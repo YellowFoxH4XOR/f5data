@@ -23,12 +23,35 @@ from playwright.async_api import async_playwright, Browser, Page, TimeoutError a
 
 ARTICLE_URL = "https://my.f5.com/manage/s/article/{k}"
 
-# A page is "ready" once the article body has rendered. The body — including
-# the <h1> and every content table — lives inside a lightning-formatted-rich-text
-# shadow root, so light-DOM selectors like "main h1" never match. Playwright's
-# CSS engine pierces open shadow roots, so we wait on the content table itself,
-# which every target article (index/report/CVE/EOL) contains.
-_BODY_READY_SELECTOR = "table.askf5table"
+# A page is "ready" once the article body has rendered. The body — including the
+# <h1> and every content table — lives inside a lightning-formatted-rich-text
+# shadow root, so light-DOM selectors like "main h1" never match. We wait via a
+# shadow-piercing function for at least one *content* table to appear. We must
+# NOT key on the "askf5table" class: older articles render content tables as bare
+# <table> with no class, and keying on the class made those time out (4x45s) and
+# skip enrichment. This predicate mirrors isContentTable() in _EXTRACT_JS.
+_READY_JS = r"""
+() => {
+  function isContentTable(el) {
+    if (/askf5table/.test(el.className || '')) return true;
+    let n = el;
+    while (n) {
+      if (n.tagName === 'LIGHTNING-FORMATTED-RICH-TEXT') return true;
+      const root = n.getRootNode && n.getRootNode();
+      n = n.parentElement || (root && root.host) || null;
+    }
+    return false;
+  }
+  function hasTable(root) {
+    for (const el of (root.querySelectorAll ? root.querySelectorAll('*') : [])) {
+      if (el.tagName === 'TABLE' && isContentTable(el)) return true;
+      if (el.shadowRoot && hasTable(el.shadowRoot)) return true;
+    }
+    return false;
+  }
+  return hasTable(document.body);
+}
+"""
 
 # The Salesforce community occasionally serves a "Sorry to interrupt / CSS Error"
 # shell. We detect it and reload.
@@ -44,13 +67,28 @@ _EXTRACT_JS = r"""
 () => {
   const SECTION_MAX = 130;
 
-  // Collect all askf5table elements in document order, descending into shadow
-  // roots. Document order matters so each table's nearest preceding heading is
-  // discoverable.
+  // A content table is one inside the article body. Newer articles class theirs
+  // "askf5table"; OLDER articles use bare <table> with no class. So we identify
+  // content tables structurally: classed askf5table, OR descended from a
+  // lightning-formatted-rich-text body (which excludes nav/footer layout
+  // tables). Climbing crosses shadow boundaries via the host element.
+  function isContentTable(el) {
+    if (/askf5table/.test(el.className || '')) return true;
+    let n = el;
+    while (n) {
+      if (n.tagName === 'LIGHTNING-FORMATTED-RICH-TEXT') return true;
+      const root = n.getRootNode && n.getRootNode();
+      n = n.parentElement || (root && root.host) || null;
+    }
+    return false;
+  }
+
+  // Collect all content tables in document order, descending into shadow roots.
+  // Document order matters so each table's nearest preceding heading is found.
   function deepTables(root, acc) {
     const kids = root.querySelectorAll ? root.querySelectorAll('*') : [];
     for (const el of kids) {
-      if (el.tagName === 'TABLE' && /askf5table/.test(el.className || '')) acc.push(el);
+      if (el.tagName === 'TABLE' && isContentTable(el)) acc.push(el);
       if (el.shadowRoot) deepTables(el.shadowRoot, acc);
     }
   }
@@ -197,8 +235,8 @@ class ArticleSession:
         for attempt in range(self.max_reloads + 1):
             try:
                 await self._page.goto(url, timeout=self.nav_timeout_ms, wait_until="domcontentloaded")
-                await self._page.wait_for_selector(_BODY_READY_SELECTOR, timeout=self.ready_timeout_ms)
-                # Give shadow-DOM rich text a beat to populate after the H1.
+                await self._page.wait_for_function(_READY_JS, timeout=self.ready_timeout_ms)
+                # Give shadow-DOM rich text a beat to finish populating.
                 await self._page.wait_for_timeout(800)
                 data = await self._page.evaluate(_EXTRACT_JS)
                 if data.get("isErrorShell"):
