@@ -1,0 +1,59 @@
+name: Scrape F5 vulnerabilities + EOL
+
+# Runs the scraper on a schedule and commits the refreshed dataset back to this
+# repo. The repo is both the output store and the incremental cache: the run
+# reads data/output/manifest.json from the checkout, scrapes only what's new or
+# stale, and commits the diff. Committing each run also keeps this scheduled
+# workflow alive (GitHub disables cron workflows after 60 days of inactivity).
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"        # every Monday 06:00 UTC
+  workflow_dispatch:            # manual trigger
+    inputs:
+      refresh:
+        description: "Ignore cache and re-scrape everything"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write               # allow the built-in GITHUB_TOKEN to push
+
+concurrency:
+  group: f5-scrape
+  cancel-in-progress: false     # never interrupt a run mid-commit
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330        # well under the 6h hard limit; first full run is long
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: pip install -e .
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Scrape
+        run: |
+          python -m f5scraper.cli all \
+            ${{ (github.event_name == 'workflow_dispatch' && inputs.refresh) && '--refresh' || '' }} \
+            --ttl-days 7
+
+      - name: Commit dataset
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/output
+          if git diff --cached --quiet; then
+            echo "No dataset changes."
+          else
+            git commit -m "data: refresh F5 vulns + EOL ($(date -u +%Y-%m-%d))"
+            git push
+          fi
