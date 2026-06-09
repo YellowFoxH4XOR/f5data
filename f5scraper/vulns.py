@@ -100,7 +100,11 @@ async def run(session: ArticleSession, output_dir: Path, *, refresh: bool = Fals
         cache.record(report.k_number, content_hash(report.to_dict()), mutability)
 
     # 3. Enrichment from per-CVE articles ---------------------------------- #
-    for art_k, cve_id in cve_article_ks.items():
+    items = list(cve_article_ks.items())
+    log.info("Enriching %d CVE detail articles", len(items))
+    for n, (art_k, cve_id) in enumerate(items, 1):
+        if n % 25 == 0:
+            log.info("  ...enriched %d/%d CVE articles", n, len(items))
         if not cache.should_scrape(art_k, "mutable"):
             continue
         fn = _cve_filename(cve_id)

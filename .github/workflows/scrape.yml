@@ -21,7 +21,9 @@ concurrency:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 330        # well under the 6h hard limit; first full run is long
+    timeout-minutes: 330        # well under the 6h hard limit; full refresh is long
+    env:
+      PYTHONUNBUFFERED: "1"     # stream Python logs live into the Actions log
     steps:
       - uses: actions/checkout@v4
 
@@ -35,8 +37,45 @@ jobs:
       - name: Install Chromium
         run: python -m playwright install --with-deps chromium
 
-      - name: Scrape
-        run: python -m f5scraper.cli all --refresh   # always full refresh; never use cache
+      - name: Scrape (full refresh, no cache)
+        run: |
+          echo "::group::Scraper output (live INFO logs: per-report, per-CVE enrichment, EOL, compat, KEV/EPSS)"
+          # -u = unbuffered so progress lines appear in real time
+          python -u -m f5scraper.cli all --refresh
+          echo "::endgroup::"
+
+      - name: Run summary
+        if: always()            # write the summary even if the scrape failed
+        run: |
+          python3 - >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, os
+          from collections import Counter
+          def load(p):
+              try:
+                  with open(p) as f: return json.load(f)
+              except Exception: return {}
+          v = load("data/output/vulnerabilities.json")
+          eol = load("data/output/eol.json")
+          compat = load("data/output/compat.json")
+          cves = v.get("cves", [])
+          def n(pred): return sum(1 for c in cves if pred(c))
+          pri = Counter(c.get("priority") for c in cves)
+          print("## F5 scrape summary")
+          if not cves:
+              print("\n**No dataset produced — the scrape likely failed. Check the log above.**")
+          else:
+              print(f"\n| Metric | Count |\n|---|---|")
+              print(f"| CVEs | **{v.get('cve_count', len(cves))}** |")
+              print(f"| KEV (actively exploited) | {n(lambda c: c.get('kev'))} |")
+              print(f"| EPSS scored | {n(lambda c: c.get('epss_score') is not None)} |")
+              print(f"| Out-of-band | {n(lambda c: c.get('is_out_of_band'))} |")
+              print(f"| On end-of-life software | {n(lambda c: c.get('has_eol_affected'))} |")
+              print(f"| Quarterly reports | {v.get('report_count')} |")
+              print(f"| EOL records | {eol.get('record_count')} |")
+              print(f"| Compat (K9476) records | {compat.get('record_count')} |")
+              order = ["Critical", "High", "Medium", "Low"]
+              print(f"\n**Priority:** " + ", ".join(f"{k} {pri.get(k, 0)}" for k in order))
+          PY
 
       - name: Commit dataset
         run: |
@@ -44,8 +83,12 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/output
           if git diff --cached --quiet; then
-            echo "No dataset changes."
+            echo "No dataset changes this run." | tee -a "$GITHUB_STEP_SUMMARY"
           else
+            echo "::group::Changed files"
+            git diff --cached --stat
+            echo "::endgroup::"
             git commit -m "data: refresh F5 vulns + EOL ($(date -u +%Y-%m-%d))"
             git push
+            { echo ""; echo "**Committed** \`$(git rev-parse --short HEAD)\` and pushed."; } >> "$GITHUB_STEP_SUMMARY"
           fi
