@@ -40,6 +40,32 @@ Files are written only when their content changes, so unchanged articles produce
 zero diff. Mutable data (CVE details, EOL dates) is refreshed on a TTL; closed
 past quarters are immutable and scraped once.
 
+## Enrichment fields
+
+Each CVE record is enriched (same JSON shape, just more fields):
+
+- **Threat intel:** `kev` (CISA Known Exploited), `kev_date_added`, `kev_ransomware`,
+  `epss_score` (0–1 exploitation probability). Keyed by CVE ID; feeds are
+  fetched fail-soft, so an outage degrades gracefully.
+- **CVSS decomposition:** `attack_vector`, `remote`, `unauthenticated`,
+  `user_interaction_required` (computed from the stored vectors).
+- **F5 operational:** `impact`, `mitigation`, `recommended_actions`, `f5_bug_id`,
+  `status`, `published_date`.
+- **EOL cross-link:** per affected branch, `branch_is_eol` / `branch_eots_date`
+  (best-effort, matched on major.minor against the EOL dataset); CVE-level
+  `has_eol_affected`.
+- **Priority:** `priority` (Critical/High/Medium/Low) + `priority_score` (0–10).
+  **Heuristic, not an official score:** base = max CVSS; KEV forces ≥9; +1 if
+  remotely exploitable without auth; +0.5 if any affected branch is past EoTS.
+
+Coverage also includes **out-of-band advisories** (the "Additional Security
+Announcements" on K12201527), marked `is_out_of_band: true` — not just the
+scheduled quarterly reports.
+
+`compat.json` (from **K9476**) maps each hardware platform to the software
+versions it supports — useful to check whether a device's hardware can run a
+fixed/target version.
+
 ## Is a CVE applicable to my device?
 
 Each CVE record carries the **module/feature that must be active** for it to

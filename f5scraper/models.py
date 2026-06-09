@@ -32,6 +32,10 @@ class AffectedProduct:
     # F5's verbatim "Vulnerable component or feature" — the condition that must
     # hold for the CVE to apply (e.g. a specific profile/feature configured).
     vulnerable_component: str | None = None
+    # EOL cross-link (best-effort): is this affected branch already past End of
+    # Technical Support, per the EOL dataset, and on what date.
+    branch_is_eol: bool | None = None
+    branch_eots_date: str | None = None
 
 
 @dataclass
@@ -62,8 +66,47 @@ class CVE:
     applies_to_all_modules: bool = False
     description: str | None = None
     cwe: str | None = None
+    # F5 operational fields (from the CVE article body):
+    impact: str | None = None
+    mitigation: str | None = None
+    recommended_actions: str | None = None
+    f5_bug_id: str | None = None
+    status: str | None = None              # e.g. "Final" / "In progress"
+    published_date: str | None = None
+    # CVSS vector decomposition (computed from the stored vector):
+    attack_vector: str | None = None       # network / adjacent / local / physical
+    remote: bool | None = None             # AV:N or AV:A
+    unauthenticated: bool | None = None     # PR:N
+    user_interaction_required: bool | None = None  # UI:R / UI:P
+    # Threat intel (external feeds, keyed by CVE ID):
+    kev: bool = False                      # CISA Known Exploited Vulnerabilities
+    kev_date_added: str | None = None
+    kev_ransomware: bool | None = None
+    epss_score: float | None = None        # 0..1 exploitation probability
+    # Derived:
+    has_eol_affected: bool = False         # any affected branch past EoTS
+    priority: str | None = None            # Critical / High / Medium / Low (heuristic)
+    priority_score: float | None = None    # 0..10 (heuristic, documented)
+    is_out_of_band: bool = False           # sourced from Additional Security Announcements
     source_reports: list[str] = field(default_factory=list)  # quarterly K-numbers
     updated_date: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class CompatRecord:
+    """A hardware platform's compatible software versions (K9476 matrix)."""
+
+    hardware: str
+    source_k: str
+    hw_type: str | None = None
+    # branch label -> supported version range, e.g. {"17.x": "17.1.0 - 17.5.1"}
+    compatible_software: dict[str, str] = field(default_factory=dict)
+    lifecycle_note: str | None = None
+    aom: str | None = None
+    eud: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

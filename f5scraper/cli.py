@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 
 from .browser import ArticleSession
-from . import vulns, eol
+from . import vulns, eol, compat
 
 DEFAULT_OUTPUT = Path("data/output")
 
@@ -18,21 +18,28 @@ async def _run(args: argparse.Namespace) -> None:
         headless=not args.headful,
         throttle_seconds=args.throttle,
     ) as session:
-        if args.command in ("vulns", "all"):
-            await vulns.run(
-                session, args.output,
-                refresh=args.refresh, limit=args.limit, ttl_days=args.ttl_days,
-            )
+        # For `all`, run EOL + compat first so the CVE EOL cross-link sees fresh
+        # eol.json in the same invocation.
         if args.command in ("eol", "all"):
             await eol.run(
                 session, args.output,
                 refresh=args.refresh, ttl_days=args.ttl_days,
             )
+        if args.command in ("compat", "all"):
+            await compat.run(
+                session, args.output,
+                refresh=args.refresh, ttl_days=args.ttl_days,
+            )
+        if args.command in ("vulns", "all"):
+            await vulns.run(
+                session, args.output,
+                refresh=args.refresh, limit=args.limit, ttl_days=args.ttl_days,
+            )
 
 
 def main() -> None:
     p = argparse.ArgumentParser(prog="f5scraper", description=__doc__)
-    p.add_argument("command", choices=["vulns", "eol", "all"])
+    p.add_argument("command", choices=["vulns", "eol", "compat", "all"])
     p.add_argument("--output", type=Path, default=DEFAULT_OUTPUT,
                    help="output/cache directory (default: data/output)")
     p.add_argument("--refresh", action="store_true",

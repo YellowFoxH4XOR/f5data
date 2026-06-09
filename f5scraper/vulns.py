@@ -20,7 +20,7 @@ from pathlib import Path
 from .browser import ArticleSession
 from .cache import Cache, content_hash
 from .models import CVE
-from . import parse
+from . import parse, intel, enrich
 
 log = logging.getLogger("f5scraper.vulns")
 
@@ -112,24 +112,68 @@ async def run(session: ArticleSession, output_dir: Path, *, refresh: bool = Fals
         except RuntimeError as e:
             log.warning("enrichment failed for %s (%s): %s", cve_id, art_k, e)
             continue
-        enrich = parse.parse_cve_detail(detail)
-        for key, val in enrich.items():
+        detail_fields = parse.parse_cve_detail(detail)
+        for key, val in detail_fields.items():
             if val is not None:
                 rec[key] = val  # detail is authoritative for these fields
         cache.write_json(fn, rec)
-        cache.record(art_k, content_hash(enrich), "mutable")
+        cache.record(art_k, content_hash(detail_fields), "mutable")
 
-    # 4. Rebuild combined index (dedup-free by construction) --------------- #
+    # 3b. Out-of-band advisories (Additional Security Announcements) -------- #
+    # Skipped under --limit (a testing knob). Most entries are single-CVE
+    # advisories; a few are multi-CVE "Out-of-band Security Notification" reports.
+    if not limit:
+        for ann in parse.parse_index_additional(index_data):
+            k = ann["k"]
+            if not cache.should_scrape(k, "mutable"):
+                continue
+            try:
+                data = await session.render_article(k)
+            except RuntimeError as e:
+                log.warning("out-of-band %s failed: %s", k, e)
+                continue
+            report_cves = parse.parse_report(data)
+            if report_cves:  # multi-CVE out-of-band notification (report-style)
+                for c in report_cves:
+                    c.is_out_of_band = True
+                    c.source_reports = [k]
+                    fn = _cve_filename(c.id)
+                    cache.write_json(fn, _merge_cve(cache.read_json(fn), c))
+                    if c.article_k and c.article_k != k:
+                        try:
+                            det = await session.render_article(c.article_k)
+                            rec = cache.read_json(fn)
+                            for key, val in parse.parse_cve_detail(det).items():
+                                if val is not None:
+                                    rec[key] = val
+                            cache.write_json(fn, rec)
+                        except RuntimeError as e:
+                            log.warning("oob enrich failed %s: %s", c.article_k, e)
+            else:  # single-CVE advisory article
+                cve = parse.build_cve_from_article(data)
+                if cve:
+                    fn = _cve_filename(cve.id)
+                    cache.write_json(fn, _merge_cve(cache.read_json(fn), cve))
+            cache.record(k, content_hash(ann), "mutable")
+            log.info("out-of-band %s ingested", k)
+
+    # 4. Threat-intel + derived enrichment (KEV/EPSS/CVSS flags/EOL/priority) #
+    kev_map = intel.fetch_kev()
+    epss_map = intel.fetch_epss([c.get("id", "") for c in cache.glob_json("cves")])
+    enrich.enrich_dataset(output_dir, kev_map, epss_map)
+
+    # 5. Rebuild combined index (after enrichment; dedup-free by construction) #
     all_cves = cache.glob_json("cves")
     all_reports = cache.glob_json("reports")
     combined = {
-        "generated_from": "my.f5.com K12201527 Quarterly Security Notifications",
+        "generated_from": "my.f5.com K12201527 Quarterly Security Notifications + out-of-band advisories",
         "report_count": len(all_reports),
         "cve_count": len(all_cves),
+        "kev_count": sum(1 for c in all_cves if c.get("kev")),
         "reports": sorted(all_reports, key=lambda r: r.get("date_iso") or "", reverse=True),
         "cves": sorted(all_cves, key=lambda c: c.get("id", "")),
     }
     cache.write_json("vulnerabilities.json", combined)
     cache.save_manifest()
-    log.info("vulns: %d reports, %d CVEs", len(all_reports), len(all_cves))
+    log.info("vulns: %d reports, %d CVEs (%d KEV)", len(all_reports), len(all_cves), combined["kev_count"])
     return {"reports": len(all_reports), "cves": len(all_cves)}

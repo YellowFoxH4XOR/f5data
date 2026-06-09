@@ -385,6 +385,182 @@ def parse_cve_detail(data: dict[str, Any]) -> dict[str, Any]:
                     elif "cvss/calculator/4.0" in href and "cvss_v40_vector" not in out:
                         out["cvss_v40_vector"] = _vector(href)
                         _apply_sev_score(out, txt, "40")
+
+    # F5 operational fields (section order in the body is Description → Impact →
+    # Security Advisory Status → Recommended Actions → Mitigation → Acknowledgements).
+    out["published_date"] = normalize_date(data.get("published"))
+    impact = _between(body, "Impact", ("Security Advisory Status",))
+    if impact:
+        out["impact"] = impact
+    rec = _between(body, "Security Advisory Recommended Actions",
+                   ("Mitigation", "Acknowledgements", "Supplemental Information", "Related Content"))
+    if rec:
+        out["recommended_actions"] = rec
+    mit = _between(body, "Mitigation",
+                   ("Acknowledgements", "Supplemental Information", "Related Content"))
+    if mit:
+        out["mitigation"] = mit
+    bug = re.search(r"assigned ID (\d+)", body)
+    if bug:
+        out["f5_bug_id"] = bug.group(1)
+    status = re.search(r"marked as '([^']+)'", body)
+    if status:
+        out["status"] = status.group(1)
+    return out
+
+
+# CVSS vector key -> attack-vector word
+_AV_WORD = {"N": "network", "A": "adjacent", "L": "local", "P": "physical"}
+
+
+def parse_cvss_vector(vector: str | None) -> dict[str, Any]:
+    """Decompose a CVSS vector string into filterable flags.
+
+    Handles both v3.1 (`AV/AC/PR/UI/...`) and v4.0 (`AV/AC/AT/PR/UI/...`).
+    Returns keys: attack_vector, remote, unauthenticated, user_interaction_required.
+    """
+    if not vector:
+        return {}
+    parts = dict(p.split(":", 1) for p in vector.split("/") if ":" in p)
+    out: dict[str, Any] = {}
+    av = parts.get("AV")
+    if av:
+        out["attack_vector"] = _AV_WORD.get(av, av)
+        out["remote"] = av in ("N", "A")
+    if "PR" in parts:
+        out["unauthenticated"] = parts["PR"] == "N"
+    if "UI" in parts:
+        # v3.1: N/R; v4.0: N/P/A. Anything other than None means UI is involved.
+        out["user_interaction_required"] = parts["UI"] != "N"
+    return out
+
+
+def parse_index_additional(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Out-of-band advisories from the 'Additional Security Announcements' table."""
+    out: list[dict[str, Any]] = []
+    for table in data.get("tables", []):
+        header = [h.lower() for h in table.get("header", [])]
+        if not (len(header) >= 2 and "announcement date" in header[0]
+                and "reference" in header[1]):
+            continue
+        for row in table["rows"][1:]:
+            if len(row) < 2:
+                continue
+            links = row[1].get("links") or []
+            if not links:
+                continue
+            k = k_from_href(links[0]["href"])
+            if not k:
+                continue
+            out.append({
+                "k": k,
+                "title": links[0]["text"].strip(),
+                "url": _abs(links[0]["href"]),
+                "date": row[0].get("text", "").strip() or None,
+            })
+        break
+    return out
+
+
+def build_cve_from_article(data: dict[str, Any]) -> CVE | None:
+    """Build a CVE directly from a single-CVE advisory article (out-of-band).
+
+    Used for 'Additional Security Announcements' that are one-CVE advisories
+    rather than multi-CVE quarterly-style reports.
+    """
+    title = data.get("title", "")
+    cid = cve_from_text(title)
+    k = data.get("k_number")
+    affected = parse_cve_status(data)
+    if not cid and not affected:
+        return None
+    req_modules, applies_all = module_summary(affected)
+    cve = CVE(
+        id=cid or (k or title),
+        title=title,
+        article_k=k,
+        url=data.get("url"),
+        is_exposure=cid is None,
+        affected=affected,
+        required_modules=req_modules,
+        applies_to_all_modules=applies_all,
+        is_out_of_band=True,
+    )
+    # Apply detail-derived fields (description, cwe, cvss, ops fields, severity).
+    detail = parse_cve_detail(data)
+    for key, val in detail.items():
+        if key == "affected" or val is None:
+            continue
+        if hasattr(cve, key):
+            setattr(cve, key, val)
+    return cve
+
+
+def parse_compat(data: dict[str, Any]) -> list["CompatRecord"]:
+    """Hardware/software compatibility records from K9476.
+
+    K9476 uses a two-row header: a 'Compatible software versions' super-header
+    (colspan) over per-branch sub-columns (21.x / 17.x / ...). We expand spans,
+    combine the two header rows into real column labels, then emit one record per
+    hardware row.
+    """
+    from .models import CompatRecord  # local import to avoid top-level churn
+
+    source_k = data.get("k_number", "")
+    out: list[CompatRecord] = []
+    for table in data.get("tables", []):
+        grid = expand_grid(table["rows"])
+        if len(grid) < 3:
+            continue
+        h0 = [c.get("text", "").strip() for c in grid[0]]
+        h1 = [c.get("text", "").strip() for c in grid[1]]
+        n = len(h0)
+
+        sw_cols: dict[int, str] = {}   # col index -> branch label
+        meta: dict[str, int] = {}      # 'lifecycle'/'aom'/'eud' -> col index
+        type_cols: list[int] = []
+        hw_cols: list[int] = []
+        for i in range(n):
+            top = h0[i].lower()
+            sub = h1[i] if i < len(h1) else ""
+            if "compatible software" in top:
+                sw_cols[i] = sub or h0[i]
+            elif "lifecycle" in top:
+                meta["lifecycle"] = i
+            elif top == "aom":
+                meta["aom"] = i
+            elif top == "eud":
+                meta["eud"] = i
+            elif "type" in top or "type" in sub.lower():
+                type_cols.append(i)
+            else:
+                hw_cols.append(i)
+
+        if not sw_cols:
+            continue  # not a compatibility table
+
+        for row in grid[2:]:
+            def cell(idx: int) -> str:
+                return row[idx].get("text", "").strip() if idx < len(row) else ""
+
+            hardware = " / ".join(t for i in hw_cols if (t := cell(i)))
+            if not hardware:
+                continue
+            hw_type = " / ".join(t for i in type_cols if (t := cell(i))) or None
+            compatible = {
+                label: cell(i)
+                for i, label in sw_cols.items()
+                if cell(i) and cell(i).lower() not in _NOT_AFFECTED
+            }
+            out.append(CompatRecord(
+                hardware=hardware,
+                source_k=source_k,
+                hw_type=hw_type,
+                compatible_software=compatible,
+                lifecycle_note=(cell(meta["lifecycle"]) or None) if "lifecycle" in meta else None,
+                aom=(cell(meta["aom"]) or None) if "aom" in meta else None,
+                eud=(cell(meta["eud"]) or None) if "eud" in meta else None,
+            ))
     return out
 
 
