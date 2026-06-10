@@ -7,6 +7,15 @@ Flow:
      file keyed by CVE ID; write the report file.
   3. Enrich each CVE from its own article (description, CWE, CVSS vectors,
      authoritative severity) when the cache says so.
+  3b. Out-of-band advisories from the "Additional Security Announcements" table
+     of K12201527: same single/multi-CVE ingest as step 3 but marked
+     is_out_of_band=True.
+  3c. Search-based discovery via the Coveo REST API: enumerates ALL my.f5.com
+     Security Advisory articles (currently ~5000+), ingests any whose K-number
+     is not already covered by steps 2–3b. Results are persisted to
+     data/output/discovered.json for diffability. New CVEs discovered here are
+     automatically included in step 4's KEV/EPSS/priority enrichment because
+     they are written to cves/ before that step runs.
   4. Rebuild data/output/vulnerabilities.json from all canonical files — this is
      what guarantees a duplicate-free, deterministic combined index regardless
      of run history.
@@ -20,7 +29,7 @@ from pathlib import Path
 from .browser import ArticleSession
 from .cache import Cache, content_hash
 from .models import CVE
-from . import parse, intel, enrich
+from . import parse, intel, enrich, discover
 
 log = logging.getLogger("f5scraper.vulns")
 
@@ -55,7 +64,8 @@ def _merge_cve(existing: dict | None, new: CVE) -> dict:
 
 
 async def run(session: ArticleSession, output_dir: Path, *, refresh: bool = False,
-              limit: int | None = None, ttl_days: int = 0) -> dict:
+              limit: int | None = None, ttl_days: int = 0,
+              no_discover: bool = False) -> dict:
     cache = Cache(output_dir, refresh=refresh, ttl_days=ttl_days)
 
     # 1. Index ------------------------------------------------------------- #
@@ -156,10 +166,101 @@ async def run(session: ArticleSession, output_dir: Path, *, refresh: bool = Fals
             else:  # single-CVE advisory article
                 cve = parse.build_cve_from_article(data)
                 if cve:
+                    cve.source_reports = [k]
                     fn = _cve_filename(cve.id)
                     cache.write_json(fn, _merge_cve(cache.read_json(fn), cve))
+                else:
+                    log.warning("out-of-band %s: parse returned no CVE — skipping cache.record", k)
+                    continue
             cache.record(k, content_hash(ann), "mutable")
             log.info("out-of-band %s ingested", k)
+
+    # 3c. Search-based discovery (Coveo) --------------------------------------- #
+    # Skipped under --limit (testing knob) and under --no-discover.
+    # Enumerates ALL my.f5.com Security Advisory articles via the Coveo REST API
+    # and ingests any not already covered by steps 2–3b. New CVEs land in cves/
+    # before step 4, so they get full KEV/EPSS/priority enrichment automatically.
+    if not limit and not no_discover:
+        # Build the covered set: union of manifest keys + all article_k values on
+        # canonical CVE records + all report k_numbers. This is the authoritative
+        # "already ingested" set — anything in it is safe to skip.
+        covered_ks: set[str] = set(cache.manifest.keys())
+        for rec in cache.glob_json("cves"):
+            if rec.get("article_k"):
+                covered_ks.add(rec["article_k"])
+        for rep in cache.glob_json("reports"):
+            if rep.get("k_number"):
+                covered_ks.add(rep["k_number"])
+
+        advisories: list[dict] = []
+        try:
+            all_advisories = await discover.enumerate_advisories(session)
+            advisories = discover.filter_new(all_advisories, covered_ks, manifest=cache.manifest)
+            log.info(
+                "discover: %d total advisories from Coveo, %d new (not yet ingested)",
+                len(all_advisories), len(advisories),
+            )
+            # Persist the full listing for diffability/debugging.
+            import datetime as _dt
+            cache.write_json("discovered.json", {
+                "generated_at": _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat(),
+                "total_coveo_advisories": len(all_advisories),
+                "new_this_run": len(advisories),
+                "articles": sorted(all_advisories, key=lambda a: a.get("k", "")),
+            })
+        except RuntimeError as e:
+            log.warning("discover: enumeration failed, skipping search-discovery: %s", e)
+
+        # No should_scrape gate here: filter_new already decided what needs
+        # scraping (unknown Ks, plus known Ks whose Coveo last-updated date is
+        # newer than our manifest scraped_at). A TTL-based gate would wrongly
+        # skip those stale re-includes on non-refresh runs.
+        for ann in advisories:
+            k = ann["k"]
+            try:
+                data = await session.render_article(k)
+            except RuntimeError as e:
+                log.warning("discover: render failed for %s: %s", k, e)
+                continue
+            report_cves = parse.parse_report(data)
+            if report_cves:  # multi-CVE report-style advisory
+                for c in report_cves:
+                    c.is_out_of_band = True
+                    c.source_reports = [k]
+                    fn = _cve_filename(c.id)
+                    existing = cache.read_json(fn)
+                    if existing:
+                        # CVE already ingested from a quarterly source; preserve its
+                        # authoritative fields (affected, title, severity, scores) and
+                        # only union source_reports to avoid clobbering with potentially
+                        # less-detailed data from a digest-style advisory article.
+                        existing["source_reports"] = sorted(
+                            set(existing.get("source_reports", [])) | {k}
+                        )
+                        cache.write_json(fn, existing)
+                    else:
+                        cache.write_json(fn, _merge_cve(None, c))
+                        if c.article_k and c.article_k != k:
+                            try:
+                                det = await session.render_article(c.article_k)
+                                rec = cache.read_json(fn)
+                                for key, val in parse.parse_cve_detail(det).items():
+                                    if val is not None:
+                                        rec[key] = val
+                                cache.write_json(fn, rec)
+                            except RuntimeError as e:
+                                log.warning("discover: enrich failed %s: %s", c.article_k, e)
+            else:  # single-CVE advisory article
+                cve = parse.build_cve_from_article(data)
+                if cve:
+                    cve.source_reports = [k]
+                    fn = _cve_filename(cve.id)
+                    cache.write_json(fn, _merge_cve(cache.read_json(fn), cve))
+                else:
+                    log.warning("discover: %s: parse returned no CVE — skipping cache.record", k)
+                    continue
+            cache.record(k, content_hash(ann), "mutable")
+            log.info("discover: ingested %s (%s)", k, ann.get("title", "")[:80])
 
     # 4. Threat-intel + derived enrichment (KEV/EPSS/CVSS flags/EOL/priority) #
     kev_map = intel.fetch_kev()

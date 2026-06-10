@@ -2,11 +2,19 @@
 
 Builds a structured JSON dataset from F5's support site (`my.f5.com`):
 
-1. **Vulnerabilities** — every CVE / security exposure reached from the index
-   article [K12201527](https://my.f5.com/manage/s/article/K12201527) →
-   each **Quarterly Security Notification** report → each CVE's own article
-   (severity, CVSS v3.1/v4.0 score + vector, affected products/versions,
-   fixes, CWE, description).
+1. **Vulnerabilities** — every CVE / security exposure from two complementary
+   discovery channels:
+   - **Index-driven:** [K12201527](https://my.f5.com/manage/s/article/K12201527) →
+     each **Quarterly Security Notification** report → each CVE's own article
+     (severity, CVSS v3.1/v4.0 score + vector, affected products/versions,
+     fixes, CWE, description). Also includes the "Additional Security
+     Announcements" (out-of-band advisories) linked from that index.
+   - **Search-driven:** the Coveo search API (same backend as the my.f5.com
+     search bar) is queried for all ~5000+ Security Advisory articles. Any
+     K-number not already ingested via the index channel is rendered and ingested
+     — this catches standalone advisory articles never linked from K12201527.
+     The full listing is persisted to `data/output/discovered.json` for
+     diffability. Skip with `--no-discover`.
 2. **End of Life / End of Support** — software (`K5903`) and hardware (`K4309`)
    lifecycle dates, plus best-effort follow of the EOL index (`K11478`).
 
@@ -108,7 +116,8 @@ python -m f5scraper.cli eol                  # EOL only
 
 Flags: `--refresh` (ignore cache), `--limit N` (cap reports), `--ttl-days N`
 (re-scrape mutable articles older than N days; `0` = always), `--output DIR`
-(default `data/output`), `--throttle SECONDS`, `--headful`, `-v`.
+(default `data/output`), `--throttle SECONDS`, `--no-discover` (skip
+Coveo search-discovery step), `--headful`, `-v`.
 
 ## Automated runs (GitHub Actions)
 

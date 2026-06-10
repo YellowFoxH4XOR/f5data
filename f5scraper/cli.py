@@ -34,6 +34,7 @@ async def _run(args: argparse.Namespace) -> None:
             await vulns.run(
                 session, args.output,
                 refresh=args.refresh, limit=args.limit, ttl_days=args.ttl_days,
+                no_discover=args.no_discover,
             )
 
 
@@ -52,6 +53,8 @@ def main() -> None:
                    help="seconds to wait between article loads")
     p.add_argument("--headful", action="store_true",
                    help="run a visible browser (debugging)")
+    p.add_argument("--no-discover", action="store_true",
+                   help="skip Coveo search-based advisory discovery (step 3c)")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args()
 

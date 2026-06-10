@@ -19,7 +19,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any
 
-from playwright.async_api import async_playwright, Browser, Page, TimeoutError as PWTimeout
+from playwright.async_api import async_playwright, Browser, Error as PWError, Page, TimeoutError as PWTimeout
 
 ARTICLE_URL = "https://my.f5.com/manage/s/article/{k}"
 
@@ -30,6 +30,16 @@ ARTICLE_URL = "https://my.f5.com/manage/s/article/{k}"
 # NOT key on the "askf5table" class: older articles render content tables as bare
 # <table> with no class, and keying on the class made those time out (4x45s) and
 # skip enrichment. This predicate mirrors isContentTable() in _EXTRACT_JS.
+#
+# Prose-only advisories ("Final"/not-affected articles) have NO tables at all,
+# so we also accept advisory body-section markers in the rendered text:
+#   - "Recommended Actions" (covers both the long "Security Advisory
+#     Recommended Actions" heading and the short legacy form), or
+#   - a standalone "Impact" line plus the "Published Date" metadata (oldest
+#     legacy template, e.g. K48127735, has no section headings at all).
+# These markers sit inside the article body itself, so when they are visible
+# any tables have rendered too; non-advisory pages (index, EOL, compat) still
+# satisfy the table arm.
 _READY_JS = r"""
 () => {
   function isContentTable(el) {
@@ -49,6 +59,10 @@ _READY_JS = r"""
     }
     return false;
   }
+  const main = document.querySelector('main') || document.body;
+  const txt = main.innerText || '';
+  if (txt.includes('Recommended Actions')) return true;
+  if (/^Impact$/m.test(txt) && txt.includes('Published Date')) return true;
   return hasTable(document.body);
 }
 """
@@ -246,10 +260,14 @@ class ArticleSession:
                 if self.throttle_seconds:
                     await asyncio.sleep(self.throttle_seconds)
                 return data
-            except (PWTimeout, RuntimeError) as e:  # noqa: PERF203 - retry loop
+            except (PWTimeout, RuntimeError, PWError) as e:  # noqa: PERF203 - retry loop
                 last_err = e
                 if attempt < self.max_reloads:
-                    await self._page.wait_for_timeout(1500)
+                    # Non-timeout navigation errors (machine slept mid-run ->
+                    # ERR_NETWORK_IO_SUSPENDED, Wi-Fi blip) need longer to
+                    # recover than an in-page render retry does.
+                    transient_net = isinstance(e, PWError) and not isinstance(e, PWTimeout)
+                    await self._page.wait_for_timeout(15_000 if transient_net else 1500)
                     continue
 
         raise RuntimeError(f"Failed to render {k_number} after {self.max_reloads + 1} attempts: {last_err}")
