@@ -1,0 +1,87 @@
+name: Discover F5 security advisories
+
+# Daily incremental discovery (step 3c only, effectively): enumerates all
+# Security Advisory articles via the Coveo search API and renders only the
+# ones we have never ingested or whose last-updated date on my.f5.com is
+# newer than our last scrape (filter_new in f5scraper/discover.py). The big
+# --ttl-days keeps every cached QSN/report/enrichment article untouched —
+# freshness of those is the nightly full-refresh scrape.yml's job. Typical
+# run is minutes (F5 publishes/updates a handful of advisories per day).
+
+on:
+  schedule:
+    - cron: "30 13 * * *"      # daily 13:30 UTC = 19:00 IST (UTC+5:30), 2h before scrape.yml
+  workflow_dispatch:            # manual trigger
+
+permissions:
+  contents: write               # allow the built-in GITHUB_TOKEN to push
+
+concurrency:
+  group: f5-scrape              # shared with scrape.yml: never run both at once
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120        # generous; typical run is well under 30 min
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: pip install -e .
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Discover and ingest new/updated advisories
+        run: |
+          echo "::group::Scraper output (discovery, KEV/EPSS, index rebuild)"
+          # --ttl-days 36500: skip all cached QSN articles; only discovery's
+          # new/updated advisories render. No --refresh by design.
+          python -u -m f5scraper.cli vulns --ttl-days 36500
+          echo "::endgroup::"
+
+      - name: Run summary
+        if: always()            # write the summary even if the run failed
+        run: |
+          python3 - >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          def load(p):
+              try:
+                  with open(p) as f: return json.load(f)
+              except Exception: return {}
+          d = load("data/output/discovered.json")
+          v = load("data/output/vulnerabilities.json")
+          print("## F5 advisory discovery summary")
+          if not d:
+              print("\n**No discovered.json produced — discovery likely failed. Check the log above.**")
+          else:
+              print(f"\n| Metric | Count |\n|---|---|")
+              print(f"| Advisories on my.f5.com (Coveo) | {d.get('total_coveo_advisories')} |")
+              print(f"| New/updated this run | **{d.get('new_this_run')}** |")
+              print(f"| Total CVEs in dataset | {v.get('cve_count')} |")
+          PY
+
+      - name: Commit dataset
+        if: always()            # a timeout mid-run must not lose scraped data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/output
+          if git diff --cached --quiet; then
+            echo "No dataset changes this run." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::group::Changed files"
+            git diff --cached --stat
+            echo "::endgroup::"
+            git commit -m "data: daily advisory discovery ($(date -u +%Y-%m-%d))"
+            git pull --rebase origin main
+            git push
+            { echo ""; echo "**Committed** \`$(git rev-parse --short HEAD)\` and pushed."; } >> "$GITHUB_STEP_SUMMARY"
+          fi
