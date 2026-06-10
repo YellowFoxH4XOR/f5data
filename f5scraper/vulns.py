@@ -221,7 +221,11 @@ async def run(session: ArticleSession, output_dir: Path, *, refresh: bool = Fals
             try:
                 data = await session.render_article(k)
             except RuntimeError as e:
-                log.warning("discover: render failed for %s: %s", k, e)
+                # Record the failure so the next run does not retry it; the
+                # filter_new staleness check re-includes the article if F5
+                # ever updates it (Coveo last-updated > our scraped_at).
+                log.warning("discover: render failed for %s — recorded, no retry until updated: %s", k, e)
+                cache.record(k, "render-failed", "mutable")
                 continue
             report_cves = parse.parse_report(data)
             if report_cves:  # multi-CVE report-style advisory
