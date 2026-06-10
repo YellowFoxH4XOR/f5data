@@ -607,18 +607,29 @@ def parse_eol(data: dict[str, Any], category: str) -> list[EolRecord]:
     source_k = data.get("k_number", "")
     out: list[EolRecord] = []
     for table in data.get("tables", []):
+        grid = expand_grid(table["rows"])
+        if not grid:
+            continue
         header = table.get("header", [])
-        col_eosd = _header_index(header, "End of Software Development")
-        col_eots = _header_index(header, "End of Technical Support")
+        section = table.get("section")
+        body_start = 1
+        # Some articles (e.g. K21501912 / F5OS) put a one-cell title row above
+        # the real header; use the title as section and read headers a row down.
+        if len(grid) > 1 and len({id(c) for c in grid[0]}) == 1:
+            section = section or (header[0] if header else None)
+            header = [c.get("text", "") for c in grid[1]]
+            body_start = 2
+        # "EoSD/EoTS" is the combined-milestone column in F5OS tables; the
+        # slash keeps prose headers like "EoSD and EoTS milestone" excluded.
+        col_eosd = _header_index(header, "End of Software Development", "EoSD/EoTS")
+        col_eots = _header_index(header, "End of Technical Support", "EoSD/EoTS")
         col_eos = _header_index(header, "End of Sale")
         if col_eosd is None and col_eots is None and col_eos is None:
             continue  # not a lifecycle table
         col_fcs = _header_index(header, "First customer ship")
-        col_latest = _header_index(header, "Latest maintenance")
-        section = table.get("section")
+        col_latest = _header_index(header, "Latest maintenance", "Latest patch")
 
-        grid = expand_grid(table["rows"])
-        for row in grid[1:]:  # skip header
+        for row in grid[body_start:]:  # skip header
             def cell(idx: int | None) -> str | None:
                 if idx is None or idx >= len(row):
                     return None

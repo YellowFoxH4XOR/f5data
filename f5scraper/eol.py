@@ -1,9 +1,10 @@
 """EOL / lifecycle crawl: software + hardware support dates.
 
 Sources:
-  - K5903  : BIG-IP software support policy (software)
-  - K4309  : F5 hardware product lifecycle (hardware)
-  - K11478 : End of Life / End of Sale index (links to per-product articles)
+  - K5903     : BIG-IP software support policy (software)
+  - K21501912 : F5OS (VELOS chassis / rSeries) support policy (software)
+  - K4309     : F5 hardware product lifecycle (hardware)
+  - K11478    : End of Life / End of Sale index (links to per-product articles)
 
 All EOL articles are "mutable" — F5 extends and revises lifecycle dates, so we
 re-scrape each run (subject to TTL). Output is rebuilt into eol.json from the
@@ -24,6 +25,7 @@ log = logging.getLogger("f5scraper.eol")
 # (article, category) pairs to scrape directly.
 SOURCES = [
     ("K5903", "software"),
+    ("K21501912", "software"),  # F5OS (VELOS chassis / rSeries) support policy
     ("K4309", "hardware"),
 ]
 INDEX_K = "K11478"
