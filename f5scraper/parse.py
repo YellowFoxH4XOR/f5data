@@ -16,7 +16,9 @@ from typing import Any
 from .models import AffectedProduct, CVE, EolRecord, Report
 
 _K_RE = re.compile(r"/article/(K\w+)")
-_CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}", re.IGNORECASE)
+# CAN- is the pre-2005 provisional prefix for the same id space (e.g. K5004's
+# "CAN-2005-2096"); cve_from_text normalizes it to CVE-.
+_CVE_RE = re.compile(r"(?:CVE|CAN)-\d{4}-\d{4,7}", re.IGNORECASE)
 _CWE_RE = re.compile(r"CWE-\d+")
 _SEVERITY_RE = re.compile(r"\b(Critical|High|Medium|Low)\b", re.IGNORECASE)
 _CVSS31_RE = re.compile(r"([0-9]+\.[0-9])\s*\(CVSS v3\.1\)")
@@ -84,7 +86,7 @@ def k_from_href(href: str | None) -> str | None:
 
 def cve_from_text(text: str) -> str | None:
     m = _CVE_RE.search(text or "")
-    return m.group(0).upper() if m else None
+    return m.group(0).upper().replace("CAN-", "CVE-") if m else None
 
 
 def normalize_date(s: str | None) -> str | None:
@@ -309,7 +311,15 @@ def parse_cve_status(data: dict[str, Any]) -> list[AffectedProduct]:
     affected: list[AffectedProduct] = []
     for table in data.get("tables", []):
         header = table.get("header", [])
-        if _header_index(header, "Vulnerable component or feature") is None:
+        # Modern layout has 'Vulnerable component or feature'; legacy layouts
+        # (pre-QSN advisories) instead pair a Product column with a
+        # vulnerable-versions column ('Versions affected by this issue' on
+        # exposure articles, bare 'Affected' on the oldest ones).
+        is_modern = _header_index(header, "Vulnerable component or feature") is not None
+        is_legacy = (_header_index(header, "Product", "Service") is not None
+                     and _header_index(header, "Versions known to be vulnerable",
+                                       "Versions affected by this issue", "Affected") is not None)
+        if not (is_modern or is_legacy):
             continue
         grid = expand_grid(table["rows"])
         if not grid:
@@ -317,9 +327,13 @@ def parse_cve_status(data: dict[str, Any]) -> list[AffectedProduct]:
         ghead = [c.get("text", "") for c in grid[0]]
         col_prod = _header_index(ghead, "Product", "Service")
         col_branch = _header_index(ghead, "Branch")
-        col_vuln = _header_index(ghead, "Versions known to be vulnerable")
-        col_fix = _header_index(ghead, "Fixes introduced in")
+        col_vuln = _header_index(ghead, "Versions known to be vulnerable",
+                                 "Versions affected by this issue", "Affected")
+        col_fix = _header_index(ghead, "Fixes introduced in",
+                                "Versions known to be not vulnerable", "Not Affected")
         col_comp = _header_index(ghead, "Vulnerable component or feature")
+        if col_vuln is not None and col_vuln == col_prod:
+            continue  # ambiguous header match (e.g. 'Affected product') — not a status table
 
         for row in grid[1:]:
             def cell(idx: int | None) -> str:
@@ -462,38 +476,78 @@ def parse_index_additional(data: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-def build_cve_from_article(data: dict[str, Any]) -> CVE | None:
-    """Build a CVE directly from a single-CVE advisory article (out-of-band).
+def _advisory_description(data: dict[str, Any]) -> str | None:
+    """The advisory's description text, never the page sidebar.
 
-    Used for 'Additional Security Announcements' that are one-CVE advisories
-    rather than multi-CVE quarterly-style reports.
+    Falls back to the body truncated before the related/recommended widgets
+    for legacy articles that lack the 'Security Advisory Description' heading.
+    Those widgets list other advisories, so CVE ids found past them would be
+    noise from unrelated articles.
+    """
+    body = data.get("bodyText", "")
+    desc = _between(body, "Security Advisory Description", ("Impact", "Security Advisory Status"))
+    if desc:
+        return desc
+    cut = len(body)
+    for marker in ("Related Content", "AI Recommended Content"):
+        j = body.find(marker)
+        if 0 <= j < cut:
+            cut = j
+    return body[:cut].strip() or None
+
+
+def build_cves_from_article(data: dict[str, Any]) -> list[CVE]:
+    """Build CVE records directly from an advisory article (out-of-band).
+
+    Most advisories name one CVE in the title. Legacy 'Multiple <component>
+    vulnerabilities' articles instead enumerate CVE ids in the description —
+    those become one record per id, sharing the article's affected table. An
+    article with no CVE ids anywhere but a real affected table is a security
+    exposure, keyed by its K number. Returns [] when there is genuinely
+    nothing to ingest (e.g. a not-affected advisory with no CVE ids).
     """
     title = data.get("title", "")
-    cid = cve_from_text(title)
     k = data.get("k_number")
     affected = parse_cve_status(data)
-    if not cid and not affected:
-        return None
-    req_modules, applies_all = module_summary(affected)
-    cve = CVE(
-        id=cid or (k or title),
-        title=title,
-        article_k=k,
-        url=data.get("url"),
-        is_exposure=cid is None,
-        affected=affected,
-        required_modules=req_modules,
-        applies_to_all_modules=applies_all,
-        is_out_of_band=True,
-    )
-    # Apply detail-derived fields (description, cwe, cvss, ops fields, severity).
+    desc = _advisory_description(data)
+
+    title_cid = cve_from_text(title)
+    if title_cid:
+        cids = [title_cid]
+    else:
+        cids = sorted({m.group(0).upper().replace("CAN-", "CVE-")
+                       for m in _CVE_RE.finditer(desc or "")})
+    if not cids and not affected:
+        return []
+
     detail = parse_cve_detail(data)
-    for key, val in detail.items():
-        if key == "affected" or val is None:
-            continue
-        if hasattr(cve, key):
-            setattr(cve, key, val)
-    return cve
+    req_modules, applies_all = module_summary(affected)
+    out: list[CVE] = []
+    for cid in cids or [None]:
+        cve = CVE(
+            id=cid or (k or title),
+            title=title,
+            article_k=k,
+            url=data.get("url"),
+            is_exposure=cid is None,
+            affected=affected,
+            required_modules=req_modules,
+            applies_to_all_modules=applies_all,
+            is_out_of_band=True,
+        )
+        # Apply detail-derived fields (description, cwe, cvss, ops fields,
+        # severity); the article-wide values hold for every CVE it lists.
+        for key, val in detail.items():
+            if key == "affected" or val is None:
+                continue
+            if hasattr(cve, key):
+                setattr(cve, key, val)
+        if len(cids) > 1 and desc:
+            chunk = _between(desc, cid, tuple(c for c in cids if c != cid))
+            if chunk:
+                cve.description = f"{cid} {chunk}"
+        out.append(cve)
+    return out
 
 
 def parse_compat(data: dict[str, Any]) -> list["CompatRecord"]:

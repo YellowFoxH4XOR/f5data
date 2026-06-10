@@ -163,12 +163,13 @@ async def run(session: ArticleSession, output_dir: Path, *, refresh: bool = Fals
                             cache.write_json(fn, rec)
                         except RuntimeError as e:
                             log.warning("oob enrich failed %s: %s", c.article_k, e)
-            else:  # single-CVE advisory article
-                cve = parse.build_cve_from_article(data)
-                if cve:
-                    cve.source_reports = [k]
-                    fn = _cve_filename(cve.id)
-                    cache.write_json(fn, _merge_cve(cache.read_json(fn), cve))
+            else:  # advisory article (one or more CVEs, or an exposure)
+                cves = parse.build_cves_from_article(data)
+                if cves:
+                    for cve in cves:
+                        cve.source_reports = [k]
+                        fn = _cve_filename(cve.id)
+                        cache.write_json(fn, _merge_cve(cache.read_json(fn), cve))
                 else:
                     log.warning("out-of-band %s: parse returned no CVE — skipping cache.record", k)
                     continue
@@ -250,14 +251,20 @@ async def run(session: ArticleSession, output_dir: Path, *, refresh: bool = Fals
                                 cache.write_json(fn, rec)
                             except RuntimeError as e:
                                 log.warning("discover: enrich failed %s: %s", c.article_k, e)
-            else:  # single-CVE advisory article
-                cve = parse.build_cve_from_article(data)
-                if cve:
+            else:  # advisory article (one or more CVEs, or an exposure)
+                cves = parse.build_cves_from_article(data)
+                for cve in cves:
                     cve.source_reports = [k]
                     fn = _cve_filename(cve.id)
                     cache.write_json(fn, _merge_cve(cache.read_json(fn), cve))
-                else:
-                    log.warning("discover: %s: parse returned no CVE — skipping cache.record", k)
+                if not cves:
+                    # Genuinely nothing to ingest (not-affected advisory with
+                    # no CVE ids). Record it anyway: the article rendered and
+                    # parsed fine, and without a manifest entry it would be
+                    # re-rendered on every discovery run. filter_new's
+                    # staleness check re-includes it if F5 ever updates it.
+                    cache.record(k, content_hash(ann), "mutable")
+                    log.info("discover: %s has no CVE/affected content — recorded, nothing ingested", k)
                     continue
             cache.record(k, content_hash(ann), "mutable")
             log.info("discover: ingested %s (%s)", k, ann.get("title", "")[:80])
