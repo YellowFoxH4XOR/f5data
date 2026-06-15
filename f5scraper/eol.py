@@ -65,6 +65,17 @@ async def run(session: ArticleSession, output_dir: Path, *, refresh: bool = Fals
             log.warning("EOL article %s failed: %s", k, e)
             continue
         records = parse.parse_eol(data, category)
+        # K21501912 lists both F5OS-A (rSeries appliance) and F5OS-C (VELOS
+        # chassis) lifecycle tables; we only track F5OS-C. The product family is
+        # carried in each record's section title ("F5OS-C ... releases").
+        if k == "K21501912":
+            kept = [r for r in records if "F5OS-C" in (r.section or "")]
+            if records and not kept:
+                log.warning(
+                    "EOL %s: F5OS-C filter matched none of %d records — section "
+                    "titles may have changed (expected 'F5OS-C ...')", k, len(records),
+                )
+            records = kept
         if not records:
             log.info("EOL %s: no lifecycle tables found", k)
             continue
