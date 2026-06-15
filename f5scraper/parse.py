@@ -420,6 +420,23 @@ def parse_cve_detail(data: dict[str, Any]) -> dict[str, Any]:
     status = re.search(r"marked as '([^']+)'", body)
     if status:
         out["status"] = status.group(1)
+    # The prose under "Security Advisory Status" — F5's evaluation reasoning (why
+    # a product is / isn't vulnerable). For vulnerable advisories this section is
+    # followed by the per-product status tables; truncate before them so we keep
+    # only the narrative (the table data already lives in `affected`). Table/ToC
+    # markers below never occur in the prose, so they're safe cut points; for
+    # not-vulnerable advisories none are present and the prose runs to the next
+    # section heading.
+    status_text = _between(
+        body, "Security Advisory Status",
+        ("In this section", "Note: After a fix is introduced",
+         "Vulnerable component or feature", "Versions known to be vulnerable",
+         "Versions affected by this issue",
+         "Security Advisory Recommended Actions", "Acknowledgements",
+         "Supplemental Information", "Related Content"),
+    )
+    if status_text:
+        out["status_text"] = status_text
     return out
 
 

@@ -72,6 +72,7 @@ class CVE:
     recommended_actions: str | None = None
     f5_bug_id: str | None = None
     status: str | None = None              # e.g. "Final" / "In progress"
+    status_text: str | None = None         # prose under "Security Advisory Status" (the evaluation reasoning, sans tables)
     published_date: str | None = None
     # CVSS vector decomposition (computed from the stored vector):
     attack_vector: str | None = None       # network / adjacent / local / physical
