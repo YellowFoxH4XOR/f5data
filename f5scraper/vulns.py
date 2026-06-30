@@ -196,10 +196,16 @@ async def run(session: ArticleSession, output_dir: Path, *, refresh: bool = Fals
         advisories: list[dict] = []
         try:
             all_advisories = await discover.enumerate_advisories(session)
-            advisories = discover.filter_new(all_advisories, covered_ks, manifest=cache.manifest)
+            # --refresh means "re-scrape everything" (per the CLI), so re-render
+            # every discovered advisory — this is what re-applies parser fixes to
+            # already-ingested discovery-sourced records. Incremental runs only
+            # take filter_new's new/stale set.
+            advisories = (all_advisories if refresh
+                          else discover.filter_new(all_advisories, covered_ks, manifest=cache.manifest))
             log.info(
-                "discover: %d total advisories from Coveo, %d new (not yet ingested)",
+                "discover: %d total advisories from Coveo, %d to scrape (%s)",
                 len(all_advisories), len(advisories),
+                "full refresh" if refresh else "new/stale only",
             )
             # Persist the full listing for diffability/debugging.
             import datetime as _dt

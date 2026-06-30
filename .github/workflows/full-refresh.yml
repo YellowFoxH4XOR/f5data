@@ -1,0 +1,93 @@
+name: Monthly full refresh (with discovery)
+
+# The daily jobs do NOT re-render already-ingested discovery-sourced advisories:
+# scrape.yml runs --no-discover, and discover.yml (filter_new) only re-renders
+# articles F5 has updated since we last scraped them. So a parser improvement
+# never reaches the ~5,800 standalone out-of-band advisories on its own.
+#
+# This monthly job runs `vulns --refresh` WITH discovery, which re-renders every
+# discoverable advisory and re-applies the current parser to all of them (the
+# fixed-parser values win via _merge_cve). It is the dataset's self-heal pass.
+# Rendering is sequential, so a full run is a couple of hours — hence monthly.
+
+on:
+  schedule:
+    - cron: "0 6 1 * *"         # 06:00 UTC on the 1st of each month (no daily-job overlap)
+  workflow_dispatch:            # manual trigger
+
+permissions:
+  contents: write               # allow the built-in GITHUB_TOKEN to push
+
+concurrency:
+  group: f5-scrape              # shared with scrape.yml / discover.yml: never run two at once
+  cancel-in-progress: false     # never interrupt a run mid-commit
+
+jobs:
+  full-refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350        # full discovery+refresh is sequential and long; under the 6h limit
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: pip install -e .
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Full refresh (vulns, with discovery)
+        run: |
+          echo "::group::Scraper output (full refresh: index, reports, all discovered advisories, KEV/EPSS)"
+          # --refresh re-scrapes everything AND (with discovery on) re-renders
+          # every discovered advisory, re-applying the current parser to records
+          # the daily jobs never revisit. EOL/compat are refreshed daily by
+          # scrape.yml, so this job runs `vulns` only.
+          python -u -m f5scraper.cli vulns --refresh
+          echo "::endgroup::"
+
+      - name: Run summary
+        if: always()
+        run: |
+          python3 - >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          def load(p):
+              try:
+                  with open(p) as f: return json.load(f)
+              except Exception: return {}
+          v = load("data/output/vulnerabilities.json")
+          cves = v.get("cves", [])
+          def n(pred): return sum(1 for c in cves if pred(c))
+          print("## F5 monthly full-refresh summary")
+          if not cves:
+              print("\n**No dataset produced — the run likely failed. Check the log above.**")
+          else:
+              print(f"\n| Metric | Count |\n|---|---|")
+              print(f"| CVEs | **{v.get('cve_count', len(cves))}** |")
+              print(f"| With severity | {n(lambda c: c.get('severity'))} |")
+              print(f"| With a CVSS score | {n(lambda c: c.get('cvss_v31_score') is not None or c.get('cvss_v40_score') is not None)} |")
+              print(f"| KEV (actively exploited) | {n(lambda c: c.get('kev'))} |")
+              print(f"| Out-of-band | {n(lambda c: c.get('is_out_of_band'))} |")
+          PY
+
+      - name: Commit dataset
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/output
+          if git diff --cached --quiet; then
+            echo "No dataset changes this run." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::group::Changed files"
+            git diff --cached --stat
+            echo "::endgroup::"
+            git commit -m "data: monthly full refresh ($(date -u +%Y-%m-%d))"
+            git pull --rebase origin main
+            git push
+            { echo ""; echo "**Committed** \`$(git rev-parse --short HEAD)\` and pushed."; } >> "$GITHUB_STEP_SUMMARY"
+          fi
