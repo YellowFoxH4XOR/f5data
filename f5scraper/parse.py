@@ -23,6 +23,8 @@ _CWE_RE = re.compile(r"CWE-\d+")
 _SEVERITY_RE = re.compile(r"\b(Critical|High|Medium|Low)\b", re.IGNORECASE)
 _CVSS31_RE = re.compile(r"([0-9]+\.[0-9])\s*\(CVSS v3\.1\)")
 _CVSS40_RE = re.compile(r"([0-9]+\.[0-9])\s*\(CVSS v4\.0\)")
+_SCORE_RE = re.compile(r"([0-9]+\.[0-9])")
+_SEV_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
 _NOT_AFFECTED = {"", "none", "not applicable", "not vulnerable", "n/a"}
 
 # F5 product name -> normalized TMOS provisioning module code. Ordered: the
@@ -90,10 +92,10 @@ def cve_from_text(text: str) -> str | None:
 
 
 def normalize_date(s: str | None) -> str | None:
-    """'February 4, 2026' or 'Feb 4, 2026' -> '2026-02-04'."""
+    """'February 4, 2026' / 'Feb 4, 2026' / '04-Feb-2026' -> '2026-02-04'."""
     if not s:
         return None
-    for fmt in ("%B %d, %Y", "%b %d, %Y"):
+    for fmt in ("%B %d, %Y", "%b %d, %Y", "%d-%b-%Y", "%d-%B-%Y"):
         try:
             return datetime.strptime(s.strip(), fmt).date().isoformat()
         except ValueError:
@@ -126,7 +128,11 @@ def expand_grid(rows: list[list[dict[str, Any]]]) -> list[list[dict[str, Any]]]:
                     del carry[col]
                 else:
                     carry[col][1] = rem - 1
-                col += cell.get("colspan", 1)
+                # Each carry entry is a single column: a colspan>1 spanned cell
+                # was expanded into one carry entry per covered column when first
+                # seen, so advance by 1 (not colspan) or we skip — and orphan —
+                # the sibling carry columns, corrupting every following row.
+                col += 1
                 continue
             if si < len(cells):
                 cell = cells[si]
@@ -210,15 +216,22 @@ def parse_report(data: dict[str, Any]) -> list[CVE]:
     """CVEs and security exposures listed in a quarterly report's tables.
 
     A CVE table has header 'Article (CVE)'; an exposure table 'Article
-    (Exposure)'. Severity comes from the table's section heading ('Medium CVEs',
-    etc.). Multi-product CVEs use rowspan, handled via `expand_grid`.
+    (Exposure)'. The 2022 reports use a different layout: a 'CVE' first column
+    and a 'Bug IDs' first column for exposures. Severity comes from the table's
+    section heading ('Medium CVEs', etc.). Multi-product CVEs use rowspan,
+    handled via `expand_grid`.
     """
     out: list[CVE] = []
     report_k = data.get("k_number")
     for table in data.get("tables", []):
         header = table.get("header", [])
-        is_cve = _header_index(header, "Article (CVE)") is not None
-        is_exp = _header_index(header, "Article (Exposure)") is not None
+        # Match the '(CVE)'/'(Exposure)' marker so all header variants work:
+        # 'Article (CVE)' (modern), 'Security Advisory (CVE)' (mid-2022), and
+        # the bare 'CVE'/'Bug IDs' first columns (early 2022).
+        first = header[0].strip().lower() if header else ""
+        is_cve = _header_index(header, "(CVE)") is not None or first == "cve"
+        is_exp = (_header_index(header, "(Exposure)") is not None
+                  or first == "bug ids")
         if not (is_cve or is_exp):
             continue
         severity = None
@@ -256,6 +269,9 @@ def parse_report(data: dict[str, Any]) -> list[CVE]:
                 ctext = rows[0][col_cvss].get("text", "")
                 cvss31 = _f(_first(_CVSS31_RE, ctext))
                 cvss40 = _f(_first(_CVSS40_RE, ctext))
+                # 2022 reports list a bare score with no "(CVSS vX.Y)" suffix.
+                if cvss31 is None and cvss40 is None:
+                    cvss31 = _f(_first(_SCORE_RE, ctext))
             affected: list[AffectedProduct] = []
             for r in rows:
                 prod = r[col_prod].get("text", "").strip() if col_prod is not None else ""
@@ -295,6 +311,20 @@ def _f(s: str | None) -> float | None:
         return None
 
 
+def _sev_score(blob: str) -> tuple[str | None, float | None, float | None]:
+    """Extract (severity, cvss_v31_score, cvss_v40_score) from a Severity/CVSS
+    cell blob. Handles tagged scores ('7.5 (CVSS v3.1)'), bare scores ('5.9'),
+    and combined 'Medium/5.9'. An untagged score is taken as the v3.x value."""
+    if not blob or not blob.strip() or blob.strip().lower() in _NOT_AFFECTED:
+        return None, None, None
+    sm = _SEVERITY_RE.search(blob)
+    v40 = _f(_first(_CVSS40_RE, blob))
+    v31 = _f(_first(_CVSS31_RE, blob))
+    if v31 is None and v40 is None:
+        v31 = _f(_first(_SCORE_RE, blob))
+    return (sm.group(1).capitalize() if sm else None), v31, v40
+
+
 # --------------------------------------------------------------------------- #
 # CVE detail article (enrichment: description, CWE, CVSS vectors, severity)
 # --------------------------------------------------------------------------- #
@@ -332,6 +362,10 @@ def parse_cve_status(data: dict[str, Any]) -> list[AffectedProduct]:
         col_fix = _header_index(ghead, "Fixes introduced in",
                                 "Versions known to be not vulnerable", "Not Affected")
         col_comp = _header_index(ghead, "Vulnerable component or feature")
+        col_sev = _header_index(ghead, "Severity")
+        col_score = _header_index(ghead, "CVSS")
+        if col_score == col_sev:  # single combined "Severity/CVSS score" column
+            col_score = None
         if col_vuln is not None and col_vuln == col_prod:
             continue  # ambiguous header match (e.g. 'Affected product') — not a status table
 
@@ -348,6 +382,7 @@ def parse_cve_status(data: dict[str, Any]) -> list[AffectedProduct]:
             if not product:
                 continue
             comp = cell(col_comp)
+            sev, v31, v40 = _sev_score("\n".join(filter(None, (cell(col_sev), cell(col_score)))))
             affected.append(AffectedProduct(
                 product=product,
                 branch=cell(col_branch) or None,
@@ -356,6 +391,9 @@ def parse_cve_status(data: dict[str, Any]) -> list[AffectedProduct]:
                                      if v.lower() not in _NOT_AFFECTED],
                 vulnerable_component=None if comp.lower() in _NOT_AFFECTED else comp,
                 module_code=normalize_module(product),
+                severity=sev,
+                cvss_v31_score=v31,
+                cvss_v40_score=v40,
             ))
     return affected
 
@@ -385,20 +423,50 @@ def parse_cve_detail(data: dict[str, Any]) -> dict[str, Any]:
     if cwe:
         out["cwe"] = cwe.group(0)
 
-    # CVSS vectors + authoritative severity/score live in the Severity/CVSS cells
-    # of the status tables, as first.org calculator links.
+    # CVE-level severity + CVSS score/vector = the WORST case across the
+    # per-product status-table rows (each product keeps its own value on its
+    # AffectedProduct). F5's layouts vary — severity/score live in a "Severity"
+    # column, a "CVSSv3 score" column, and/or a combined "Severity/CVSS score"
+    # cell ("Medium/5.9", "5.9", or "High/7.5 (CVSS v3.1)\nHigh/8.7 (CVSS
+    # v4.0)"). Vectors come from a row's first.org calculator link (v3.0 stored
+    # as v31 — same metric set and 0-10 scale).
+    candidates = []
     for table in data.get("tables", []):
-        for row in table.get("rows", []):
+        header = table.get("header", [])
+        sev_col = _header_index(header, "Severity")
+        score_col = _header_index(header, "CVSS")
+        if score_col == sev_col:  # a single "Severity/CVSS score" column
+            score_col = None
+        for row in table.get("rows", [])[1:]:
+            def ctext(idx: int | None) -> str:
+                return row[idx].get("text", "") if (idx is not None and idx < len(row)) else ""
+
+            sev, v31, v40 = _sev_score("\n".join(filter(None, (ctext(sev_col), ctext(score_col)))))
+            if sev is None and v31 is None and v40 is None:
+                continue
+            v31vec = v40vec = None
             for cell in row:
                 for link in cell.get("links") or []:
                     href = link.get("href", "")
-                    txt = link.get("text", "")
-                    if "cvss/calculator/3.1" in href and "cvss_v31_vector" not in out:
-                        out["cvss_v31_vector"] = _vector(href)
-                        _apply_sev_score(out, txt, "31")
-                    elif "cvss/calculator/4.0" in href and "cvss_v40_vector" not in out:
-                        out["cvss_v40_vector"] = _vector(href)
-                        _apply_sev_score(out, txt, "40")
+                    if "cvss/calculator/4.0" in href:
+                        v40vec = _vector(href)
+                    elif "cvss/calculator/3." in href:
+                        v31vec = _vector(href)
+            rank = (max(v31 or 0.0, v40 or 0.0), _SEV_RANK.get((sev or "").lower(), 0))
+            candidates.append((rank, sev, v31, v40, v31vec, v40vec))
+    if candidates:
+        candidates.sort(key=lambda c: c[0], reverse=True)
+        _, sev, v31, v40, v31vec, v40vec = candidates[0]
+        if sev:
+            out["severity"] = sev
+        if v31 is not None:
+            out["cvss_v31_score"] = v31
+        if v40 is not None:
+            out["cvss_v40_score"] = v40
+        if v31vec:
+            out["cvss_v31_vector"] = v31vec
+        if v40vec:
+            out["cvss_v40_vector"] = v40vec
 
     # F5 operational fields (section order in the body is Description → Impact →
     # Security Advisory Status → Recommended Actions → Mitigation → Acknowledgements).
@@ -528,9 +596,13 @@ def build_cves_from_article(data: dict[str, Any]) -> list[CVE]:
     affected = parse_cve_status(data)
     desc = _advisory_description(data)
 
-    title_cid = cve_from_text(title)
-    if title_cid:
-        cids = [title_cid]
+    # A title may name several CVEs ("... CVE-2022-37026 and CVE-2025-32433");
+    # capture all of them, not just the first. Legacy "Multiple <component>
+    # vulnerabilities" titles name none, so fall back to the description.
+    title_cids = sorted({m.group(0).upper().replace("CAN-", "CVE-")
+                         for m in _CVE_RE.finditer(title)})
+    if title_cids:
+        cids = title_cids
     else:
         cids = sorted({m.group(0).upper().replace("CAN-", "CVE-")
                        for m in _CVE_RE.finditer(desc or "")})
@@ -584,33 +656,51 @@ def parse_compat(data: dict[str, Any]) -> list["CompatRecord"]:
         if len(grid) < 3:
             continue
         h0 = [c.get("text", "").strip() for c in grid[0]]
-        h1 = [c.get("text", "").strip() for c in grid[1]]
         n = len(h0)
+        sw_top = [i for i in range(n) if "compatible software" in h0[i].lower()]
+        if not sw_top:
+            continue  # not a compatibility table
 
-        sw_cols: dict[int, str] = {}   # col index -> branch label
+        # Branch labels (21.x / 17.x / ...) sit one row below the 'Compatible
+        # software versions' super-header — but the VIPRION chassis+blade table
+        # nests an extra header row, pushing them down another level. Find the
+        # first row whose software columns carry real labels, not the repeated
+        # super-header text.
+        label_idx = 1
+        for ri in range(1, len(grid)):
+            vals = [grid[ri][i].get("text", "").strip().lower()
+                    if i < len(grid[ri]) else "" for i in sw_top]
+            if all(v and "compatible software" not in v for v in vals):
+                label_idx = ri
+                break
+        hlabel = [c.get("text", "").strip() for c in grid[label_idx]]
+        data_start = label_idx + 1
+
+        sw_cols: dict[int, str] = {       # col index -> branch label
+            i: (hlabel[i] if i < len(hlabel) and hlabel[i] else h0[i]) for i in sw_top
+        }
         meta: dict[str, int] = {}      # 'lifecycle'/'aom'/'eud' -> col index
         type_cols: list[int] = []
         hw_cols: list[int] = []
         for i in range(n):
+            if i in sw_cols:
+                continue
             top = h0[i].lower()
-            sub = h1[i] if i < len(h1) else ""
-            if "compatible software" in top:
-                sw_cols[i] = sub or h0[i]
-            elif "lifecycle" in top:
+            if "lifecycle" in top:
                 meta["lifecycle"] = i
             elif top == "aom":
                 meta["aom"] = i
             elif top == "eud":
                 meta["eud"] = i
-            elif "type" in top or "type" in sub.lower():
+            elif "type" in top:
+                # A dedicated 'Type' column (top header). Note the chassis+blade
+                # table's 'Chassis/Type'/'Blade/Type' sub-labels live UNDER a
+                # 'Hardware' top header, so they stay hardware columns.
                 type_cols.append(i)
             else:
                 hw_cols.append(i)
 
-        if not sw_cols:
-            continue  # not a compatibility table
-
-        for row in grid[2:]:
+        for row in grid[data_start:]:
             def cell(idx: int) -> str:
                 return row[idx].get("text", "").strip() if idx < len(row) else ""
 
@@ -633,15 +723,6 @@ def parse_compat(data: dict[str, Any]) -> list["CompatRecord"]:
                 eud=(cell(meta["eud"]) or None) if "eud" in meta else None,
             ))
     return out
-
-
-def _apply_sev_score(out: dict[str, Any], text: str, ver: str) -> None:
-    # text like "Medium/5.9" or "High/8.2"
-    m = re.match(r"\s*(Critical|High|Medium|Low)\s*/\s*([0-9]+\.[0-9])", text, re.IGNORECASE)
-    if not m:
-        return
-    out.setdefault("severity", m.group(1).capitalize())
-    out[f"cvss_v{ver}_score"] = float(m.group(2))
 
 
 def _vector(href: str) -> str | None:
@@ -697,7 +778,9 @@ def parse_eol(data: dict[str, Any], category: str) -> list[EolRecord]:
         col_eos = _header_index(header, "End of Sale")
         if col_eosd is None and col_eots is None and col_eos is None:
             continue  # not a lifecycle table
-        col_fcs = _header_index(header, "First customer ship")
+        # The header may carry an embedded newline ("First Customer\nShip Month"
+        # on K4309); match the leading words only.
+        col_fcs = _header_index(header, "First customer")
         col_latest = _header_index(header, "Latest maintenance", "Latest patch")
 
         for row in grid[body_start:]:  # skip header
@@ -711,15 +794,70 @@ def parse_eol(data: dict[str, Any], category: str) -> list[EolRecord]:
             product = cell(0)
             if not product:
                 continue
+            # Drop full-width sub-section heading rows (a single colspan cell,
+            # e.g. "Common Criteria Hardware Products ...") — expand_grid repeats
+            # the one cell across every column, so detect by cell identity.
+            if len({id(c) for c in row}) == 1:
+                continue
+            # Drop K4309's color-legend rows ("Regular Support"/"Extended
+            # Support" repeated across the row) — not real products.
+            if product.strip().lower() in _EOL_NON_PRODUCT:
+                continue
+            fcs = _eol_date(cell(col_fcs))
+            eosd = _eol_date(cell(col_eosd))
+            eots = _eol_date(cell(col_eots))
+            eos = _eol_date(cell(col_eos))
+            latest = _eol_clean(cell(col_latest))
+            # Drop any remaining non-data rows that carry a label but no
+            # lifecycle dates at all (stray sub-headers).
+            if not any((fcs, eosd, eots, eos, latest)):
+                continue
             out.append(EolRecord(
                 product=product,
                 category=category,
                 source_k=source_k,
                 section=section,
-                first_customer_ship=cell(col_fcs),
-                end_of_software_development=cell(col_eosd),
-                end_of_technical_support=cell(col_eots),
-                end_of_sale=cell(col_eos),
-                latest_maintenance_release=cell(col_latest),
+                first_customer_ship=fcs,
+                end_of_software_development=eosd,
+                end_of_technical_support=eots,
+                end_of_sale=eos,
+                latest_maintenance_release=latest,
             ))
     return out
+
+
+# Placeholder cell values that mean "no value", normalized to null.
+_EOL_SENTINELS = {"", "---", "--", "none", "n/a", "na", "not applicable", "tbd"}
+# Row labels that are legend keys / section headings, not products.
+_EOL_NON_PRODUCT = {"regular support", "extended support"}
+
+
+def _eol_clean(raw: str | None) -> str | None:
+    """Null out EOL placeholder sentinels; pass real values (e.g. versions)."""
+    if not raw:
+        return None
+    return None if raw.strip().lower() in _EOL_SENTINELS else raw.strip()
+
+
+def _eol_date(raw: str | None) -> str | None:
+    """Normalize an EOL date cell to ISO. Full dates -> 'YYYY-MM-DD';
+    month-precision cells ('Jun-2011') -> 'YYYY-MM'; sentinels -> None;
+    anything else is preserved verbatim (a real but unrecognized value)."""
+    s = _eol_clean(raw)
+    if s is None:
+        return None
+    iso = normalize_date(s)
+    if iso:
+        return iso
+    # Tolerate a dash/space separator typo seen on K4309, e.g. "01-Oct 2024".
+    for fmt in ("%d-%b %Y", "%d %b %Y"):
+        try:
+            return datetime.strptime(s, fmt).date().isoformat()
+        except ValueError:
+            continue
+    for fmt in ("%b-%Y", "%B-%Y", "%b %Y", "%B %Y"):
+        try:
+            return datetime.strptime(s, fmt).strftime("%Y-%m")
+        except ValueError:
+            continue
+    return s

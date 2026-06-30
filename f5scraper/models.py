@@ -32,6 +32,12 @@ class AffectedProduct:
     # F5's verbatim "Vulnerable component or feature" — the condition that must
     # hold for the CVE to apply (e.g. a specific profile/feature configured).
     vulnerable_component: str | None = None
+    # Per-product severity / CVSS score, as F5 assigns them per row (different
+    # products often get different scores for the same CVE). The CVE-level
+    # severity/score is the worst case across these.
+    severity: str | None = None
+    cvss_v31_score: float | None = None
+    cvss_v40_score: float | None = None
     # EOL cross-link (best-effort): is this affected branch already past End of
     # Technical Support, per the EOL dataset, and on what date.
     branch_is_eol: bool | None = None
