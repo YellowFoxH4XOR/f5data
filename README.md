@@ -134,3 +134,26 @@ limit comfortably handle even a first full historical scrape.
   in prose rather than standard EoSD/EoTS tables, so the deep-follow is
   best-effort and contributes few extra records.
 - Be polite: a throttle is applied between article loads by default.
+
+## License & data sources
+
+The **source code** in this repository is licensed under the **MIT License**
+(see [`LICENSE`](LICENSE)). The MIT license covers the code only — it does **not**
+cover the dataset under `data/output/`.
+
+The **dataset** is derived from third-party sources, each governed by its own
+terms — see [`NOTICE`](NOTICE) for full attributions and the disclaimer. In
+short:
+
+- **F5 advisory / EOL / compatibility content** (`my.f5.com`) is © F5, Inc. and
+  subject to F5's Terms of Use. This project is **not affiliated with or endorsed
+  by F5**, and adding a license here grants no rights in F5's content. Some
+  fields contain verbatim F5 text (`description`, `impact`, `mitigation`,
+  `recommended_actions`); reusing the dataset is your responsibility under F5's
+  terms and applicable copyright law.
+- **CISA KEV** — U.S. Government work, public domain.
+- **EPSS** and **CVSS** — FIRST.org, used with attribution.
+- **CVE** identifiers — CVE Program; "CVE" is a trademark of MITRE.
+
+Provided **as is**, for informational/security-research use, with no warranty.
+Always verify against the authoritative source before acting on this data.
