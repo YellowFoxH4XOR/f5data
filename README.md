@@ -18,6 +18,13 @@ Builds a structured JSON dataset from F5's support site (`my.f5.com`):
 2. **End of Life / End of Support** — software (`K5903`) and hardware (`K4309`)
    lifecycle dates, plus best-effort follow of the EOL index (`K11478`).
 
+3. **Full knowledge base** (`articles` command) — every my.f5.com K-article
+   (~37k: Support Solutions, Known Issues, Knowledge, Security Advisories,
+   Policies, Operations Guides, Videos) saved as a standalone HTML file, plus an
+   index mapping each filename to a short description. No page rendering: the
+   Coveo search API returns each article's full HTML body, so the whole KB is
+   fetched in ~40 API calls (~5 minutes).
+
 ## Why a headless browser
 
 `my.f5.com` is a Salesforce Lightning SPA. Article bodies — including every
@@ -39,6 +46,8 @@ data/output/
   cves/{CVE-ID}.json     # one per CVE / exposure (canonical, keyed by ID)
   eol.json               # combined lifecycle records
   eol/{Knumber}.json     # one per EOL source article
+  all_articles/{Knumber}.html  # one per K-article: metadata header + F5's body verbatim
+  all_articles.json      # {"{Knumber}.html": "short description"} for every file above
 ```
 
 **No duplication, stays current:** each entity is written to a canonical file
@@ -112,6 +121,7 @@ python -m playwright install chromium
 python -m f5scraper.cli all                 # vulns + EOL
 python -m f5scraper.cli vulns --limit 2 -v  # newest 2 reports only (testing)
 python -m f5scraper.cli eol                  # EOL only
+python -m f5scraper.cli articles             # full KB dump (not part of `all`)
 ```
 
 Flags: `--refresh` (ignore cache), `--limit N` (cap reports), `--ttl-days N`
@@ -125,6 +135,11 @@ Coveo search-discovery step), `--headful`, `-v`.
 and commits the refreshed `data/output/` back to the repo using the built-in
 `GITHUB_TOKEN`. The repo is a full Linux runner, so Chromium and the 6-hour job
 limit comfortably handle even a first full historical scrape.
+
+`.github/workflows/articles.yml` runs daily (02:30 UTC, and on manual dispatch),
+re-fetches the full KB via `f5scraper.cli articles`, and commits only the
+`all_articles/` files that changed plus `all_articles.json`. It runs in its own
+concurrency group, so it never queues behind or displaces the scrape jobs.
 
 ## Notes & limitations
 

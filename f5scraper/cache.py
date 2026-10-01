@@ -76,6 +76,15 @@ class Cache:
         p.parent.mkdir(parents=True, exist_ok=True)
         return _write_if_changed(p, obj)
 
+    def write_text(self, rel: str, text: str) -> bool:
+        """Write `text` to `rel`; returns True if the file changed on disk."""
+        p = self.dir / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if p.exists() and p.read_text() == text:
+            return False
+        p.write_text(text)
+        return True
+
     def glob_json(self, subdir: str) -> list[Any]:
         d = self.dir / subdir
         if not d.is_dir():

@@ -1,0 +1,104 @@
+name: Refresh F5 KB articles
+
+# Daily dump of every my.f5.com K-article (~37k) to data/output/all_articles/
+# plus the filename -> description index data/output/all_articles.json. No page
+# rendering: article bodies come straight from the Coveo search API (see
+# f5scraper/articles.py), so a run is ~40 API calls and takes minutes. Chromium
+# is only needed for the one page load that captures the guest search token.
+# Files are written only when their content changed, so a typical day commits
+# a few dozen articles.
+
+on:
+  schedule:
+    - cron: "30 2 * * *"       # daily 02:30 UTC = 08:00 IST, clear of the other jobs
+  workflow_dispatch:            # manual trigger
+
+permissions:
+  contents: write               # allow the built-in GITHUB_TOKEN to push
+
+# Own group, NOT f5-scrape: GitHub keeps only one pending run per group, so a
+# third workflow queued there could cancel a waiting discover/scrape run. This
+# job only touches all_articles/ + all_articles.json, so it never conflicts
+# with the other workflows' commits — the rebase-and-retry push below is enough.
+concurrency:
+  group: f5-articles
+  cancel-in-progress: false     # never interrupt a run mid-commit
+
+jobs:
+  articles:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45         # generous; typical run is ~10 min incl. setup
+    env:
+      PYTHONUNBUFFERED: "1"     # stream Python logs live into the Actions log
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: pip install -e .
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Fetch all KB articles
+        run: |
+          echo "::group::Scraper output (token capture, paginated Coveo fetch, prune, index rebuild)"
+          python -u -m f5scraper.cli articles
+          echo "::endgroup::"
+
+      - name: Run summary
+        if: always()            # write the summary even if the fetch failed
+        run: |
+          python3 - >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, subprocess
+          from collections import Counter
+          def load(p):
+              try:
+                  with open(p) as f: return json.load(f)
+              except Exception: return {}
+          idx = load("data/output/all_articles.json")
+          status = subprocess.run(
+              ["git", "status", "--porcelain", "--untracked-files=all", "data/output/all_articles"],
+              capture_output=True, text=True,
+          ).stdout.splitlines()
+          print("## F5 KB articles summary")
+          if not idx:
+              print("\n**No all_articles.json produced — the fetch likely failed. Check the log above.**")
+          else:
+              # Descriptions are "<type>: <title> — <summary>".
+              types = Counter(d.split(":", 1)[0] for d in idx.values())
+              print(f"\n| Metric | Count |\n|---|---|")
+              print(f"| Articles | **{len(idx)}** |")
+              print(f"| New this run | {sum(1 for s in status if s.startswith('??'))} |")
+              print(f"| Updated this run | {sum(1 for s in status if s.startswith(' M'))} |")
+              print(f"| Removed this run | {sum(1 for s in status if s.startswith(' D'))} |")
+              print("\n**By type:** " + ", ".join(f"{t} {n}" for t, n in types.most_common()))
+          PY
+
+      # No `if: always()`: a failed fetch leaves the index un-rebuilt, and
+      # committing files without their index entries would break the
+      # "every file has a description" guarantee. The next run redoes it all.
+      - name: Commit dataset
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/output/all_articles data/output/all_articles.json
+          if git diff --cached --quiet; then
+            echo "No article changes this run." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::group::Changed files"
+            git diff --cached --stat | tail -n 40
+            echo "::endgroup::"
+            git commit -q -m "data: refresh KB articles ($(date -u +%Y-%m-%d))"
+            # Not serialized with the f5-scrape workflows, so main may move
+            # between our rebase and push; retry rather than fail the run.
+            for attempt in 1 2 3 4 5; do
+              git pull --rebase origin main && git push && break
+              if [ "$attempt" = 5 ]; then echo "push failed after 5 attempts"; exit 1; fi
+              sleep $((attempt * 15))
+            done
+            { echo ""; echo "**Committed** \`$(git rev-parse --short HEAD)\` and pushed."; } >> "$GITHUB_STEP_SUMMARY"
+          fi

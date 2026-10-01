@@ -147,8 +147,11 @@ def _coveo_search(
     number: int = _PAGE_SIZE,
     first_result: int = 0,
     sort: str = "date ascending",
+    fields: list[str] | None = None,
 ) -> dict[str, Any]:
     """POST one page of results to the Coveo search API.
+
+    `fields` overrides the default fieldsToInclude (the advisory-listing set).
 
     Raises urllib.error.HTTPError / urllib.error.URLError on network failure;
     raises RuntimeError on a non-200 response that urllib doesn't already raise.
@@ -169,7 +172,7 @@ def _coveo_search(
             "originContext": "Search",
             "actionCause": "searchboxSubmit",
         },
-        "fieldsToInclude": [
+        "fieldsToInclude": fields or [
             "title",
             "date",
             "uri",
