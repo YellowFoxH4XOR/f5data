@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K11476294: Error: Profile is a required property and may not be set to none or an empty value</title>
+<meta name="description" content="Support Solution: Error: Profile is a required property and may not be set to none or an empty value — [ERROR][Timestamp][/cm/adc-core/tasks/distribute-config/&lt;task job ID&gt;/worker AdcDistributeTaskWorker] Transaction &lt;transaction ID&gt; on BIG-IP &lt;IP address&gt; failed after 0 seconds: &quot;profile&quot; is a…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K11476294">
+</head>
+<body>
+<header>
+<h1>K11476294: Error: Profile is a required property and may not be set to none or an empty value</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-02-04</dd>
+<dt>Updated</dt><dd>2025-12-05</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li><li>BIG-IP</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K11476294">https://my.f5.com/manage/s/article/K11476294</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>When attempting to deploy changes from the BIG-IQ onto the BIG-IP. In the /var/log/restjavad.x.log, the below log appears:<br><br><span class="example2">[ERROR][Timestamp][/cm/adc-core/tasks/distribute-config/&lt;task job ID&gt;/worker AdcDistributeTaskWorker] Transaction &lt;transaction ID&gt; on BIG-IP &lt;IP address&gt; failed after 0 seconds: &quot;profile&quot; is a required property and may not be set to &quot;none&quot; or an empty value</span></p>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>BIG-IQ CM</li><li>Application Deployment</li></ul>
+<p><span class="sectiontitle">Cause</span><br>In some cases, The BIG-IQ tries to patch the tunnel (s) with an empty profile. For more information, refer to <a href="https://cdn.f5.com/product/bugtracker/ID970033.html" target="_blank">ID 970033</a>.</p>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<p>Patch the profiles with a different ifIndex:</p>
+<ol><li>Write all tunnels to a file</li></ol>
+<div style="margin-left: 40px;"><span class="code">restcurl /cm/adc-core/working-config/net/tunnels/tunnel | jq .items[] -c &gt; /var/tmp/wc<br>restcurl /cm/adc-core/current-config/net/tunnels/tunnel | jq .items[] -c &gt; /var/tmp/cc</span></div>
+<ol start="2"><li> Diff content of ifIndex</li></ol>
+<div style="margin-left: 40px;"><span class="code">cat /var/tmp/cc | jq .id -r | sort | while read uuid ; do grep $uuid  /var/tmp/cc | jq .ifIndex &gt; /var/tmp/mycc ; grep $uuid  /var/tmp/wc | jq .ifIndex &gt; /var/tmp/mywc ; diff /var/tmp/mywc /var/tmp/mycc &gt;/dev/null ; if [ $? -eq &quot;1&quot;  ] ; then echo $uuid ; fi  ; done &gt; /var/tmp/diffout</span></div>
+<div style="margin-left: 40px;"><span class="note">Make sure that diffout contains UUID only, and test one of them to check the difference.</span></div>
+<p> </p>
+<ol start="3"><li>Create a file named fixTunnel.sh with the below content:</li></ol>
+<div style="margin-left: 40px;"><span class="code">TUNID=$1<br>restcurl &quot;/cm/adc-core/current-config/net/tunnels/tunnel/$TUNID&quot; | sed -e &#39;s/current/working/g&#39; |  jq &#39;del(.generation,.lastUpdateMicros)&#39; &gt; workfinal<br>curl &quot;localhost:8100/cm/adc-core/working-config/net/tunnels/tunnel/$TUNID&quot; -X PUT -d @workfinal | jq .</span></div>
+<ol start="4"><li>Use the existing fixTunnel.sh script to correct the ifIndex:<br><span class="code">cat /var/tmp/diffout |  while read UUID ; do echo $UUID ; ./fixtunnel.sh $UUID ;  done</span><br><span class="note">At the end of the procedure, you can re-run steps 1 and 2 again, and confirm that /var/tmp/diffout is empty.</span></li></ol>
+<p><span class="sectiontitle">Additional Information</span><br><br>None<br> </p>
+</article>
+</body>
+</html>

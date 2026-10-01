@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K05822509: Decrypting HTTP/3 over QUIC with Wireshark</title>
+<meta name="description" content="Knowledge: Decrypting HTTP/3 over QUIC with Wireshark — You want to troubleshoot issues with HTTP/3 over QUIC by capturing and analyzing packet traces.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K05822509">
+</head>
+<body>
+<header>
+<h1>K05822509: Decrypting HTTP/3 over QUIC with Wireshark</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2020-02-10</dd>
+<dt>Updated</dt><dd>2025-06-11</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.1.0, 15.1.1, 15.1.2, 15.1.3, 15.1.4, 15.1.5, 15.1.6, 15.1.7, 15.1.8, 16.1.0, 16.1.1, 16.1.2, 16.1.3, 17.0.0, 17.0.X, 15.1.X, 16.1.X, 17.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K05822509">https://my.f5.com/manage/s/article/K05822509</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3>
+<p>You should consider using these procedures under the following condition:</p>
+<ul><li>You want to troubleshoot issues with HTTP/3 over QUIC by capturing and analyzing packet traces.</li></ul>
+<h3>Description</h3>
+<p>Beginning in BIG-IP 15.1.0.1, F5 introduced the HTTP/3 and QUIC profiles as experimental features.</p>
+<p>Beginning in BIG-IP 15.1.1 and BIG-IP 16.1.0, BIG-IP supports QUIC and HTTP/3 <a href="https://datatracker.ietf.org/doc/html/draft-ietf-quic-http-27" target="_blank">draft-ietf-quic-http-27</a> and <a href="https://datatracker.ietf.org/doc/html/draft-ietf-quic-http-28" target="_blank">draft-ietf-quic-http-28</a> . For more information, refer to <a href="https://cdn.f5.com/product/bugtracker/ID915713.html" target="_blank">ID 915713</a>.</p>
+<p>The HTTP/3 network protocol is the next major version of the Hypertext Transfer Protocol succeeding HTTP/2. HTTP/3 over QUIC uses the User Datagram Protocol (UDP), so the procedures for capturing and analyzing the packet traces may differ from communications using the TCP protocol.</p>
+<p><span class="sectiontitle">Prerequisites</span></p>
+<p>You must meet the following prerequisites to use these procedures:</p>
+<ul><li>You can reproduce the issue to collect a packet capture.</li><li>You have a client system with Wireshark 3.2.0 or later installed.</li><li>You have root user access to the BIG-IP system.</li></ul>
+<p><span class="sectiontitle">Procedures</span></p>
+<p><strong>Using the tcpdump command and Wireshark to capture and analyze traffic</strong></p>
+<p>You must have Wireshark 3.2.0 or later to load the SSL secrets to decrypt the SSL traffic. When troubleshooting issues with HTTP/3 over QUIC, you will first run the <strong>tcpdump </strong>command to capture SSL traffic and then use the Wireshark application to decrypt and analyze traffic. To do so, perform the following procedures:</p>
+<ul><li><a href="#p1" target="_self">Capturing SSL traffic and generating the handshake secret on the BIG-IP system</a></li><li><a href="#p2" target="_self">Loading the SSL secret on Wireshark</a></li></ul>
+<p><span class="subsubsectiontitle"><a id="p1" name="p1"></a>Capturing SSL traffic and generating the handshake secret on the BIG-IP system</span></p>
+<p>To use the <strong>tcpdump </strong>command to capture traffic on the BIG-IP system and generate its handshake secret, perform the following procedure:</p>
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+<ol><li>Log in to the BIG-IP command line.</li><li>Change the directory to <strong>/var/tmp</strong> by entering the following command:
+<p><span class="code">cd /var/tmp</span></p>
+</li><li>Use an editor, such as <strong>vi, </strong>to create an Advanced Shell (<strong>bash</strong>) script by entering the following:
+<p><span class="code">#!/bin/bash<br> <br>OUTPUT=$(tcpdump -r $1 2&gt;/dev/null)<br> <br>ES=$(echo $OUTPUT | grep -P &#39;1.3ES:(?!0000000000000000)&#39; | head -n1 | sed &#39;s/^.*1.3ES:\([^ ]*\).*$/\1/&#39;)<br>HSC=$(echo $OUTPUT | grep -P &#39;1.3HSC:(?!0000000000000000)&#39; | head -n1 | sed &#39;s/^.*1.3HSC:\([^ ]*\).*$/\1/&#39;)<br>HSS=$(echo $OUTPUT | grep -P &#39;1.3HSS:(?!0000000000000000)&#39; | head -n1 | sed &#39;s/^.*1.3HSS:\([^ ]*\).*$/\1/&#39;)<br>APPC=$(echo $OUTPUT | grep -P &#39;1.3APPC:(?!0000000000000000)&#39; | head -n1 | sed &#39;s/^.*1.3APPC:\([^ ]*\).*$/\1/&#39;)<br>APPS=$(echo $OUTPUT | grep -P &#39;1.3APPS:(?!0000000000000000)&#39; | head -n1 | sed &#39;s/^.*1.3APPS:\([^ ]*\).*$/\1/&#39;)<br>CR=$(tcpdump -r $1 2&gt;/dev/null | grep -P &#39;1.3CR:(?!0000000000000000)&#39; | head -n1 | sed &#39;s/^.*1.3CR:\([^ ]*\).*$/\1/&#39;)<br> <br>cat &lt;&lt; EOF &gt; ssl-secret.log<br>CLIENT_EARLY_TRAFFIC_SECRET $CR $ES<br>CLIENT_HANDSHAKE_TRAFFIC_SECRET $CR $HSC<br>SERVER_HANDSHAKE_TRAFFIC_SECRET $CR $HSS<br>CLIENT_TRAFFIC_SECRET_0 $CR $APPC<br>SERVER_TRAFFIC_SECRET_0 $CR $APPS<br>EOF<br> <br>echo &quot;Wrote ssl-secret.log&quot;</span></p>
+</li><li>Save the file using the following file name:
+<p><span class="example2">/var/tmp/gensecret</span></p>
+</li><li>Add execution permission to the file by entering the following command:
+<p><span class="code">chmod u+x /var/tmp/gensecret</span></p>
+</li><li>Enable SSL key logging via <strong>tcpdump</strong> by entering the following command:
+<p><span class="code">tmsh modify sys db tcpdump.sslprovider value enable</span></p>
+</li><li>Start a <strong>tcpdump </strong>capture on the BIG-IP system by entering the following command:
+<p><span class="code"><span class="example2">tcpdump -ni 0.0:nnn -s0 --f5 ssl:v udp or icmp -vvv -w /var/tmp/quic.pcap</span></span></p>
+</li><li>Pass QUIC traffic to the BIG-IP system by reproducing the issue.</li><li>Stop the capture.</li><li>To generate the SSL secrets, enter the following command:
+<p><span class="code">/var/tmp/gensecret /var/tmp/quic.pcap</span></p>
+</li><li>Verify that the secrets are generated by entering the following command:
+<p><span class="code">cat /var/tmp/ssl-secret.log</span></p>
+<p>If no secrets are generated, repeat the procedure from step 6 again. You may need to restart and clear your browser&#39;s cache.</p>
+</li><li>
+<p>To revert the change in step 5 and disable SSL key logging via <strong>tcpdump,</strong> enter the following command:</p>
+<p><span class="code">tmsh modify sys db tcpdump.sslprovider value disable</span></p>
+</li></ol>
+<p><span class="subsubsectiontitle"><a id="p2" name="p2"></a>Loading the SSL secret on Wireshark</span></p>
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+<ol><li>Copy the two files, <strong>ssl-secret.log</strong> and <strong>quic.pcap</strong>, generated in the previous procedure to your client system.</li><li>Open the Wireshark application.
+<p><span class="note"><strong>Note:</strong> You need Wireshark 3.2.0 or later.</span></p>
+</li><li>Go to <strong>Edit </strong>&gt; <strong>Preferences </strong>&gt; <strong>Protocols </strong>&gt; <strong>TLS</strong>.</li><li>For the <strong>(Pre)-Master-Secret log</strong> file name, select <strong>Browse </strong>and locate the <strong>ssl-secret.log </strong>file<strong>.</strong></li><li>Go to <strong>Edit </strong>&gt; <strong>Preferences </strong>&gt; <strong>Protocols </strong>&gt; <strong>QUIC</strong>.</li><li>For<strong> QUIC UDP port</strong>, enter the port number of your BIG-IP virtual server.</li><li>Select <strong>Ok</strong>.
+<p>The<strong> quic.pcap</strong> file is decrypted.</p>
+</li></ol>
+</article>
+</body>
+</html>

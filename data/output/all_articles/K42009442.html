@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K42009442: Exporting ASM Policy audit logs manually</title>
+<meta name="description" content="Support Solution: Exporting ASM Policy audit logs manually — Navigate to Security ›› Application Security : Policy : Audit : Log">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K42009442">
+</head>
+<body>
+<header>
+<h1>K42009442: Exporting ASM Policy audit logs manually</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2019-08-06</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 13.X.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 12.X.X, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 13.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K42009442">https://my.f5.com/manage/s/article/K42009442</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+Exporting ASM Policy audit logs manually
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>ASM Policy audit logs</li><li>GUI (Configuration Utility)</li><li>REST API</li><li>MySQL</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>None</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>To export policy audit logs from the GUI (Configuration Utility) perform one of the following actions:<br><br><a href="#gui">Export via the GUI</a><br><a href="#rest">Export using REST</a><br><a href="#mysql">Export directly from the local mysql database</a><br><br><span class="subsectiontitle"><a id="gui" name="gui"></a>Export via the GUI</span></p>
+
+<ol><li>Navigate to <strong>Security  ››  Application Security : Policy : Audit : Log</strong></li><li>Modify the Filter as desired</li><li>Click <strong>Export</strong></li><li>Click <strong>OK</strong><br>	<span class="note">There is a export limitation of 1500 records.<strong>Note:</strong></span></li></ol>
+<span class="subsectiontitle"><a id="rest" name="rest"></a>Export using REST</span>
+
+<ol><li>Obtain the REST Policy ID for each policy using the following command where <strong>&lt;mgmt ip&gt;</strong> is the BIG-IP management IP.
+
+	<p><strong>curl -skuadmin:admin https://&lt;mgmt ip&gt;/mgmt/tm/asm/policies?\$select=name,id\&amp;\$top=10 | jq -c &#39;.items[]|[(.name,.id)]&#39;</strong></p>
+
+	<p>For example this device has two policies:</p>
+	<span class="example2">curl -skuadmin:admin https://192.168.0.1/mgmt/tm/asm/policies?\$select=name,id\&amp;\$top=10 | jq -c &#39;.items[]|[(.name,.id)]&#39;<br>	[&quot;mypolicy&quot;,&quot;NuBmLiEtxAcQxWvuqP-LnA&quot;]<br>	[&quot;myotherpolicy&quot;,&quot;Ct3t5hLE3vwYJipDrQoz5Q&quot;]</span></li><li>
+	<p>Export the policy audit logs to CSV for each required policy using the following command, where <strong>&lt;mgmt ip&gt;</strong> is the BIG-IP management IP and <strong>&lt;rest ID&gt;</strong> is the ID of the policy as per step 1:</p>
+	<strong>curl -skuadmin:admin https://&lt;mgmt IP&gt;/mgmt/tm/asm/policies/&lt;rest ID&gt;/audit-logs?\$ | jq &#39;.items[]|[(.eventType, .entityKind, .lastUpdateMicros, .description, .deviceName, .username, .component, .entityName)]|@csv&#39; &gt;&gt; /var/tmp/filename.csv</strong>
+
+	<p>For example:</p>
+
+	<p><span class="example2">curl -skuadmin:admin https://162.168.0.1/mgmt/tm/asm/policies/NuBmLiEtxAcQxWvuqP-LnA/audit-logs?\$ | jq &#39;.items[]|[(.eventType, .entityKind, .lastUpdateMicros, .description, .deviceName, .username, .component, .entityName)]|@csv&#39; &gt;&gt; /var/tmp/filename.csv</span></p>
+	</li><li>Check the <strong>filename.txt</strong> file for the audit logs</li></ol>
+
+<p><span class="subsectiontitle"><a id="mysql" name="mysql"></a>Export directly from the local mysql database</span></p>
+
+<ol><li>Get the list of policies:
+	<p><span class="code">mysql -Bs -u root -p$(perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw) -e &quot;select id,name from PLC.PL_POLICIES&quot;</span></p>
+
+	<p>For example:</p>
+	<span class="example2">mysql -Bs -u root -p$(perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw) -e &quot;select id,name from PLC.PL_POLICIES&quot;<br>	104     /Common/mypolicy<br>	105     /Common/myotherpolicy</span></li><li>
+	<p>Use the policy ID to dump the policy audit logs from the database table to a file, where <strong>XX </strong>is the ID of the policy.</p>
+	<strong>mysql -Bs -u root -p$(perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw) -e &quot;select * from PLC.PL_CONFIG_LOG where policy_id = XX&quot;  &gt;&gt; /var/tmp/filename.txt</strong>
+
+	<p>For example:</p>
+
+	<p><span class="example2">mysql -Bs -u root -p$(perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw) -e &quot;select * from PLC.PL_CONFIG_LOG where policy_id = 104&quot;  &gt;&gt; /var/tmp/filename.txt</span></p>
+	</li><li>
+	<p>Check the <strong>filename.txt</strong> file for the audit logs<br>	<span class="note"><strong>Note</strong>: Some manual formatting may be required</span></p>
+	</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

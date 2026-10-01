@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K23145710: Identifying and removing invalid duplicate device objects on the BIG-IQ system</title>
+<meta name="description" content="Knowledge: Identifying and removing invalid duplicate device objects on the BIG-IQ system — Identify if you have duplicate managed device objects in your BIG-IQ configuration">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K23145710">
+</head>
+<body>
+<header>
+<h1>K23145710: Identifying and removing invalid duplicate device objects on the BIG-IQ system</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2019-04-23</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K23145710">https://my.f5.com/manage/s/article/K23145710</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>You should consider using this procedure under the following condition:</p>
+
+<ul><li>Identify if you have duplicate managed device objects in your BIG-IQ configuration</li><li>Remove duplicate managed device objects from your BIG-IQ configuration if any exists</li></ul>
+<h3>Description</h3><p>The BIG-IQ system uses the value contained in the <strong>/config/f5-rest-device-id</strong> file as the unique identifier for the managed device. This is referred to as the UUID or machine ID. If the file has been modified on a managed device, it can result in the BIG-IQ system managing two duplicate managed device objects for the same device (the two managed device objects are identical except for their UUIDs). This can result in unpredictable behavior as well as intermittent deploy failures. The following are possible actions that could lead to duplicate managed device objects on the BIG-IQ system:</p>
+
+<ul><li>You restored a user configuration set (UCS) that has a different <strong>/config/f5-rest-device-id</strong> file to a managed device. This results in a change to the managed device&#39;s f5-rest-id.</li><li>You modified the <strong>/config/f5-rest-device-id</strong> file on a managed device.</li></ul>
+
+<p>Some deploys may fail with error messages similar to the following example in the <strong>/var/log/restjavad.0.log</strong> file on the BIG-IQ system:</p>
+
+<p><span class="example2">[INFO][22 Mar 2018 03:01:06 GMT][/cm/shared/event/alerts AlertCollectionWorker] Deployment Task Notification | | BIG-IQ: iq1.example.com | Module: Network Security | Task Name: test_Eval | Task Status: FAILED | Type: Full | Timestamp: Mar 22, 2018 03:01(GMT) | User: admin | | BIG-IP Devices: | ltm1.example.com: CANCELED - Device is not available | ltm1.example.com: CANCELED - Device is not available |</span></p>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisites to use this procedure:</p>
+
+<ul><li>You have administrative access to the command line on the BIG-IQ system</li><li>You have administrative access to the command line on the managed device(s)</li></ul>
+
+<p><span class="sectiontitle">Procedures</span></p>
+
+<ul><li><a href="#proc1">Identifying invalid duplicate managed device objects</a></li><li><a href="#proc2">Removing invalid duplicate managed device objects</a></li></ul>
+
+<p><span class="subsectiontitle"><a id="proc1" name="proc1"></a>Identifying invalid duplicate managed device objects</span></p>
+
+<p>To identify invalid duplicate managed device objects on the BIG-IQ system, you can create two bash functions and run them, then compare the results with the managed device&#39;s f5-rest-id. To do so, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the command line of the BIG-IQ system</li><li>To create the first bash shell script function, <strong>list-devices</strong>, type the following command:
+	<p><span class="code">list-devices(){ restcurl shared/resolver/device-groups/cm-bigip-allDevices/devices&#39;?$select=address,hostname,machineId,selfLink&#39;; }</span></p>
+
+	<p>The <strong>list-devices</strong> bash function returns an abbreviated list of all discovered devices on the BIG-IQ system. </p>
+	</li><li>To create the second bash shell script function, <strong>list-dups</strong>, type the following command:
+	<p><span class="code">list-dups() { list-devices| grep address | cut -d &#39;:&#39; -f2 | tr -d &#39;&quot;,&#39; | sort -n | uniq -c | grep -v -w 1; }</span></p>
+
+	<p>The <strong>list-dups</strong> bash function returns IP addresses that show up in more than one object, and the number of instances where the IP addresses were found.</p>
+
+	<p><span class="note"><strong>Note</strong>: These two bash functions are temporary functions; they will no longer exist when the BIG-IQ system is rebooted. You will need to re-create them if you require them again.</span></p>
+	</li><li>To identify duplicate managed device objects, type the following command:
+	<p><span class="code">list-dups</span></p>
+
+	<p>If there are duplicate managed device objects,the command will return an output indicating the number of duplicates for an IP address. The following example shows that there are two managed device objects with the IP address <strong>192.168.0.97</strong>:</p>
+
+	<p><span class="example2">2  192.168.0.97</span></p>
+
+	<p>If there are no duplicate managed device objects, the command will not return any output.</p>
+	</li><li>To determine the UUID/machine ID of the duplicate managed device objects, use the following command syntax:
+	<p><span class="code">list-devices | grep -A4 &lt;IP address identified from previous step&gt;</span></p>
+
+	<p>For example, type the following command:</p>
+
+	<p><span class="example2">list-devices | grep -A4 192.168.0.97</span></p>
+
+	<p>You should observe an output similar to the following example:</p>
+
+	<p><span class="example2">      &quot;address&quot;: &quot;192.168.0.97&quot;,<br>	      &quot;hostname&quot;: &quot;ltm1.example.com&quot;,<br>	      &quot;machineId&quot;: &quot;5480b771-d0e0-460d-b101-8a1a028a016e&quot;,<br>	      &quot;selfLink&quot;: &quot;https://localhost/mgmt/shared/resolver/device-groups/cm-bigip-allDevices/devices/5480b771-d0e0-460d-b101-8a1a028a016e&quot;<br>	    },<br>	--<br>	      &quot;address&quot;: &quot;192.168.0.97&quot;,<br>	      &quot;hostname&quot;: &quot;ltm1.example.com&quot;,<br>	      &quot;machineId&quot;: &quot;934239d7-64eb-42e8-9b4a-a06c2f952eb2&quot;,<br>	      &quot;selfLink&quot;: &quot;https://localhost/mgmt/shared/resolver/device-groups/cm-bigip-allDevices/devices/934239d7-64eb-42e8-9b4a-a06c2f952eb2&quot;<br>	    },</span></p>
+	</li><li>To determine the f5-rest-id of the affected managed device, log in to the command line of the affected managed device and type the following command:
+	<div style="text-align: start;"><br>	<span class="code">cat /config/f5-rest-device-id</span></div>
+
+	<p>The command should return the f5-rest-id of the managed device. For example:</p>
+
+	<p><span class="example2">5480b771-d0e0-460d-b101-8a1a028a016e</span></p>
+	</li><li>When you have determined the f5-rest-id of the affected managed device, you can then identify which managed device object in the BIG-IQ configuration is invalid. Using the example outputs from step 5, the managed device object with machine ID <strong>934239d7-64eb-42e8-9b4a-a06c2f952eb2</strong> is invalid.</li></ol>
+
+<p><span class="subsectiontitle"><a id="proc2" name="proc2"></a>Removing invalid duplicate managed device objects</span></p>
+
+<p>When you have determined the UUID/machine ID of the duplicate managed device objects in your BIG-IQ configuration and the f5-rest-id of the actual managed device, you can remove the invalid duplicate managed device object. To do so, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system. </span></p>
+
+<p><span class="note"><strong>Note</strong>: F5 recommends that you always perform a UCS backup of the BIG-IQ system prior to removing any invalid managed device objects from the BIG-IQ configuration. For more information about BIG-IQ system UCS file backup and restoration, refer to the <strong>UCS Backup Management for the BIG-IQ System</strong> chapter of the <em><strong>BIG-IQ Centralized Management: Licensing and Initial Setup </strong></em>manual<em><strong>. </strong></em>For information about how to locate F5 product manuals, refer to <a href="https://my.f5.com/manage/s/article/K12453464" target="_blank">K12453464: Finding product documentation on AskF5</a>.</span></p>
+
+<ol><li>
+	<p>Log in to the command line of the BIG-IQ system.</p>
+	</li><li>
+	<p>Set variable with BIG-IP uuid to be removed:<br>	<span class="example2">uuid_to_remove=&lt;f5-rest-device-id&gt;</span></p>
+	</li><li>
+	<p>Set array variable with groups found to contain the uuid:<br>	 groups_with_uuid=($(restcurl shared/index/config?\$filter=uuid%20eq%20%27&quot;${uuid_to_remove}&quot;%27|jq .items[].selfLink | cut -d &#39;/&#39; -f8 | tr -d &#39;&quot;&#39;))</p>
+	</li><li>
+	<p>Verify that the array contains one of more groups:<br>	<span class="example2">echo ${groups_with_uuid[@]}</span><br>	<span class="note">Note: If nothing is returned the uuid was not found in any device groups</span></p>
+	</li><li>
+	<p>Remove the the uuid from any groups it was found in:<br>	<span class="example2">for group_name in ${groups_with_uuid[@]}; do restcurl -X DELETE shared/resolver/device-groups/${group_name}/devices/${uuid_to_remove}; done</span></p>
+	</li></ol>
+<br> 
+</article>
+</body>
+</html>

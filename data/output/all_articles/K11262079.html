@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K11262079: Update 3rd Party CA device certificate with a new 3rd Party CA device certificate</title>
+<meta name="description" content="Support Solution: Update 3rd Party CA device certificate with a new 3rd Party CA device certificate — The current CA signed device certificate is about to expire and attempts to replace it via the Configuration Utility return errors.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K11262079">
+</head>
+<body>
+<header>
+<h1>K11262079: Update 3rd Party CA device certificate with a new 3rd Party CA device certificate</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-04-18</dd>
+<dt>Updated</dt><dd>2025-04-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP AAM: 13.1.3</li><li>BIG-IP FPS: 13.1.3</li><li>BIG-IP DNS: 13.1.3</li><li>BIG-IP LTM: 13.1.3</li><li>BIG-IP Link Controller: 13.1.3</li><li>BIG-IP PEM: 13.1.3</li><li>BIG-IP ASM: 13.1.3</li><li>BIG-IP APM: 13.1.3</li><li>BIG-IP Analytics: 13.1.3</li><li>BIG-IP AFM: 13.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K11262079">https://my.f5.com/manage/s/article/K11262079</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+The current CA signed device certificate is about to expire and attempts to replace it via the Configuration Utility return errors.
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>The installed Device Certificate is already signed by a Certificate Authority</li><li>The client certificate and key need to be updated</li><li>The intermediate certificate needs to be updated</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+Unknown at time of publication.
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+Replace a 3rd Party CA signed device certificate from the command line. 
+
+<ul><li>Confirm which portions of the device certificate need replacement.
+	<ul><li>Client certificate?</li><li>Certificate chain?</li><li>Key?</li></ul>
+	</li></ul>
+The instructions below update all three, but if the certificate chain and key aren&#39;t changing, then just update the client certificate. Afterwards, save the configuration and restart httpd to see the changes from the Configuration Utility.<br><br><span class="note">Note: If this device is monitored by GTM/DNS, this new certificate must be exchanged with GTM/DNS otherwise this iQuery connection will fail after the certificate expires. Follow instructions from <a href="https://my.f5.com/manage/s/article/K13312" target="_self">K13312: Overview of the BIG-IP DNS big3d_install, bigip_add, and gtm_add utilities (11.x - 16.x)</a> to exchange this new certificate.<br><br>Note: If this device is managed by BIG-IQ, you may need to rediscover this device afterwards.</span>
+
+<ol><li>Upload the files to /var/tmp.</li><li>Extract the bundle. If it&#39;s already in .pem format skip to the next step (#3).
+	<ul><li><a href="https://my.f5.com/manage/s/article/K6549" target="_self">K6549: Converting PKCS certificates to PEM format for use with the BIG-IP system</a></li><li>Example:<span class="code"> <span class="example2">openssl pkcs12 -in /var/tmp/devcert-bigip.p12 -out /var/tmp/devcert-bigip.pem -nodes</span></span>
+		<ul><li>Include <span class="code">-nodes</span> to avoid applying another password to this bundle<br>			 </li></ul>
+		</li></ul>
+	</li><li>Back up the current certificate, key, and certificate chain.
+	<ul><li>Device certificate file
+		<ul><li>Template:<br>			<span class="code">cp /config/httpd/conf/ssl.crt/&lt;current-cert-name&gt;.crt /config/httpd/conf/ssl.crt/&lt;current-cert-name&gt;.crt.orig</span><br>			 </li><li>Example:<br>			<span class="code">cp /config/httpd/conf/ssl.crt/server.crt /config/httpd/conf/ssl.crt/server.crt.orig</span></li></ul>
+		</li><li>Device key file
+		<ul><li>Template:<br>			<span class="code">cp /config/httpd/conf/ssl.key/&lt;current-key-name&gt;.key /config/httpd/conf/ssl.key/&lt;current-key-name&gt;.key.orig</span><br>			 </li><li>Example:<span class="code"> </span><br>			<span class="example2"><span class="code">cp /config/httpd/conf/ssl.key/server.key /config/httpd/conf/ssl.key/server.key.orig</span></span><br>			 </li></ul>
+		</li><li>Certificate chain
+		<ul><li>Check for an existing certificate chain<br>			<span class="code">tmsh list sys httpd ssl-certchainfile</span><br>			 </li><li>Then archive, if necessary.<br>			<span class="code">cp /config/httpd/conf/ssl.crt/cert-chain.crt /config/httpd/conf/ssl.crt/cert-chain.crt.orig</span><br>			 </li></ul>
+		</li></ul>
+	</li><li>Confirm the backups exist.
+	<ul><li><span class="code">ls -lh /config/httpd/conf/ssl.key/</span></li><li><span class="code">ls -lh /config/httpd/conf/ssl.crt/</span><br>		 </li></ul>
+	</li><li>Manually create the new certificate and key. This may require a separate SSH or notepad.
+	<ul><li>View the contents of the *.pem file. It should show all certificates and the private key.
+		<ul><li><span class="code">cat /var/tmp/devcert-bigip.pem</span><br>			 </li></ul>
+		</li><li>Create client certificate file
+		<ul><li><span class="code">vim /var/tmp/devcert-bigip.crt</span>
+			<ul><li>Extract the client certificate, including -----BEGIN CERTIFICATE----- through -----END CERTIFICATE-----. This is usually the top certificate in a bundle.</li><li>Insert this text into the certificate file.</li><li>Save these changes.<br>				 </li></ul>
+			</li></ul>
+		</li><li>Create the key file: 
+		<ul><li><span class="code">vim /var/tmp/devcert-bigip.key</span>
+			<ul><li>Extract the key, including -----BEGIN PRIVATE KEY----- through -----END PRIVATE KEY-----.</li><li>Insert this text into the key file.</li><li>Save these changes.<br>				 </li></ul>
+			</li></ul>
+		</li><li>Create chain certificate file
+		<ul><li><span class="code">vim /var/tmp/devcert-bigip-chain.crt</span>
+			<ul><li>Extract the remaining certificates, including -----BEGIN CERTIFICATE----- through -----END CERTIFICATE-----. There may be more than one.</li><li>Insert this text into the certificate-chain file.</li><li>Save these changes.<br>				 </li></ul>
+			</li></ul>
+		</li></ul>
+	</li><li>Copy and rename both the key and client certificate to the /config/httpd/conf/ssl directory.<br>	<span class="note">Note: This overwrites the original server.crt and server.key files so confirm the back ups from step 4 exist.</span>
+	<ul><li><span class="code">cp /var/tmp/devcert-bigip.key /config/httpd/conf/ssl.key/server.key</span></li><li><span class="code">cp /var/tmp/devcert-bigip.crt /etc/httpd/conf/ssl.crt/server.crt</span><br>		 </li></ul>
+	</li><li>Copy the certificate chain to the /config/httpd/conf/ssl directory.
+	<ul><li><span class="code">cp /var/tmp/devcert-chain.crt /etc/httpd/conf/ssl.crt/devcert-chain.crt</span><br>		 </li></ul>
+	</li><li>Apply the new device certificate and key to the BIG-IP filestore at the same time.
+	<ul><li><span class="code">tmsh modify sys httpd { ssl-certfile /etc/httpd/conf/ssl.crt/server.crt ssl-certkeyfile /etc/httpd/conf/ssl.key/server.key }</span><br>		 </li></ul>
+	</li><li>Add the certificate chain.
+	<ul><li><span class="code">tmsh modify sys httpd ssl-certchainfile /etc/httpd/conf/ssl.crt/devcert-chain.crt</span><br>		 </li></ul>
+	</li><li>Confirm the certificate chain was applied.
+	<ul><li><span class="code">tmsh list sys httpd ssl-certchainfile</span><br>		 </li></ul>
+	</li><li>Save these changes.
+	<ul><li><span class="code">tmsh save sys config</span><br>		 </li></ul>
+	</li><li>Restart httpd so the Configuration Utility shows these updates.
+	<ul><li><span class="code">tmsh restart sys service httpd</span></li></ul>
+	</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<ul><li>Check the results via the WebUI.
+	<ul><li><span class="code">System &gt;&gt; Certificate Management : Device Certificate Management : Device Certificate</span><br>		 </li></ul>
+	</li><li>Check the certificates from the CLI.
+	<ul><li><span class="code">openssl s_client -connect &lt;mgmtIP&gt;:443 -showcerts</span></li><li>The new client certificate and chain certificates should show<br>		 </li></ul>
+	</li><li>To roll back these changes. Rename the original certificate and key to overwrite the current certificate and key pair then remove the certificate chain. Save the changes and restart httpd to view these updates from the Configuration Utility.
+	<ul><li><span class="code">cp /etc/httpd/conf/ssl.key/server.key.orig /etc/httpd/conf/ssl.key/server.key</span></li><li><span class="code">cp /etc/httpd/conf/ssl.crt/server.crt.orig /etc/httpd/conf/ssl.crt/server.crt</span></li><li><span class="code">tmsh modify sys httpd ssl-certchainfile none</span></li><li><span class="code">tmsh save sys config</span></li><li><span class="code">tmsh restart sys service httpd</span></li></ul>
+	</li></ul>
+</article>
+</body>
+</html>

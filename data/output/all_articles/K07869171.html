@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K07869171: The BIG-IQ user interface may fail to load after an upgrade to 8.0.0</title>
+<meta name="description" content="Known Issue: The BIG-IQ user interface may fail to load after an upgrade to 8.0.0 — The BIG-IQ user interface may fail to load after an upgrade to version 8.0.0. This is due to the BIG-IQ Role Based Access Control (RBAC) subsystem failing to update task tables that have a large…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K07869171">
+</head>
+<body>
+<header>
+<h1>K07869171: The BIG-IQ user interface may fail to load after an upgrade to 8.0.0</h1>
+<dl>
+<dt>Type</dt><dd>Known Issue</dd>
+<dt>Published</dt><dd>2021-02-25</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Final</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li><li>BIG-IQ Centralized Management: 8.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K07869171">https://my.f5.com/manage/s/article/K07869171</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Known Issue</h3><p>The BIG-IQ user interface may fail to load after an upgrade to version 8.0.0. This is due to the BIG-IQ Role Based Access Control (RBAC) subsystem failing to update task tables that have a large number of items.</p>
+
+<p>This issue occurs when the following condition is met:</p>
+
+<ul><li>You attempt to upgrade the BIG-IQ system when there are more than 100,000 records for a single task in the BIG-IQ database.</li></ul>
+
+<p><span class="sectiontitle">Impact</span></p>
+
+<p>The BIG-IQ system fails to function, and you cannot access the user interface.</p>
+
+<p><span class="sectiontitle">Symptoms</span></p>
+
+<p>As a result of this issue, you may encounter one or more of the following symptoms:</p>
+
+<ul><li>The BIG-IQ user interface fails to load and displays an error message similar to the following example:
+	<p><span class="example2">Waiting for BIG-IQ services to become available</span></p>
+	</li><li>In the <strong>/var/log/bootstrap/bootstrap.out</strong> file, you observe messages that appear similar to the following example:
+	<p><span class="example2">Database upgrade succeeded.</span></p>
+	</li><li>In the <strong>/var/log/postgres/postgresql-&lt;date&gt;.log</strong> file, you observe messages that appear similar to the following example:
+	<p><span class="example2">ERROR:  query string argument of EXECUTE is null<br>	CONTEXT:  PL/pgSQL function rbac_add_pattern(text,text,text,text[],boolean) line 108 at EXECUTE<br>	STATEMENT:  call rbac_add_pattern($1,$2,$3,$4,$5)</span></p>
+	</li><li>In the <strong>/var/log/tokumon/current</strong> file, you observe messages that appear similar to the following example:
+	<p><span class="example2">[ERROR] postgres_configurator: _isRBACReady: RBAC is not ready.</span></p>
+	</li></ul>
+<h3>Resolution</h3><p><span class="sectiontitle">Status</span></p>
+
+<p>F5 Product Development has assigned ID 995837 to this issue. F5 has confirmed that this issue exists in the products listed in the <strong>Applies to (see versions)</strong> box, located in the upper-right corner of this article. For information about releases, point releases, or hotfixes that resolve this issue, refer to the following table.</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1" style="width: 100%;"><tbody><tr><td colspan="1" rowspan="1">Type of fix</td><td colspan="1" rowspan="1">Fixes introduced in</td><td colspan="1" rowspan="1">Related articles</td></tr><tr><td colspan="1" rowspan="1">Release</td><td colspan="1" rowspan="1">8.1.0</td><td colspan="1" rowspan="1"><a href="https://my.f5.com/manage/s/article/K2200" target="_blank">K2200: Most recent versions of F5 software</a></td></tr><tr><td colspan="1" rowspan="1">Point release/hotfix</td><td colspan="1" rowspan="1">8.0.0.1</td><td colspan="1" rowspan="1"><a href="https://my.f5.com/manage/s/article/K9502" target="_blank">K9502: BIG-IP hotfix and point release matrix</a></td></tr></tbody></table>
+
+<p><span class="sectiontitle">Workaround</span></p>
+
+<p>To work around this issue, you can modify the <strong>rbac_add_pattern_proc.sql</strong> file and perform a manual database update. To do so, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of workaround:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the command line of the affected BIG-IQ system.</li><li>To verify that the workaround was not previously implemented, enter the following <strong>grep</strong> command, and make sure the output is clean:
+	<p><span class="code">grep -A 2 -B 3 &quot;create_triggers_sql IS NOT NULL&quot; /var/config/rest/postgres/sql/post/rbac_add_pattern_proc.sql</span></p>
+	</li><li>To fix the <strong>rbac_add_pattern_proc.sql</strong> file, enter the following <strong>sed</strong> command:
+	<p><span class="code">sed -i -e &quot;s/EXECUTE create_triggers_sql || &#39;;&#39;;/IF (create_triggers_sql IS NOT NULL) THEN \n EXECUTE create_triggers_sql || &#39;;&#39;; \n END IF; /&quot; -i -e &quot;s/EXECUTE create_index_sql || &#39;;&#39;;/IF (create_index_sql IS NOT NULL) THEN \n EXECUTE create_index_sql || &#39;;&#39;; \n END IF; /&quot; /var/config/rest/postgres/sql/post/rbac_add_pattern_proc.sql</span></p>
+	</li><li>To verify that the workaround script is added to the SQL file, enter the following <strong>grep</strong> command again:
+	<p><span class="code">grep -A 2 -B 3 &quot;create_triggers_sql IS NOT NULL&quot; /var/config/rest/postgres/sql/post/rbac_add_pattern_proc.sql</span></p>
+
+	<p>Output appears similar to the following example:</p>
+
+	<p><span class="example2">IF (create_index_sql IS NOT NULL) THEN<br>	EXECUTE create_index_sql || &#39;;&#39;;<br>	END IF;<br>	IF (create_triggers_sql IS NOT NULL) THEN<br>	EXECUTE create_triggers_sql || &#39;;&#39;;<br>	END IF;</span></p>
+	</li><li>To run the script to re-declare the procedure in the database, enter the following command:
+	<p><span class="code">psql -U postgres -d bigiq_db -f /var/config/rest/postgres/sql/post/rbac_add_pattern_proc.sql</span></p>
+	</li><li>To reset the RBAC subsystem, enter the following command:
+	<p><span class="code">rbac-reset</span></p>
+	</li><li>You must wait until <strong>rbac-reset</strong> is complete before proceeding further. Even though the <strong>rbac-reset</strong> command returns as complete on the command line output, the re-calculation of the RBAC information on all documents happens in the background, and this process takes a long time (sometimes an hour). To check the calculation status, enter the following command and wait until it reaches <strong>0</strong> before proceeding further:
+	<p><span class="code">while true ; do date ; psql -U postgres -d bigiq_db -c &quot;select count(*) from bigiqauthorization.shared_authorization_journals;&quot; ; sleep 10 ; done</span></p>
+
+	<p>Output appears similar to the following example:</p>
+
+	<p><span class="example2">Mon Mar 22 07:34:43 PDT 2021<br>	 count <br>	-------<br>	     0<br>	(1 row)</span></p>
+
+	<p><span class="note"><strong>Note</strong>: You should see the count decreasing each time the query is run. The reset process is completed when the count reaches <strong>0</strong>.</span></p>
+	</li><li>Press <strong>Ctrl+C</strong> to stop the verification command.</li><li>Review the Postgres logs in the <strong>/var/log/postgres </strong>directory and confirm that no more <strong>rbac_add_pattern</strong> errors occur.
+	<p><span class="note"><strong>Note</strong>: If you still see errors, the rbac-rest process has not yet completed. Wait before proceeding further.</span></p>
+	</li><li>At this point, <strong>tokumon</strong> begins the re-indexation process and you need to wait until this is fully complete. To check the <strong>tokumond</strong> re-indexing progress, enter the following command and wait until the process is completed:
+	<p><span class="note"><strong>Note</strong>: The <strong>tokumond</strong> process does not start indexing entries until after the <strong>rbac-reset</strong> process is completed.</span></p>
+
+	<p><span class="code">while true ; do fgrep Progress /var/log/tokumon/current | tail -n1 ; sleep 10 ; done</span></p>
+
+	<p>Output appears similar to the following example:</p>
+
+	<p><span class="example2">2021-01-25_13:39:04.35913 [INFO] postgres_configurator: sendFind: percentComplete:85. Progress: [========================================== ]<br>	2021-01-25_13:39:04.58741 [INFO] postgres_configurator: sendFind: percentComplete:89. Progress: [============================================ ]<br>	2021-01-25_13:39:04.83006 [INFO] postgres_configurator: sendFind: percentComplete:93. Progress: [============================================== ]<br>	2021-01-25_13:39:05.08111 [INFO] postgres_configurator: sendFind: percentComplete:97. Progress: [================================================ ]</span></p>
+
+	<p>The BIG-IQ user interface is restored after the re-indexing progress reaches 99%.</p>
+	</li><li>Press <strong>Ctrl+C</strong> to stop the verification command.</li></ol>
+</article>
+</body>
+</html>

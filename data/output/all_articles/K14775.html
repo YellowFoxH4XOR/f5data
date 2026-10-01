@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K14775: Configure an HTTP profile to rewrite URLs so that redirects from an HTTP server specify the HTTPS protocol</title>
+<meta name="description" content="Knowledge: Configure an HTTP profile to rewrite URLs so that redirects from an HTTP server specify the HTTPS protocol — In HTTP redirect responses from a pool member that is behind a virtual server with SSL Client profile enabled you want the redirects to http:// URL presented to the client as redirects to https://">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K14775">
+</head>
+<body>
+<header>
+<h1>K14775: Configure an HTTP profile to rewrite URLs so that redirects from an HTTP server specify the HTTPS protocol</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2014-01-13</dd>
+<dt>Updated</dt><dd>2026-06-01</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 21.X.X, 21.1.X, 21.1.0, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.3, 16.1.6, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0, 13.1.X, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.X, 13.0.1, 13.0.0, 12.1.X, 12.1.6, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 17.X.X, 12.0.0, 12.1.5, 15.X.X, 14.X.X, 13.X.X, 12.X.X, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 12.0.X, 16.X.X, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K14775">https://my.f5.com/manage/s/article/K14775</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3>
+<p>You should consider using this procedure under the following condition:</p>
+<ul><li>In HTTP redirect responses from a pool member that is behind a virtual server with SSL Client profile enabled you want the redirects to http:// URL presented to the client as redirects to https://</li></ul>
+<p>The procedure do not apply to conditions when the http:// URL is included inside the body of the of HTML document, rather than in HTTP response header</p>
+<h3>Description</h3>
+<p>A virtual server that has a Client SSL profile applied accepts HTTPS connections from clients, decrypts the SSL sessions, and sends the HTTP requests to the web server. If the BIG-IP system is not re-encrypting requests with a Server SSL profile, the web server listens and responds to all requests using HTTP. As a result, self-referencing Location headers in redirect responses specify the HTTP protocol instead of the HTTPS protocol that the client originally requested. The BIG-IP Client SSL profile encrypts the response and returns it to the client, but the Location header value is not modified by default. The client follows the HTTP redirect, and the request fails in one of the following ways:</p>
+<ul><li>If no HTTP virtual server was configured for the same virtual address on the BIG-IP system, the connection fails and the system no longer uses the SSL session.</li><li>If an HTTP virtual server is configured on the same virtual address and sends traffic to the same web servers, the request may unintentionally succeed, but not be encrypted, because the system used the HTTP protocol instead of the HTTPS protocol.</li><li>If an HTTP virtual server is configured on the same virtual address and uses an iRule or Fallback Host to redirect an HTTP response to HTTPS, the system may repeatedly redirect the request between the two locations until the browser reaches its maximum redirect limit and reports an error.</li></ul>
+<p>Many applications rely on the use of redirects. When these redirects fail, the SSL session is disrupted, and in most cases the website is unusable.</p>
+<p><span class="subsectiontitle">Special case: Trailing slash redirects</span></p>
+<p>When a requested URI does not include a trailing forward slash ( <strong>/</strong> ) at the end of the URI, some web servers generate a courtesy redirect using the following algorithm:</p>
+<ul><li>When a request arrives specifying a resource name that does not end with a slash, the web server first searches for a file with a name that matches the last section of the URI.</li><li>If the web server cannot find a matching file, it looks for a directory with a name that matches the last section of the URI.</li><li>If the web server finds a matching directory, it sends an HTTP 302 redirect response back to the client with the Location value, specifying the protocol over which the request was received, the originally-requested resource, and a trailing slash.</li></ul>
+<p>The following is an example of a trailing slash HTTP 302 redirect response scenario for a BIG-IP virtual server that has a Client SSL profile configured, and does not have a Server SSL profile configured:</p>
+<ol><li>A user types <strong>https://www.f5.com/stuff</strong> without a trailing slash, intending to browse the <strong>stuff </strong>directory.</li><li>The client browser sends an SSL request to the Client SSL virtual server, which resides on the BIG-IP LTM system.</li><li>The BIG-IP LTM system decrypts the request and sends a <strong>GET /stuff</strong> command to the web server using the HTTP protocol.</li><li>Because a file named <strong>stuff</strong> does not exist in the root directory of the web server, but a directory named <strong>stuff</strong> exists, the web server sends an HTTP 302 redirect response for the same resource name over the same protocol, appending a trailing slash. Since the request was sent using the HTTP protocol, when the web server sends the HTTP 302 redirect response, it specifies HTTP (not HTTPS), and the resulting redirect header is <strong>Location: </strong><strong>http://www.f5.com/stuff/</strong>.</li><li>When the client receives the HTTP 302 redirect response, it sends a new request to the BIG-IP LTM virtual server requesting <strong>http://www.f5.com/stuff/</strong>.</li><li>Since the request uses HTTP, rather than HTTPS, the SSL session fails in one of the ways previously described.</li></ol>
+<p>Trailing slash redirects are matched by the <strong>Matching</strong> http-rewrite option, ignoring the trailing slash.</p>
+<p><span class="warning"><strong>Important</strong>: In versions prior to BIG-IP 12.1.0, the system does not rewrite redirects from web servers that use the HTTPS protocol. Typically, this is not an issue if the backend HTTPS server is running on the same port as the virtual server. The redirect works because the port the server is listening on is the same as the virtual server. However, if the backend HTTPS server is running on a different port than that of the virtual server, the redirect fails. Beginning in BIG-IP 12.1.0, the system also rewrites redirects from web servers that use HTTPS protocol. If the redirect URI already uses https://, only the IP address and port are updated, as needed.<br><br><strong>Note: </strong> In some cases you might want to rewrite HTML content to match the redirect URI, or you want to redirect to different server URI than the original one, in this case we can use rewrite profile instead of relying on HTTP rewrite feature. Keep in mind that the rewrite of content is dependent on tags and attributes of the content body, but this will guarantee that scripts and style files with attributes such as <strong>src</strong>, <strong>href</strong>, or <strong>link </strong>within the HTML page will match the redirected URL.</span></p>
+<p><span class="sectiontitle">Prerequisites</span></p>
+<p>You must meet the following prerequisite to use this procedure:</p>
+<ul><li>You have the Client SSL profile configured on a virtual server.</li></ul>
+<p><span class="sectiontitle">Procedures</span></p>
+<p>To watch a video demo of the Configuration utility procedures, go to <img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000kwCH&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000l1Kfx" alt=""></img>  <a href="https://my.f5.com/manage/s/article/K000161481" target="_blank">Rewrite BIG-IP HTTP redirects from backend servers to HTTPS for clients </a>.</p>
+<p><span class="subsectiontitle">Configuring HTTP rewrites using the BIG-IP Configuration utility</span></p>
+<p>The following procedure enables HTTP rewrites using the BIG-IP Configuration utility.</p>
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+<ol><li>Log in to the Configuration utility.</li><li>Select <strong>Local Traffic</strong> &gt; <strong> Profiles</strong> &gt; <strong>Services</strong> &gt; <strong>HTTP</strong>.</li><li>To create a new HTTP profile, select <strong>Create</strong>. Alternatively, you can select an existing profile to modify.</li><li>If you are creating a new profile, enter a name for the profile, for <strong>Parent Profile</strong>, select <strong>http</strong>.</li><li>Under <strong>Settings</strong>, set <strong>Redirect Rewrite</strong> to <strong>All</strong>, <strong>Matching</strong>, or <strong>Nodes</strong>, depending upon your configuration:
+<ul><li>Choose <strong>Matching</strong> to rewrite redirects when the path and query URI components of the request and the redirect are identical (except for the trailing slash). This option is useful if the redirect references the same object, changing only the protocol or host name, while the path and name of the requested object remains the same. This setting is useful when addressing the trailing slash redirect special case issue previously discussed.</li><li>Choose <strong>Nodes</strong> to rewrite redirects when the redirect URI contains a node IP address instead of a host name, and you want the system to change it to the virtual server address.</li><li>Choose <strong>All</strong> to rewrite all HTTP 301, 302, 303, 305, or 307 redirects to HTTPS, whether or not they match the virtual server.</li><li>Choose <strong>None </strong>to disable HTTP rewrites.</li></ul>
+</li><li>Select <strong>Finished</strong>.
+<p><span class="note"><strong>Note</strong>: If you created a new profile, you must now associate it with the virtual server. If you modified an existing profile, you can skip the remaining steps.</span></p>
+</li><li>Go to <strong>Local Traffic </strong>&gt; <strong>Virtual Servers</strong>.</li><li>Select the virtual server for which redirect URLs should be rewritten.</li><li>Under <strong>Configuration</strong>, for <strong>HTTP profile</strong>, select the new HTTP profile.</li><li>Select <strong>Update</strong>.</li></ol>
+<p><span class="subsectiontitle">Configuring HTTP rewrites using tmsh </span></p>
+<p>The following procedure enables HTTP re-writes using the TMOS Shell <strong>(tmsh)</strong>.</p>
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+<p><span class="note"><strong>Note</strong>: If you created a new HTTP profile, you must now associate it with the virtual server. If you modified an existing profile already associated with a virtual server, you can skip the next step.</span></p>
+<ol><li>Log in to <strong>tmsh</strong> by entering the following command:</li><li>
+<p><span class="code">tmsh</span></p>
+</li><li>The following command syntax creates a new HTTP profile with <strong>redirect-rewrite </strong>turned on:
+<p><span class="code">tmsh create /ltm profile http &lt;profile_name&gt; defaults-from http redirect-rewrite &lt;rewrite_type&gt;</span></p>
+In the previous command syntax, note the following:
+<ul><li><strong>&lt;profile_name&gt;</strong> is the name of the new HTTP profile you want to create.</li><li><strong>&lt;rewrite_type&gt;</strong> is one of the following rewrite types depending on your configuration:
+<ul><li>Choose <strong>Matching</strong> to rewrite redirects when the path and query URI components of the request and the redirect are identical (except for the trailing slash). This option is useful if the redirect references the same object, changing only the protocol or host name, while the path and name of the requested object remains the same. This setting is useful when addressing the trailing slash redirect special case issue previously discussed.</li><li>Choose <strong>Nodes</strong> to rewrite redirects when the redirect URI contains a node IP address instead of a host name, and you want the system to change it to the virtual server address.</li><li>Choose <strong>All</strong> to rewrite all HTTP 301, 302, 303, 305, or 307 redirects to HTTPS, whether or not they match the virtual server.</li><li>Choose <strong>None </strong>to disable HTTP rewrites.</li></ul>
+</li></ul>
+</li><li>To modify an existing http profile, use the following command syntax:
+<p><span class="code">modify /ltm profile http &lt;existing_profile_name&gt; redirect-rewrite &lt;rewrite_type&gt;</span></p>
+In the previous command syntax, note the following:
+<ul><li><strong>&lt;existing_profile_name&gt;</strong> is the name of the existing HTTP profile you want to modify.</li><li><strong>&lt;rewrite_type&gt; </strong>is one of the rewrite types listed in step 2.</li></ul>
+</li><li>To associate an http profile with a virtual server, use the following command syntax:
+<p><span class="code">modify /ltm virtual &lt;virtual_server&gt; profiles add { &lt;http_profile&gt; }</span></p>
+In the previous command syntax, note the following:
+<ul><li><strong>&lt;virtual_server&gt; </strong>is the name of the virtual server you want to modify.</li><li><strong>&lt;http_profile&gt;</strong> is the name of the newly created HTTP profile you want to associate with this virtual server.</li></ul>
+</li><li>Save the change by entering the following command:
+<p><span class="code">save /sys config</span></p>
+</li></ol>
+</article>
+</body>
+</html>

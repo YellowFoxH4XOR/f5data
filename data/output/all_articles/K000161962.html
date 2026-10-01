@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161962: BIG-IP HA Pair Enters Active-Active State Due to Devices Not Being Added to the Sync-Failover Device Group</title>
+<meta name="description" content="Support Solution: BIG-IP HA Pair Enters Active-Active State Due to Devices Not Being Added to the Sync-Failover Device Group — 010c006d:5: Leaving Offline for Active for dbvar not redundant.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161962">
+</head>
+<body>
+<header>
+<h1>K000161962: BIG-IP HA Pair Enters Active-Active State Due to Devices Not Being Added to the Sync-Failover Device Group</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-29</dd>
+<dt>Updated</dt><dd>2026-06-29</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161962">https://my.f5.com/manage/s/article/K000161962</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Two BIG-IP LTM devices enter an unexpected Active-Active state, resulting in loss of high availability failover functionality. Both devices announce themselves as Active and standalone. The following log message is observed on the device that was previously in Standby:</p>
+<p>010c006d:5: Leaving Offline for Active for dbvar not redundant.</p>
+<p><br>This message indicates that the device does not detect a redundant failover peer and therefore transitions itself to Active as a standalone unit. The result is a split-brain condition where both devices are simultaneously Active, each processing traffic independently with no failover coordination between them.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>Two device groups configured on the system</li><li>One device group of type sync-only, with both devices added and network-failover disabled</li><li>One device group of type sync-failover, with no devices added</li><li>Network failover not enabled on either device</li><li>Device trust broken or not properly established</li></ul>
+<h2>Cause</h2>
+<p>The root cause is a device group misconfiguration. Both devices are added only to a sync-only device group, which does not support failover. The sync-failover device group, which is required for Active-Standby failover to function, has no devices added to it.</p>
+<p>When a BIG-IP device is not a member of any sync-failover device group, the sod daemon cannot detect a redundant failover peer. When the device is released from an offline state or comes online, sod evaluates whether a redundant peer exists. Finding none, it logs the message shown above and transitions the device to Active as a standalone unit. This happens independently on both devices, resulting in both becoming Active simultaneously.</p>
+<p>The underlying configuration that produces this behavior is as follows.</p>
+<p>A sync-only device group containing both devices but not supporting failover:</p>
+<p>cm device-group /Common/device_trust_group {<br>    auto-sync enabled<br>    devices {<br>        /Common/&lt;device-1-hostname&gt; { }<br>        /Common/&lt;device-2-hostname&gt; { }<br>    }<br>    hidden true<br>    network-failover disabled<br>}<br>A sync-failover device group that supports failover but has no devices added to it:</p>
+<p>cm device-group /Common/&lt;sync-failover-group-name&gt; {<br>    auto-sync enabled<br>    type sync-failover<br>}<br>Because no devices are members of the sync-failover group, failover negotiation between the two devices is never possible. Only configuration synchronization is active. When either device is taken offline and released, or when it comes online and finds no peer in a sync-failover group, it declares itself Active as a standalone unit.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>To restore proper Active-Standby failover functionality, perform the following steps.</p>
+<p>Step 1. Add both devices to the sync-failover device group. Both devices must be members of the same sync-failover group for failover to function.</p>
+<p>tmsh modify cm device-group /Common/&lt;sync-failover-group-name&gt; devices add { /Common/&lt;device-1-hostname&gt; /Common/&lt;device-2-hostname&gt; }</p>
+<p>Step 2. Enable network failover on the sync-failover device group. Network failover allows the devices to monitor each other over the network and trigger failover when a peer becomes unreachable.</p>
+<p>tmsh modify cm device-group /Common/&lt;sync-failover-group-name&gt; network-failover enabled</p>
+<p>Step 3. Configure the ConfigSync IP address on each device. This is the self-IP address used for configuration synchronization between the devices.</p>
+<p>tmsh modify cm device /Common/&lt;device-hostname&gt; configsync-ip &lt;self-ip-address&gt;</p>
+<p>Step 4. Configure the unicast failover addresses on each device. These are the addresses used for failover heartbeat communication.</p>
+<p>tmsh modify cm device /Common/&lt;device-hostname&gt; unicast-address {{ ip &lt;self-ip-address&gt; port 1026 }}</p>
+<p>Step 5. Save the configuration on both devices.</p>
+<p>tmsh save sys config</p>
+<p>Step 6. Perform an initial configuration synchronization from the device with the correct configuration to the peer.</p>
+<p>tmsh run cm config-sync to-group /Common/&lt;sync-failover-group-name&gt;</p>
+<p><br>Step 7. Verify that both devices are now in the sync-failover group and that one device shows Active and the other shows Standby.</p>
+<p>tmsh show cm sync-status<br>tmsh show cm failover-status</p>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

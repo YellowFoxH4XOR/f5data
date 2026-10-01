@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K30122954: GTM / DNS: Understanding Static Persist Load Balancing Method for GSLB pools</title>
+<meta name="description" content="Support Solution: GTM / DNS: Understanding Static Persist Load Balancing Method for GSLB pools — Understanding the Static Persist load balancing method for GSLB pools.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K30122954">
+</head>
+<body>
+<header>
+<h1>K30122954: GTM / DNS: Understanding Static Persist Load Balancing Method for GSLB pools</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-02-18</dd>
+<dt>Updated</dt><dd>2023-02-07</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 15.X.X, 12.0.0, 12.1.0, 12.1.1, 12.1.2, 12.1.3, 12.1.4, 12.1.5, 12.1.6, 13.0.0, 13.0.1, 13.1.0, 13.1.1, 13.1.3, 13.1.4, 13.1.5, 14.0.0, 14.0.1, 14.1.0, 14.1.2, 14.1.3, 14.1.4, 14.1.5, 15.0.0, 15.0.1, 15.1.0, 15.1.1, 15.1.2, 15.1.3, 15.1.4, 15.1.5, 15.1.6, 15.1.7, 15.1.8, 16.0.0, 16.0.1, 16.1.0, 16.1.1, 16.1.2, 16.1.3, 12.0.X, 12.1.X, 13.0.X, 13.1.X, 14.0.X, 14.1.X, 15.0.X, 15.1.X, 16.0.X, 16.1.X, 12.X.X, 13.X.X, 14.X.X, 16.X.X</li><li>BIG-IP GTM: 11.3.0, 11.4.0, 11.4.1, 11.5.0, 11.5.1, 11.5.2, 11.5.3, 11.5.4, 11.5.5, 11.5.6, 11.5.7, 11.5.8, 11.5.9, 11.5.10, 11.6.0, 11.6.1, 11.6.2, 11.6.3, 11.6.4, 11.6.5, 11.0.0, 11.1.0, 11.2.0, 11.2.1, 11.0.X, 11.1.X, 11.2.X, 11.3.X, 11.4.X, 11.5.X, 11.6.X, 11.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K30122954">https://my.f5.com/manage/s/article/K30122954</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><span class="sectiontitle">Description</span></h2>
+
+<p>Understanding the <strong>Static Persist</strong> load balancing method for GSLB pools.</p>
+
+<h2><span class="sectiontitle">Environment</span></h2>
+
+<p>GTM (DNS) Pool members are configured to use the Static Persist load balancing method.</p>
+
+<h2>Cause</h2>
+The Static Persist load balancing method for GSLB pools is designed to consistently return the same pool member (virtual server) in replies to DNS queries from the same LDNS address or range (using CIDR masking) of source addresses.<br><br>There are two global settings that control which part of the LDNS address the tmm should regard as important. By default, these are 32 for IPv4 and 128 for IPv6. For example, the setting can be adjusted so that all clients in the same /16, /24, or /28 would be treated the same way. Any value in the range of 1-32 can be entered for IPv4 and 1-128 for IPv6.<br><br>In the GUI, these settings are available as:​​​
+<ul><li>DNS  ››  Settings  ››  GSLB  ››  Load Balancing
+	<ul><li>Load Balancing Defaults
+		<ul><li>Static Persist CIDR (IPv4): 32</li><li>Static Persist CIDR (IPv6): 128</li></ul>
+		</li></ul>
+	</li></ul>
+In tmsh, they are available as:
+
+<pre style="margin-left: 40px;">
+gtm global-settings general {
+    static-persist-cidr-ipv4 32
+    static-persist-cidr-ipv6 128
+}
+</pre>
+A GSLB pool can be configured to use &quot;Static Persist&quot; as the load balancing method:<br> 
+<h3>GUI</h3>
+
+<ul><li>DNS  ››  GSLB  ››  Pools  ››  &lt;Pool&gt;  ››  &quot;Members&quot; tab
+	<ul><li>Load Balancing
+		<ul><li>Load Balancing Method: Preferred: Static Persist</li></ul>
+		</li></ul>
+	</li></ul>
+
+<h3>TMSH</h3>
+
+<pre style="margin-left: 40px;">
+gtm pool a example_pool {
+    load-balancing-mode static-persistence
+}
+</pre>
+
+<h2>Recommended Actions</h2>
+Configure the &quot;Static Persist&quot; load balancing method for GSLB pools as advised in the article.
+
+<h2>Additional Information</h2>
+
+<p>When a GSLB pool is configured to use the Static Persist load balancing method, the selection behavior is as follows.</p>
+
+<h3>IPv4 LDNS addresses</h3>
+
+<ol><li>Take the source IP address of the DNS request (the LDNS IP) and shift it right to leave the configured number of bits from the CIDR length.  By default, this is 32 for IPv4, which leaves the IP address unchanged. If CIDR length is set to 24, the address would be shifted right by 8 bits, effectively throwing away the last byte. In other words, for the purpose of LB selection, an LDNS IP of 10.1.2.3 with a CIDR length of 24 would be treated as 0.10.1.2.</li><li>Divide the IP address (32-bit integer) by the total number of pool members (regardless of whether they&#39;re up or down), take the remainder, and add 1. This gives a number &#39;n&#39; between 1 and the number of pool members.</li><li>If the n<sup><span style="font-size: 10.5pt;"><span style="font-family: &quot;游明朝&quot;,serif;">th</span></span></sup> pool member is up and available, select it. Otherwise, increment to the next pool member and try again. If no pool members are available, return LB failure.</li></ol>
+
+<p>Note that if a new member is added to an existing pool, or an existing member is removed, the result of the calculation will change. Customers may wish to consider using Wide IP persistence if it is important that a client continues to receive the same DNS reply in that situation.</p>
+
+<p>Assuming an LDNS IPv4 address of 10.0.0.128, with a 32-bit IPv4 CIDR length, and the 5 pool members like below:</p>
+
+<pre>
+gtm pool a gtm_pool {
+    load-balancing-mode static-persistence
+    members {
+        generic:10.0.0.1:80 {
+            member-order 0
+        }
+        generic:10.0.0.2:80 {
+            member-order 1
+        }
+        generic:10.0.0.3:80 {
+            member-order 2
+        }
+        generic:10.0.0.4:80 {
+            member-order 3
+        }
+        generic:10.0.0.5:80 {
+            member-order 4
+        }
+    }
+}</pre>
+
+<p><br>The 32-bit IPv4 address 10.0.0.128 is equivalent to a 32-bit integer:</p>
+
+<pre>
+  167772288</pre>
+
+<p>Then, apply the following calculation to these values:</p>
+
+<ol><li>No shift-right is needed, as the mask is 32 bits</li><li>Divide 167772288 by 5 and take the remainder (3)</li><li>Add one to the result (4)</li><li>Return the 4th pool-member (10.0.0.4)</li></ol>
+ 
+
+<h4>Static Persist CIDR (IPv4): 32</h4>
+
+<p>LDNS: 10.0.0.128 -- pool-member: 10.0.0.4<br>LDNS: 10.0.0.129 -- pool-member: 10.0.0.5<br>LDNS: 10.0.0.130 -- pool-member: 10.0.0.1<br>LDNS: 10.0.0.131 -- pool-member: 10.0.0.2<br>LDNS: 10.0.0.132 -- pool-member: 10.0.0.3<br>LDNS: 10.0.0.133 -- pool-member: 10.0.0.4<br>LDNS: 10.0.0.134 -- pool-member: 10.0.0.5<br>LDNS: 10.0.0.135 -- pool-member: 10.0.0.1<br>LDNS: 10.0.0.136 -- pool-member: 10.0.0.2<br>LDNS: 10.0.0.137 -- pool-member: 10.0.0.3</p>
+
+<h4>Static Persist CIDR (IPv4): 31</h4>
+
+<p>LDNS: 10.0.0.128 -- pool-member: 10.0.0.5<br>LDNS: 10.0.0.129 -- pool-member: 10.0.0.5<br>LDNS: 10.0.0.130 -- pool-member: 10.0.0.1<br>LDNS: 10.0.0.131 -- pool-member: 10.0.0.1<br>LDNS: 10.0.0.132 -- pool-member: 10.0.0.2<br>LDNS: 10.0.0.133 -- pool-member: 10.0.0.2<br>LDNS: 10.0.0.134 -- pool-member: 10.0.0.3<br>LDNS: 10.0.0.135 -- pool-member: 10.0.0.3<br>LDNS: 10.0.0.136 -- pool-member: 10.0.0.4<br>LDNS: 10.0.0.137 -- pool-member: 10.0.0.4</p>
+
+<h4>Static Persist CIDR (IPv4): 24</h4>
+
+<p>LDNS: 10.0.0.128 -- pool-member: 10.0.0.1<br>LDNS: 10.0.0.129 -- pool-member: 10.0.0.1<br>LDNS: 10.0.0.130 -- pool-member: 10.0.0.1<br>LDNS: 10.0.0.131 -- pool-member: 10.0.0.1<br>LDNS: 10.0.0.132 -- pool-member: 10.0.0.1<br>LDNS: 10.0.0.133 -- pool-member: 10.0.0.1<br>LDNS: 10.0.0.134 -- pool-member: 10.0.0.1<br>LDNS: 10.0.0.135 -- pool-member: 10.0.0.1<br>LDNS: 10.0.0.136 -- pool-member: 10.0.0.1<br>LDNS: 10.0.0.137 -- pool-member: 10.0.0.1</p>
+
+<h4>Static Persist CIDR (IPv4): 24 &amp; Pool Member 10.0.0.1 disabled</h4>
+In this case, LB selection rolls over to the next available member.
+
+<p>LDNS: 10.0.0.128 -- pool-member: 10.0.0.2<br>LDNS: 10.0.0.129 -- pool-member: 10.0.0.2<br>LDNS: 10.0.0.130 -- pool-member: 10.0.0.2<br>LDNS: 10.0.0.131 -- pool-member: 10.0.0.2<br>LDNS: 10.0.0.132 -- pool-member: 10.0.0.2<br>LDNS: 10.0.0.133 -- pool-member: 10.0.0.2<br>LDNS: 10.0.0.134 -- pool-member: 10.0.0.2<br>LDNS: 10.0.0.135 -- pool-member: 10.0.0.2<br>LDNS: 10.0.0.136 -- pool-member: 10.0.0.2<br>LDNS: 10.0.0.137 -- pool-member: 10.0.0.2</p>
+
+<h3>IPv6 LDNS addresses</h3>
+
+<div>For IPv6 addresses, the calculation is slightly different to avoid dividing a 128-bit number, which is computationally expensive.</div>
+
+<ol><li>Take the source IP address of the DNS request (the LDNS IP) and shift it right to leave the configured number of bits from the CIDR length. By default, this is 128 for IPv6, which leaves the IP address unchanged. If CIDR length is set to 112, the address would be shifted right by 16 bits. For example, for the purpose of LB selection, an LDNS IP of 2001:DB8::f5:1 with a CIDR length of 112 would be treated as 0:2001:DB8::f5.</li><li>Split the 128-bit into four 32-bit values, and XOR these values together.</li><li>Divide the resulted 32-bit value by the total number of pool members (regardless of whether they&#39;re up or down), take the remainder, and add 1. This gives a number &#39;n&#39; between 1 and the number of pool members.</li><li>If the n<sup><span style="font-size: 10.5pt;"><span style="font-family: &quot;游明朝&quot;,serif;">th</span></span></sup> pool member is up and available, select it. Otherwise, increment to the next pool member and try again. If no pool members are available, return LB failure.</li></ol>
+
+<p>For example, if static-persist-cidr-ipv6 is 48, then the mask will be applied to the 2nd 32-bit word (the one containing bits 32-63), and an XOR is then performed between that value and the first 32-bit word (bits 0-31). Similarly, if the cidr length was 120 bits, the mask would be applied to the 4th 32-bit value, and the result would be xor&#39;d against the 3rd 32-bit word, and then again against the 2nd, then the 1st. This ensures that the entropy of the full 128-bit IPv6 address is retained, without the performance hit of performing 128-bit division.<br><br>Assuming an LDNS IPv6 address of 2001:0db8::1:80, with a 128-bit IPv6 CIDR length, and the same 5 pool members as above:<br><br>The 128-bit IPv6 address 2001:0db8::1:80 is equivalent to four 32-bit integers:</p>
+
+<pre>
+  0x20010db8 0x00000000 0x00000000 0x00010080</pre>
+
+<p>Then, apply the following calculation to these values:</p>
+
+<ol><li>No shift-right is needed, as the mask is 128 bits</li><li>XOR the right-most 32-bits with the 32-bits immediately before it (0x00010080 xor 0x00000000 = 0x00010080)</li><li>XOR the result with the 32-bits immediately before it (0x00010080 xor 0x00000000 = 0x00010080)</li><li>XOR the result with the 32-bits immediately before it (0x00010080 xor 0x20010db8 = 0x20000D38)</li><li>Divide 0x20000D38 by 5 and take the remainder (1)</li><li>Add one to the result (2)</li><li>Return the 2nd pool-member (10.0.0.2)</li></ol>
+ 
+
+<h4>Static Persist CIDR (IPv6): 128</h4>
+
+<p>LDNS: 2001:0db8::1:80 -- pool-member: 10.0.0.2<br>LDNS: 2001:0db8::1:81 -- pool-member: 10.0.0.3<br>LDNS: 2001:0db8::1:82 -- pool-member: 10.0.0.4<br>LDNS: 2001:0db8::1:83 -- pool-member: 10.0.0.5<br>LDNS: 2001:0db8::1:84 -- pool-member: 10.0.0.1<br>LDNS: 2001:0db8::1:85 -- pool-member: 10.0.0.2<br>LDNS: 2001:0db8::1:86 -- pool-member: 10.0.0.3<br>LDNS: 2001:0db8::1:87 -- pool-member: 10.0.0.4<br>LDNS: 2001:0db8::1:88 -- pool-member: 10.0.0.4<br>LDNS: 2001:0db8::1:89 -- pool-member: 10.0.0.5</p>
+
+<h4>Static Persist CIDR (IPv6): 127</h4>
+
+<p>LDNS: 2001:0db8::1:80 -- pool-member: 10.0.0.3<br>LDNS: 2001:0db8::1:81 -- pool-member: 10.0.0.3<br>LDNS: 2001:0db8::1:82 -- pool-member: 10.0.0.4<br>LDNS: 2001:0db8::1:83 -- pool-member: 10.0.0.4<br>LDNS: 2001:0db8::1:84 -- pool-member: 10.0.0.5<br>LDNS: 2001:0db8::1:85 -- pool-member: 10.0.0.5<br>LDNS: 2001:0db8::1:86 -- pool-member: 10.0.0.1<br>LDNS: 2001:0db8::1:87 -- pool-member: 10.0.0.1<br>LDNS: 2001:0db8::1:88 -- pool-member: 10.0.0.2<br>LDNS: 2001:0db8::1:89 -- pool-member: 10.0.0.2</p>
+
+<h4>Static Persist CIDR (IPv6): 112</h4>
+
+<p>LDNS: 2001:0db8::1:80 -- pool-member: 10.0.0.2<br>LDNS: 2001:0db8::1:81 -- pool-member: 10.0.0.2<br>LDNS: 2001:0db8::1:82 -- pool-member: 10.0.0.2<br>LDNS: 2001:0db8::1:83 -- pool-member: 10.0.0.2<br>LDNS: 2001:0db8::1:84 -- pool-member: 10.0.0.2<br>LDNS: 2001:0db8::1:85 -- pool-member: 10.0.0.2<br>LDNS: 2001:0db8::1:86 -- pool-member: 10.0.0.2<br>LDNS: 2001:0db8::1:87 -- pool-member: 10.0.0.2<br>LDNS: 2001:0db8::1:88 -- pool-member: 10.0.0.2<br>LDNS: 2001:0db8::1:89 -- pool-member: 10.0.0.2</p>
+</article>
+</body>
+</html>

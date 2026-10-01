@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162933: NGINX Plus Fails to Start When Binding to a Keepalived Virtual IP Address</title>
+<meta name="description" content="Support Solution: NGINX Plus Fails to Start When Binding to a Keepalived Virtual IP Address — NGINX Plus fails to start when its configuration binds a listener to a keepalived virtual IP (VIP) that is not currently assigned to a local interface.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162933">
+</head>
+<body>
+<header>
+<h1>K000162933: NGINX Plus Fails to Start When Binding to a Keepalived Virtual IP Address</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-14</dd>
+<dt>Updated</dt><dd>2026-08-14</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Plus</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162933">https://my.f5.com/manage/s/article/K000162933</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>NGINX Plus fails to start when its configuration binds a listener to a keepalived virtual IP (VIP) that is not currently assigned to a local interface.</p>
+<p>The following errors may be logged:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">nginx: [emerg] bind() to HA_VIP_ADDRESS:1812 failed (99: Cannot assign requested address)</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">nginx.service: Control process exited, code=exited, status=1/FAILURE</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">nginx.service: Failed with result &#39;exit-code&#39;</span></p>
+<h2>Environment</h2>
+<ul><li>NGINX Plus</li><li>Linux system using systemd</li><li>Keepalived and VRRP configured in an active-passive HA pair</li><li>NGINX Plus configured to listen directly on the HA VIP: <br><span style="font-family: &#39;courier new&#39;, courier, monospace;">listen HA_VIP_ADDRESS:1812 udp;<br></span></li><li>The HA VIP is assigned only after the node becomes the VRRP MASTER.</li><li>IPv4 nonlocal binding is disabled: <br><span style="font-family: &#39;courier new&#39;, courier, monospace;">net.ipv4.ip_nonlocal_bind = 0</span></li><li>A custom keepalived configuration may be used instead of the NGINX-provided <span style="font-family: &#39;courier new&#39;, courier, monospace;">nginx-ha-keepalived</span> package and <span style="font-family: &#39;courier new&#39;, courier, monospace;">nginx-ha-setup</span> utility.</li></ul>
+<h2>Cause</h2>
+<p>The issue is caused by a startup-order dependency between NGINX Plus and keepalived:</p>
+<ol><li>NGINX Plus starts during system initialization.</li><li>Keepalived initially places the node in the BACKUP state.</li><li>The VRRP election has not completed, so the VIP is not present on the local interface.</li><li>Because <span style="font-family: &#39;courier new&#39;, courier, monospace;">net.ipv4.ip_nonlocal_bind</span> is set to <span style="font-family: &#39;courier new&#39;, courier, monospace;">0</span>, NGINX Plus cannot bind to the unassigned VIP.</li><li>NGINX Plus exits with error <span style="font-family: &#39;courier new&#39;, courier, monospace;">99: Cannot assign requested address</span>.</li><li>Keepalived later becomes MASTER and assigns the VIP, but NGINX Plus does not automatically restart.</li></ol>
+<p>A custom or incomplete HA configuration can expose this startup race. Checking only the network-interface state does not necessarily coordinate NGINX Plus startup with VIP ownership.</p>
+<h2>Recommended Actions</h2>
+<p><strong>Option 1: Implement the NGINX Plus HA solution</strong></p>
+<p>Use this approach when NGINX Plus must continue listening directly on the HA VIP.</p>
+<ol><li>Install the NGINX-provided <span style="font-family: &#39;courier new&#39;, courier, monospace;">nginx-ha-keepalived</span> package on both nodes.</li><li>Run the <span style="font-family: &#39;courier new&#39;, courier, monospace;">nginx-ha-setup</span> utility as the root user on both nodes.</li><li>Configure the active-passive pair according to the NGINX Plus HA procedure.</li><li>Verify that the generated keepalived configuration includes:
+<ul><li>NGINX Plus health-check scripts.</li><li>The manual-failover script, where required.</li><li>The NGINX HA notification script.</li><li>Correct unicast source and peer addresses.</li><li>Correct VIP configuration.</li></ul>
+</li><li>If the deployment requires a second VRRP instance, add and validate that instance manually after running <span style="font-family: &#39;courier new&#39;, courier, monospace;">nginx-ha-setup</span>. The setup utility does not automatically support multiple VRRP instances.</li><li>Test reboot, failover, VIP assignment, and NGINX Plus service recovery during a maintenance window.</li></ol>
+<p><strong>Option 2: Permit binding to nonlocal IPv4 addresses</strong></p>
+<p>If the NGINX Plus configuration must continue to reference the VIP directly, enable nonlocal IPv4 binding on both HA nodes:</p>
+<p><span style="background-color: #f1f1f1;">echo &quot;net.ipv4.ip_nonlocal_bind=1&quot; | sudo tee -a /etc/sysctl.conf</span></p>
+<p><span style="background-color: #f1f1f1;">sudo sysctl -p</span></p>
+<p>Verify the setting:</p>
+<p><span style="background-color: #f1f1f1;">sysctl -a | grep nonlocal_bind</span></p>
+<p>The expected result is:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">net.ipv4.ip_nonlocal_bind = 1</span></p>
+<p><strong>Option 3: Listen on all local interfaces</strong></p>
+<p>As an alternative, change VIP-specific NGINX Plus listeners to listen on all local interfaces:</p>
+<p><code>listen *:1812 udp;<br></code></p>
+<p>For additional VIP-specific listeners, replace the VIP address in the same manner:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">listen *:&lt;PORT&gt; udp;<br></span></p>
+<p>After modifying the configuration:</p>
+<ol><li>Validate the NGINX Plus configuration.</li><li>Reload or restart NGINX Plus according to the applicable change procedure.</li><li>Confirm that the listener is active on the intended port.</li><li>Verify that firewall and network access controls restrict traffic to the intended interfaces and sources.</li><li>Test failover and reboot behavior on both HA nodes.</li></ol>
+<h2>Additional Information</h2>
+<ul><li>Keepalived and VRRP may require several seconds after boot to complete an election and assign the VIP.</li><li>NGINX Plus may start before the VIP is available unless the HA configuration accounts for this startup sequence.</li><li>Enabling <span style="font-family: &#39;courier new&#39;, courier, monospace;">net.ipv4.ip_nonlocal_bind</span> allows NGINX Plus to bind to an IPv4 address that is not currently assigned to a local interface.</li><li>Using <span style="font-family: &#39;courier new&#39;, courier, monospace;">listen *:&lt;port&gt;</span> avoids dependence on the VIP being present during NGINX Plus startup, but causes NGINX Plus to listen on all applicable local interfaces. Firewall and access-control rules should therefore be reviewed.</li><li>A maintenance window is recommended when implementing or migrating HA configurations.</li><li>If multiple VRRP instances are required, each instance must use the appropriate interface, peer addresses, VIP, and unique VRRP router ID.</li></ul>
+</article>
+</body>
+</html>

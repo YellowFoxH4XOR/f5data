@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K01348844: How to log remotely with SSL Orchestrator since it logs locally by default</title>
+<meta name="description" content="Support Solution: How to log remotely with SSL Orchestrator since it logs locally by default — When you create a topology the iRules that are built as a result log locally by default. In order to change this alterations to these iRules will be needed.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K01348844">
+</head>
+<body>
+<header>
+<h1>K01348844: How to log remotely with SSL Orchestrator since it logs locally by default</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-03-02</dd>
+<dt>Updated</dt><dd>2026-08-10</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP SSL Orchestrator: 14.X.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 15.1.1, 15.1.0, 15.X.X, 14.1.4, 14.1.2, 14.1.0, 14.0.0, 15.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K01348844">https://my.f5.com/manage/s/article/K01348844</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>When you create a topology the iRules that are built as a result log locally by default. In order to change this alterations to these iRules will be needed.</p>
+<span class="sectiontitle">Environment</span>
+
+<ul><li>You have created a topology and need to log remotely.</li><li>SSL Profiles, Virtual servers, pool members, HSL logging, Bypass IPs/URLs</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>This could be due to the volume of logging being created or a local decision to do so.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>High Speed Logging is the best way to accomplish this. In order to do this the changes will have to be made manually to the iRule.</p>
+
+<ol><li>For example to send logging for a Bypass rule in the topology there are certain lines that would need to be added and/or modified.<br>	<br>	Here is an example of a typical Bypass iRule created for a common topology.</li></ol>
+
+<pre style="margin-left: 40px;">
+ltm rule /Common/Topology_Select_Prod {
+    when RULE_INIT {
+    ## User-defined: array list of to-match categories for alternate egress
+    set static::ALT_PATH_URLS {
+        /Common/ZScaler_URL_Bypass_List
+    }
+
+    ## User-defined: data group of destination subnet to-match
+    set static::ALT_PATH_SUBNETS &quot;wccp_bypass_subnets&quot;
+
+    ## User-defined: name of alternate path topology
+    set static::ALT_TOPOLOGY &quot;/Common/sslo_Zscaler_Bypass_Prod.app/sslo_Zscaler_Bypass_Prod-in-t-4&quot;
+
+    ## User-defined: name of primary path topology
+    set static::PRIMARY_TOPOLOGY &quot;/Common/sslo_Zscaler_Path_Prod.app/sslo_Zscaler_Path_Prod-in-t-4&quot;
+}
+when CLIENT_ACCEPTED {
+
+    if {[class match -- [IP::local_addr] equals $static::ALT_PATH_SUBNETS ]} {
+        virtual $static::ALT_TOPOLOGY
+        log local0.info &quot;F5_SSLO_Log Topology=Zscaler_Bypass_Prod Proxied=No Path=Zscaler_Bypass F5_Rule=ZS_Bypassed_subnets src_ip=[IP::remote_addr] dest_ip=[IP::local_addr] dest_port=[TCP::local_port]&quot;
+        ## disable remaining event processing
+        event CLIENT_DATA disable
+        event CLIENTSSL_CLIENTHELLO disable
+    } else {
+        virtual $static::PRIMARY_TOPOLOGY
+        TCP::collect
+    }
+}
+when CLIENT_DATA {
+    if { [regexp {^([A-Z]+) (?:/|https?://|[A-Za-z\d-]{1,63}[.]|\[[a-fA-F\d:]+\]|(?:[*]\x20)) } [TCP::payload] junk method] &amp;&amp; ([lsearch -exact -sorted {CONNECT DELETE GET HEAD LOCK OPTIONS PATCH POST PROPFIND PUT TRACE UNLOCK} $method] &gt;= 0 )} {
+        set host_hdr [findstr [TCP::payload] &quot;Host: &quot; 6 &quot;\r\n&quot;]
+        set res [CATEGORY::lookup &quot;http://${host_hdr}/&quot; custom]
+        if { [lsearch -exact $static::ALT_PATH_URLS ${res}] &gt;= 0 } {
+            virtual $static::ALT_TOPOLOGY
+            log local0.info &quot;F5_SSLO_Log Topology=Zscaler_Bypass_Prod Proxied=No Path=Zscaler_Bypass F5_Rule=ZS_Bypassed_URLs cat=${res} url=http://${host_hdr}/ src_ip=[IP::remote_addr] dest_ip=[IP::local_addr] dest_port=[TCP::local_port]&quot;
+            ## disable remaining event processing
+            event CLIENTSSL_CLIENTHELLO disable
+        } else { log local0.info &quot;F5_SSLO_Log Topology=Zscaler_Path_Prod Proxied=Yes Path=Zscaler F5_Rule=None url=http://${host_hdr}/ src_ip=[IP::remote_addr] dest_ip=[IP::local_addr] dest_port=[TCP::local_port]&quot;}
+    }
+    TCP::release
+}
+when CLIENTSSL_CLIENTHELLO {
+    if { [SSL::extensions exists -type 0] } {
+        set tls_servername [string range [SSL::extensions -type 0] 9 [string length [SSL::extensions -type 0]]]
+        if { [info exists tls_servername] } {
+            set res [CATEGORY::lookup &quot;https://${tls_servername}/&quot; custom]
+            if { [lsearch -exact $static::ALT_PATH_URLS ${res}] &gt;= 0 } {
+                log local0.info &quot;F5_SSLO_Log Topology=Zscaler_Bypass_Prod Proxied=No Path=Direct_to_Internet F5_Rule=ZS_Bypassed_URLs cat=${res} url=https://${tls_servername}/ src_ip=[IP::remote_addr] dest_ip=[IP::local_addr] dest_port=[TCP::local_port]&quot;
+                virtual $static::ALT_TOPOLOGY
+            } else { log local0.info &quot;F5_SSLO_Log Topology=Zscaler_Path_Prod Proxied=Yes Path=Zscaler F5_Rule=None url=https://${tls_servername}/ src_ip=[IP::remote_addr] dest_ip=[IP::local_addr] dest_port=[TCP::local_port]&quot; }
+        }
+    } else { log local0.info &quot;F5_SSLO_Log Topology=Zscaler_Path_Prod Proxied=Yes Path=ZScaler F5_Rule=None/No_SNI url=no_SNI src_ip=[IP::remote_addr] dest_ip=[IP::local_addr] dest_port=[TCP::local_port]&quot; }
+}
+}
+
+</pre>
+
+<ul><li>Here is the same iRule with the changes in the syntax highlighted below:</li></ul>
+
+<pre style="margin-left: 40px;">
+when RULE_INIT {
+  ## User-defined: array list of to-match categories for alternate egress
+  set static::ALT_PATH_URLS {
+    /Common/ZScaler_URL_Bypass_List
+  }
+
+  ## User-defined: data group of destination subnet to-match
+  set static::ALT_PATH_SUBNETS &quot;wccp_bypass_subnets&quot;
+
+  ## User-defined: name of alternate path topology
+  set static::ALT_TOPOLOGY &quot;/Common/sslo_Zscaler_Bypass_Prod.app/sslo_Zscaler_Bypass_Prod-in-t-4&quot;
+
+  ## User-defined: name of primary path topology
+  set static::PRIMARY_TOPOLOGY &quot;/Common/sslo_Zscaler_Path_Prod.app/sslo_Zscaler_Path_Prod-in-t-4&quot;
+
+  <span class="code"><strong>## User-defined: name of HSL logging Pool</strong></span>
+  <strong><span class="code">set hsl [HSL::open -proto UDP -pool Splunk]</span></strong>
+
+}
+when CLIENT_ACCEPTED {
+
+  if {[class match -- [IP::local_addr] equals $static::ALT_PATH_SUBNETS ]} {
+    virtual $static::ALT_TOPOLOGY
+    <span class="code"><strong>HSL::send $hsl</strong></span> &quot;F5_SSLO_Log Topology=Zscaler_Bypass_Prod Proxied=No Path=Zscaler_Bypass F5_Rule=ZS_Bypassed_subnets src_ip=[IP::remote_addr] dest_ip=[IP::local_addr] dest_port=[TCP::local_port]&quot;
+    ## disable remaining event processing
+    event CLIENT_DATA disable
+    event CLIENTSSL_CLIENTHELLO disable
+  } else {
+    virtual $static::PRIMARY_TOPOLOGY
+    TCP::collect
+  }
+}
+when CLIENT_DATA {
+  if { [regexp {^([A-Z]+) (?:/|https?://|[A-Za-z\d-]{1,63}[.]|\[[a-fA-F\d:]+\]|(?:[*]\x20)) } [TCP::payload] junk method] &amp;&amp; ([lsearch -exact -sorted {CONNECT DELETE GET HEAD LOCK OPTIONS PATCH POST PROPFIND PUT TRACE UNLOCK} $method] &gt;= 0 )} {
+    set host_hdr [findstr [TCP::payload] &quot;Host: &quot; 6 &quot;\r\n&quot;]
+    set res [CATEGORY::lookup &quot;http://${host_hdr}/&quot; custom]
+    if { [lsearch -exact $static::ALT_PATH_URLS ${res}] &gt;= 0 } {
+      virtual $static::ALT_TOPOLOGY
+      <span class="code"><strong>HSL::send $hsl</strong></span> &quot;F5_SSLO_Log Topology=Zscaler_Bypass_Prod Proxied=No Path=Zscaler_Bypass F5_Rule=ZS_Bypassed_URLs cat=${res} url=http://${host_hdr}/ src_ip=[IP::remote_addr] dest_ip=[IP::local_addr] dest_port=[TCP::local_port]&quot;
+      ## disable remaining event processing
+      event CLIENTSSL_CLIENTHELLO disable
+    } else { <span class="code"><strong>HSL::send $hsl</strong></span> &quot;F5_SSLO_Log Topology=Zscaler_Path_Prod Proxied=Yes Path=Zscaler F5_Rule=None url=http://${host_hdr}/ src_ip=[IP::remote_addr] dest_ip=[IP::local_addr] dest_port=[TCP::local_port]&quot;}
+  }
+  TCP::release
+}
+when CLIENTSSL_CLIENTHELLO {
+  if { [SSL::extensions exists -type 0] } {
+    set tls_servername [string range [SSL::extensions -type 0] 9 [string length [SSL::extensions -type 0]]]
+    if { [info exists tls_servername] } {
+      set res [CATEGORY::lookup &quot;https://${tls_servername}/&quot; custom]
+      if { [lsearch -exact $static::ALT_PATH_URLS ${res}] &gt;= 0 } {
+        <strong><span class="code">HSL::send $hsl</span></strong> &quot;F5_SSLO_Log Topology=Zscaler_Bypass_Prod Proxied=No Path=Direct_to_Internet F5_Rule=ZS_Bypassed_URLs cat=${res} url=https://${tls_servername}/ src_ip=[IP::remote_addr] dest_ip=[IP::local_addr] dest_port=[TCP::local_port]&quot;
+        virtual $static::ALT_TOPOLOGY
+      } else { <span class="code"><strong>HSL::send $hsl</strong></span> &quot;F5_SSLO_Log Topology=Zscaler_Path_Prod Proxied=Yes Path=Zscaler F5_Rule=None url=https://${tls_servername}/ src_ip=[IP::remote_addr] dest_ip=[IP::local_addr] dest_port=[TCP::local_port]&quot; }
+    }
+  } else {<span class="code"><strong>HSL::send $hsl</strong></span> &quot;F5_SSLO_Log Topology=Zscaler_Path_Prod Proxied=Yes Path=ZScaler F5_Rule=None/No_SNI url=no_SNI src_ip=[IP::remote_addr] dest_ip=[IP::local_addr] dest_port=[TCP::local_port]&quot; }
+}</pre>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>Ensure that all changes are tested before applying to a production environment.</p>
+</article>
+</body>
+</html>

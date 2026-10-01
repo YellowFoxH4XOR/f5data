@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000135464: Considerations when using FQDN pool members</title>
+<meta name="description" content="Support Solution: Considerations when using FQDN pool members — A pool may be created that includes static IP pool members and (fully-qualified domain name) FQDN nodes.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000135464">
+</head>
+<body>
+<header>
+<h1>K000135464: Considerations when using FQDN pool members</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-07-12</dd>
+<dt>Updated</dt><dd>2025-04-01</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.0.0, 15.0.X, 15.0.1, 17.X.X, 16.X.X, 15.X.X, 17.5.X, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000135464">https://my.f5.com/manage/s/article/K000135464</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>A pool may be created that includes static IP pool members and (fully-qualified domain name) FQDN nodes.</p>
+
+<p>Upon creating a new FQDN node, the BIG-IP system will automatically query its configured DNS resolver for both its A and AAAA records. It will collect IPv4 and IPv6 addresses that are recursively queried by the DNS resolver.</p>
+
+<p>For example, the following shows a query for www<strong>.</strong>f5<strong>.</strong>com retuns 2 IPv4 addresses and 2 IPv6 addresses.</p>
+
+<pre>
+<span style="font-family: Courier New,Courier,monospace;"># dig www<strong>.</strong>f5<strong>.</strong>com A</span>
+<span style="font-family: Courier New,Courier,monospace;">www<strong>.</strong>f5<strong>.</strong>com.       8    IN   CNAME  dwbfwz8xncgmg.cloudfront.net.</span>
+<span style="font-family: Courier New,Courier,monospace;">dwbfwz8xncgmg<strong>.</strong>cloudfront<strong>.</strong>net. 38 IN   A    108.156.91.78</span>
+<span style="font-family: Courier New,Courier,monospace;">dwbfwz8xncgmg<strong>.</strong>cloudfront<strong>.</strong>net. 38 IN   A    108.156.91.96
+dwbfwz8xncgmg<strong>.</strong>cloudfront<strong>.</strong>net. 48 IN   AAAA  2600:9000:2351:9200:14:232e:8a00:93a1
+dwbfwz8xncgmg<strong>.</strong>cloudfront<strong>.</strong>net. 48 IN   AAAA  2600:9000:2351:7c00:14:232e:8a00:93a1</span></pre>
+
+<p>The BIG-IP system will then proceed to automatically create nodes and pool members consisting of all the returned DNS A and AAAA IP address records. These are dynamically created and removed based on the DNS serevr response. These automatically created nodes and pool members are also referred to as <strong><em>ephemeral</em></strong> nodes or <strong><em>ephemeral</em></strong> pool members.</p>
+
+<p>For example, the following pool has two static pool members and one FQDN node.</p>
+
+<pre>
+<span style="font-family: Courier New,Courier,monospace;"># tmsh list ltm pool my_http_pool
+ltm pool my_http_pool {
+  members {
+    10.11.65.100:http {
+      address 10.11.65.100
+      ratio 5
+      session monitor-enabled
+      state down
+    }
+    10.11.65.101:http {
+      address 10.11.65.101
+      ratio 3
+      session monitor-enabled
+      state up
+    }
+    www<strong>.</strong>f5<strong>.</strong>com:http {
+      fqdn {
+        autopopulate enabled
+        name www<strong>.</strong>f5<strong>.</strong>com
+      }
+      ratio 2
+      state fqdn-up
+    }
+    _auto_108.156.91.54:http {
+      address 108.156.91.54
+      ephemeral true
+      ratio 2
+      session monitor-enabled
+      state up
+      fqdn {
+        autopopulate enabled
+        name www<strong>.</strong>f5<strong>.</strong>com
+      }
+    }
+    _auto_108.156.91.66:http {
+      address 108.156.91.66
+      ephemeral true
+      ratio 2
+      session monitor-enabled
+      state up
+      fqdn {
+        autopopulate enabled
+        name www<strong>.</strong>f5<strong>.</strong>com
+      }
+    }
+    _auto_2600.9000.2351.1000.14.232e.8a00.93a1:http {
+      address 2600:9000:2351:1000:14:232e:8a00:93a1
+      ephemeral true
+      ratio 2
+      session monitor-enabled
+      state checking
+      fqdn {
+        autopopulate enabled
+        name www<strong>.</strong>f5<strong>.</strong>com
+      }
+    }
+    _auto_2600.9000.2351.5600.14.232e.8a00.93a1:http {
+      address 2600:9000:2351:5600:14:232e:8a00:93a1
+      ephemeral true
+      ratio 2
+      session monitor-enabled
+      state checking
+      fqdn {
+        autopopulate enabled
+        name www<strong>.</strong>f5<strong>.</strong>com
+      }
+    }
+  }
+}</span></pre>
+
+<p><span class="subsectiontitle">Considerations</span></p>
+
+<p>There are some considerations when using FQDN pool members compared to using static pool members.</p>
+
+<ul><li>Creating an FQDN node causes the BIG-IP system to create an undetermined number of nodes and pool members based on the DNS server answer.</li><li>Any Ratio, Priority Group Activation, and connection limit values for ephemeral (automatically created) members are set to the same value that was specified on the FQDN node.</li><li>Any Ratio, Priority Group Activation, and connection limit value on each ephemeral node or pool member are note permitted be configured separately.</li></ul>
+
+<p>Consequently, mixing static and FQDN pool members in the same pool may produce unexpected results.</p>
+
+<p>Let&#39;s say we have these members in a pool:</p>
+
+<pre>
+<span style="font-family: courier;">a<strong>.</strong>com 10.0.1.1 ratio 1
+a<strong>.</strong>com 10.0.1.2 ratio 1
+a<strong>.</strong>com 10.0.1.3 ratio 1
+b<strong>.</strong>com 10.0.2.1 ratio 2
+b<strong>.</strong>com 10.0.2.2 ratio 2
+static 10.0.3.1 ratio 5</span></pre>
+
+<p>We can see a<strong>.</strong>com will have a total ratio of 1+1+1 = 3, while b<strong>.</strong>com will get a total ratio of 2+2 = 4, while the static pool member has a ratio of 5</p>
+
+<p>To acheive a 1:1:1 ratio balance between a<strong>.</strong>com, b<strong>.</strong>com, and the static pool member, we will need to consider the number of ephemeral pool members returned by the DNS server.</p>
+
+<p>For example:</p>
+
+<pre>
+<span style="font-family: courier;">a<strong>.</strong>com 10.0.1.1 ratio 2
+a<strong>.</strong>com 10.0.1.2 ratio 2
+a<strong>.</strong>com 10.0.1.3 ratio 2
+b<strong>.</strong>com 10.0.2.1 ratio 3
+b<strong>.</strong>com 10.0.2.2 ratio 3
+static 10.0.3.1 ratio 6</span></pre>
+
+<p>This gives us a 2+2+2=6, 3+3=6, and 6 ratio values, which translates to a 1:1:1 load-balancing weight between a<strong>.</strong>com, b<strong>.</strong>com and the static pool member.</p>
+
+<p><span class="subsectiontitle">Other Use Cases</span></p>
+
+<p>What if the DNS server returns an undetermined and dynamically changing number of IP addresses?</p>
+
+<p>For example, at one point, a<strong>.</strong>com can contain 3 members.</p>
+
+<pre>
+<span style="font-family: courier;">a<strong>.</strong>com 10.0.1.1 ratio 1
+a<strong>.</strong>com 10.0.1.2 ratio 1
+a<strong>.</strong>com 10.0.1.3 ratio 1</span></pre>
+
+<p>Two weeks later, the FQDN provider unpredictably changes its hosts and provides only two with one ipv6 address:</p>
+
+<pre>
+<span style="font-family: courier;">a<strong>.</strong>com 10.0.1.1 ratio 1
+a<strong>.</strong>com 10.0.1.2 ratio 1
+a<strong>.</strong>com ::100 ratio 1</span></pre>
+
+<p><strong>Option 1</strong>: On the DNS server level, consider using the F5 BIG-IP DNS to optimize and control the provisioning of IP addresses to clients. The F5 BIG-IP DNS can provide IP addresses based on the client&#39;s LDNS proximity, topology, round-trip-time, hops, and other metrics, as well as a server&#39;s measured load, traffic, and many other dynamic and static load-balancing methods.</p>
+
+<p>(See the F5 technical documentation for your version of F5 BIG-IP DNS more information: <a href="https://techdocs.f5.com/kb/en-us/products/big-ip-dns/manuals/product/bigip-dns-load-balancing-12-1-0.html" target="_blank">BIG-IP DNS: Load Balancing</a> )</p>
+
+<p><strong>Option 2</strong>: You can create different pools and load-balance among those pools. You can then use iRules to control the distribution of connections between the pool members. For example:</p>
+
+<pre>
+<span style="font-family: courier;">Pool A contains a<strong>.</strong>com
+Pool B contains b<strong>.</strong>com
+Pool C contains all static pool members</span></pre>
+
+<p>We can then use an irule on the virtual server to distribute connections between the pools evenly or in any desired ratio:</p>
+
+<pre>
+<span style="font-family: courier;">when CLIENT_ACCEPTED {
+  set x [expr rand()]
+  if {$x &lt; 0.33333} { 
+    log local0. &quot;pool A&quot;
+    pool pool_a
+  } elseif {$x &lt; 0.66666} {
+    log local0. &quot;pool B&quot;
+    pool pool_b
+  } else {
+    log local0. &quot;pool static&quot;
+    pool pool_static
+  }
+}</span></pre>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None.</p>
+</article>
+</body>
+</html>

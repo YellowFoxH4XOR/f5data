@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000137797: F5OS unable to add known-hosts entry: &quot;file known-hosts known-host &lt;host&gt; config&#x27;: Host un-reachable&quot;</title>
+<meta name="description" content="Support Solution: F5OS unable to add known-hosts entry: &quot;file known-hosts known-host &lt;host&gt; config&#x27;: Host un-reachable&quot; — R4600-R9-S10(config)# file known-hosts known-host 198.51.100.5">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000137797">
+</head>
+<body>
+<header>
+<h1>K000137797: F5OS unable to add known-hosts entry: &quot;file known-hosts known-host &lt;host&gt; config&#x27;: Host un-reachable&quot;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-12-05</dd>
+<dt>Updated</dt><dd>2023-12-05</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS</li><li>F5OS-A: 1.5.X, 1.4.X, 1.3.X, 1.5.1, 1.5.0, 1.4.0, 1.3.2, 1.3.1, 1.3.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000137797">https://my.f5.com/manage/s/article/K000137797</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>Added a <strong>known-hosts</strong> entry to F5OS configuration, but commit fails with a <strong>Host un-reachable</strong> message similar to the following:</p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">R4600-R9-S10# conf<br>Entering configuration mode terminal<br>R4600-R9-S10(config)# file known-hosts known-host 198.51.100.5<br>R4600-R9-S10(config-known-host-198.51.100.5)# commit<br>Aborted: &#39;file known-hosts known-host 198.51.100.5 config&#39;: Host un-reachable</span></p>
+
+<p>System has connectivity to the destination SSH server in question, and SSH attempts from F5OS command line via bash are successful.</p>
+
+<p>A packet trace of the failing connection reveals that the SSH session initiated from F5OS is only enabling the <strong>ssh-rsa</strong> host key algorithm, which does not match any of the algorithms enabled on the destination SSH server.</p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">SSH Protocol<br>    SSH Version 2<br>        Packet Length: 1148<br>        Padding Length: 8<br>        Key Exchange<br>            Message Code: Key Exchange Init (20)<br>            Algorithms<br>                Cookie: c667f67b1aea84908b517d72c9cd0ee4<br>                kex_algorithms length: 320<br>                kex_algorithms string [truncated]: curve25519-sha256,...<br>                server_host_key_algorithms length: 7<br>                server_host_key_algorithms string: ssh-rsa      &lt;--</span></p>
+
+<h2><strong>Environment</strong></h2>
+
+<ul><li>F5OS</li><li>SSH/SCP</li></ul>
+
+<h2><strong>Cause</strong></h2>
+
+<p>SSH connections originate from the <strong>utils-agent</strong> container when committing a known-hosts entry. This restricts the host key algorithms to ssh-rsa.</p>
+
+<p>These connections will fail when made towards modern systems running an up to date SSH server, as ssh-rsa is often disabled by default.</p>
+
+<p>Bug <strong>ID1399041</strong> tracks this issue.</p>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>There is no workaround for this issue on F5OS at the time of this article&#39;s publication.</p>
+
+<p>However, you can work around this issue by modifying the configuration on the SSH server you are attempting to add as a known-host.</p>
+
+<p>You should first evaluate the security implications of such a change in your environment.</p>
+
+<p>Example, using an Ubuntu 22.04 server:</p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">## Confirm that ssh-rsa is a supported host key algorithm:<br><br>ssh -Q HostKeyAlgorithms<br><br>root@ubuntu-server:~# ssh -Q HostKeyAlgorithms<br>ssh-ed25519<br>ssh-ed25519-cert-v01@openssh<strong>.</strong>com<br>sk-ssh-ed25519@openssh<strong>.</strong>com<br>sk-ssh-ed25519-cert-v01@openssh<strong>.</strong>com<br>ssh-rsa  &lt;-- Note<br>...<br><br>## Determine the currently enabled host key algorithms:<br><br>root@ubuntu-server:~# sshd -T | grep hostkeyalg<br><br>hostkeyalgorithms ssh-ed25519-cert-v01@openssh<strong>.</strong>com,ecdsa-sha2-nistp256-cert-v01@openssh<strong>.</strong>com,ecdsa-sha2-nistp384-cert-v01@openssh<strong>.</strong>com,ecdsa-sha2-nistp521-cert-v01@openssh<strong>.</strong>com,sk-ssh-ed25519-cert-v01@openssh<strong>.</strong>com,sk-ecdsa-sha2-nistp256-cert-v01@openssh<strong>.</strong>com,rsa-sha2-512-cert-v01@openssh<strong>.</strong>com,rsa-sha2-256-cert-v01@openssh<strong>.</strong>com,ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,sk-ssh-ed25519@openssh<strong>.</strong>com,sk-ecdsa-sha2-nistp256@openssh<strong>.</strong>com,rsa-sha2-512,rsa-sha2-256<br><br>## Edit /etc/ssh/sshd_config (or add a drop in file to /etc/ssh/sshd_config.d), appending &#39;ssh-rsa&#39; to that string:<br><br>root@ubuntu-server:~# tail -1 /etc/ssh/sshd_config<br><br>hostkeyalgorithms ssh-ed25519-cert-v01@openssh<strong>.</strong>com,ecdsa-sha2-nistp256-cert-v01@openssh<strong>.</strong>com,ecdsa-sha2-nistp384-cert-v01@openssh<strong>.</strong>com,ecdsa-sha2-nistp521-cert-v01@openssh<strong>.</strong>com,sk-ssh-ed25519-cert-v01@openssh<strong>.</strong>com,sk-ecdsa-sha2-nistp256-cert-v01@openssh<strong>.</strong>com,rsa-sha2-512-cert-v01@openssh<strong>.</strong>com,rsa-sha2-256-cert-v01@openssh<strong>.</strong>com,ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,sk-ssh-ed25519@openssh<strong>.</strong>com,sk-ecdsa-sha2-nistp256@openssh<strong>.</strong>com,rsa-sha2-512,rsa-sha2-256,ssh-rsa      &lt;-- Note<br><br>## Restart the SSH server to effect the changes:<br><br>root@ubuntu-server:~# systemctl restart ssh<br>root@ubuntu-server:~# sshd -T | grep hostkeyalg<br>hostkeyalgorithms ssh-ed25519-cert-v01@openssh<strong>.</strong>com,ecdsa-sha2-nistp256-cert-v01@openssh<strong>.</strong>com,ecdsa-sha2-nistp384-cert-v01@openssh<strong>.</strong>com,ecdsa-sha2-nistp521-cert-v01@openssh<strong>.</strong>com,sk-ssh-ed25519-cert-v01@openssh<strong>.</strong>com,sk-ecdsa-sha2-nistp256-cert-v01@openssh<strong>.</strong>com,rsa-sha2-512-cert-v01@openssh<strong>.</strong>com,rsa-sha2-256-cert-v01@openssh<strong>.</strong>com,ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,sk-ssh-ed25519@openssh<strong>.</strong>com,sk-ecdsa-sha2-nistp256@openssh<strong>.</strong>com,rsa-sha2-512,rsa-sha2-256,ssh-rsa</span></p>
+
+<h2><strong>Additional Information</strong></h2>
+
+<p>None</p>
+</article>
+</body>
+</html>

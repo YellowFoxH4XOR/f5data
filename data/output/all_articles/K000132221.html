@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000132221: Communication between pods returns http2.remote_reset</title>
+<meta name="description" content="Support Solution: Communication between pods returns http2.remote_reset — After TCP Three Way Handshake, the first HTTP2 request returns a 200 OK but the subsequent HTTP2 request returns “http2.remote_reset”">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000132221">
+</head>
+<body>
+<header>
+<h1>K000132221: Communication between pods returns http2.remote_reset</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-01-24</dd>
+<dt>Updated</dt><dd>2023-02-10</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000132221">https://my.f5.com/manage/s/article/K000132221</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>After TCP Three Way Handshake, the first HTTP2 request returns a 200 OK but the subsequent HTTP2 request returns “http2.remote_reset”</p>
+
+<pre class="ckeditor_codeblock">
+[2023-01-10T14:11:54.569Z] &quot;GET /path/GET HTTP/2&quot; 200 - via_upstream - &quot;-&quot; 0 500 281 280 &quot;-&quot; &quot;user-agent&quot; &quot;a0243ba7-d7df-4e39-8779-db72cccc39d9&quot; &quot;10.130.2.25:30010&quot; &quot;10.130.2.25:30010&quot; outbound|30010||*.example.com 10.128.2.102:42412 10.130.2.25:30010 10.128.2.102:45382 - default
+
+[2023-01-10T14:11:54.857Z] &quot;POST /path/POST HTTP/2&quot; 0 - http2.remote_reset - &quot;-&quot; 309 0 6180 - &quot;-&quot; &quot;user-agent&quot; &quot;a0243ba7-d7df-4e39-8779-db72cccc39d9&quot; &quot;10.130.2.25:30010&quot; &quot;-&quot; outbound|30010||*.example.com - 10.130.2.25:30010 10.128.2.102:45382 - default
+</pre>
+
+<h2><br><br><strong>Environment</strong></h2>
+
+<ul><li>Openshift 4.7</li><li>Aspen Mesh 1.11.x</li></ul>
+ 
+
+<h2><strong>Cause</strong></h2>
+
+<p>Two ServiceEntries resources with different IP and same port were used causing Aspen Mesh to try to load balance to an invalid IP.</p>
+
+<p><img alt="Wireshark Capture" src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po0000007ko0&amp;feoid=00N1T00000AOnlF&amp;refid=0EM1T000005MCBL"></img></p>
+
+<pre class="ckeditor_codeblock">
+- apiVersion: networking.istio.io/v1beta1
+  kind: ServiceEntry
+  metadata:
+    name: se-30010
+    namespace: ns1
+  spec:
+    addresses:
+    - 10.130.2.25
+    endpoints:
+    - address: 10.130.2.25
+      ports:
+        egress: 30010
+    hosts:
+    - &#39;*.example.com&#39;
+    location: MESH_EXTERNAL
+    ports:
+    - name: egress
+      number: 30010
+      protocol: HTTP2
+    resolution: DNS
+
+- apiVersion: networking.istio.io/v1beta1
+  kind: ServiceEntry
+  metadata:
+    name: se1-30010
+    namespace: ns1
+  spec:
+    addresses:
+    - 10.131.2.11
+    endpoints:
+    - address: 10.131.2.11
+      ports:
+        egress: 30010
+    hosts:
+    - &#39;*.example.com&#39;
+    location: MESH_EXTERNAL
+    ports:
+    - name: egress
+      number: 30010
+      protocol: HTTP2
+    resolution: DNS
+</pre>
+
+<h2><br><strong>Recommended Actions</strong></h2>
+
+<p>ServiceEntries (SE) with static IP and wildcard host could cause this problem if there&#39;s more than one defined in the namespace with the same TCP port; i.e. TCP port should be unique.</p>
+
+<p>Delete one of the SE or use a unique TCP port per IP.</p>
+
+<p>Likewise, reducing the scope of the ServiceEntry by using the exportTo: &quot;.&quot; field making this SE applicable only to the current namespace instead of the whole cluster.</p>
+
+<pre class="ckeditor_codeblock">
+- apiVersion: networking.istio.io/v1beta1
+  kind: ServiceEntry
+  metadata:
+    name: se-30010
+    namespace: ns1
+  spec:
+    addresses:
+    - 10.130.2.25
+    endpoints:
+    - address: 10.130.2.25
+      ports:
+        egress: 30010
+    hosts:
+    - &#39;*.example.com&#39;
+    exportTo:
+    - &quot;.&quot;
+    location: MESH_EXTERNAL
+    ports:
+    - name: egress
+      number: 30010
+      protocol: HTTP2
+    resolution: DNS
+</pre>
+
+<h2><br><strong>Additional Information</strong></h2>
+
+<p>https://istio.io/latest/docs/reference/config/networking/service-entry/#ServiceEntry<br>https://istio.io/latest/docs/reference/config/istio.mesh.v1alpha1/#MeshConfig</p>
+</article>
+</body>
+</html>

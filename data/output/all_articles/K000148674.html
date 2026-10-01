@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000148674: How to modify the HOST and SNI header to match a FQDN pool member hostname via and iRule using Data-Groups</title>
+<meta name="description" content="Support Solution: How to modify the HOST and SNI header to match a FQDN pool member hostname via and iRule using Data-Groups — How to modify the HOST and SNI header to match a FQDN pool member&#x27;s hostname via and iRule using Data-Groups">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000148674">
+</head>
+<body>
+<header>
+<h1>K000148674: How to modify the HOST and SNI header to match a FQDN pool member hostname via and iRule using Data-Groups</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-11-21</dd>
+<dt>Updated</dt><dd>2024-11-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000148674">https://my.f5.com/manage/s/article/K000148674</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>How to modify the HOST and SNI header to match a FQDN pool member&#39;s hostname via and iRule using Data-Groups</p>
+<h2>Environment</h2>
+<p>BIG-IP LTM</p>
+<h2>Cause</h2>
+<p>Looking to change the host header and SNI based on the FQDN pool member selected</p>
+<h2>Recommended Actions</h2>
+<p>This method uses a data-group with an iRule to achieve the wanted result</p>
+<p><strong>iRule:</strong></p>
+<pre>when LB_SELECTED {<br>  # Retrieve the IP address of the selected pool member<br>  set server_addr [LB::server addr]<br><br>  # Log the IP address and port of the selected pool member<br>  log local0. &quot;Selected pool member: $server_addr&quot;<br><br>  # Retrieve the name of the selected server in the load-balancing pool<br><span style="font-family: var(--c-bodyCopyFont);font-size: var(--c-bodyCopySize);background-color: var(--slds-g-color-surface-container-1, var(--lwc-colorbackgroundalt, #fff));color: var(--slds-g-color-neutral-base-10, #181818);">   set server_name [LB::server name]</span><br><br>  # Log the original Host header and the selected server name for debugging purposes<br>  log local0. &quot;Original Host: [HTTP::host], Selected Server: $server_name&quot;<br><br>  # Retrieve the FQDN based on the IP address from the data group<br>  set server_fqdn [class lookup $server_addr ip_to_fqdn_dg]<br><br>  # Sets the sni_value to the Pool Members FQDN<br>  set sni_value $server_fqdn<br><br>  if { $server_fqdn ne &quot;&quot; } {<br>       # Log the FQDN of the selected pool member<br>       log local0. &quot;Selected server FQDN: $server_fqdn&quot;<br>     } else {<br>       log local0. &quot;No FQDN mapping found for IP address: $server_addr&quot;<br>     }<br>       # Rewrite the Host header to be the name of the selected server<br>       HTTP::header replace Host $server_fqdn<br>     <br>       # Log the new Host header for verification<br>       log local0. &quot;New Host: [HTTP::header Host]&quot;<br>}<br><br>when SERVERSSL_CLIENTHELLO_SEND {<br>  # Set the CLIENT HELLO SNI to Pool Member FQDN<br>  SSL::extensions insert [binary format SSScSa* 0 [expr { [set sni_length [string length $sni_value]] + 5 }] [expr { $sni_length + 3 }] 0 $sni_length $sni_value]<br>}</pre>
+<p>---</p>
+<p><strong>Data-Group (Example):</strong></p>
+<pre>ltm data-group internal ip_to_fqdn_dg {<br>  records {<br>    10.101.151.2 {<br>      data two.example.local<br>    }<br>    10.101.151.3 {<br>      data three.example.local<br>    }<br>  }<br>  type string<br>}</pre>
+<p> </p>
+<h2>Additional Information</h2>
+<p>This is what the debug log lines in the iRule output looks like:</p>
+<pre>Nov 19 07:21:42 bigip info tmm[11182]: Rule /Common/irule_change_HOST_SNI &lt;LB_SELECTED&gt;: Selected pool member: 10.101.151.3<br>Nov 19 07:21:42 bigip info tmm[11182]: Rule /Common/irule_change_HOST_SNI&lt;LB_SELECTED&gt;: Original Host: www.example.com, Selected Server: /Common/fqdn_pl 10.101.151.3 443<br>Nov 19 07:21:42 bigip info tmm[11182]: Rule /Common/irule_change_HOST_SNI&lt;LB_SELECTED&gt;: Selected server FQDN: three.example.local<br>Nov 19 07:21:42 bigip info tmm[11182]: Rule /Common/irule_change_HOST_SNI&lt;LB_SELECTED&gt;: New Host: three.example.local<br>Nov 19 07:22:39 bigip info tmm[11182]: Rule /Common/irule_change_HOST_SNI&lt;LB_SELECTED&gt;: Selected pool member: 10.101.151.2<br>Nov 19 07:22:39 bigip info tmm[11182]: Rule /Common/irule_change_HOST_SNI&lt;LB_SELECTED&gt;: Original Host: www.example.com, Selected Server: /Common/fqdn_pl 10.101.151.2 443<br>Nov 19 07:22:39 bigip info tmm[11182]: Rule /Common/irule_change_HOST_SNI&lt;LB_SELECTED&gt;: Selected server FQDN: two.example.local<br>Nov 19 07:22:39 bigip info tmm[11182]: Rule /Common/irule_change_HOST_SNI&lt;LB_SELECTED&gt;: New Host: two.example.local</pre>
+</article>
+</body>
+</html>

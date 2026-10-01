@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000149701: Allow Local Subnet feature may not work properly if clients use non-private IP addresses as Local NIC IP addresses</title>
+<meta name="description" content="Support Solution: Allow Local Subnet feature may not work properly if clients use non-private IP addresses as Local NIC IP addresses — The connected network is vulnerable of tunnel crack as LocalIP falls under the public IPs">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000149701">
+</head>
+<body>
+<header>
+<h1>K000149701: Allow Local Subnet feature may not work properly if clients use non-private IP addresses as Local NIC IP addresses</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-02-12</dd>
+<dt>Updated</dt><dd>2025-07-13</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>F5 Distributed Cloud Services</li><li>BIG-IP APM: 17.0.0, 17.1.1, 17.1.0, 17.0.X, 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.2</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000149701">https://my.f5.com/manage/s/article/K000149701</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Network Access Allow Local Subnet feature may not work properly if clients use non-private IP addresses as Local NIC IP addresses. During this problem, the below kind of logs will be observed in client-side logs (%temp%\logtermainal.txt):</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>The connected network is vulnerable of tunnel crack as LocalIP falls under the public IPs 
+IP VulnerableIP Property NetworkVulnerableIPv4Addresses1 and IPAddress = &lt;IP address&gt;
+AllowLocalSubnet = FALSE, Vulnerable Local interface IP is part of Vulnerable list, so do not add allow local subnet entry for it, &lt;IP address&gt;</code></pre>
+<p>Please note that the VPN tunnel establishment process should be completed successfully.</p>
+<h2>Environment</h2>
+<p>BIG-IP APM</p>
+<p>APM Client 7246 or later</p>
+<p>Network Access resource configured with Allow Local Subnet option enabled (this is disabled by default)</p>
+<h2>Cause</h2>
+<p>The issue occurs due to a security enhancement addressing the TunnelCrack vulnerability (CVE-2023-43124). In newer APM client versions, stricter checks are applied to prevent local subnet traffic from bypassing the VPN tunnel unless explicitly allowed.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>If clients have private IP addresses (RFC 1918) as local NIC IP addresses, the Allow Local Subnet feature should have no problem.</p>
+<p>If clients have non-private IP addresses as local NIC IP addresses and the APM administrator wants to use the Allow Local Subnet feature, disable the check by following steps:</p>
+<p>(1) Download the connectivity content profile by navigating to Navigate to <a href="https://apm-vs-fqdn.com/pre/config.php?version=2.0" target="_blank" style="font-family: var(--c-hyperlinkFont);">https://apm-vs-fqdn/pre/config.php?version=2.0</a> (e.g. using a browser or the curl command =&gt; You will get the XML payload. (use your VPN FQDN in place of the placeholder &quot;apm<span style="font-size: var(--c-bodyCopyBoldSize);font-family: var(--c-bodyCopyBoldFont);">-</span>vs<span style="font-size: var(--c-bodyCopyBoldSize);font-family: var(--c-bodyCopyBoldFont);">-</span>fqdn&quot;)</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>[Quick Linux command example]
+curl -k https://apm-vs-fqdn/pre/config.php?version=2.0 -o original-cp.xml
+cp original-cp.xml modified-cp.xml</code></pre>
+<p>(2) Modify the XML payload [modified-cp.xml] by inserting the below tags (Just before &quot;<span style="font-family: monospace, monospace;">&lt;/FEATURES&gt;&lt;/PROFILE&gt;&quot; string</span>):</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>&lt;LocalNetCheck&gt;&lt;LocalNetCheckEnabled&gt;False&lt;/LocalNetCheckEnabled&gt;&lt;/LocalNetCheck&gt;&lt;/FEATURES&gt;&lt;/PROFILE&gt;</code></pre>
+<p><span style="font-family: monospace, monospace;">The final modified XML payload will look like this:</span></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&gt;
+&lt;PROFILE VERSION=&quot;2.0&quot;&gt;
+
+[ ... snip ... ]
+
+&lt;FEATURES&gt;&lt;HEADER_COOKIE&gt;YES&lt;/HEADER_COOKIE&gt;&lt;LocalNetCheck&gt;&lt;LocalNetCheckEnabled&gt;False&lt;/LocalNetCheckEnabled&gt;&lt;/LocalNetCheck&gt;&lt;/FEATURES&gt;&lt;/PROFILE&gt;</code></pre>
+<p>(3) Create an iRule:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when CLIENT_ACCEPTED {
+    ACCESS::restrict_irule_events disable
+}
+ 
+when HTTP_REQUEST {
+    if { [HTTP::uri] contains &quot;pre/config&quot; } {
+        # replace &quot;XML_Modified_Payload&quot; with the content of the modified XML file from step (2) 
+        # or the customer can simply use the modified file of step (3) (will be a bit ugly code)
+        set xmlPayload1 {XML_Modified_Payload}  
+ 
+        set xmlPayload $xmlPayload1
+        HTTP::respond 200 content \
+        $xmlPayload \
+        &quot;Content-Type&quot; &quot;application/xml&quot;
+    }
+}</code></pre>
+<p>(4) Attach the above iRule to the APM virtual server.</p>
+<h2>Additional Information</h2>
+<p>None.</p>
+</article>
+</body>
+</html>

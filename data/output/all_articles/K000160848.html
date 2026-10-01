@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160848: F5 Distributed Cloud - How to deploy a Secure Mesh Site and AppStack Cluster on Proxmox VE using Terraform</title>
+<meta name="description" content="Support Solution: F5 Distributed Cloud - How to deploy a Secure Mesh Site and AppStack Cluster on Proxmox VE using Terraform — F5 Distributed Cloud Customer Edge (CE) sites can be deployed on KVM-based hypervisors using available CE images. Proxmox Virtual Environment (VE) is an open-source enterprise virtualization platform…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160848">
+</head>
+<body>
+<header>
+<h1>K000160848: F5 Distributed Cloud - How to deploy a Secure Mesh Site and AppStack Cluster on Proxmox VE using Terraform</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-04-16</dd>
+<dt>Updated</dt><dd>2026-04-16</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Distributed Cloud Services</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160848">https://my.f5.com/manage/s/article/K000160848</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>F5 Distributed Cloud Customer Edge (CE) sites can be deployed on KVM-based hypervisors using available CE images. Proxmox Virtual Environment (VE) is an open-source enterprise virtualization platform built on KVM and Linux Containers. Deploying F5 Distributed Cloud CE sites on Proxmox VE using Terraform automation is not explicitly documented in the standard F5 Distributed Cloud deployment guides, and the specific steps for creating CE templates, configuring virtual networks, and automating multi-node deployments on Proxmox require additional guidance.</p>
+<ul><li>How can an F5 Distributed Cloud Secure Mesh Site be deployed on Proxmox VE?</li><li>How can an F5 Distributed Cloud AppStack Cluster be deployed on Proxmox VE?</li><li>How is an F5 XC CE template created on Proxmox VE from the KVM image?</li><li>How is Terraform used to automate the deployment of CE sites on Proxmox VE?</li><li>How are virtual networks configured on Proxmox VE for CE SLO and SLI interfaces?</li><li>How can the number of AppStack worker nodes be scaled after initial deployment?</li></ul>
+<h2>Environment</h2>
+<ul><li>F5 Distributed Cloud (SaaS)</li><li>Customer Edge (CE) software — Secure Mesh Site and AppStack personas</li><li>Proxmox Virtual Environment (VE) — single server or cluster (example uses a 3-node cluster)</li><li>KVM-based CE image (RHEL qcow2 format) sourced from <a href="https://docs.cloud.f5.com/docs/images" target="_blank">https://docs.cloud.f5.com/docs/images</a></li><li>Terraform CLI with Telmate Proxmox Provider</li><li>F5 Distributed Cloud API credentials (API Token or P12 file)</li><li>Linux Bridge virtual networks on Proxmox VE:
+<ul><li><code>vmbr0</code> — Internet-facing network for CE SLO interfaces</li><li><code>vmbr1</code> or <code>vmbr0</code> with VLAN tag (e.g., VLAN 100) — internal network for CE SLI interfaces and AppStack node connectivity</li></ul>
+</li><li>Minimum hardware requirements:
+<ul><li>24 vCPU total (9 nodes × 4 vCPU each)</li><li>144 GB RAM total (9 nodes × 16 GB each)</li><li>ISO file storage for cloud-init disks (local or CephFS)</li><li>Block storage for VM disks and templates (local-lvm or Ceph pool)</li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p>None</p>
+<h2>Answer/Recommended Actions</h2>
+<p>Deploy a redundant 3-node Secure Mesh Site and a 6-node AppStack Cluster on Proxmox VE using Terraform automation. The Secure Mesh Site provides SLO connectivity to the internet and SLI connectivity (including DHCP services) to the AppStack nodes on an isolated internal network.</p>
+<p><strong>Logical Topology</strong></p>
+<pre>----------------- vmbr0 (with Internet Access)
+     |      |      |
+   +----+ +----+ +----+
+  | m0 | | m1 | | m2 |  3-node Secure Mesh Site
+   +----+ +----+ +----+
+     |      |      |
+-------------------------------------  vmbr1 (or vmbr0 VLAN 100)
+  |      |      |     |      |      |
++----+ +----+ +----+ +----+ +----+ +----+
+| m0 | | m1 | | m2 | | w0 | | w1 | | w2 |  6-node AppStack Site
++----+ +----+ +----+ +----+ +----+ +----+
+</pre>
+<ul><li>The 3-node Secure Mesh Site connects via <strong>SLO interfaces</strong> to <code>vmbr0</code> for internet access and control plane connectivity to F5 Distributed Cloud.</li><li>The Secure Mesh Site provides <strong>DHCP services and internet connectivity</strong> to AppStack nodes via its <strong>SLI interfaces</strong> on the internal network (<code>vmbr1</code> or VLAN-tagged <code>vmbr0</code>).</li><li>Each AppStack node receives DHCP and internet connectivity through the Secure Mesh Site&#39;s SLI interfaces.</li></ul>
+<p><strong>Prerequisites</strong></p>
+<ul><li>Proxmox VE server or cluster meeting the minimum hardware requirements listed in the Environment section.</li><li>F5 Distributed Cloud account with appropriate permissions and API credentials (API Token or encrypted P12 file with password available as environment variable <code>VES_P12_PASSWORD</code>).</li><li>Terraform CLI installed on the deployment workstation.</li><li>Access to the Terraform example configuration repository: <a href="https://github.com/mwiget/f5xc-proxmox-site" target="_blank">https://github.com/mwiget/f5xc-proxmox-site</a></li></ul>
+<p><strong>Step 1: Clone the Example Repository</strong></p>
+<pre>$ git clone https://github.com/mwiget/f5xc-proxmox-site
+$ cd f5xc-proxmox-site
+</pre>
+<p><strong>Step 2: Download the F5 XC CE KVM Image</strong></p>
+<p>Run the following helper script from the Proxmox server shell to download the latest CE KVM qcow2 image. Modify environment variables to match your setup before executing:</p>
+<pre>$ cat download_ce_image.sh
+#!/bin/bash
+image=$(curl -s https://docs.cloud.f5.com/docs/images/node-cert-hw-kvm-images | grep qcow2\&quot; | cut -d\&quot; -f2)
+if test -z $image; then
+  echo &quot;can&#39;t find qcow2 image from download url. Check https://docs.cloud.f5.com/docs/images/node-cert-hw-kvm-images&quot;
+  exit 1
+fi
+if ! -f $image; then
+  echo &quot;downloading $image ...&quot;
+  wget $image
+fi
+</pre>
+<p><strong>Step 3: Create the F5 XC CE Template on Proxmox</strong></p>
+<p>Run the following script directly on the Proxmox server shell. Adjust the <code>qcow2</code> path, <code>id</code> (template VM ID), and <code>storage</code> values to match your environment before executing:</p>
+<pre>$ cat create_f5xc_ce_template.sh
+#!/bin/bash
+# Adjust full path to downloaded qcow2 file, target template id, and storage
+qcow2=/root/rhel-9.2024.11-20240523024833.qcow2
+id=9000
+storage=cephpool
+
+echo &quot;resizing image to 50G ...&quot;
+qemu-img resize $qcow2 50G
+echo &quot;destroying existing VM $id (if present) ...&quot;
+qm destroy $id
+echo &quot;creating vm template $id from $image ...&quot;
+qm create $id --memory 16384 --net0 virtio,bridge=vmbr0 --scsihw virtio-scsi-pci
+qm set $id --name f5xc-ce-template
+qm set $id --scsi0 $storage:0,import-from=$qcow2
+qm set $id --boot order=scsi0
+qm set $id --serial0 socket --vga serial0
+qm template $id
+</pre>
+<p><strong>Step 4: Configure Terraform Variables</strong></p>
+<p>Copy the example variables file and populate it with values specific to your environment:</p>
+<pre>$ cp terraform.tfvars.example terraform.tfvars
+</pre>
+<p>The following variables must be configured in <code>terraform.tfvars</code>:</p>
+<table border="1" cellpadding="6" cellspacing="0"><thead><tr><th colspan="1" rowspan="1">Variable</th><th colspan="1" rowspan="1">Description</th></tr></thead><tbody><tr><td colspan="1" rowspan="1"><code>project_prefix</code></td><td colspan="1" rowspan="1">Prefix applied to site and node names (e.g., your initials)</td></tr><tr><td colspan="1" rowspan="1"><code>ssh_public_key</code></td><td colspan="1" rowspan="1">SSH public key provided to each CE node</td></tr><tr><td colspan="1" rowspan="1"><code>pm_api_url</code></td><td colspan="1" rowspan="1">Proxmox API URL</td></tr><tr><td colspan="1" rowspan="1"><code>pm_api_token_id</code></td><td colspan="1" rowspan="1">Proxmox API Token ID (e.g., <code>root@pam!prox</code>)</td></tr><tr><td colspan="1" rowspan="1"><code>pm_api_token_secret</code></td><td colspan="1" rowspan="1">Proxmox API Token Secret</td></tr><tr><td colspan="1" rowspan="1"><code>pm_target_nodes</code></td><td colspan="1" rowspan="1">List of Proxmox server nodes to use for VM placement</td></tr><tr><td colspan="1" rowspan="1"><code>iso_storage_pool</code></td><td colspan="1" rowspan="1">Proxmox storage pool for cloud-init ISO disks</td></tr><tr><td colspan="1" rowspan="1"><code>pm_storage_pool</code></td><td colspan="1" rowspan="1">Proxmox storage pool for VM disks</td></tr><tr><td colspan="1" rowspan="1"><code>pm_clone</code></td><td colspan="1" rowspan="1">Name of the F5 XC CE template created in Step 3</td></tr><tr><td colspan="1" rowspan="1"><code>pm_pool</code></td><td colspan="1" rowspan="1">Optional resource pool to which VMs will be added</td></tr><tr><td colspan="1" rowspan="1"><code>f5xc_api_url</code></td><td colspan="1" rowspan="1"><code>https://&lt;tenant&gt;.console.ves.volterra.io/api</code></td></tr><tr><td colspan="1" rowspan="1"><code>f5xc_api_token</code></td><td colspan="1" rowspan="1">F5 XC API Token</td></tr><tr><td colspan="1" rowspan="1"><code>f5xc_tenant</code></td><td colspan="1" rowspan="1">F5 XC Tenant ID</td></tr><tr><td colspan="1" rowspan="1"><code>f5xc_api_p12_file</code></td><td colspan="1" rowspan="1">Path to the encrypted F5 XC API P12 file. Password must be set via the <code>VES_P12_PASSWORD</code> environment variable</td></tr></tbody></table>
+<p><strong>Step 5: Enable the Firewall and AppStack Modules</strong></p>
+<p>Edit the file <a href="https://github.com/mwiget/f5xc-proxmox-site/blob/main/lab-firewall.tf" target="_blank"><code>lab-firewall.tf</code></a> and set <code>count=1</code> in both the <code>firewall</code> and <code>appstack</code> modules to enable deployment. Setting <code>count=0</code> disables a module; setting it to a value greater than 1 deploys multiple instances of that site type, with the count index appended as a suffix to the site name.</p>
+<p><strong>Step 6: Deploy the Sites Using Terraform</strong></p>
+<pre>$ terraform init
+
+$ terraform plan
+
+$ terraform apply
+</pre>
+<p>Terraform will display periodic progress output, including site status, until both sites reach <strong>ONLINE</strong> status. Once deployed, verify the sites in the F5 Distributed Cloud Console under <strong>Cloud &amp; Edge Sites → Site Management</strong>. Confirm both the Secure Mesh Site and the AppStack site show a Health Score of 100/100 and a Site Admin State of Online.</p>
+<p>DHCP leases assigned to AppStack nodes can be verified in the F5 Distributed Cloud Console by navigating to the Secure Mesh Site dashboard and reviewing the DHCP management section. The AppStack cluster can also be queried directly using the auto-generated kubeconfig:</p>
+<pre>$ source env.sh
+$ kubectl get nodes -o wide
+</pre>
+<p><strong>Scaling Worker Nodes</strong></p>
+<p>To add or remove AppStack worker nodes after initial deployment, edit the worker node count in <a href="https://github.com/mwiget/f5xc-proxmox-site/blob/main/lab-firewall.tf" target="_blank"><code>lab-firewall.tf</code></a> and re-apply the Terraform configuration:</p>
+<pre>$ terraform apply
+</pre>
+<p><strong>Destroying the Deployment</strong></p>
+<p>To remove all site objects from F5 Distributed Cloud and delete all Virtual Machines and disks from Proxmox, run:</p>
+<pre>$ terraform destroy
+</pre>
+<h2>Additional Information</h2>
+<p>The Terraform example repository (<a href="https://github.com/mwiget/f5xc-proxmox-site" target="_blank">https://github.com/mwiget/f5xc-proxmox-site</a>) includes additional configuration examples beyond the dual-NIC Secure Mesh + AppStack topology documented in this article:</p>
+<ul><li><a href="https://github.com/mwiget/f5xc-proxmox-site/blob/main/secure-mesh-single-nic.tf" target="_blank"><code>secure-mesh-single-nic.tf</code></a> — Single-NIC Secure Mesh Site deployment</li><li><a href="https://github.com/mwiget/f5xc-proxmox-site/blob/main/secure-mesh-dual-nic.tf" target="_blank"><code>secure-mesh-dual-nic.tf</code></a> — Dual-NIC Secure Mesh Site deployment (standalone, without AppStack)</li><li><a href="https://github.com/mwiget/f5xc-proxmox-site/blob/main/appstack.tf" target="_blank"><code>appstack.tf</code></a> — AppStack-only deployment</li></ul>
+<p>Proxmox VE provides multiple options for creating a second virtual network for CE SLI interfaces. The approach used in this article is a VLAN-tagged sub-interface on <code>vmbr0</code> (e.g., VLAN 100). Alternative methods include dedicated physical Ethernet ports or Proxmox Software Defined Networking (SDN). The choice depends on available hardware and network architecture.</p>
+<p>The F5 XC CE KVM image is the same image used for all KVM-based deployments, including standard KVM/libvirt environments. The template creation process in this article resizes the image to 50 GB before importing it as a Proxmox VM template. This template is reused for both the Secure Mesh Site and AppStack node VMs, as the CE software determines the operational persona (Secure Mesh or AppStack) based on the site configuration applied from the F5 Distributed Cloud Console.</p>
+<p>The Terraform Proxmox Provider used in this example is the <a href="https://registry.terraform.io/providers/Telmate/proxmox/latest/docs" target="_blank">Telmate Proxmox Provider</a>. Refer to its documentation for advanced Proxmox-specific configuration options such as resource pools, storage pool types, and cluster node targeting.</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K12944: The AES::decrypt iRule command does not work across TMM or after a failover or reboot</title>
+<meta name="description" content="Known Issue: The AES::decrypt iRule command does not work across TMM or after a failover or reboot — The configuration is reloaded between the creation of the ciphertext using the AES::encrypt command and then attempts to decrypt it using the AES::decrypt command.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K12944">
+</head>
+<body>
+<header>
+<h1>K12944: The AES::decrypt iRule command does not work across TMM or after a failover or reboot</h1>
+<dl>
+<dt>Type</dt><dd>Known Issue</dd>
+<dt>Published</dt><dd>2012-06-23</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 9.6.1, 10.2.1, 10.2.0, 10.1.0, 10.0.1, 10.0.0, 9.6.0, 9.4.8, 9.4.7, 9.4.6, 9.4.5, 10.2.2, 9.4.3, 9.4.2, 9.4.1, 9.4.0, 11.1.0, 11.0.0, 10.2.4, 10.2.3, 9.4.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K12944">https://my.f5.com/manage/s/article/K12944</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Known Issue</h3><p><span class="sectiontitle">Description</span></p>
+
+<p>The <strong>AES::decrypt</strong> iRule command does not decrypt ciphertext that results from the <strong>AES::encrypt</strong> iRule command. This issue occurs when any of the following conditions is met:</p>
+
+<ul><li>The configuration is reloaded between the creation of the ciphertext using the <strong>AES::encrypt</strong> command and then attempts to decrypt it using the <strong>AES::decrypt</strong> command.</li><li>A TMM instance processes the connection when the ciphertext is created using the <strong>AES::encrypt</strong> command and by a different TMM instance when the <strong>AES::decrypt</strong> command attempts to decrypt it.</li><li>The BIG-IP system fails over or restarts between the creation of the ciphertext using the <strong>AES::encrypt</strong> command and then attempts to decrypt it using the <strong>AES::decrypt</strong> command.</li></ul>
+
+<p>This issue occurs because the <strong>AES::decrypt</strong> command uses the salt information from the current TMM instead of that provided in the ciphertext.</p>
+
+<p><span class="sectiontitle">Impact</span></p>
+
+<p>Decrypted data may not be available to make traffic decisions.</p>
+
+<p><span class="sectiontitle">Symptoms</span></p>
+
+<p>As a result of this issue, you may encounter the following symptoms:</p>
+
+<ul><li><a href="http://www.f5.com/services/customer-support/ihealth/" target="_blank">F5 iHealth</a> lists Heuristic H860958-1 on the Diagnostics &gt; Identified &gt; Low screen.</li><li>Data is not decrypted. If you attempt to log the result from the <strong>AES::decrypt</strong> command to a log file, the system logs a blank output. For example, you can use the following iRule <strong>crypto</strong> to log the result from the <strong>AES::decrypt</strong> on a ciphertext that represents the string <strong>XY</strong>:
+	<p><span class="note"><strong>Note</strong>: The iRule has been truncated for brevity.</span></p>
+
+	<p><span class="code">  when RULE_INIT {<br>	    set cipehrtext [binary format H* &quot;3c142fb05d95ee3ffca3ed0b64271b1578f9b1b070c42a1ce8cb04186f84a64343c03d13d8f1cf44&quot;]<br>	    set plaintext [AES::decrypt &quot;keystring&quot; $cipertext]<br>	    log local0. &quot;Plaintext: $plaintext&quot;<br>	  }</span><br>	The iRule logs the following line, which does not contain the expected decrypted data, to the <strong>/var/log/ltm</strong> file:</p>
+
+	<p><span class="code">Rule crypto &lt;RULE_INIT&gt;: Plaintext:</span></p>
+
+	<p>The iRule should instead log the following line, which contains the decrypted string <strong>XY</strong>:</p>
+
+	<p><span class="code">Rule crypto &lt;RULE_INIT&gt;: Plaintext: XY</span></p>
+	</li><li>iRules using the <strong>AES::encrypt</strong> and <strong>AES::decrypt</strong> commands may not process traffic as expected.</li></ul>
+
+<p><span class="sectiontitle">Status</span></p>
+
+<p>F5 Product Development has assigned ID 224113 (formerly CR134057) to this issue, and has confirmed that this issue exists in the products listed in the <strong>Applies To</strong> box. For information about releases, point releases, or hotfixes that resolve this issue, refer to the following table.</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1" style="width: 100%;"><tbody><tr><td colspan="1" rowspan="1">Type of fix</td><td colspan="1" rowspan="1">Fixes introduced in</td><td colspan="1" rowspan="1">Related articles</td></tr><tr><td colspan="1" rowspan="1">Release</td><td colspan="1" rowspan="1">11.2.0</td><td colspan="1" rowspan="1"><a href="https://my.f5.com/manage/s/article/K2200" target="_blank">K2200: Most recent versions of F5 software</a></td></tr><tr><td colspan="1" rowspan="1">Hotfix</td><td colspan="1" rowspan="1">None</td><td colspan="1" rowspan="1">None</td></tr></tbody></table>
+
+<p><br><span class="sectiontitle">Workaround</span></p>
+
+<p>To work around this issue, you can specify the AES key as a hex string in the following format:</p>
+
+<p><span class="code">AES &lt;length&gt; &lt;hex_key&gt; </span></p>
+
+<p>For example, the following iRule sets a 256 bit AES key, uses it to encrypt a cookie seen in the request, then later decrypts it. The system uses the identical AES key each time, regardless of TMM instance or restart status:</p>
+
+<p><span class="example2">when RULE_INIT {</span></p>
+
+<p><span class="example2">     set static::key &quot;AES 256 7618EAAF2D348D642C0DF02D8A4FD2A19AD70DA64B2BE83DD2CDD6139A65BBD1&quot;<br>}</span></p>
+
+<p><span class="example2">when HTTP_RESPONSE {<br>     # encrypt cookies in response<br>     ...<br>     set encrypted_secret [AES::encrypt $static::key [HTTP::cookie secret]]<br>     ...<br>}</span></p>
+
+<p><span class="example2">when HTTP_REQUEST {<br>     # decrypt cookies in subsequent requests<br>     ...<br>     set decrypted_secret [AES::decrypt $static::key [$encrypted_secret]]<br>     ...<br>}</span></p>
+</article>
+</body>
+</html>

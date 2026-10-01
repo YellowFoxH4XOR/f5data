@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K35403491: Https Monitor Markdown with reason: &#x27;&#x27;connect: protocol mismatch search result false&#x27;&#x27; or &#x27;&#x27;unknown protocol&#x27;&#x27; in the gtm log</title>
+<meta name="description" content="Support Solution: Https Monitor Markdown with reason: &#x27;&#x27;connect: protocol mismatch search result false&#x27;&#x27; or &#x27;&#x27;unknown protocol&#x27;&#x27; in the gtm log — Domain name monitor is marked “offline” but the webpage can be accessed.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K35403491">
+</head>
+<body>
+<header>
+<h1>K35403491: Https Monitor Markdown with reason: &#x27;&#x27;connect: protocol mismatch search result false&#x27;&#x27; or &#x27;&#x27;unknown protocol&#x27;&#x27; in the gtm log</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-03-31</dd>
+<dt>Updated</dt><dd>2025-04-01</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 14.X.X, 13.X.X, 12.X.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0</li><li>BIG-IP GTM: 11.X.X, 11.6.X, 11.5.X, 11.4.X, 11.3.X, 11.2.X, 11.1.X, 11.0.X, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 11.6.5, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 11.5.1, 11.5.0, 11.4.1, 11.4.0, 11.3.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K35403491">https://my.f5.com/manage/s/article/K35403491</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>Domain name monitor is marked “offline” but the webpage can be accessed.<br>Https Monitor is marked down with reason: <span class="example2">connect: protocol mismatch search result false</span> when you check with tmsh command as below:<br><br><span class="code">tmsh show /gtm pool members</span></p>
+
+<p><span class="example2"> -----------------------------------------------------<br>  | Gtm::Pool Member: /Common/pool_443 vs_443:/Common/test<br>  -----------------------------------------------------<br>  | Status<br>  |   Availability : offline<br>  |   State        : enabled<br>  |   Reason       :  Monitor /Common/monitor_https_example_com from 10.0.0.1 : connect: protocol mismatch search result false</span></p>
+
+<ul><li>You may also notice an ssl handshake failure message as one of the following<br>	<span class="example2">err big3d[8235]: 01333001:3: SSLConnect: SSL error:14094410:SSL routines:SSL3_READ_BYTES:sslv3 alert handshake failure</span><br>	<span class="example2">err big3d[6071]: 01333001:3: SSLConnect: SSL error:140770FC:SSL routines:SSL23_GET_SERVER_HELLO:unknown protocol</span></li><li>You may see alerts in /var/log/gtm<br>	<span class="example2">alert gtmd[14124]: 011ae0f2:1: Monitor instance /Common/monitor_https 10.0.0.1:443 UNKNOWN_MONITOR_STATE --&gt; DOWN from 1.1.1.1 (connect: protocol mismatch search result false)</span></li></ul>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP GTM</li><li>BIG-IP DNS</li><li>Pool members as Generic Host</li><li>HTTP[S] monitors</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br>These messages are coming from our &#39;big3d&#39; process which is responsible for (among other things) doing the health checks on monitored servers. The error message comes directly from the ssl library that big3d uses. The most common reason for this is you are attempting to use an https monitor for an http resource. This is not specific to BIG-IP, for example you can see the same in curl when trying to use the https protocol on a port-80 http server:<br><br><span class="code">$ curl -k https://1.1.1.1:80</span><br>curl: (35) error:140770FC:SSL routines:SSL23_GET_SERVER_HELLO:unknown protocol<br><span class="sectiontitle">Recommended Actions</span><br>The appropriate action is to change the monitor type to suit the pool member. Do not apply https monitors to http pool members. Because the member isn&#39;t listed in the log message, it is challenging to determine which pool member is the cause of the log message. The best action is to review the members which are in a down state by monitor, and audit to ensure that it&#39;s appropriate for an https monitor to be applied to that member.</p>
+
+<ol></ol>
+
+<p><span class="sectiontitle">Additional Information</span><br>You can use the following to get a listing of the pool members down with protocol mismatch. From there, you can review which of them is inappropriate for https monitor. <br><br><span class="code">tmsh show gtm pool [type] members | grep -B 6 &#39;protocol&#39; </span><br><span class="warning">Note: You must utilize the correct &quot;type&quot; as one of the supported types: a aaaa cname mx naptr srv</span><br><br>Example<br><br><span class="example2"># tmsh show gtm pool a members | grep -B 6 &#39;protocol&#39;<br>..<br>  --------------------------------------------------------------<br>  | Gtm::Pool Member: pool_mobile:A 10_35_20_21_80:server_mobile<br>  --------------------------------------------------------------<br>  | Status<br>  |   Availability : offline<br>  |   State        : enabled<br>  |   Reason       :  Monitor /Common/https_head_f5 from 10.35.13.1 : connect: protocol mismatch search result false<br>..</span><br><br>You may instead utilize tcpdump to capture monitor traffic to identify if https monitors are inappropriately applied.</p>
+
+<ol><li>Perform TCP dump to investigate the cause of monitor. <br>	Refer to <a href="https://my.f5.com/manage/s/article/K411" target="_self">K411: Overview of packet tracing with the tcpdump utility</a><br>	 </li><li>If there is no issue for ssl handshake, you should check the https monitor is correctly configured ,especially the http request formatting.<br>	Refer to <a href="https://my.f5.com/manage/s/article/K13397" target="_self">K13397: Overview of HTTP health monitor request formatting for the BIG-IP DNS system</a></li></ol>
+</article>
+</body>
+</html>

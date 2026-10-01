@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000150789: How To: Allow File Uploads through XC WAF/WAAP</title>
+<meta name="description" content="Support Solution: How To: Allow File Uploads through XC WAF/WAAP — A web application with legitimate file upload functionality experiences constant blocking from F5® Distributed Cloud (XC) WAF, often from different signature IDs. How can XC WAF be configured to…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000150789">
+</head>
+<body>
+<header>
+<h1>K000150789: How To: Allow File Uploads through XC WAF/WAAP</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-04-10</dd>
+<dt>Updated</dt><dd>2025-12-31</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Distributed Cloud Services</li><li>F5 Distributed Cloud WAF</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000150789">https://my.f5.com/manage/s/article/K000150789</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>A web application with legitimate file upload functionality experiences constant blocking from F5® Distributed Cloud (XC) WAF, often from different signature IDs.  How can XC WAF be configured to reliably permit these file uploads?</p>
+<h2>Environment</h2>
+<ul><li>F5® Distributed Cloud (XC) WAF</li><li>F5 XC Service Policies</li></ul>
+<h2>Cause</h2>
+<p>File upload content contains binary data patterns that match WAF signature IDs for potential attacks, causing false positive detections and blocks</p>
+<h2>Recommended Actions</h2>
+<h3><span style="text-decoration: underline;"><strong>Context</strong></span></h3>
+<ul><li>As a WAF is designed to process HTTP, a textual protocol, data types that cannot be parsed as text are prone to unpredictable parsing results which can incur False Positives (FPs). </li><li>Files such as PDFs, Word/Excel documents, images and other documents that must be opened in a specific application are binary data, which cannot be parsed as text and therefore cannot be reliably inspected by a WAF.</li><li>An approximate visualization of the WAF&#39;s interpretation of a binary file can be seen by opening such a file in a text editor:</li></ul>
+<p>Example of PDF document opened in Notepad++:</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000bpQ9&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000OwuIX" width="702" height="280"></img>  </p>
+<p> </p>
+<p>Some of these unreadable character sequences may constitute patterns that match WAF signatures.  A WAF blocking message that triggered on binary POST body content is characterized by:</p>
+<ol><li>context: body</li><li>non-ASCII characters in the signature matching_info field</li></ol>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000bpQ9&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000Owu5d"></img></p>
+<p>Remediation of the FPs isn&#39;t as simple as excluding one signature: different binary documents may trigger different signatures in a non-deterministic fashion.</p>
+<p>Instead, an exclusion rule is required to skip signature matching on the specific data type.  It would be imprudent to expose the application to file upload attack vectors, it&#39;s most important to <strong>ensure this exclusion rule is as narrowly targeted</strong> as possible.</p>
+<h3></h3>
+<p>NOTE: F5 XC support analysts are available to assist with this procedure if you are unsure.</p>
+<p> </p>
+<p><span style="text-decoration: underline;font-size: 16px;"><strong>Step 1: Collect Required Information</strong></span></p>
+<p>The first step is to collect the information required to define match conditions for the exclusion rule.  As mentioned, it is <strong>strongly recommended</strong> to ensure these match conditions are as narrow as possible, ideally only applying to the exact file upload location.</p>
+<p>The recommended approach is to define the exclusion rule with three match conditions that must all evaluate as TRUE for the exclusion to be enacted.  Those are:</p>
+<ol><li>Method</li><li>Exact path (or tightly defined regex)</li><li>Content-Type header value</li></ol>
+<p>The appropriate values for these conditions can be obtained from the security event log.  The first two are presented in the standard view:</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000bpQ9&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000OwwvR" width="614" height="289"></img></p>
+<p> </p>
+<p>The Content-Type header value can be found in the JSON view.  Hit the JSON tab on the log record and locate the field:</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000bpQ9&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000Owx1t" width="709" height="117"></img></p>
+<p>Common POST methods specified in the Content-Type header for binary file uploads include:</p>
+<ul><li>multipart/form-data; boundary=---...</li><li>image/jpeg, image/png, video/mp4, application/pdf and other specific MIME types</li><li>application/octet-stream</li></ul>
+<p> </p>
+<p>The most common of these is Multipart and we&#39;ll continue to use it as the demonstrative example.  Because multipart specification in Content-Type header will also contain a random character sequence to define the multipart boundary, matching must be done by regex.</p>
+<p> </p>
+<p>Using the screenshots above as example, the exclusion rule match conditions will therefore be:</p>
+<table border="1" style="width: 29.4882%;"><tbody><tr><td colspan="1" rowspan="1" style="width: 26.4624%;background-color: #2c3e50;"><span style="color: #ffffff;"><strong>Element</strong></span></td><td colspan="1" rowspan="1" style="width: 30.0561%;background-color: #2c3e50;"><span style="color: #ffffff;"><strong>Match Type</strong></span></td><td colspan="1" rowspan="1" style="width: 43.4497%;background-color: #2c3e50;"><span style="color: #ffffff;"><strong>Value</strong></span></td></tr><tr><td colspan="1" rowspan="1" style="width: 26.4624%;">method</td><td colspan="1" rowspan="1" style="width: 30.0561%;">Exact</td><td colspan="1" rowspan="1" style="width: 43.4497%;">POST</td></tr><tr><td colspan="1" rowspan="1" style="width: 26.4624%;">path</td><td colspan="1" rowspan="1" style="width: 30.0561%;">Exact</td><td colspan="1" rowspan="1" style="width: 43.4497%;">/repo/upload/uploadFile.php</td></tr><tr><td colspan="1" rowspan="1" style="width: 26.4624%;">header Content-Type</td><td colspan="1" rowspan="1" style="width: 30.0561%;">regex</td><td colspan="1" rowspan="1" style="width: 43.4497%;">.*multipart/form-data.*</td></tr></tbody></table>
+<p> </p>
+<p> </p>
+<h3><span style="text-decoration: underline;font-size: 16px;"><strong>Step 2: Create the Service Policy</strong></span></h3>
+<p>This type of exclusion requires a Service Policy (SP).  That is because WAF Exclusion Rules on the LB do not support header matching.</p>
+<p>To create the SP, from the Web App &amp; API Protection tile navigate to <strong>Manage </strong>-&gt; <strong>Service Policies</strong> -&gt; <strong>Service Policies</strong> and hit <strong>Add Service Policies</strong>.</p>
+<p>Give the SP a name. then click <strong>Configure </strong>under <strong>Rules </strong>(<strong>Custom Rule List</strong>).</p>
+<p>Click <strong>Add Item</strong> to create a <strong>Service Policy Rule</strong>.</p>
+<p>Give the rule an informative name.</p>
+<p>Specify <strong>Actions</strong>.  You will need to hit the <strong>Show Advanced Fields</strong> slider:</p>
+<ul><li style="font-weight: bold;"><strong>Action: Next Policy</strong></li><li style="font-weight: bold;"><strong>Select App Firewall Action Type: App Firewall Detection Control</strong></li></ul>
+<p> <img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000bpQ9&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000Ox0kX" width="977" height="336"></img></p>
+<p>When you select App Firewall Detection Control, the frame will expand to present additional WAF exclusion config options.</p>
+<p>Specify <strong>WAF Exclusion Actions</strong>:</p>
+<ul><li><strong>SignatureID: 0</strong>  (this means &quot;all signatures&quot;)</li><li style="font-weight: bold;"><strong>Context: Body</strong></li><li>Context Name: leave blank</li></ul>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000bpQ9&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000Ox0J8" width="879" height="209"></img></p>
+<p> </p>
+<p>Now, scroll down the page to the <strong>Request Match</strong> section.  This is where the match conditions are defined.</p>
+<p>Specify the <strong>Method</strong> as <strong>POST</strong>.</p>
+<p>Hit Configure under <strong>HTTP Path.</strong></p>
+<p>On the resultant screen, enter the upload URL <strong>path </strong>under <strong>Exact Value</strong>s match.  Optionally, apply <strong>Transformers </strong>to account for variations in case, encoding, etc.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000bpQ9&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000OwtmI" width="689" height="568"></img></p>
+<p> </p>
+<p>Hit <strong>Apply </strong>to return to the previous page, which should now look like:</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000bpQ9&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000Ox1Le" width="654" height="248"></img></p>
+<p> </p>
+<p>Now, configure matching on the <strong>Content-Type header</strong>.  Hit <strong>Add Item</strong> under <strong>HTTP Headers</strong>.</p>
+<p>Specify the <strong>Header Name</strong> as <strong>Content-Type</strong> (it&#39;s case insensitive), leave <strong>Match Options</strong> as <strong>Match Values</strong> and enter the regex pattern under <strong>Regex Values</strong>.</p>
+<pre class="language-javascript" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>.*multipart/form-data.*</code></pre>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000bpQ9&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000Ox1qH" width="862" height="522"></img></p>
+<p>For POST methods other than multipart, adjust the Header match conditions accordingly.</p>
+<p> </p>
+<p>Hit <strong>Apply </strong>several times and <strong>Add Service Policy</strong> to save it.</p>
+<p> </p>
+<p> </p>
+<h3><span style="text-decoration: underline;font-size: 16px;"><strong>Step 3: Apply the Service Policy to the HTTP LB</strong></span></h3>
+<p>Edit Configuration on the HTTP Load Balancer go to<strong> Common Security Controls</strong> -&gt; <strong>Service Policies</strong>  and select <strong>Apply Specified Service Policies</strong></p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000bpQ9&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000OwyKY" width="558" height="329"></img></p>
+<p> </p>
+<p>Hit <strong>Configure.</strong></p>
+<p>NOTE: exact steps will vary if the LB has existing SPs applied.</p>
+<ul><li>We will need to add two Service Policies to an LB with none already applied. </li><li>Adjust accordingly if the LB already has Service Policies applied; the order in which this one is assigned is largely inconsequential provided it&#39;s above any Allow action that matches legitimate traffic. </li><li>Best practice is to assign WAF exclusion SPs below any enforcing controls.</li><li>The below assumes an LB with no existing SPs.</li></ul>
+<p> </p>
+<p>Hit Add Item so that there are two objects in the list.</p>
+<p>For the <strong>first SP</strong>, select <strong>the one we created</strong> in the previous step from the drop-down.</p>
+<p>For the <strong>second SP</strong>, select an existing <strong>allow-all SP</strong>, or use <strong>ves-io-shared/ves-io-allow-all</strong> if one doesn&#39;t exist.</p>
+<ul><li>Assigning the <strong>allow-all</strong> SP is necessary because a SP ruleset has a <strong>default Deny</strong> action if an allow is not matched.</li><li>&#39;allow all&#39; does not mean the request is forwarded to the origin without further inspection, it means only that it&#39;s allowed by Service Policies, and will be passed to the next module (WAF) for further inspection.</li></ul>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000bpQ9&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000Ox3VV" width="925" height="180"></img></p>
+<p>Hit <strong>Apply</strong>, the <strong>Save HTTP Load Balancer</strong>.</p>
+<p> </p>
+<ul><li style="list-style-type: none;">
+<ul></ul>
+</li></ul>
+<p>File Uploads at the specified path should now no longer be blocked by WAF.</p>
+<p> </p>
+<h2>Additional Information</h2>
+<h3><span style="text-decoration: underline;"><strong>What is <code>Content-Type: multipart/form-data</code> header ?</strong></span></h3>
+<p>The <code>Content-Type: multipart/form-data</code> header is used in HTTP requests to indicate that the request body contains multiple parts, each with its own set of headers. This content type is commonly used for submitting forms that include files and other data, especially in scenarios like file uploads.</p>
+<h3><span style="text-decoration: underline;"><strong>What is the &quot;boundary string&quot; that follow that header?</strong></span></h3>
+<ul style="list-style-type: disc;"><li>The boundary string is specified in the <code>Content-Type</code> header and is used to delineate the different parts of the request body. For example:
+<div>
+<div><code></code>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW</code></pre>
+</div>
+</div>
+</li><li>Each part of the body is preceded by <code>--boundary</code>, and the final boundary is <code>--boundary--</code>.</li></ul>
+<p> </p>
+<p>See also: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/POST" target="_blank">https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods/POST</a></p>
+<p> </p>
+<p>Note: the method described here is functionally equivalent to the method of excluding signature checks for a file upload URL path in ASM/AWAF as described here: <a href="https://my.f5.com/manage/s/article/K10602137" target="_blank">https://my.f5.com/manage/s/article/K10602137</a></p>
+</article>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161340: BIG-IQ Fails to Discover BIG-IP Devices Configured with ssl-verify-client require — SSL Exception Error</title>
+<meta name="description" content="Support Solution: BIG-IQ Fails to Discover BIG-IP Devices Configured with ssl-verify-client require — SSL Exception Error — &quot;SSL exception on the connection to IP address &lt;x.x.x.x&gt;. Please see the logs for more information.&quot;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161340">
+</head>
+<body>
+<header>
+<h1>K000161340: BIG-IQ Fails to Discover BIG-IP Devices Configured with ssl-verify-client require — SSL Exception Error</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-05-19</dd>
+<dt>Updated</dt><dd>2026-06-16</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li><li>BIG-IQ Centralized Management: 8.0.0, 8.X.X, 8.4.X, 8.4.1, 8.4.0, 8.3.X, 8.3.0, 8.2.X, 8.2.0, 8.1.X, 8.1.0, 8.0.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161340">https://my.f5.com/manage/s/article/K000161340</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When attempting to add or re-discover BIG-IP devices from BIG-IQ Centralized Management, the following error is displayed in the BIG-IQ GUI:</p>
+<p><strong>&quot;SSL exception on the connection to IP address &lt;x.x.x.x&gt;. Please see the logs for more information.&quot;</strong></p>
+<p>This error occurs when the target BIG-IP device has its <strong>httpd configuration set to ssl-verify-client require</strong>. Because BIG-IQ does not present a client certificate during the TLS handshake, the BIG-IP rejects the connection, preventing discovery and management.</p>
+<p>This also applies to any remote API call system that is unable to present a trusted client certificate back to the BIG-IP with httpd ssl-verify-client set to “require”.</p>
+<h2>Environment</h2>
+<ul><li><strong>BIG-IQ Centralized Management:</strong> Version 8.4.0 / 8.4.1 (Virtual Edition)</li><li><strong>BIG-IP:</strong> Any version with the following sys httpd configuration:
+<ul><li>ssl-verify-client require</li><li>ssl-ocsp-enable on</li><li>Third-party or CA-signed certificates in use on the BIG-IP httpd</li></ul>
+</li><li><strong>Authentication on BIG-IP:</strong> Remote – Client Certificate (e.g., CAC/PIV/Smartcard)</li><li><strong>Discovery method:</strong> Management IP address</li><li><strong>BIG-IQ SSL Certificate Verification:</strong> &quot;Verify Hosts&quot; is enabled <a href="https://my.f5.com/manage/s/article/K12743130" target="_self">K12743130 </a>(not a factor in this issue)</li><li><strong>Compliance context:</strong> STIG (Security Technical Implementation Guide) requirements mandating ssl-verify-client require</li></ul>
+<h2>Cause</h2>
+<p>BIG-IQ does not have the capability to present a client certificate during the TLS handshake when communicating with managed BIG-IP devices. When a BIG-IP is configured with ssl-verify-client require, it demands a client certificate from any connecting system — including BIG-IQ. Since BIG-IQ cannot supply this certificate, the SSL handshake fails and the device cannot be discovered or managed.</p>
+<p>This is a current product limitation, not a defect. A Request for Feature Enhancement (RFE) has been submitted to F5 Product Engineering.</p>
+<p>RFE ID: 2337877<br>RFE ID: 1087749 </p>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>Step 1: Remove the &quot;Managed by BIG-IQ&quot; Status from BIG-IP (if applicable)</strong></p>
+<p>If a BIG-IP still shows &quot;Managed by BIG-IQ&quot; after a BIG-IQ rebuild or crash, run the following commands on the BIG-IP to reset its REST framework:</p>
+<p># rm -rf /var/config/rest/iapps/*<br># rm -rf /var/config/rest/storage/*<br># bigstart restart restjavad</p>
+<p>Alternatively, use the supported command on the BIG-IP (not the BIG-IQ):</p>
+<p># clear-rest-storage</p>
+<p>To verify the BIG-IP is no longer managed by any BIG-IQ:</p>
+<p># restcurl -u &lt;username&gt;:&lt;password&gt; /mgmt/shared/resolver/device-groups/cm-bigip-allDevices/devices</p>
+<p>A 404 response confirms the device is not currently managed by BIG-IQ.</p>
+<p><strong>Step 2: Allow BIG-IQ to Bypass Client Certificate Requirement (Workaround)</strong></p>
+<p>To allow BIG-IQ to discover and manage a BIG-IP while keeping <strong>ssl-verify-client require</strong> for all other clients, add an ssl-include exception for the BIG-IQ CM IP address using tmsh edit:</p>
+<p>On the BIG-IP, run:</p>
+<p>1.<span style="font-family: &#39;Times New Roman&#39;;font-size: 7pt;">     </span>Edit sys httpd</p>
+<p># tmsh<br># edit sys httpd</p>
+<p>Add the following ssl-include line <strong>above</strong> the ssl-verify-client require line, replacing &lt;BIG-IQ-CM-IP&gt; with the actual BIG-IQ management IP:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ssl-include &quot;&lt;If \&quot;%{REMOTE_ADDR} == &#39;&lt;BIG-IQ-CM-IP&gt;&#39;\&quot;&gt; SSLVerifyClient optional &lt;/If&gt;&quot;</code></pre>
+<p>The resulting sys httpd stanza should resemble:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>sys httpd {
+ auth-pam-dashboard-timeout on
+ auth-pam-idle-timeout 600
+ ssl-ca-cert-file /Common/new_admin_ca_bundle
+ ssl-ocsp-enable on
+ ssl-protocol &quot;all -SSLv3 -TLSv1 -TLSv1.1&quot;
+ ssl-include &quot;&lt;If \&quot;%{REMOTE_ADDR} == &#39;&lt;BIG-IQ-CM-IP&gt;\&quot;&gt;
+ SSLVerifyClient optional
+&lt;/If&gt;&quot;
+ ssl-verify-client require
+}</code></pre>
+<p>Save the configuration:</p>
+<p># tmsh save sys config</p>
+<p><strong>Note:</strong> This change does <strong>not</strong> require an httpd restart and takes effect immediately. All other clients (non-BIG-IQ) will continue to require a client certificate.</p>
+<p><strong>For multiple BIG-IQ IP addresses</strong>, use the || operator:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ssl-include &quot;&lt;If \&quot;%{REMOTE_ADDR} == &#39;&lt;IP1&gt;&#39; || %{REMOTE_ADDR} == &#39;&lt;IP2&gt;&#39;\&quot;&gt; SSLVerifyClient optional &lt;/If&gt;&quot;</code></pre>
+<p><strong>Or use CIDR notation:</strong></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ssl-include &quot;&lt;If \&quot;%{REMOTE_ADDR} -ipmatch &#39;&lt;BIG-IQ-IP&gt;/30&#39;\&quot;&gt; SSLVerifyClient optional &lt;/If&gt;&quot;</code></pre>
+<h2>Additional Information</h2>
+<ul><li>The ssl-include configuration change <strong>survives upgrades</strong> when saved to the running configuration.</li></ul>
+<p> </p>
+</article>
+</body>
+</html>

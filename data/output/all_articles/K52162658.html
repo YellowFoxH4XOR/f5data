@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K52162658: The BIG-IP APM portal access may incorrectly rewrite URLs with CSS-style HTML entities</title>
+<meta name="description" content="Known Issue: The BIG-IP APM portal access may incorrectly rewrite URLs with CSS-style HTML entities — The BIG-IP APM portal access may incorrectly rewrite URLs with CSS-style HTML entities.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K52162658">
+</head>
+<body>
+<header>
+<h1>K52162658: The BIG-IP APM portal access may incorrectly rewrite URLs with CSS-style HTML entities</h1>
+<dl>
+<dt>Type</dt><dd>Known Issue</dd>
+<dt>Published</dt><dd>2017-04-21</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 13.0.0, 12.1.1, 12.1.0, 12.0.0, 11.6.1, 12.1.2, 11.5.4, 11.6.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K52162658">https://my.f5.com/manage/s/article/K52162658</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Known Issue</h3><p>The BIG-IP APM portal access may incorrectly rewrite URLs with CSS-style HTML entities.</p><p>This issue occurs when all of the following conditions are met:</p><ul><li>Your BIG-IP APM system is configured with a portal access profile.</li><li>Content processed by the portal access profile includes CSS-style HTML entities.	<p>Following is an example CSS with an HTML entity:</p>	<p><span class="example2">&lt;div style=&quot;background:url(&amp;#39;image.jpg&amp;#39;)&quot;&gt;</span></p>	</li></ul><p><span class="sectiontitle">Impact</span></p><p>The system incorrectly rewrites the CSS HTML entities.</p><p><span class="sectiontitle">Symptoms</span></p><p>As a result of this issue, you may encounter one or more of the following symptoms:</p><ul><li>	<p>Content is missing or does not render correctly.</p>	</li><li>	<p>Web application functionality is impacted.</p>	</li><li>	<p>When you view the CSS HTML entity before the rewrite, it appears similar to the following example:</p>	<p><span class="example2">&lt;div style=&quot;background:url(<strong>&amp;#39;</strong>image.jpg<strong>&amp;#39;</strong>)&quot;&gt;</span></p>	</li><li>	<p>When you view the CSS content rewritten by the BIG-IP APM portal access rewrite process, the content HTML entity appears similar to the following example:</p>	<p><span class="example2">&lt;div style=&quot;background:url(<strong>&amp;#39?F5CH=I</strong>;image.jpg<strong>&amp;#39;</strong>)&quot;&gt;</span></p>	</li></ul><h3>Resolution</h3><p><span class="sectiontitle">Status</span></p>
+
+<p>F5 Product Development has assigned ID 362511 to this issue. F5 has confirmed that this issue exists in the products listed in the <strong>Applies to (see versions)</strong> box, located in the upper-right corner of this article. For information about releases or hotfixes that resolve this issue, refer to the following table:</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1" style="width: 100%;"><tbody><tr><td colspan="1" rowspan="1">Type of Fix</td><td colspan="1" rowspan="1">Fixes Introduced In</td><td colspan="1" rowspan="1">Related Articles</td></tr><tr><td colspan="1" rowspan="1">Release</td><td colspan="1" rowspan="1">None</td><td colspan="1" rowspan="1">None</td></tr><tr><td colspan="1" rowspan="1">Hotfix</td><td colspan="1" rowspan="1">None</td><td colspan="1" rowspan="1">None</td></tr></tbody></table>
+
+<p><span class="sectiontitle">Workaround</span></p>
+
+<p>To work around this issue, you can create and apply a customized iRule to the affected virtual server that converts the rewritten HTML entities to their original characters. To do so, refer to the following example procedure:</p>
+
+<p><span class="impact"><strong>Impact of workaround: </strong>F5 recommends that you perform the following procedure in a lab environment before implementing it into a production environment.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Navigate to <strong>Local Traffic</strong> &gt;<strong> iRules </strong>&gt;<strong> Create</strong>.</li><li>In the <strong>Name</strong> box, type a name for the iRule.</li><li>In the <strong>Definition</strong> box, type the following <strong>example</strong> text:
+	<p><span class="example2">when REWRITE_REQUEST_DONE {<br>	# HTML entities in inline CSS style attributes may cause incorrect rewriting of URLs<br>	    if { [HTTP::path] ends_with &quot;&lt;url&gt;&quot; } {<br>	        set bug_rewrite1 1<br>	        REWRITE::post_process 1<br>	    } elseif { [info exists bug_rewrite] } {<br>	        unset bug_rewrite<br>	    }<br>	}<br>	when REWRITE_RESPONSE_DONE {<br>	    if { [info exists bug_rewrite] } {<br>	        set indices [regexp -all -inline -nocase -indices \<br>	                {url\(\s*<strong>&amp;#39</strong>(\<strong>?F5CH=I;</strong>)/} [REWRITE::payload] ]<br>	        for {set idx [llength $indices]} {[incr idx -1] &gt;= 1} {} {<br>	            set i_start [lindex [lindex $indices $idx] 0]<br>	            set i_len   [lindex [lindex $indices $idx] 1]<br>	            set i_len   [expr {$i_len - $i_start + 1}]<br>	            # remove incorrectly added context hint;<br>	            # <strong>Note: Add hex encoded destination resource (http://www.example.com) for absolute-path URLs</strong><br>	            REWRITE::payload replace $i_start $i_len \<br>	                {;/f5-w-<strong>687474703A2F2F7777772E6578616D706C652E636F6DDA</strong>$$}<br>	            # skip full match and move to next capturing group<br>	            incr idx -1<br>	        }<br>	        unset -nocomplain indices idx i_start i_len data bug_rewrite<br>	    }<br>	}</span></p>
+
+	<p><span class="note"><strong>Note</strong>: In this example, the iRule corrects the rewritten HTML entity <strong>&amp;#39?F5CH=I;image.jpg&amp;#39;</strong> back to the original <strong><em>&amp;#39;image.jpg&amp;#39;</em></strong>.</span></p>
+
+	<p><span class="warning"><strong>Important</strong>: You must modify the iRule stanza to use the correct hex encoded host string that appears in the rewrite payload section of the iRule after the<strong> f5-w- </strong>prefix.</span></p>
+
+	<p><span class="note">For example:</span></p>
+
+	<p><span class="note"><span class="example2">{;/f5-w-687474703A2F2F7777772E6578616D706C652E636F6DDA$$}</span></span></p>
+
+	<p><span class="warning"><strong>Important: </strong>In some deployment instances, you may need to modify the URL rewrite regular expression. For example, when the URL references a full URL path:</span></p>
+
+	<p><span class="warning">Example full URL path regular expression:</span></p>
+
+	<p><span class="warning"><span class="example2">({url\(\s*&amp;#39(\?F5CH=I;https:\/\/content.example.com)} [REWRITE::payload] ])</span></span></p>
+	</li><li>Click <strong>Finished</strong>.</li><li>Click <strong>Virtual Servers</strong>.</li><li>Click the name of the virtual server that is affected by this issue.</li><li>Click the <strong>Resources</strong> tab.</li><li>In the <strong>iRules</strong> section, click <strong>Manage</strong>.</li><li>From the <strong>Available</strong> column, select the iRule you previously created.</li><li>Click the <strong>&lt;&lt;</strong> button.
+	<p>The iRule moves to the <strong>Enabled</strong> column.</p>
+	</li><li>Click <strong>Finished</strong>.</li></ol>
+</article>
+</body>
+</html>

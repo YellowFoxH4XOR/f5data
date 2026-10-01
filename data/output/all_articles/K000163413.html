@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163413: Configuration deployment using automation via NIM API call is not reloading nginx to make the configuration active</title>
+<meta name="description" content="Support Solution: Configuration deployment using automation via NIM API call is not reloading nginx to make the configuration active — NGINX Instance Manager API deployments may report success and update the NGINX configuration, while the active NGINX worker processes continue using the previous configuration. The NGINX Agent may…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163413">
+</head>
+<body>
+<header>
+<h1>K000163413: Configuration deployment using automation via NIM API call is not reloading nginx to make the configuration active</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-09-24</dd>
+<dt>Updated</dt><dd>2026-09-24</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Instance Manager</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163413">https://my.f5.com/manage/s/article/K000163413</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>NGINX Instance Manager API deployments may report success and update the NGINX configuration, while the active NGINX worker processes continue using the previous configuration. The NGINX Agent may log a successful reload even though the reload signal was sent to a third-party monitoring companion process instead of the actual NGINX master process.</p>
+<h2>Environment</h2>
+<ul><li>NGINX Instance Manager.</li><li>NGINX Agent.</li><li>NGINX instances managed through NGINX Instance Manager.</li><li>Configuration deployments submitted through the NGINX Instance Manager API, such as through Ansible.</li><li>A third-party monitoring agent with NGINX deep monitoring enabled.</li><li>The monitoring agent creates a helper process with a command line similar to:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">nginx: OneAgent companion process</span></p>
+</li><li>The actual NGINX master process has a command line similar to:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">nginx: master process /usr/sbin/nginx -c /etc/nginx/nginx.conf</span></p>
+</li><li>Both processes can have parent PID 1.</li></ul>
+<h2>Cause</h2>
+<p>The NGINX Agent process-discovery filter is too permissive and identifies processes whose command line begins with <span style="background-color: #f1f1f1;">nginx:</span> as NGINX processes.</p>
+<p>The third-party monitoring companion process therefore can be incorrectly classified as an NGINX master process. The companion process and the actual NGINX master process can resolve to the same NGINX identifier, causing a collision in the Agent process map.</p>
+<p>The Agent may then select the companion process and send the reload signal to it. The Agent logs the reload as successful, but the actual NGINX master and worker processes are not reloaded.</p>
+<h2>Recommended Actions</h2>
+<p>Apply the NGINX Agent process-discovery fix that restricts matching to actual NGINX master and worker process patterns.</p>
+<p>After applying the fix:</p>
+<ol><li>Deploy a configuration through the NGINX Instance Manager API.</li><li>Confirm that the deployment reports success.</li><li>Confirm that the Agent reload message references the actual NGINX master process.</li><li>Verify that NGINX worker process start times change after deployment.</li><li>Confirm that the new configuration is active without requiring a manual reload.</li></ol>
+<h2>Additional Information</h2>
+<p>Use one of the following workarounds until the NGINX Agent fix is available:</p>
+<ol><li>Disable NGINX deep monitoring in the third-party monitoring agent.</li><li>Determine whether the third-party monitoring agent can rename its companion process so that its command line does not begin with <span style="background-color: #f1f1f1;">nginx:</span>.</li><li>Manually reload NGINX when immediate configuration activation is required: <br><span style="background-color: #f1f1f1;">systemctl reload nginx</span></li></ol>
+<p>Use the following command to compare the NGINX processes:</p>
+<p><span style="background-color: #f1f1f1;">ps -eo pid,ppid,lstart,cmd | grep -i nginx | grep -v grep</span></p>
+<p>The reload must target the process identified as the actual NGINX master, for example:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">nginx: master process /usr/sbin/nginx -c /etc/nginx/nginx.conf</span></p>
+<p>A reload message that references the third-party monitoring companion process does not confirm that NGINX was reloaded.</p>
+<p>A successful API response, NGINX Instance Manager deployment status, or Agent success message alone does not confirm that the active NGINX workers were refreshed. Compare worker process start times before and after deployment to verify the reload.</p>
+<p>The <span style="background-color: #f1f1f1;">nginx -T</span> command can show the updated configuration even when the running worker processes have not been reloaded. Verify both the configuration output and worker process start times.</p>
+</article>
+</body>
+</html>

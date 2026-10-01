@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161771: Rebuilding VCMP Guest on Viprion on single blade while other blade is working fine</title>
+<meta name="description" content="Support Solution: Rebuilding VCMP Guest on Viprion on single blade while other blade is working fine — During some unexpected behavior, config on one of the blades for specific VCMP Guest might be damaged, but working fine on other slot. In such cases, rebuilding from working slot might be easier than…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161771">
+</head>
+<body>
+<header>
+<h1>K000161771: Rebuilding VCMP Guest on Viprion on single blade while other blade is working fine</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-17</dd>
+<dt>Updated</dt><dd>2026-06-17</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.0.0, 17.1.0, 17.0.X, 17.X.X, 21.X.X, 21.1.X, 21.1.0, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161771">https://my.f5.com/manage/s/article/K000161771</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>During some unexpected behavior, config on one of the blades for specific VCMP Guest might be damaged, but working fine on other slot. In such cases, rebuilding from working slot might be easier than troubleshooting the issue on faulty blade.</p>
+<h2>Environment</h2>
+<ul><li>
+<p>BIG-IP</p>
+</li><li>Viprion</li><li>VCMP Guest</li></ul>
+<h2>Cause</h2>
+<p>There might be multiple reasons for rebuilding VCMP Guest on single slot, compared to rebuilding VCMP Guest from UCS, this procedure does not require deleting config for healthy blade.</p>
+<h2>Answer/Recommended Actions</h2>
+<h3>Before You Start</h3>
+<ul><li>Save a UCS backup from the <strong>working</strong> guest slots (not the broken one): <code>tmsh save sys ucs /var/local/ucs/backup_before_repair.ucs </code></li><li>Make sure that initial image is matching version running on healthy slot: <code>tmsh list vcmp guest &lt;guest_name&gt; initial-image</code></li><li>Note the master key (in case it&#39;s needed): <code>f5mku -K</code></li></ul>
+<h3>Step 1 — Set Guest to Configured (Shuts it down)</h3>
+<p><strong>GUI (vCMP Host):</strong></p>
+<ol><li>Navigate to <strong>vCMP</strong> &gt; <strong>Guest List</strong></li><li>Click the <strong>name</strong> of the affected guest</li><li>In the <strong>State</strong> field, select <strong>Configured</strong></li><li>Click <strong>Update</strong></li></ol>
+<p>The guest will shut down on all slots. Monitor until it disappears from the running list:</p>
+<p><code>watch -n1 tmsh show vcmp guest </code></p>
+<p>Press <code>Ctrl+C</code> when the guest no longer appears.</p>
+<h3>Step 2 — Delete the Virtual Disk on the Affected Slot Only</h3>
+<p><strong>GUI (vCMP Host):</strong></p>
+<ol><li>Navigate to <strong>vCMP</strong> &gt; <strong>Virtual Disk List</strong></li><li>Wait ~1 minute for the vdisk status to change from <strong>in-use</strong> to <strong>ready</strong></li><li>Locate the entry for your guest on the <strong>affected slot</strong> (e.g., <code>guestname.img</code> with Slot ID = affected slot)</li><li>Check the checkbox to the left of that entry</li><li>Click <strong>Delete</strong> → confirm <strong>Delete</strong></li></ol>
+<p><span style="color: #c0392b;"><strong>Important:</strong> Only delete the vdisk for the <strong>affected slot</strong>. Do not delete vdisks for the healthy slots.</span></p>
+<p>You can verify via CLI:</p>
+<p><code>tmsh show vcmp virtual-disk </code></p>
+<h3>Step 3 — Remove the Affected Slot from &quot;Allowed Slots&quot;</h3>
+<p><strong>GUI (vCMP Host):</strong></p>
+<ol><li>Navigate to <strong>vCMP</strong> &gt; <strong>Guest List</strong></li><li>Click the <strong>name</strong> of the guest (must be in <strong>Configured</strong> state to edit)</li><li>Find the <strong>Allowed Slots</strong> section</li><li>Move the <strong>affected slot</strong> from the <strong>Selected</strong> list back to the <strong>Available</strong> list</li><li>Adjust <strong>Minimum Number of Slots</strong> if needed (must be ≤ number of remaining allowed slots)</li><li>Click <strong>Update</strong></li></ol>
+<h3>Step 4 — Deploy the Guest (Without the Affected Slot)</h3>
+<p><strong>GUI (vCMP Host):</strong></p>
+<ol><li>Navigate to <strong>vCMP</strong> &gt; <strong>Guest List</strong></li><li>Click the <strong>name</strong> of the guest</li><li>Change <strong>State</strong> to <strong>Deployed</strong></li><li>Click <strong>Update</strong></li></ol>
+<p>Monitor until all remaining slots show <strong>running</strong>:</p>
+<p><code>watch -n1 tmsh show vcmp guest </code></p>
+<h3>Step 5 — Add the Affected Slot Back (Without Shutting Down)</h3>
+<p>Once the guest is fully running on the other slots, add the affected slot back <strong>while the guest remains deployed</strong> — this can be done without shutting it down:</p>
+<p><strong>GUI (vCMP Host):</strong></p>
+<ol><li>Navigate to <strong>vCMP</strong> &gt; <strong>Guest List</strong></li><li>Click the <strong>name</strong> of the guest (while it is still <strong>Deployed/Running</strong>)</li><li>In the <strong>Allowed Slots</strong> section, move the <strong>affected slot</strong> back from <strong>Available</strong> to <strong>Selected</strong></li><li>Click <strong>Update</strong></li></ol>
+<p>The host will provision a fresh vdisk on the affected slot and replicate the configuration from the primary slot. Monitor the affected slot coming back up:</p>
+<p><code>tmsh show vcmp guest tmsh show vcmp virtual-disk </code></p>
+<p>The affected slot should transition from <code>starting</code> → <code>running</code></p>
+<h2>Additional Information</h2>
+<p>If this procedure would fail, you can try rebuilding VCMP Guest from UCS.</p>
+</article>
+</body>
+</html>

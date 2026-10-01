@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000133165: AspenMesh - Accessing External Services.</title>
+<meta name="description" content="Support Solution: AspenMesh - Accessing External Services. — All TCP outbound connections from a POD being part of Istio mesh is being redirected to istio-proxy sidecar. This includes DNS over TCP connections and connections from init-containers. UDP traffic…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000133165">
+</head>
+<body>
+<header>
+<h1>K000133165: AspenMesh - Accessing External Services.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-04-14</dd>
+<dt>Updated</dt><dd>2023-04-14</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.14, 1.5, 1.6, 1.9, 1.11, 1.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000133165">https://my.f5.com/manage/s/article/K000133165</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>All TCP outbound connections from a POD being part of Istio mesh is being redirected to istio-proxy sidecar. This includes DNS over TCP connections and connections from init-containers. UDP traffic is not being intercepted and proxied by Istio sidecar.</p>
+
+<p>To improve security Aspenmesh is by default configured with default-deny outbound traffic policy to block all outgoing traffic from the POD to external services. To allow the connectivity to external services, users have to explicitly specify the service they want to connect to by creating ServiceEntry object.</p>
+
+<p>Istio opensource distribution uses different approach and it allows all outbound traffic from the POD.</p>
+
+<p>The global traffic policy is configured in Aspenmesh and Istio via <span style="font-size: 12.8px;font-family: SFMono-Regular, Menlo, Monaco, Consolas, &quot;Liberation Mono&quot;, &quot;Courier New&quot;, monospace;">meshConfig.outboundTrafficPolicy.mode</span> parameter. In this article we will describe how to disable the default outbound policy globally, on a specific namespace or on PODs with specific labels.</p>
+
+<h2><strong>Environment</strong></h2>
+
+<ul><li><strong>Kubernetes</strong>: 1.17x -1.24.x </li><li><strong>Aspen Mesh</strong>: 1.9.x, 1.11.x, 1.14.x  </li></ul>
+
+<h2><strong>Cause</strong></h2>
+
+<p>In case the external service has not been configured with ServiceEntry and is not added to Istio Service Registry then the traffic will be blocked by istio-proxy sidecar and users will receive &quot;502 Bad gateway&quot; error message for HTTP services and TCP RST for TCP services.</p>
+
+<p>Example of istio-proxy Access Logs indicating the application trying to connect to unknown external service:</p>
+
+<pre class="ckeditor_codeblock">
+# HTTP Service
+[2023-03-27T10:26:24.887Z] &quot;GET / HTTP/1.1&quot; 502 - direct_response - &quot;-&quot; 0 0 0 - &quot;-&quot; &quot;curl/7.87.0&quot; &quot;24775f16-5bd7-47fa-80b2-4ae35c9b6b88&quot; &quot;f5.com&quot; &quot;-&quot; - - 107.162.162.40:80 10.244.1.20:58506 - block_all
+
+# TCP Service
+[2023-03-27T10:26:34.268Z] &quot;- - -&quot; 0 UH - - &quot;-&quot; 0 0 9 - &quot;-&quot; &quot;-&quot; &quot;-&quot; &quot;-&quot; &quot;-&quot; BlackHoleCluster - 107.162.162.40:1234 10.244.1.20:60910 - -
+</pre>
+
+<h2><strong>Recommended Actions</strong></h2>
+Global and default outbound traffic policy is controlled by Helm override values.yaml file used to install istiod chart.<br>Here is the default policy present in the pre-configured values.yaml file attached to istiod chart:
+<pre class="ckeditor_codeblock">
+meshConfig:
+  # services or ServiceEntries for the destination port
+  # REGISTRY_ONLY - restrict outbound traffic to services defined in the service registry
+  outboundTrafficPolicy:
+    mode: REGISTRY_ONLY</pre>
+
+<p>To change the global policy to ALLOW_ANY and to allow outbound connections to all services we have to change the policy like below:</p>
+
+<pre class="ckeditor_codeblock">
+# aspen-mesh-override-values.yaml file
+meshConfig:
+  outboundTrafficPolicy:
+    mode: ALLOW_ANY</pre>
+
+<p>and run helm upgrade command:<br> </p>
+
+<pre class="ckeditor_codeblock">
+helm upgrade istiod manifests/charts/istio-control/istio-discovery -n istio-system --values aspen-mesh-override-values.yaml</pre>
+
+<p><br>To control the default outbound policy for a specific namespace or for PODs having specific labels we can use Sidecar CRD.<br>Example 1: default outbound policy for all PODs with sidecars deployed in a namespace  &lt;namespace&gt;</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: networking.istio.io/v1beta1
+kind: Sidecar
+metadata:
+  name: allow-any-namespace
+  namespace: &lt;namespace&gt;
+spec:
+  outboundTrafficPolicy:
+    mode: &quot;ALLOW_ANY&quot;
+</pre>
+
+<p><br>Example 1: default outbound policy for all PODs with sidecars deployed in a namespace  &lt;namespace&gt; and with label &#39;policy: allowany&#39;</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: networking.istio.io/v1beta1
+kind: Sidecar
+metadata:
+  name: allow-any-selector
+  namespace: &lt;namespace&gt;
+spec:
+  workloadSelector:
+    labels:
+      policy: allowany
+  outboundTrafficPolicy:
+    mode: &quot;ALLOW_ANY&quot;</pre>
+
+<p> </p>
+
+<h2><strong>Additional Information</strong></h2>
+
+<ol><li><a href="https://istio.io/latest/docs/tasks/traffic-management/egress/egress-control/" target="_blank">Istio - Accessing External Services</a></li><li><a href="https://istio.io/latest/docs/reference/config/istio.mesh.v1alpha1/#MeshConfig" target="_blank">Istio - meshConfig reference</a></li><li><a href="https://istio.io/latest/docs/reference/config/networking/sidecar/#Sidecar" target="_blank">Istio Sidecar reference</a></li></ol>
+</article>
+</body>
+</html>

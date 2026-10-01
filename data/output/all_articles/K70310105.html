@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K70310105: ASM with IP-intelligence cannot reject request based on x-forwarded-for</title>
+<meta name="description" content="Support Solution: ASM with IP-intelligence cannot reject request based on x-forwarded-for — You apply solution described in article K73304774: AFM + IP Intelligence does not block requests using X-Forwarded-For header value">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K70310105">
+</head>
+<body>
+<header>
+<h1>K70310105: ASM with IP-intelligence cannot reject request based on x-forwarded-for</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-01-19</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP Platforms</li><li>BIG-IP</li><li>BIG-IP ASM: 15.X.X, 14.X.X, 13.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 13.1.0, 16.1.0, 13.0.1, 16.X.X, 13.0.0, 16.0.0, 16.0.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K70310105">https://my.f5.com/manage/s/article/K70310105</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<ul><li>You apply solution described in article <a href="https://my.f5.com/manage/s/article/K73304774" target="_self">K73304774: AFM + IP Intelligence does not block requests using X-Forwarded-For header value</a></li><li>X-forwarded-For header contains multiple IP address as it traverse the network </li><li>The last client IP address extracted from x-forwarded-for header by AWAF security policy, for example the IP address of a proxy and not the true source of the request</li><li>Meaning, If a malicious actor initiated the request but the request traverse through multiple hops, it leads the described solution of IP reputation not being effective</li></ul>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>ASM</li><li>IP-reputation </li><li>X-forwarded-for</li><li>BIG-IP</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<ul><li>The BIG-IP system appends the source IP address to the existing X-Forwarded-For header</li><li>If multiple X-Forwarded-For headers are present in the request, the BIG-IP system appends the source IP address to the value of the last X-Forwarded-For header in the request.</li><li>By design and a change of behavior introduced following <a href="https://cdn.f5.com/product/bugtracker/ID632532.html" target="_self">ID 632532</a>.</li><li><a href="https://my.f5.com/manage/s/article/K50499256" target="_self">K50499256: The BIG-IP system appends the source IP address to the existing X-Forwarded-For header</a></li></ul>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ul><li>A custom iRule like the one described below can be used </li><li>The iRule iterates and identifies all IP address/es in the X-Forwarded-For header and applies IP-reputation to each IP-address identified</li><li>You would need to verify and possibly adjust the below iRule for your environment </li></ul>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p style="margin-left: 40px;"><span class="code">when HTTP_REQUEST {<br>#Variables for the Log Message<br>set xforwarderfor [HTTP::header &quot;X-Forwarded-For&quot;]<br>set http_host [HTTP::host]<br>set http_uri [HTTP::uri]<br>set http_user_agent [HTTP::header &quot;User-Agent&quot;]<br>set xhost [HTTP::header &quot;X-Host&quot;]<br>### Only check the website example.com<br><br>if  {[HTTP::header &quot;X-Host&quot;] eq &quot;example.com&quot;}{<br>    foreach axff [HTTP::header values X-Forwarded-For] {<br>    foreach anip [split [string map {&quot; &quot; &quot;&quot;} $axff] &quot;,&quot;] {<br>        set ip_reputation_categories [IP::reputation $anip]<br>        <br>        ### if the IP have a bad reputation the lengh will be NOT zero<br>        if {[llength [IP::reputation $anip]] != 0}{<br>            log &quot;action=blocked,http_host=\&quot;$http_host\&quot;,http_user_agent=\&quot;$http_user_agent\&quot;,http_uri=\&quot;$http_uri\&quot;,xforwarderfor=$xforwarderfor,xhost=\&quot;$xhost\&quot;,badip=\&quot;$anip\&quot;,reputation=\&quot;[IP::reputation $anip]\&quot;&quot;<br>            reject}<br>        }<br>    }<br>    }<br>} </span></p>
+</article>
+</body>
+</html>

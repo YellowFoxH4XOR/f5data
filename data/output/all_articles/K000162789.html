@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162789: NGINX App Protect WAF Resource Threshold Semantics on High-RAM and High-Core Linux Hosts</title>
+<meta name="description" content="Support Solution: NGINX App Protect WAF Resource Threshold Semantics on High-RAM and High-Core Linux Hosts — The physical-memory and CPU metrics have different semantics.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162789">
+</head>
+<body>
+<header>
+<h1>K000162789: NGINX App Protect WAF Resource Threshold Semantics on High-RAM and High-Core Linux Hosts</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-05</dd>
+<dt>Updated</dt><dd>2026-08-05</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>F5 WAF for NGINX</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162789">https://my.f5.com/manage/s/article/K000162789</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>In standalone NGINX App Protect WAF deployments, <span style="font-family: &#39;courier new&#39;, courier, monospace;">physical_memory_utilization</span> can report a high value on an idle Linux host with low actual memory usage. A <span style="font-family: &#39;courier new&#39;, courier, monospace;">waf_resource_exception</span> event may then place the enforcer into failure mode:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">APP_PROTECT {</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> &quot;event&quot;: &quot;waf_resource_exception&quot;,</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> &quot;mode&quot;: &quot;failure&quot;,</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> &quot;mode_changed&quot;: true,</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> &quot;resource&quot;: &quot;physical_memory_utilization&quot;,</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> &quot;value&quot;: 94,</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">&quot;threshold&quot;: 90</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></p>
+<p>The physical-memory and CPU metrics have different semantics.</p>
+<h2>Environment</h2>
+<ul><li>Standalone NGINX App Protect WAF deployment</li><li>NGINX Plus on a high-core, high-memory Linux host</li><li>RHEL 9-family operating system</li><li>Example configuration:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">app_protect_cpu_thresholds high=90 low=80;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">app_protect_physical_memory_util_thresholds high=90 low=80;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">app_protect_failure_mode_action drop;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">app_protect_request_buffer_overflow_action drop;</span></p>
+</li><li>Actual host memory consumption may remain low while <span style="font-family: &#39;courier new&#39;, courier, monospace;">physical_memory_utilization</span> reports a value above 90.</li><li>The CPU metric is calculated across all host CPUs rather than per core or per worker.</li></ul>
+<h2>Cause</h2>
+<p>The <span style="font-family: &#39;courier new&#39;, courier, monospace;">physical_memory_utilization</span> metric has inverted practical semantics in the affected implementation. The NGINX module obtains system memory information and reports free RAM. Therefore:</p>
+<ul><li>A high value indicates a large amount of free RAM.</li><li>A low value indicates less free RAM.</li><li>The metric does not represent enforcer RSS, the <span style="font-family: &#39;courier new&#39;, courier, monospace;">total_umu_max_size</span> pool, or actual memory pressure.</li><li>The calculation does not use CPU core count or enforcer thread count.</li><li>Changing <span style="font-family: &#39;courier new&#39;, courier, monospace;">total_umu_max_size</span> does not materially change this reading.</li></ul>
+<p>An idle host with substantial free memory can therefore exceed the configured high threshold and enter failure mode. The apparent correlation with core count is not part of the metric calculation.</p>
+<p>The CPU metric has normal polarity: a higher value indicates higher aggregate CPU busy time.</p>
+<h2>Recommended Actions</h2>
+<ul><li><strong>Configure the physical-memory threshold</strong>
+<ol><li>Measure the steady-state <span style="font-family: &#39;courier new&#39;, courier, monospace;">physical_memory_utilization</span> value under representative operating conditions.</li><li>If the check is retained, set the high threshold above the normal steady-state value and the low threshold below the high threshold. For example:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">app_protect_physical_memory_util_thresholds high=98 low=95;</span></p>
+</li><li>If free-RAM monitoring is not useful, disable the check by setting both thresholds to 100:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">app_protect_physical_memory_util_thresholds high=100 low=100;</span></p>
+</li><li>Do not increase <span style="font-family: &#39;courier new&#39;, courier, monospace;">total_umu_max_size</span> to change <span style="font-family: &#39;courier new&#39;, courier, monospace;">physical_memory_utilization</span>. This parameter controls the enforcer’s UMU allocation budget, not this metric.</li></ol>
+</li><li><strong>Configure the CPU threshold</strong>
+<p>Use the aggregate CPU threshold as a coarse protection mechanism for sustained host-wide CPU saturation:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">app_protect_cpu_thresholds high=90 low=80;</span></p>
+<p>The CPU value is calculated from aggregate <span style="font-family: &#39;courier new&#39;, courier, monospace;">/proc/stat</span> deltas:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">in_use = delta_user + delta_nice + delta_sys + delta_iowait</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">total = in_use + delta_idle</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">sample = 100 * in_use / total</span></p>
+<p>The reported value is averaged over the 10 most recent samples. Short CPU spikes may not trigger a <span style="font-family: &#39;courier new&#39;, courier, monospace;">waf_resource_exception</span>.</p>
+<p>A single busy core contributes only a small percentage of aggregate CPU on a high-core host. Validate CPU threshold behavior with sustained load distributed across all cores when required.<br><br></p>
+</li><li><strong>Use operating-system resource controls</strong>
+<p>For actual resource protection, supplement the NGINX App Protect WAF thresholds with:</p>
+<ul><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">MemoryMax=</span> or <span style="font-family: &#39;courier new&#39;, courier, monospace;">MemoryHigh=</span> on the NGINX systemd unit, or an equivalent container cgroup limit.</li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">CPUQuota=</span> on the NGINX systemd unit, or an equivalent container CPU limit.</li><li>Monitoring for kernel out-of-memory and OOM-kill events.</li><li>Monitoring of memory and CPU Pressure Stall Information (PSI).</li><li>NGINX request and connection limiting.</li><li>Appropriate worker sizing and CPU affinity.</li><li>Per-worker capacity planning, because aggregate CPU measurement may not detect single-core hotspots.</li></ul>
+</li></ul>
+<h2>Additional Information</h2>
+<ul><li>The resource state machine enters failure mode when the reported value exceeds <span style="font-family: &#39;courier new&#39;, courier, monospace;">high</span> and returns to normal mode when it falls below <span style="font-family: &#39;courier new&#39;, courier, monospace;">low</span>.</li><li>Because the physical-memory value represents free RAM, an idle high-memory host may remain above the high threshold and stay in failure mode until the value falls below the low threshold.</li><li>A high <span style="font-family: &#39;courier new&#39;, courier, monospace;">physical_memory_utilization</span> value does not by itself indicate memory exhaustion.</li><li>The NGINX App Protect WAF CPU metric reports aggregate busy CPU time and is intended as a broad safety net for sustained saturation.</li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmm_count</span> and <span style="font-family: &#39;courier new&#39;, courier, monospace;">total_umu_max_size</span> should not be tuned to correct the physical-memory metric. <span style="font-family: &#39;courier new&#39;, courier, monospace;">total_umu_max_size</span> remains relevant for limiting enforcer UMU allocations.</li></ul>
+</article>
+</body>
+</html>

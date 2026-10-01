@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160093: NGINX Load Balancer for Kubernetes (NLK) with multiple upstream applications (local)</title>
+<meta name="description" content="Support Solution: NGINX Load Balancer for Kubernetes (NLK) with multiple upstream applications (local) — When using the NGINX Load Balancer for Kubernetes (NLK) setup guide with a local Kubernetes cluster and NGINX Ingress Controller (NIC), issues arise when attempting to route traffic to multiple…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160093">
+</head>
+<body>
+<header>
+<h1>K000160093: NGINX Load Balancer for Kubernetes (NLK) with multiple upstream applications (local)</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-19</dd>
+<dt>Updated</dt><dd>2026-02-19</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Plus: R36</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160093">https://my.f5.com/manage/s/article/K000160093</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When using the <a href="https://docs.nginx.com/nginxaas/azure/loadbalancer-kubernetes/" target="_blank">NGINX Load Balancer for Kubernetes (NLK) setup guide</a> with a local Kubernetes cluster and NGINX Ingress Controller (NIC), issues arise when attempting to route traffic to multiple application upstreams using a single nodePort Service.</p>
+<p><strong>Problem:</strong> When a single nodePort Service is configured and the same statefile is shared across multiple upstreams in the NGINX configuration, only the original upstream receives NLK updates. Other upstreams require a manual NGINX reload to reflect the NLK changes.</p>
+<p> </p>
+<h2>Environment</h2>
+<ul><li>NGINX Ingress Controller cluster with NGINX Load Balancer for Kubernetes (NLK) installed</li><li>NGINX Plus Load Balancer</li><li>nodePort Service configuration</li><li>Shared statefile between multiple upstreams</li><li>NLK updating NGINX configuration with upstream information</li></ul>
+<h2>Cause</h2>
+<p>NLK is designed to support <strong>one nodePort per upstream application</strong> and will only update one API endpoint per nodePort. When the API is updated with new information from NLK, NGINX updates the corresponding statefile to ensure consistency in case of an NGINX reload.</p>
+<p><strong>Limitation:</strong> Sharing a single nodePort across multiple upstreams is not supported by NLK&#39;s design.</p>
+<p> </p>
+<h2>Answer/Recommended Actions</h2>
+<p>Use one nodePort per application or upstream</p>
+<p>Example Configuration</p>
+<p><span style="font-family: &#39;Times New Roman&#39;;font-size: medium;">app1 Namespace</span></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>apiVersion: v1
+kind: Service
+metadata:
+name: nodeport-app1
+namespace: app1-namespace
+annotations:
+# Let the controller know to pay attention to this service.
+# If you are connecting multiple controllers, the value can be used to distinguish them.
+nginx.com/nginxaas: nginxaas
+spec:
+type: NodePort
+ports:
+- targetPort: 443
+port: 443
+protocol: TCP
+# The port name must be prefixed with either `http-` or `stream-`
+# and the rest of the name must match the name of an upstream in that context.
+name: http-app1-upstream
+selector:
+app.kubernetes.io/name: nginx-ingress</code></pre>
+<p><span style="font-family: &#39;Times New Roman&#39;;font-size: medium;">app2 Namespace</span></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>apiVersion: v1
+kind: Service
+metadata:
+name: nodeport-app2
+namespace: app2-namespace
+annotations:
+# Let the controller know to pay attention to this service.
+# If you are connecting multiple controllers, the value can be used to distinguish them.
+nginx.com/nginxaas: nginxaas
+spec:
+type: NodePort
+ports:
+- targetPort: 443
+port: 443
+protocol: TCP
+# The port name must be prefixed with either `http-` or `stream-`
+# and the rest of the name must match the name of an upstream in that context.
+name: http-app2-upstream
+selector:
+app.kubernetes.io/name: nginx-ingress</code></pre>
+<p><span style="font-family: &#39;Times New Roman&#39;;font-size: medium;">Load Balancer config</span></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>upstream app1-upstream {
+  zone app1-upstream 256k;
+  least_time last_byte;
+  keepalive 16;
+  state /var/lib/nginx/state/app1-upstream.state;
+}
+
+upstream app2-upstream {
+  zone app2-upstream 256k;
+  least_time last_byte;
+  keepalive 16;
+  state /var/lib/nginx/state/app2-upstream.state;
+}</code></pre>
+<p> </p>
+<h2>Additional Information</h2>
+<ul><li>The nodePort Service can be deployed in either the NGINX Ingress Controller namespace or in an application-specific namespace.</li><li>Each upstream requires its own dedicated nodePort Service and unique statefile for NLK to function correctly.</li><li>The port name in the Service definition must follow the naming convention: <span style="font-family: &#39;maple mono&#39;, monospace;font-size: 12.25px;">http-;&lt;upstream-name&gt;</span> or <span style="font-family: &#39;maple mono&#39;, monospace;font-size: 12.25px;">stream-&lt;upstream-name&gt;</span> to match the corresponding upstream block in the NGINX configuration.</li></ul>
+</article>
+</body>
+</html>

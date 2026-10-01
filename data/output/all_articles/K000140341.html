@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000140341: Message: 01260009:4: [client] -&gt; [virtual-server]: Connection error: ssl_hs_do_crl_validation:XXXX: alert(46) unknown certificate error</title>
+<meta name="description" content="Support Solution: Message: 01260009:4: [client] -&gt; [virtual-server]: Connection error: ssl_hs_do_crl_validation:XXXX: alert(46) unknown certificate error — Dynamic CRL checking for client certificate authentication generally works with following order.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000140341">
+</head>
+<body>
+<header>
+<h1>K000140341: Message: 01260009:4: [client] -&gt; [virtual-server]: Connection error: ssl_hs_do_crl_validation:XXXX: alert(46) unknown certificate error</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-07-17</dd>
+<dt>Updated</dt><dd>2025-08-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.5.X, 17.5.1, 17.5.0, 17.1.2, 16.1.6, 16.1.5, 17.1.0, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 15.1.10, 15.1.9, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.1.8, 15.1.X, 16.1.X, 17.1.X, 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000140341">https://my.f5.com/manage/s/article/K000140341</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Dynamic CRL checking for client certificate authentication generally works with following order.</p>
+<ol><li>BIG-IP first request client to provide its certificate for certificate authentication.</li><li>Once client certificate is received by BIG-IP, BIG-IP checks the &quot;X509v3 CRL Distribution Points&quot; extension inside client certificate.</li><li>Then, BIG-IP tries to resolve the FQDN of the &quot;X509v3 CRL Distribution Points&quot; URL and sends DNS request via DNS resolver, so that BIG-IP can download CRL from the specified &quot;X509v3 CRL Distribution Points&quot; URL.</li><li>After BIG-IP successfully resolves the IP address of CRLDP FQDN. BIG-IP tries to download CRL from the specified &quot;X509v3 CRL Distribution Points&quot; URL.</li><li>Once CRL is successfully downloaded, BIG-IP caches it and checks client certificate against CRL to see if client certificate is revoked or not.</li><li>If client certificate is revoked, client side SSL connection is torn down. If client certificate is valid, client is allowed to access to resource (e.g., access to pool member, access to APM resources...etc).</li></ol>
+<p>Here is packet flow of normal/working case (once CRL file is successfully downloaded and cached, further DNS or HTTP CRL download traffic may not be captured, as BIG-IP uses locally cached one).</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000U9aX&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007lSRn" alt="wireshark-normal-case.png" style="display: block;margin-left: auto;margin-right: auto;"></img></p>
+<p style="text-align: center;"><span style="color: #666666;">Figure: Dynamic CRL working case</span></p>
+<p> </p>
+<p>Under specific configuration, DNS name resolution may not happen and client side SSL connection may be torn down with &quot;alert(46) unknown certificate error&quot; error message as follows.</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Jul 16 13:02:15 bigip.local warning tmm4[11974]: 01260009:4: 10.1.1.50:52492 -&gt; 10.1.1.176:443: Connection error: ssl_hs_do_crl_validation:6335: alert(46) unknown certificate error</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">Jul 16 13:02:15 bigip.local warning tmm4[11974]: 01260013:4: SSL Handshake failed for TCP 10.1.1.50:52492 -&gt; 10.1.1.176:443</span></p>
+<p>Here is packet flow of non-working case. Neither DNS traffic (of CRLDP FQDN name resolution) nor CRL download (HTTP) traffic is captured.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000U9aX&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007lSRs" alt="wireshark-failure-case.png" style="display: block;margin-left: auto;margin-right: auto;"></img></p>
+<p style="text-align: center;"><span style="color: #666666;">Figure: Dynamic CRL non-working case</span></p>
+<p> </p>
+<h2>Environment</h2>
+<ul><li>Dynamic CRL checking for client certificate authentication</li><li>Net DNS resolver &quot;Forward Zone&quot; configuration does not match to the CRLDP FQDN inside client certificate</li></ul>
+<p> </p>
+<h2>Cause</h2>
+<p>The error message can be seen at the time when DNS resolver &quot;Forward Zone&quot; configuration does not match to the client certificate CRLDP FQDN.</p>
+<p>Here is example of non-working case. Client certificate&#39;s CRLDP FQDN is <strong>&quot;ubuntu2204server1.f5ss.local&quot;</strong>. However, DNS resolver forward zone is specified as <strong>&quot;invalid.local&quot;</strong>. Hence, DNS resolver does not try to resolve &quot;ubuntu2204server1.f5ss.local&quot; and CRL download process does not fire.</p>
+<pre class="language-markup"><code>### client certificate CRLDP ###
+root@ubuntu2204client1:~/f5ss.local.cert# openssl x509 -in testuser101.crt -text -noout | grep CRL -A 2
+            X509v3 CRL Distribution Points:
+                Full Name:
+                  URI:http://ubuntu2204server1.f5ss.local/mycrl.crl
+root@ubuntu2204client1:~/f5ss.local.cert#
+
+
+### BIG-IP configuration example (non-working) ###
+ltm virtual /Common/clientssl_dynamic_crl_check_vs {
+    destination /Common/10.1.1.176:443
+    ip-protocol tcp
+    mask 255.255.255.255
+    pool /Common/my_http_pool
+    profiles {
+        /Common/my_clientssl_dynamic_crl_check {
+            context clientside
+        }
+        /Common/tcp { }
+    }
+    serverssl-use-sni disabled
+    source 0.0.0.0/0
+    source-address-translation {
+        type automap
+    }
+    translate-address enabled
+    translate-port enabled
+    vlans {
+        /Common/external
+    }
+    vlans-enabled
+}
+ltm profile client-ssl /Common/my_clientssl_dynamic_crl_check {
+    app-service none
+    authenticate always
+    ca-file /Common/ubuntu2204server1ca.f5ss.local
+    cache-size 0
+    cert-key-chain {
+        web001.f5ss_ubuntu2204server1ca.f5ss_0 {
+            cert /Common/web001.f5ss.local
+            chain /Common/ubuntu2204server1ca.f5ss.local
+            key /Common/web001.f5ss.local
+        }
+    }
+    crl /Common/my_dynamic_crl
+    defaults-from /Common/clientssl
+    inherit-ca-certkeychain true
+    inherit-certkeychain false
+    peer-cert-mode require
+}
+net dns-resolver /Common/my_dnsresolver {
+    forward-zones {
+        invalid.local {
+            nameservers {
+                192.168.10.201:53 { }
+            }
+        }
+    }
+    route-domain /Common/0
+}
+sys internal-proxy /Common/my_internal_proxy {
+    dns-resolver /Common/my_dnsresolver
+    route-domain /Common/0
+}
+sys crypto cert-validator crl /Common/my_dynamic_crl {
+    internal-proxy /Common/my_internal_proxy
+    strict-revocation-check enabled
+}</code></pre>
+<p> </p>
+<h2>Recommended Actions</h2>
+<p>Make sure DNS resolver forward zone is correctly covering FQDN of client certificate CRLDP FQDN.</p>
+<p><br>For example, forward zone name &quot;f5ss.local&quot; can cover CRLDP FQDN &quot;ubuntu2204server1.f5ss.local&quot;.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000U9aX&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007lSUi" alt="correct_resolver-1.png" style="display: block;margin-left: auto;margin-right: auto;"></img></p>
+<p style="text-align: center;"><span style="color: #666666;">Figure: DNS resolver with specific zone name</span></p>
+<pre class="language-markup"><code>net dns-resolver /Common/my_dnsresolver {
+    forward-zones {
+        f5ss.local {
+            nameservers {
+                192.168.10.201:53 { }
+            }
+        }
+    }
+    route-domain /Common/0
+}</code></pre>
+<p> </p>
+<p>Or alternatively, forward zone &quot;.&quot; (dot) may be the easiest way to see if name resolution correctly fire.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000U9aX&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007lSUw" alt="correct_resolver-2.png" style="display: block;margin-left: auto;margin-right: auto;"></img></p>
+<p style="text-align: center;"><span style="color: #666666;">Figure: DNS resolver with &quot;.&quot; (dot) zone</span></p>
+<pre class="language-markup"><code>net dns-resolver /Common/my_dnsresolver {
+    forward-zones {
+        . {
+            nameservers {
+                192.168.10.201:53 { }
+            }
+        }
+    }
+    route-domain /Common/0
+}</code></pre>
+<p> </p>
+<h2>Additional Information</h2>
+<p>Once CRLDP FQDN is successfully resolved and CRL file is successfully downloaded and cached, you will find binary CRL file under &quot;/config/filestore/crl_file_cache_d/&quot; directory. The cached binary CRL file is neither PEM nor DER format.</p>
+<pre class="language-markup"><code>[root@bigip:Active:Standalone] config # ls -l /config/filestore/crl_file_cache_d/
+total 8
+-rwx------. 1 root root 5304 Jul 16 13:04 http___ubuntu2204server1_f5ss_local_mycrl_crl.1
+[root@bigip:Active:Standalone] config # </code></pre>
+<p> </p>
+<p>If CRL file is not saved under &quot;/config/filestore/crl_file_cache_d/&quot;, CRL download might have failed due to any reason. At such time, it is better to check CRL file download traffic by tcpdump first.</p>
+<p>Depending on CRLDP server IP address and BIG-IP routing configuration, CRL download traffic may traverse either management interface or TMM interface. On the following example, assuming CRLDP is HTTP URI (80/TCP).</p>
+<p>[case-1) : CRLDP server is reachable via management interface]</p>
+<pre class="language-markup"><code># tcpdump -nni eth0 -s0 host [CRLDP server IP address] and port 80</code></pre>
+<p>[case-2) : CRLDP server is reachable via TMM interface]</p>
+<pre class="language-markup"><code># tcpdump -nni 0.0:nnn -s0 host [CRLDP server IP address] and port 80</code></pre>
+<p> </p>
+<h3><span style="text-decoration: underline;">Cache Timeout</span></h3>
+<p><span dir="ltr">The Dynamic CRL compares the current time and the CRL &quot;Next Update&quot; property,</span></p>
+<p><span dir="ltr">BIG-IP checks every 10 minutes to see if it has expired. </span><span dir="ltr">If CRL has expired, BIG-IP will fetch the latest CRL file from CRLDP.</span></p>
+<p><span dir="ltr">Use the following command to check Next update timestamp in the crl file:</span></p>
+<p><span dir="ltr" style="background-color: #dddddd;">openssl crl -inform der -in test.crl -text</span></p>
+<p><span dir="ltr" style="font-family: &#39;courier new&#39;, courier, monospace;">...</span></p>
+<p><span dir="ltr" style="font-family: &#39;courier new&#39;, courier, monospace;">Last Update: Nov 19 02:52:29 2024 GMT</span></p>
+<p><span dir="ltr" style="font-family: &#39;courier new&#39;, courier, monospace;">Next Update: Nov 26 15:12:29 2024 GMT</span></p>
+<p><span dir="ltr"> </span></p>
+<p><span dir="ltr">To manually delete Dynamic CRL cache, use the following steps.</span></p>
+<p><span dir="ltr">1. Delete crl cache file in /config/filestore/crl_file_cache_d/</span></p>
+<p><span dir="ltr">Example: </span></p>
+<p><span dir="ltr" style="background-color: #dddddd;">rm http___www_f5_com_crl_crl.1</span></p>
+<p><span dir="ltr"> </span></p>
+<p><span dir="ltr">2. Restart keymgmtd process to reload cache:</span></p>
+<p><span dir="ltr" style="background-color: #dddddd;">tmsh restart sys service keymgmtd</span></p>
+</article>
+</body>
+</html>

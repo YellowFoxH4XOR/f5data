@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162313: Resolving CIS AS3 Declaration Failures Caused by Path-Length and Stale Node Conflicts</title>
+<meta name="description" content="Support Solution: Resolving CIS AS3 Declaration Failures Caused by Path-Length and Stale Node Conflicts — A stale BIG-IP node object uses the same IP address as a current AS3 pool member.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162313">
+</head>
+<body>
+<header>
+<h1>K000162313: Resolving CIS AS3 Declaration Failures Caused by Path-Length and Stale Node Conflicts</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-07-17</dd>
+<dt>Updated</dt><dd>2026-07-17</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Automation and Orchestration</li><li>F5 BIG-IP Container Ingress Services</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162313">https://my.f5.com/manage/s/article/K000162313</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>F5 Container Ingress Services (CIS) can fail to apply AS3 declarations when:</p>
+<ul><li>An AS3 object path exceeds the 195-character limit.</li><li>A stale BIG-IP node object uses the same IP address as a current AS3 pool member.</li><li>A large declaration takes longer than the BIG-IP processing timeout.</li><li>A single declaration contains resources from multiple partitions and one resource fails validation.</li></ul>
+<p>Typical messages include:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">unable to digest declaration. Error: Path ... is longer than 195 characters</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">declaration is invalid</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">pool member ... static address ... conflicts with bigip node ...</span></p>
+<p>CIS may report HTTP 422 responses, and multiple VirtualServer resources can remain in an <span style="font-family: &#39;courier new&#39;, courier, monospace;">ERROR</span> state until the invalid or stale configuration is removed.</p>
+<h2>Environment</h2>
+<ul><li>F5 Container Ingress Services (CIS) 2.20.1.</li><li>BIG-IP with AS3 managing multiple partitions.</li><li>CIS deployed in custom-resource mode, including VirtualServer and related CRDs.</li><li>A large Kubernetes environment containing more than 185 namespaces.</li><li>Kubernetes pod IP addresses that can change when pods are restarted or recreated.</li><li>CIS configuration containing resources distributed across multiple BIG-IP partitions.</li><li>AS3 declarations submitted to the BIG-IP AS3 endpoint.</li><li>Optional CIS settings relevant to this issue:
+<ul><li><span style="background-color: #f1f1f1;">--filter-tenants</span></li><li><span style="background-color: #f1f1f1;">--custom-resource-mode</span></li><li><span style="background-color: #f1f1f1;">--share-nodes</span></li><li><span style="background-color: #f1f1f1;">--as3-validation</span></li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p>The following causes were identified:</p>
+<ul><li><strong>AS3 path-length violation:</strong> AS3 requires the combined <span style="font-family: &#39;courier new&#39;, courier, monospace;">/Tenant/Application/Object</span> path to be no longer than 195 characters, including slashes.</li><li><strong>Declaration fate sharing:</strong> When CIS submits a unified declaration, an invalid object can cause the complete declaration to be rejected. Consequently, updates for otherwise valid resources may also fail.</li><li><strong>Stale BIG-IP node objects:</strong> A previous pod IP remained configured as a BIG-IP node while the same address was submitted as a pool-member address in a new AS3 declaration. AS3 rejected the declaration because of the address conflict.</li><li><strong>Large declaration processing time:</strong> A CIS instance managing a large number of namespaces can generate a declaration that takes longer than the BIG-IP processing timeout.</li><li><strong>Tenant-filtering scope:</strong> <span style="background-color: #f1f1f1;">--filter-tenants=true</span> is intended for AS3 ConfigMap processing. It does not provide the expected per-tenant isolation for deployments using custom-resource-based resources such as VirtualServer or TransportServer.</li></ul>
+<h2>Answer/Recommended Actions</h2>
+<h3>Resolve an AS3 path-length violation</h3>
+<ol><li>Identify the object reported in the AS3 warning.</li><li>Shorten the tenant, application, or object names so the complete AS3 path is 195 characters or fewer.</li><li>Resubmit the affected Kubernetes resource.</li><li>Confirm that CIS receives a successful AS3 response and that the related resources leave the <span style="font-family: &#39;courier new&#39;, courier, monospace;">ERROR</span> state.</li></ol>
+<p>The limit cannot be disabled through CIS configuration.</p>
+<h3>Resolve stale node and pool-member conflicts</h3>
+<p>Complete the following steps during a controlled maintenance period:</p>
+<p> </p>
+<ol><li>Back up the BIG-IP configuration on both HA nodes:</li></ol>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh save sys ucs /var/tmp/&lt;backup-name&gt;</span></p>
+<p> </p>
+<ol start="2"><li>Export the current AS3 declaration for reference:</li></ol>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">curl -sk -u admin:&lt;password&gt; \</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">https://&lt;bigip-management-address&gt;/mgmt/shared/appsvcs/declare</span></p>
+<p> </p>
+<ol start="3"><li>Check for manually created objects in the partitions managed by CIS. Back up or document any objects that CIS does not own, because deleting AS3 declarations may remove AS3-managed configuration and will not recreate manually managed objects.</li><li>Stop the CIS deployment before removing stale AS3 configuration:</li></ol>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">kubectl scale deployment f5-cis -n f5-cis --replicas=0</span></p>
+<p> </p>
+<ol start="5"><li>Delete the affected AS3 declaration or tenant declaration from BIG-IP. If deleting the complete declaration, use the AS3 declaration endpoint:</li></ol>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">curl -sk -u admin:&lt;password&gt; \</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">-X DELETE \</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">https://&lt;bigip-management-address&gt;/mgmt/shared/appsvcs/declare</span></p>
+<p>A tenant-specific deletion may be used when a narrower cleanup is required:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">curl -sk -u admin:&lt;password&gt; \</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">-X DELETE \</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">https://&lt;bigip-management-address&gt;/mgmt/shared/appsvcs/declare/&lt;tenant&gt;</span></p>
+<p> </p>
+<ol start="6"><li>Verify that obsolete BIG-IP node objects have been removed from the affected partitions:</li></ol>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh list ltm node partition &lt;partition&gt;</span></p>
+<p> </p>
+<ol start="7"><li>If stale nodes remain, remove only the confirmed obsolete node objects and save the configuration:</li></ol>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh delete ltm node /&lt;partition&gt;/&lt;node-name&gt;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh save sys config</span></p>
+<p> </p>
+<ol start="8"><li>Configure CIS with shared nodes where appropriate:</li></ol>
+<p><span style="background-color: #f1f1f1;">--share-nodes=true</span></p>
+<p>This places shared node objects in <span style="font-family: &#39;courier new&#39;, courier, monospace;">/Common</span> and helps prevent duplicate node definitions across partitions.</p>
+<p> </p>
+<ol start="9"><li>Restart CIS:</li></ol>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">kubectl scale deployment f5-cis -n f5-cis --replicas=1</span></p>
+<p> </p>
+<ol start="10"><li>Monitor CIS logs and verify successful AS3 processing:</li></ol>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">kubectl logs -n f5-cis -f deployment/f5-cis</span></p>
+<p> </p>
+<ol start="11"><li>Confirm that VirtualServer resources no longer report <span style="font-family: &#39;courier new&#39;, courier, monospace;">ERROR</span>:</li></ol>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">kubectl get virtualserver --all-namespaces</span></p>
+<h3>Reduce declaration size and cross-partition impact</h3>
+<ul><li>Divide namespaces across multiple CIS instances.</li><li>Scope each CIS instance to an appropriate namespace or namespace group.</li><li>Assign each CIS instance only the BIG-IP partition or partitions it is intended to manage.</li><li>Avoid using a single CIS instance to generate one very large declaration for the entire Kubernetes cluster.</li><li>For AS3 ConfigMap deployments, enable tenant filtering where supported:</li></ul>
+<p><span style="background-color: #f1f1f1;">--filter-tenants=true</span></p>
+<ul><li>Do not rely on <span style="background-color: #f1f1f1;">--filter-tenants=true</span> to isolate VirtualServer, TransportServer, or other custom-resource-based declarations.</li></ul>
+<h3>Validate the <span style="background-color: #f1f1f1;">--as3-validation</span> setting</h3>
+<ul><li><span style="background-color: #f1f1f1;">--as3-validation=true</span> causes CIS to validate an AS3 declaration before deploying it to BIG-IP.</li><li>The setting defaults to <span style="font-family: &#39;courier new&#39;, courier, monospace;">true</span> when it is not specified.</li><li>Disabling validation does not resolve an AS3 declaration that BIG-IP itself rejects because of a path-length violation, duplicate node, or other declaration conflict.</li></ul>
+<h3>Investigate large-declaration timeout symptoms</h3>
+<p>If CIS reports an HTML response or an AS3 response parsing error such as:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Response body unmarshal failed: invalid character &#39;&lt;&#39; looking for beginning of value</span></p>
+<p>collect the CIS and BIG-IP REST/AS3 logs around the failure and review the declaration size and processing duration. Splitting the CIS workload into smaller instances is the recommended long-term approach. Increasing BIG-IP timeout values may reduce timeout frequency but does not correct invalid declarations or stale configuration.</p>
+<h2>Additional Information</h2>
+<ul><li>A single invalid object in a unified AS3 declaration can prevent other updates in that declaration from being accepted.</li><li>Removing stale AS3 configuration and allowing CIS to repopulate the current Kubernetes state can restore synchronization.</li><li>Before deleting AS3 declarations, verify whether manually created BIG-IP objects exist in CIS-managed partitions.</li><li>A successful CIS restart does not by itself prove that all resources have recovered; verify AS3 responses and Kubernetes resource status.</li><li>If GTM or ExternalDNS resources reference LTM virtual servers managed by another CIS instance, ensure that the referenced virtual server exists and is visible to the CIS instance managing the GTM resource.</li><li><a href="https://support.f5.com/csp/article/K000159549" target="_blank">K000159549: AS3 object path length limitation</a></li></ul>
+</article>
+</body>
+</html>

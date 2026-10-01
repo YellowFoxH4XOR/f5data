@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K92893202: SAML BIG-IP as IdP - Single Logout Request resulting in a reset</title>
+<meta name="description" content="Support Solution: SAML BIG-IP as IdP - Single Logout Request resulting in a reset — BIG-IP IdP sends a reset packet to the client when a SAML Logout Request is sent without an MRHSession cookie.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K92893202">
+</head>
+<body>
+<header>
+<h1>K92893202: SAML BIG-IP as IdP - Single Logout Request resulting in a reset</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-12-01</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 16.1.2</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K92893202">https://my.f5.com/manage/s/article/K92893202</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>BIG-IP IdP sends a reset packet to the client when a SAML Logout Request is sent without an MRHSession cookie.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP APM</li><li>BIG-IP as SAML Identity Provider <strong>IdP</strong></li><li>3rd Party - Multi-Domain Service Provider <strong>SP</strong> not using Cross-Origin Resource Sharing <strong>CORS</strong></li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>The cause of this issue was that the <strong>SP</strong> was passing the SAML Logout Request from one host to a different host <strong>before</strong> the<strong> IdP</strong> but does not support <strong>CORS. </strong>This caused the latter host to drop the MRHSession cookie before sending the request to the BIG-IP causing the reset.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>The recommend action is to have the SP update their application code to support <strong>CORS </strong>so the MRHSession cookie is sent with the SLO Request<br>If the customer cannot do so, they can apply the following iRule to the BIG-IP <strong>IdP </strong>Virtual Server</p>
+
+<ol><li>Login to the BIG-IP</li><li>Navigate to <strong>Local Traffic  ››  iRules : iRule List</strong></li><li>Click <strong>Create...</strong></li><li>Name the iRule: <br>	<strong>SLO_redirect_iRule</strong></li><li>Update the following code where the host is <strong>https://sp.apmsupport.local </strong>to the SP that is sending the logout request <br>	This updates the Referrer header to trigger the iRule<br>	<span class="code">when CLIENT_ACCEPTED {<br>	    ACCESS::restrict_irule_events disable<br>	}<br>	 <br>	when HTTP_REQUEST {<br>	    set referer_host [HTTP::header value &quot;Referer&quot;]<br>	 <br>	if { ([HTTP::uri] equals &quot;/saml/idp/profile/post/sls&quot;) &amp;&amp; ($referer_host equals &quot;https://sp.apmsupport.local&quot;) } {<br>	    log local0. &quot;SLO REQUEST triggered&quot;<br>	        HTTP::respond 302 noserver &quot;Location&quot; &quot;/vdesk/hangup.php3&quot; &quot;Content-Type&quot; &quot;text/html&quot; &quot;Cache-Control&quot; &quot;no-cache, must-revalidate&quot; Set-Cookie &quot;MRHSession=deleted;expires=Thu, 01-Jan-1970 00:00:10 GMT;domain=[HTTP::host];path=/&quot; Set-Cookie &quot;LastMRH_Session=deleted;expires=Thu, 01-Jan-1970 00:00:10 GMT;domain=[HTTP::host];path=/&quot;<br>	        log local0. &quot;Session removed&quot;<br>	    if { ([ACCESS::session exists -sid $apm_cookie]) } {<br>	        ACCESS::session remove<br>	        log local0. &quot;Access Session Removed&quot;<br>	        }<br>	    }<br>	}</span></li><li>Apply the iRule to the <strong>IdP </strong>Virtual Server and test</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>Internet Explorer will not be affected but this as it does not enforce <strong>CORS </strong>by default</p>
+</article>
+</body>
+</html>

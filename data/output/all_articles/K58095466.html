@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K58095466: Azure failover broken after ISO upgrade</title>
+<meta name="description" content="Support Solution: Azure failover broken after ISO upgrade — Error message: Error: getaddrinfo EAI_AGAIN login.microsoftonline.com:443">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K58095466">
+</head>
+<body>
+<header>
+<h1>K58095466: Azure failover broken after ISO upgrade</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-03-12</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Public Cloud</li><li>BIG-IP</li><li>BIG-IP LTM: 13.1.1, 13.1.0</li><li>Microsoft Azure</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K58095466">https://my.f5.com/manage/s/article/K58095466</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<ul><li>Azure Failover does not work after upgrade to BIG-IP VE</li><li>Error message: Error: getaddrinfo EAI_AGAIN login.microsoftonline.com:443</li></ul>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Upgrading from 13.1.0.2 to 13.1.1.2</li><li>Azure </li><li>Failover Configured</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Azure failover scripts are connecting to wrong API endpoints</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>Re-install cloud-libs using these steps</p>
+
+<ol><li>Download these tarballs to current directory
+	<ol><li><span class="code">curl -O https://cdn.f5.com/product/cloudsolutions/f5-cloud-libs/v4.6.0/f5-cloud-libs.tar.gz</span></li><li><span class="code">curl -O https://cdn.f5.com/product/cloudsolutions/f5-cloud-libs-azure/v2.6.0/f5-cloud-libs-azure.tar.gz</span></li></ol>
+	</li><li>Set cloud libs install directory
+	<ol><li><span class="code">CLOUD_LIB_DIR=/config/cloud/azure/node_modules/@f5devcentral</span></li></ol>
+	</li><li>Create the cloud libs directory
+	<ol><li><span class="code">mkdir -p $CLOUD_LIB_DIR &amp;&amp; cp f5-cloud-libs*.tar.gz* /config/cloud</span></li></ol>
+	</li><li>Create azure directory
+	<ol><li><span class="code">mkdir -p /var/log/cloud/azure</span></li></ol>
+	</li><li>Create bigip password file
+	<ol><li><span class="code">/usr/bin/install -m 400 /dev/null /config/cloud/.passwd</span></li></ol>
+	</li><li>Create credentials file
+	<ol><li><span class="code">/usr/bin/install -m 400 /dev/null /config/cloud/.azCredentials</span></li></ol>
+	</li><li>Create cloud libs install script
+	<ol><li><span class="code">/usr/bin/install -b -m 755 /dev/null /config/installCloudLibs.s</span>  </li></ol>
+	</li><li>Create managed routes file for moving UDR next hop
+	<ol><li><span class="code">/usr/bin/install -b -m 755 /dev/null /config/cloud/managedRoutes</span></li></ol>
+	</li><li>Extract cloud libs 
+	<ol><li><span class="code">tar xfz /config/cloud/f5-cloud-libs.tar.gz --warning=no-unknown-keyword -C /config/cloud/azure/node_modules/@f5devcentral</span></li><li><span class="code">tar xfz /config/cloud/f5-cloud-libs-azure.tar.gz --warning=no-unknown-keyword -C /config/cloud/azure/node_modules/@f5devcentral</span></li><li><span class="code">touch /config/cloud/cloudLibsReady</span></li></ol>
+	</li><li>Source functions from cloud libs utils
+	<ol><li><span class="code">source $CLOUD_LIB_DIR/f5-cloud-libs/scripts/util.sh</span></li></ol>
+	</li><li>Save environment variable to json file:<br>	clientID: The service principal client ID parameter from the deployment<br>	tenantID: The service principal tenant ID parameter from the deployment<br>	secret: The service principal access secret parameter from the deployment<br>	subscriptionID: The Azure subscription ID<br>	storageAccount: The name of the Azure data storage account created with this deployment (should end in &quot;data000&quot;)<br>	storageAccounKey: The API access key from the above storage account (might need to be regenerated in the portal UI)<br>	resourceGroupName: The name of the Azure resource group where this is deployed<br>	dnsLabel: The dnsLabel parameter value from the deployment<br>	location: The Azure region where this is running<br>	<span class="code">echo &#39;{&quot;clientId&quot;: &quot;clientId&quot;, &quot;tenantId&quot;: &quot;tenantId&quot;, &quot;secret&quot;: &quot;servicePrincipalSecret&quot;, &quot;subscriptionId&quot;: &quot;subscriptionID&quot;, &quot;storageAccount&quot;: &quot;storageAccountName&quot;, &quot;storageKey&quot;: &quot;storageAccountAccessKey&quot;, &quot;resourceGroupName&quot;: &quot;resourceGroupName&quot;, &quot;uniqueLabel&quot;: &quot;dnsLabel&quot;, &quot;location&quot;: &quot;location&quot;}&#39; &gt; creds.json</span></li><li>Clear any previous failures<br>	<span class="code">rm /tmp/f5-cloud-libs-signals/*</span></li><li>Encrypt credentials from json file<br>	<span class="code">/usr/bin/f5-rest-node /config/cloud/azure/node_modules/@f5devcentral/f5-cloud-libs/scripts/encryptDataToFile.js --symmetric --data-file creds.json --out-file /config/cloud/.azCredentials</span></li><li>Dump saved credentials to check output<br>	<span class="code">/usr/bin/f5-rest-node /config/cloud/azure/node_modules/@f5devcentral/f5-cloud-libs/scripts/decryptDataFromFile.js --data-file /config/cloud/.azCredentials --symmetric</span></li><li>Save bigip credentials to bigip password file</li><li>This is the svc_usr password (copied from admin at deployment<br>	<span class="code">echo &quot;myadminpassword&quot; &gt; pass</span><br>	<span class="code">/usr/bin/f5-rest-node /config/cloud/azure/node_modules/@f5devcentral/f5-cloud-libs/scripts/encryptDataToFile.js  --data-file pass --out-file /config/cloud/.passwd</span></li><li>Verify saved password<br>	<span class="code">/usr/bin/f5-rest-node /config/cloud/azure/node_modules/@f5devcentral/f5-cloud-libs/scripts/decryptDataFromFile.js --data-file /config/cloud/.passwd </span></li><li>Only add failover provider call to failover scripts if it is not already there:<br>	<span class="code">cat /config/failover/tgactive</span><br>	<span class="code">echo &quot;/usr/bin/f5-rest-node $CLOUD_LIB_DIR/f5-cloud-libs-azure/scripts/failoverProvider.js&quot; &gt;&gt; /config/failover/tgactive</span><br>	<span class="code">echo &quot;/usr/bin/f5-rest-node $CLOUD_LIB_DIR/f5-cloud-libs-azure/scripts/failoverProvider.js&quot; &gt;&gt; /config/failover/tgrefresh</span></li><li>Delete statusdb file in azure blob storage (if it exists) </li><li>When ready, execute failover</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>To determine the current available version of f5-cloud-libs and f5-cloud-libs-azure, go to:<br><a href="https://github.com/F5Networks/f5-azure-arm-templates/blob/master/azure-bigip-version-matrix.md" target="_blank">https://github.com/F5Networks/f5-azure-arm-templates/blob/master/azure-bigip-version-matrix.md</a><br>Select the link to the release tag that includes your desired BIG-IP version.<br>Download the source code, unzip it, and find the location of the template that applies to your situation.<br>For example: C:\Users\User\Downloads\f5-azure-arm-templates-7.0.0.0\f5-azure-arm-templates-7.0.0.0\supported\failover\same-net\via-api\n-nic\existing-stack\byol<br>Locate azuredeploy.json and open the file.<br>Locate the current versions for &quot;f5CloudLibsTag&quot; and &quot;f5CloudLibsAzureTag&quot;<br>For example:<br>&quot;f5CloudLibsTag&quot;: &quot;v4.9.1&quot;,<br>&quot;f5CloudLibsAzureTag&quot;: &quot;v2.9.1&quot;,<br>and substitute the versions in the curl call:<br><br><strong style="font-family: courier new,courier,mono;font-size: 9pt;font-weight: bold;">curl -O https://cdn.f5.com/product/cloudsolutions/f5-cloud-libs/v4.9</strong><strong style="font-family: courier new,courier,mono;font-size: 9pt;font-weight: bold;">.1/f5-cloud-libs.tar.gz</strong><br>?????<span class="code">curl -O https://cdn.f5.com/product/cloudsolutions/f5-cloud-libs-azure/v2.9.1/f5-cloud-libs-azure.tar.gz</span></p>
+
+<p><span class="sectiontitle">Related Content</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

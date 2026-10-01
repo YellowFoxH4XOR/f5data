@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K2471: Creating an asymmetric traffic path with the nPath feature</title>
+<meta name="description" content="Knowledge: Creating an asymmetric traffic path with the nPath feature — Setting up nPath Mode: Configuring BIG-IP Controllers and Disabling Address Translation">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K2471">
+</head>
+<body>
+<header>
+<h1>K2471: Creating an asymmetric traffic path with the nPath feature</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2006-02-17</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>BIG-IP 4.X: 4.6.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K2471">https://my.f5.com/manage/s/article/K2471</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><ul><li><a href="#Introduction">Introduction</a></li><li><a href="#Settingup">Setting up nPath Mode: Configuring BIG-IP Controllers and Disabling Address Translation</a></li><li><a href="#Settingup">Setting TCP and UDP service timeouts</a></li><li><a href="#Binding">Binding the Virtual Server Address to the Loopback</a></li><li><a href="#ConfiguringService">Configuring the service to listen on the loopback</a></li><li><a href="#Cookie">Cookie Persistence</a></li><li><a href="#Advanced">Other Advanced Features</a></li></ul>
+<h3><a name="Introduction"></a>Introduction</h3>
+<p>nPath mode rewrites outbound traffic and directs it to outbound routes, other than those on BIG-IP. This is done by assigning a source address that is the same as the virtual server used on BIG-IP, which requires specific configuration changes to your nodes and BIG-IP.</p>
+<p>nPath mode is generally used in the following two scenarios:</p>
+<ul><li>You want to save bandwidth and route outbound traffic away from BIG-IP.</li><li>You have an existing outbound route that you do not want to alter by making BIG-IP an alternate default route.</li></ul>
+<p>In nPath mode, it appears to the client that the traffic it receives, in response to a request to a virtual server, actually comes from the virtual server. In actuality, the traffic comes directly from the node. This is accomplished by configuring the node to listen on the same address as the virtual server. This configuration can introduce some of the issues, which can be resolved as follows:</p>
+<ul><li>Bind to a loopback adapter.</li><li>Create a virtual server with address translation disabled.</li></ul>
+<p><b>Binding to a loopback adapter</b></p>
+<p>Since the virtual server and node cannot both advertise availability of the same address, without causing network issues, you need to bind to the loopback adapter to prevent the node from responding to ARP requests for the address. The loopback adapter is entirely internal to the operating system; it will not advertise any address bound to it.</p>
+<p><b>Creating a virtual server with address translation disabled</b></p>
+<p>To get traffic to a node that does not advertise its address, you must create a virtual server on BIG-IP with address translation disabled. This will allow BIG-IP to forward traffic to the next hop, which is determined by the virtual server choosing from its available nodes, without changing the destination address. The traffic is then forwarded to the selected node still bearing the destination address of the virtual server.</p>
+<p>When the traffic arrives at the node, it will check for any address that matches the destination. Since it has this address bound to its loopback adapter, it will send the traffic there. Once the traffic has been properly serviced, the node will send the traffic back to the client using its default gateway and, because the traffic is coming from the loopback adapter with the same address as the virtual server, the requirement for a consistent session is met.</p>
+<h3><a name="Settingup"></a>Setting up nPath Mode: Configuring BIG-IP and Virtual Servers</h3>
+<p>Once defined, you can configure existing virtual servers or new virtual servers to use nPath mode.</p>
+<p><a name="Disabling"></a></p>
+<p><b>Disabling Address Translation</b></p>
+<p>You must disable address translation for the virtual server so the packets arrive at the nodes, specified by the virtual server, still bearing their initial destination address (the address of the virtual server).</p>
+<p><b>From the Command Line</b></p>
+<p>To disable address translation on a VIP from the command line, type the following command, where <b>10.10.10.10:80</b> is the address of the VIP you want to modify:</p>
+<p class="code">bigpipe virtual 10.10.10.10:80 translate addr disable</p>
+<p><b>From the Configuration utility</b></p>
+<p>To disable address translation on a VIP from the Configuration utility, perform the following steps where <b>10.10.10.10:80</b> is the address of the VIP you want to modify:</p>
+<ol><li>From the left navigation pane of the Configuration utility, click <b>Virtual Servers</b>.<br> <br></li><li>Click the address of the virtual server you want to modify. For example, <b>10.10.10.10:80</b>.<br> <br></li><li>On the line beginning with Enable, uncheck the box next to <b>Address</b>.<br> <br></li><li>Click <b>Apply</b>.</li></ol>
+<h3><a name="SettingTCP"></a>Setting TCP and UDP service timeouts</h3>
+<p>In nPath mode, traffic is not returned through BIG-IP; therefore, connections are never closed. This makes idle connection reaping even more critical than normal. Verify that TCP and UDP service timeouts have been set for each service used by an nPath virtual server.</p>
+<p>Depending on traffic load, you may want to set connection timeouts to be very short. For protocols that require long-term connectivity, consider the maximum duration of the sessions. Protocols such as telnet and FTP can be long term, while protocols such as HTTP and DNS will generally be short-lived. For connections that perform keep-alives (such as SSH), timeouts should be only as long as their keep-alive frequency.</p>
+<p><b>From the Command Line</b></p>
+<p>To set connection timeouts for TCP on port 80 and UDP on port 53 from the command line, type the following commands:</p>
+<p class="code">bigpipe service 80 tcp enable<br> bigpipe service 53 udp enable<br> bigpipe service 80 tcp timeout 10<br> bigpipe service 53 udp timeout 15</p>
+<p><b>From the Configuration utility</b></p>
+<p>To set connection timeouts for TCP on port 80 and UDP on port 53 from the Configuration utility, perform the following steps:</p>
+<ol><li>From the left navigation pane of the Configuration utility, click <b>Virtual Servers</b>.</li><li>Click the <b>Virtual Services</b> tab.</li><li>Click the virtual service you want to modify. For example, <b>80</b>.</li><li>Verify that the <b>TCP Service</b> check box is checked.</li><li>Type in the number of seconds you want for timeout idle connections. For example, <b>10</b>.</li><li>Click <b>Apply</b>.</li></ol>
+<h3><a name="Binding"></a>Binding the Virtual Server Address to the Loopback</h3>
+<p>Each node behind a virtual server using nPath must bind the virtual server IP address to the node&#39;s own loopback adapter, allowing the node to listen for traffic that arrives bearing the same destination IP address as the virtual server without responding to ARP requests for the virtual server address. This allows the BIG-IP only to respond to ARP requests, avoiding multiple conflicting ARP replies for the same IP address.</p>
+<p><a name="BindingUnix"></a><b>Binding to the loopback in UNIX</b></p>
+<p>In most cases, you can bind an address to the loopback adapter on UNIX platforms by using the <b>ifconfig</b> command, as follows:</p>
+<p class="code">ifconfig &lt;interface&gt; add &lt;ip_address&gt; netmask &lt;mask&gt; broadcast &lt;broadcast&gt;</p>
+<p>For example:</p>
+<p class="code">ifconfig lo0 add 10.10.10.10 netmask 255.255.255.0 broadcast 10.10.10.255</p>
+<p>To confirm the changes, type the following command:</p>
+<p class="code">ifconfig lo0</p>
+<p>The output would appear as follows:</p>
+<pre class="example">
+lo0: flags=8109&lt;UP,LOOPBACK,PROMISC,MULTICAST&gt;
+link type loop mtu 1536
+inet 127.0.0.1 netmask 255.0.0.0
+inet 10.10.10.10 netmask 255.255.255.255</pre>
+<p class="note"><b>Note</b>: The loopback device is usually named <b>lo</b> or <b>lo0</b>. In some UNIX platforms there may be multiple loopback interfaces; in these cases, always use <b>lo0</b>.</p>
+<p><a name="InstallingWindowsNT"></a><b>Installing the loopback adapter on Microsoft Windows NT®</b></p>
+<p>In order to use the loopback adapter with Microsoft Windows NT®, you must first install it.</p>
+<p>To install a loopback adapter in Microsoft Windows NT®, perform the following steps:</p>
+<ol><li>In the Network Control Panel, choose <b>Adapters</b>.</li><li>Click <b>Add</b>.</li><li>From the list, select <b>MS Loopback Adapter</b>.</li></ol>
+<p>You are asked to select from 802.3, 802.5, or FDDI:</p>
+<ul><li>For Ethernet, select <b>802.3</b>.</li><li>For Token Ring, select <b>802.5</b>.</li><li>For other, or where appropriate, select <b>FDDI</b>.</li></ul>
+<p><a name="BindingNT"></a><b>Binding to the loopback adapter in Microsoft Windows NT®</b></p>
+<p>To bind to the loopback adapter in Microsoft Windows NT®, perform the following steps:</p>
+<ol><li>In the Network Control Panel, select <b>Protocols, TCP/IP</b>.</li><li>Select <b>Loopback Adapter</b> from the list of adapters.</li><li>Click <b>Advanced</b> options.</li><li>Under the IP Addresses box, click <b>Add</b>.<p>This will allow you to bind addresses to the loopback adapter.</p>
+</li></ol>
+<h3><a name="ConfiguringService"></a>Configuring the service to listen on the loopback</h3>
+<p>After you bind the address, you must configure the service (HTTP, HTTPS, telnet, smtp, etc.) to listen on the loopback-bound virtual address. This is the most complex part of the nPath configuration; in most cases you must rely on extended knowledge of your server software in order to accomplish this step. For specific instructions about, refer to the <a href="https://support.f5.com/content/kb/en-us/archived_products/big-ip.html" target="_blank">BIG-IP manual</a>.</p>
+<h3><a target="Cookie"></a><a name="Cookie">Cookie Persistence</a></h3>
+<p>Most modes of persistence will work fine with nPath. Cookie persistence, however, is a notable exception. When cookie persistence is used, BIG-IP manages the persistence when packets return through the controller as follows. All of these cases require the BIG-IP Controller to read the return packets.</p>
+<ul><li>In <b>Insert Mode</b>, a cookie is added.</li><li>In <b>Rewrite Mode</b>, a cookie is modified.</li><li>In <b>Passive Mode</b>, BIG-IP keeps track of the node on which the cookie originated.</li></ul>
+<p>Since traffic is never returned to BIG-IP in nPath Mode, there is no way for cookie persistence to work.</p>
+<h3><a target="Cookie"></a><a name="Advanced">Other Advanced Features</a></h3>
+<p>Some other advanced features will also not work when nPath is used. Most notably, all header insertion features, which do not work withnPath because data is inserted into the header as the packet passes through BIG-IP. This causes the sequence numbers to no longer match what the client expects.</p>
+<p>It is important to keep in mind when using nPath is that as a general rule BIG-IP cannot modify the in any way packets as the pass through . If the packets are modified in some way, the connection will fail.</p>
+<p>For more information about nPath, refer to the <a href="https://support.f5.com/content/kb/en-us/archived_products/big-ip.html" target="_blank">BIG-IP Solutions Guide</a> for the version of BIG-IP you are running.</p>
+</article>
+</body>
+</html>

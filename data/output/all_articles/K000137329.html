@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000137329: iHealth Automation with Ansible does not upload qkviews correctly</title>
+<meta name="description" content="Support Solution: iHealth Automation with Ansible does not upload qkviews correctly — If you try to use the Ansible URI function to upload a qkview, iHealth responds that &quot;Input is not in the .gz format&quot;.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000137329">
+</head>
+<body>
+<header>
+<h1>K000137329: iHealth Automation with Ansible does not upload qkviews correctly</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-10-24</dd>
+<dt>Updated</dt><dd>2023-10-24</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000137329">https://my.f5.com/manage/s/article/K000137329</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+If you try to use the Ansible URI function to upload a qkview, iHealth responds that &quot;Input is not in the .gz format&quot;.
+
+<h2>Cause</h2>
+Ansible config:
+
+<pre class="ckeditor_codeblock">
+    - name: Upload qkview
+      uri:
+        url: https://ihealth2-api.f5.com/qkview-analyzer/api/qkviews
+        method: POST
+        http_agent: &quot;MyGreatiHealthClient&quot;
+        body_format: form-multipart
+        headers:
+          Authorization: &quot;Bearer {{ ihealth_token }}&quot;
+          Accept: application/vnd.f5.ihealth.api
+        body:
+          qkview:
+            filename: /var/tmp/my-bigip-qkview.qkview
+            mime_type: application/octet-stream
+        return_content: yes
+      register: result</pre>
+<br>However, when we look at what is being sent to the iHealth server, we see:<br> 
+<pre class="ckeditor_codeblock">
+POST /qkview-analyzer/api/qkviews HTTP/1.1
+Accept-Encoding: identity
+Content-Length: 1749645
+Host: ihealth2-api.f5.com
+User-Agent: MyGreatiHealthClient
+Authorization: Bearer eyJraW...fd4uPteg (truncated)
+Accept: application/vnd.f5.ihealth.api
+Content-Type: multipart/form-data; boundary=&quot;===============2028420293900413942==&quot;
+Connection: close
+
+--===============2028420293900413942==
+Content-Transfer-Encoding: base64   &lt;&lt;&lt;--- We see that Ansible has encoded the qkview file
+Content-Type: application/octet-stream
+Content-Disposition: form-data; name=&quot;qkview&quot;; filename=&quot;my-bigip-qkview.qkview&quot;
+
+H4sIAAAAAAAAA+w9a1fbyJL5Gv+Kvg5nkyzI7tZbGmAuATLJbggMkOzMhhwfWWrbusiSRw8eyeG/
+...  &lt;&lt;&lt;--- Truncated for clarity
+3baVvreWMyBJXv71yxxM+7Rf/8zH6/+7/3ej5P//H1mUJfmPoZio5wMAAAAAAAAAAAAAAPH8AdU5
+OE0AIFgA
+
+--===============2028420293900413942==--</pre>
+
+<p>So the qkview is being sent as a form attachment as expected, but Ansible is encoding it with Base64, which iHealth does not currently support, so we see that the iHealth API responds with:</p>
+
+<pre class="ckeditor_codeblock">
+&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;yes&quot;?&gt;&lt;qkview_upload&gt;&lt;result&gt;Input is not in the .gz format&lt;/result&gt;&lt;/qkview_upload&gt;</pre>
+
+<p> </p>
+
+<h2>Workaround</h2>
+
+<p>To workaround this issue, you need to use the curl via the shell command:<br> </p>
+
+<pre class="ckeditor_codeblock">
+ - name: Upload qkview via curl
+
+   shell: &#39;curl -X POST &quot;https://ihealth2-api.f5.com/qkview-analyzer/api/qkviews&quot; \
+   -H &quot;Content-Type: multipart/form-data&quot; \
+   -H &quot;Authorization: Bearer {{ihealth_token }}&quot; \
+   -H &quot;Accept: application/vnd.f5.ihealth.api&quot; \
+   --user-agent &quot;MyGreatiHealthClient&quot; \
+   --form &quot;qkview=@/var/tmp/my-bigip-qkview.qkview&quot;&#39;
+
+   register: result
+</pre>
+
+<p> </p>
+</article>
+</body>
+</html>

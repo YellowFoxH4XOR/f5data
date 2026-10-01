@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K74022236: Unable to access ASM event logs due to &#x27;&#x27;mysqld: Can&#x27;t open file: &#x27;./PRX/REQUEST_LOG.frm&#x27; (errno: 24)&#x27;&#x27;</title>
+<meta name="description" content="Support Solution: Unable to access ASM event logs due to &#x27;&#x27;mysqld: Can&#x27;t open file: &#x27;./PRX/REQUEST_LOG.frm&#x27; (errno: 24)&#x27;&#x27; — When navigating to Security ›› Event Logs : Application : Requests, you receive error on the browser">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K74022236">
+</head>
+<body>
+<header>
+<h1>K74022236: Unable to access ASM event logs due to &#x27;&#x27;mysqld: Can&#x27;t open file: &#x27;./PRX/REQUEST_LOG.frm&#x27; (errno: 24)&#x27;&#x27;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-11-05</dd>
+<dt>Updated</dt><dd>2023-10-16</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 16.X.X, 15.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.1, 16.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K74022236">https://my.f5.com/manage/s/article/K74022236</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<ul><li>ASM policy not logging event logs </li><li>When navigating to <strong>Security ›› Event Logs : Application : Requests,</strong> you receive error on the browser </li></ul>
+
+<p style="margin-left: 40px;"><span class="example2">DBD::mysql::st execute failed: Out of resources when opening file &#39;./PRX/REQUEST_LOG#P108700001.MYD&#39; (Errcode:24) at /usr/local/share/perl5/F5/ASMConfig/Entity/Base.pm line 1468</span></p>
+
+<ul><li>Also, the below error will be logged in /var/lib/mysql/mysqld.err files    </li></ul>
+
+<p style="margin-left: 40px;"><span class="example2">   200824 11:04:43 [ERROR] mysqld: Can&#39;t open file: &#39;./PRX/REQUEST_LOG.frm&#39; (errno: 24)</span><br><span class="example2">   200824 11:18:46 [ERROR] mysqld: Can&#39;t open file: &#39;./PRX/REQUEST_LOG.frm&#39; (errno: 24)</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>ASM </li><li>Event logs</li><li>BIG-IP</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+<a href="https://cdn.f5.com/product/bugtracker/ID947341.html" target="_self">ID947341</a>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>Follow steps to recover the system:</p>
+
+<ol start="0"><li>
+	<p>In case /appdata partition is filled up to 100% and mysql restarts continuously, follow below solution first:</p>
+	</li></ol>
+
+<p style="margin-left: 40px;">    <a href="https://my.f5.com/manage/s/article/K14956" target="_self">K14956: Resetting F5 Application Visibility and Reporting statistics</a></p>
+
+<p style="margin-left: 40px;">    <a href="https://my.f5.com/manage/s/article/K42497314" target="_self">K42497314: Partition /appdata is filled up to 100% and mysql restarts continuously</a></p>
+
+<ol><li>
+	<p>Connect to Bash CLI</p>
+	</li><li>
+	<p>Identify all the empty partitions using below command:</p>
+	</li></ol>
+
+<p style="margin-left: 40px;"> #<span class="code">mysql -su root -p$(perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw) -e &quot;SELECT * FROM INFORMATION_SCHEMA.PARTITIONS WHERE table_name = &#39;REQUEST_LOG&#39; AND table_schema = &#39;PRX&#39;\G&quot;</span></p>
+
+<ol start="3"><li>
+	<p>Manually delete the empty partitions by executing below command:</p>
+	</li></ol>
+
+<p style="margin-left: 40px;">  #<span class="code">mysql -su root -p$(perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw) -e &quot;ALTER TABLE PRX.REQUEST_LOG DROP PARTITION empty_partition_name&quot;</span></p>
+
+<p style="margin-left: 40px;"><span class="note">Note: Replace &quot;empty_partition_name&quot; with the real partition name for every partition that is empty which list in step 2.</span></p>
+
+<p style="margin-left: 40px;">Alternatively, delete the empty partitions using the following shell script if there are many empty partitions:</p>
+
+<p style="margin-left: 40px;">#<span class="code">mysql -su root -p$(perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw) -e &quot;SELECT partition_name FROM INFORMATION_SCHEMA.PARTITIONS WHERE table_name = &#39;REQUEST_LOG&#39; AND table_schema = &#39;PRX&#39; AND table_rows = 0&quot; | while read empty_partition_name; do  echo &quot;Dropping empty partition: $empty_partition_name&quot;; mysql -u root -p$(perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw) -e &quot;ALTER TABLE PRX.REQUEST_LOG DROP PARTITION $empty_partition_name&quot;; done</span></p>
+
+<ol start="4"><li>
+	<p> Increase &#39;open_files_limit&#39; to &#39;10000&#39;.</p>
+	</li></ol>
+
+<p style="margin-left: 40px;">-------------------------------------------------------------</p>
+
+<p style="margin-left: 40px;">In /etc/my.cnf file:</p>
+
+<p style="margin-left: 40px;"> 4.1. Change the value of the &#39;open_files_limit&#39; parameter to 10000.</p>
+
+<p style="margin-left: 40px;"> 4.2. Restart MySQL:</p>
+
+<p style="margin-left: 40px;">    #<span class="code">bigstart restart mysql</span></p>
+
+<p style="margin-left: 40px;">----------------------------------------------------------------<br><br><span class="note"><em>Note: Restarting mysql will restart ASM and trigger failover</em></span></p>
+
+<ol start="5"><li> Restart asmlogd:</li></ol>
+
+<p style="margin-left: 40px;">   #<span class="code">pkill asmlogd</span></p>
+
+<p style="margin-left: 40px;"><span class="note">Note: This workaround does not survive upgrade. It must be reapplied after every upgrade until the upgraded version contains a fix.</span></p>
+
+<p><span class="sectiontitle">Additional Information</span><br>None<br> </p>
+</article>
+</body>
+</html>

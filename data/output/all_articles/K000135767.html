@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000135767: Sensitive data being shown in istio-proxy sidecar logs</title>
+<meta name="description" content="Support Solution: Sensitive data being shown in istio-proxy sidecar logs — istio-proxy sidecar logs contain sensitive information as part of the request, e.g. in the path portion, and the information needs to be removed from the logs.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000135767">
+</head>
+<body>
+<header>
+<h1>K000135767: Sensitive data being shown in istio-proxy sidecar logs</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-08-08</dd>
+<dt>Updated</dt><dd>2023-08-09</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.14, 1.11</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000135767">https://my.f5.com/manage/s/article/K000135767</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>istio-proxy sidecar logs contain sensitive information as part of the request, e.g. in the path portion, and the information needs to be removed from the logs.</p>
+
+<pre class="ckeditor_codeblock">
+[2022-03-25T06:05:12.372Z] &quot;POST /example/?SSN=XXXXXXXX HTTP/1.1&quot; 200 - via_upstream - &quot;&quot; 0 541 180 179 &quot;10.10.10.10&quot; &quot;&quot; &quot;4684f627-ad47-43fe-8fa3-dc5666b587b5&quot; &quot;example<strong>.</strong>com&quot; &quot;10.214.1.128:443&quot; outbound|443||example<strong>.</strong>com 10.11.11.11:43048 10.11.11.11:8443 10.10.10.10:56448 example<strong>.</strong>com
+</pre>
+
+<h2><br><strong>Environment</strong></h2>
+
+<p>Aspen Mesh 1.11.x and Aspen Mesh 1.14.x<br> </p>
+
+<h2><strong>Cause</strong></h2>
+
+<p>Application is sending sensitive data in clear text as part of the request and Istio/Aspen Mesh sidecar is logging it as part of the default access log format.<br> </p>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>In this example, we can remove the <em>%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% </em>portion from the<a href="https://istio.io/latest/docs/tasks/observability/logs/access-log/#default-access-log-format" target="_blank"> default access log format</a> or modify it to <em>%REQ(X-ENVOY-ORIGINAL-PATH?:PATH):8%</em> to truncate the path to 8 characters (or any other amount) by defining an access log format in the Aspen Mesh Overrides file:</p>
+
+<pre class="ckeditor_codeblock">
+❯ cat aspen-mesh-override-values.yaml <strong>#in this example we are removing the path entirely</strong>
+meshConfig:
+  accessLogFormat: &quot;[%START_TIME%] \&quot;%REQ(:METHOD)% %PROTOCOL%\&quot; %RESPONSE_CODE% %RESPONSE_FLAGS% %RESPONSE_CODE_DETAILS% %CONNECTION_TERMINATION_DETAILS% \&quot;%UPSTREAM_TRANSPORT_FAILURE_REASON%\&quot; %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% \&quot;%REQ(X-FORWARDED-FOR)%\&quot; \&quot;%REQ(USER-AGENT)%\&quot; \&quot;%REQ(X-REQUEST-ID)%\&quot; \&quot;%REQ(:AUTHORITY)%\&quot; \&quot;%UPSTREAM_HOST%\&quot; %UPSTREAM_CLUSTER% %UPSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_REMOTE_ADDRESS% %REQUESTED_SERVER_NAME% %ROUTE_NAME%\n&quot;
+
+❯ helm upgrade istiod manifests/charts/istio-control/istio-discovery \
+    --namespace istio-system \
+    --values aspen-mesh-override-values.yaml
+
+Release &quot;istiod&quot; has been upgraded. Happy Helming!
+NAME: istiod
+LAST DEPLOYED: Mon Aug  7 20:07:07 2023
+NAMESPACE: istio-system
+STATUS: deployed
+REVISION: 2
+TEST SUITE: None
+
+❯ k logs nettools-69c48ffbd9-fpqrx -c istio-proxy <strong>#no path shown</strong>
+[2023-08-07T20:08:23.104Z] &quot;POST HTTP/1.1&quot; 200 - via_upstream - &quot;-&quot; 0 386 3126 3126 &quot;-&quot; &quot;curl/8.0.1&quot; &quot;4013a152-6f5c-4244-98a4-4b9094ddb500&quot; &quot;example<strong>.</strong>com&quot; &quot;10.11.11.11:80&quot; outbound|80||example<strong>.</strong>com 10.244.1.5:40374 10.11.11.11:80 10.244.1.5:40364 - default
+
+
+❯ cat aspen-mesh-override-values.yaml <strong>#truncating the path to 8 characters</strong>
+meshConfig:
+  accessLogFormat: &quot;[%START_TIME%] \&quot;%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH):8% %PROTOCOL%\&quot; %RESPONSE_CODE% %RESPONSE_FLAGS% %RESPONSE_CODE_DETAILS% %CONNECTION_TERMINATION_DETAILS% \&quot;%UPSTREAM_TRANSPORT_FAILURE_REASON%\&quot; %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% \&quot;%REQ(X-FORWARDED-FOR)%\&quot; \&quot;%REQ(USER-AGENT)%\&quot; \&quot;%REQ(X-REQUEST-ID)%\&quot; \&quot;%REQ(:AUTHORITY)%\&quot; \&quot;%UPSTREAM_HOST%\&quot; %UPSTREAM_CLUSTER% %UPSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_REMOTE_ADDRESS% %REQUESTED_SERVER_NAME% %ROUTE_NAME%\n&quot;
+
+❯ helm upgrade istiod manifests/charts/istio-control/istio-discovery \
+    --namespace istio-system \
+    --values aspen-mesh-override-values.yaml
+
+Release &quot;istiod&quot; has been upgraded. Happy Helming!
+NAME: istiod
+LAST DEPLOYED: Mon Aug  7 20:34:00 2023
+NAMESPACE: istio-system
+STATUS: deployed
+REVISION: 3
+TEST SUITE: None
+
+❯ k logs nettools-69c48ffbd9-fpqrx -c istio-proxy <strong>#path truncated to 8 characters: /example instead of /example/?SSN=XXXXXXXX</strong>
+[2023-08-07T20:34:16.745Z] &quot;POST /example HTTP/1.1&quot; 200 - via_upstream - &quot;-&quot; 0 386 1929 1929 &quot;-&quot; &quot;curl/8.0.1&quot; &quot;01bf1e22-22c2-4ec3-8b2d-bdefc8eb6a40&quot; &quot;example<strong>.</strong>com&quot; &quot;10.11.11.11:80&quot; outbound|80||example<strong>.</strong>com 10.244.1.5:54932 10.11.11.11:80 10.244.1.5:54920 - default
+</pre>
+
+<h2><br><strong>Additional Information</strong></h2>
+The <a href="https://istio.io/latest/docs/tasks/observability/logs/access-log/#default-access-log-format" target="_blank">default access log format</a> contains the following
+
+<pre class="ckeditor_codeblock">
+[%START_TIME%] \&quot;%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%\&quot; %RESPONSE_CODE% %RESPONSE_FLAGS% %RESPONSE_CODE_DETAILS% %CONNECTION_TERMINATION_DETAILS% \&quot;%UPSTREAM_TRANSPORT_FAILURE_REASON%\&quot; %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% \&quot;%REQ(X-FORWARDED-FOR)%\&quot; \&quot;%REQ(USER-AGENT)%\&quot; \&quot;%REQ(X-REQUEST-ID)%\&quot; \&quot;%REQ(:AUTHORITY)%\&quot; \&quot;%UPSTREAM_HOST%\&quot; %UPSTREAM_CLUSTER% %UPSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_REMOTE_ADDRESS% %REQUESTED_SERVER_NAME% %ROUTE_NAME%\n</pre>
+<br>Starting with Aspen Mesh 1.14.x the access log format can be applied on an individual namespace, or to an individual workload, to control logging at a fine grained level using the <a href="https://istio.io/v1.14/docs/tasks/observability/logs/access-log/#using-telemetry-api" target="_blank">Telemetry API</a>.<br><br>The first step is to add extension providers in the override values file (at the mesh config level), here we can define the different log formats:
+<pre class="ckeditor_codeblock">
+meshConfig:
+    extensionProviders:
+      - name: file-log
+        envoyFileAccessLog:
+          path: /dev/stdout
+          logFormat:
+            text: &quot;[%START_TIME%] \&quot;%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%\&quot; %RESPONSE_CODE% %RESPONSE_FLAGS% \&quot;%UPSTREAM_TRANSPORT_FAILURE_REASON%\&quot; %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% \&quot;%REQ(X-FORWARDED-FOR)%\&quot; \&quot;%REQ(USER-AGENT)%\&quot; \&quot;%REQ(X-REQUEST-ID)%\&quot; \&quot;%REQ(:AUTHORITY)%\&quot; \&quot;%UPSTREAM_HOST%\&quot; %UPSTREAM_CLUSTER% %UPSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_REMOTE_ADDRESS% %REQUESTED_SERVER_NAME% %ROUTE_NAME%\n&quot;
+      - name: file-log2
+        envoyFileAccessLog:
+          path: /dev/stdout
+          logFormat:
+            text: &quot;%RESPONSE_CODE% \&quot;%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%\&quot;  %RESPONSE_FLAGS% \&quot;%UPSTREAM_TRANSPORT_FAILURE_REASON%\&quot; %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% \&quot;%REQ(X-FORWARDED-FOR)%\&quot; \&quot;%REQ(USER-AGENT)%\&quot; \&quot;%REQ(X-REQUEST-ID)%\&quot; \&quot;%REQ(:AUTHORITY)%\&quot; \&quot;%UPSTREAM_HOST%\&quot; %UPSTREAM_CLUSTER% %UPSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_REMOTE_ADDRESS% %REQUESTED_SERVER_NAME% %ROUTE_NAME% [%START_TIME%]\n&quot; </pre>
+In this case, we defined file-log and file-log2. For testing purposes, in file-log2 we placed <em>[%START_TIME%]</em> flag at the end and <em>%RESPONSE_CODE% </em>at the beginning.<br><br>The second step is to create a telemetry resource that will link to the extension providers as shown below:
+<pre class="ckeditor_codeblock">
+apiVersion: telemetry.istio<strong>.</strong>io/v1alpha1
+kind: Telemetry
+metadata:
+  name: log-test1
+  namespace: default
+spec:
+  accessLogging:
+  - providers:
+    - name: file-log2
+  selector:
+    matchLabels:
+      service.istio<strong>.</strong>io/canonical-name: sleep</pre>
+In this resource we can configure the workload specific behavior; this access logging configuration will only apply to the sleep application, while the rest will use the default one.<br><br>These are the results:
+<pre class="ckeditor_codeblock">
+~  ❯ kubectl logs  sleep-8695f877bd-5pztq -c istio-proxy | tail -1 
+<strong>200</strong> &quot;GET / HTTP/1.1&quot;  - &quot;-&quot; 0 9593 5 4 &quot;-&quot; &quot;curl/7.86.0-DEV&quot; &quot;4b193bfe-fe34-4a66-8a55-7bf04d71ac6a&quot; &quot;httpbin:8000&quot; &quot;100.96.1.8:80&quot; outbound|8000||httpbin.default.svc.cluster.local 100.96.3.11:52094 100.65.171.157:8000 100.96.3.11:51458 - default <strong>[2022-12-06T20:19:56.213Z]</strong>
+
+~/ ❯ kubectl logs  httpbin-d75b55755-xg2wn -c istio-proxy | tail -1      
+[2022-12-06T20:19:56.215Z] &quot;GET / HTTP/1.1&quot; 200 - via_upstream - &quot;-&quot; 0 9593 2 2 &quot;-&quot; &quot;curl/7.86.0-DEV&quot; &quot;4b193bfe-fe34-4a66-8a55-7bf04d71ac6a&quot; &quot;httpbin:8000&quot; &quot;100.96.1.8:80&quot; inbound|80|| 127.0.0.6:36541 100.96.1.8:80 100.96.3.11:52094 outbound_.8000_._.httpbin.default.svc.cluster.local default</pre>
+</article>
+</body>
+</html>

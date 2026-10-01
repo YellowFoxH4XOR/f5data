@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162272: How to use smbclient on APM</title>
+<meta name="description" content="Support Solution: How to use smbclient on APM — Remote users can not access network resources via encrypted SMB3 shares once a VPN tunnel is established.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162272">
+</head>
+<body>
+<header>
+<h1>K000162272: How to use smbclient on APM</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-07-16</dd>
+<dt>Updated</dt><dd>2026-07-16</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162272">https://my.f5.com/manage/s/article/K000162272</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Remote users can not access network resources via encrypted SMB3 shares once a VPN tunnel is established.</p>
+<p>In the tcpdump you can see back-end server sending a TCP/RST after receiving an encrypted SMB3 message from the client.</p>
+<p>You can use &#39;smbclient&#39; tool on APM to verify if the problem is on server side, from APM to back-end server.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP deployed with APM</li><li>Computers using Edge Client to establish a VPN tunnel with APM</li><li>Users accessing network resources via encrypted SMB3 shares</li><li>Users authenticating to SMB shares via Kerberos</li></ul>
+<h2>Cause</h2>
+<p>If your back-end server issues a TCP/RST immediately following an encrypted SMB3 request, maybe is caused by an intermediate network device that modifies or proxies SMB requests (&quot;Negotiate Protocol&quot; and &quot;Session Setup&quot; messages).</p>
+<p>The client and server will generate mismatched cryptographic context that will make the server’s derived key to fail decrypting the SMB3 message sent by the client.</p>
+<h2>Recommended Actions</h2>
+<p>&#39;smbclient&#39; on BIG-IP is running v4.4.4 and negotiates AES_128_GCM. So you need to confirm that the server sharing the encrypted folder over SMB supports AES_128_GCM encryption cipher.</p>
+<p>On Windows Servers you can use this command</p>
+<p><code>Get-SmbServerConfiguration | Select-Object -Property EncryptionCiphers</code></p>
+<p>create a &#39;smb.conf&#39; file (ie. &quot;/var/tmp/test-smb.conf&quot;) with this content</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>[global]
+    client min protocol = SMB3
+    client max protocol = SMB3
+    client ipc max protocol = SMB3
+
+    # Try client-side negotiation
+    smb encrypt = desired
+
+    # Enforce Kerberos globally for client connections in Samba 4.4
+    kerberos method = secrets and keytab
+
+    # Force SPNEGO to handle the Kerberos ticket negotiation
+    client use spnego = yes
+
+    # Disable older, less secure NTLM protocols entirely
+    client ntlmv2 auth = no
+    client lanman auth = no
+    client plaintext auth = no</code></pre>
+<p>You can run a tcpdump before running Kerberos and &#39;smbclient&#39; to match logs and traces</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tcpdump -nni 0.0:nnnp -s0 -w /var/tmp/test.pcap port 445 or port 88 or icmp</code></pre>
+<p>On a different CLI, clear Kerberos cache with &#39;kdestroy&#39; and obtain a kerberos TGT (Ticket-Granting Ticket) with &#39;kinit&#39; for the user accessing the shared resource (ie. user1 in realm LAB.LAN)</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>kdestroy
+
+kinit user1@LAB.LAN</code></pre>
+<p>Check with &#39;klist&#39; which is the ticket cache and there is a Kerberos TGT for that user</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>klist
+
+Ticket cache: KEYRING:persistent:0:0
+Default principal: user1@LAB.LAN
+
+Valid starting       Expires              Service principal
+x                    x                    krbtgt/LAB.LAN@LAB.LAN</code></pre>
+<p>Use &#39;smbclient&#39; to access the encrypted shared resource (ie. //dc.lab.lan/ShareEncrypted) with debug log level 10, the &#39;smb.conf&#39; file you created and the kerberos cache.</p>
+<p>The following &#39;smbclient&#39; command will list the files inside that encrypted shared resource.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>smbclient &quot;//dc.lab.lan/ShareEncrypted&quot; -s /var/tmp/test-smb.conf --port 445 -d 10 -k --use-krb5-ccache=KEYRING:persistent:0:0 -c &#39;ls&#39;</code></pre>
+<p>Response should include &#39;encrypt SMB2 message&#39; and &#39;decrypt SMB2 message&#39; lines, along with the files stored in the shared resource (in this case only one file &quot;abc.txt&quot;)</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>&lt;...&gt;
+encrypt SMB2 message
+decrypt SMB2 message
+encrypt SMB2 message
+decrypt SMB2 message
+  .                                   D        0  
+  ..                                DHS        0  
+  abc.txt                             A        7  
+encrypt SMB2 message
+decrypt SMB2 message
+encrypt SMB2 message
+decrypt SMB2 message
+encrypt SMB2 message
+decrypt SMB2 message
+encrypt SMB2 message
+decrypt SMB2 message
+encrypt SMB2 message
+decrypt SMB2 message
+&lt;...&gt;</code></pre>
+<p>Running &#39;klist&#39; again will include now a service ticket to CIFS (Common Internet File System)</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>klist
+
+Ticket cache: KEYRING:persistent:0:0
+Default principal: user1@LAB.LAN
+
+Valid starting       Expires              Service principal
+x                    x                    cifs/dc.lab.lan@LAB.LAN
+x                    x                    krbtgt/LAB.LAN@LAB.LAN</code></pre>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161038: Config processor TimeoutException during Guided Configuration API Security deployment on BIG-IP 21.0.0</title>
+<meta name="description" content="Support Solution: Config processor TimeoutException during Guided Configuration API Security deployment on BIG-IP 21.0.0 — Config processor is not available: java.util.concurrent.TimeoutException: Unavailable: http://localhost:8100/mgmt/shared/iapp/processors/waf-openapispec-api-protection">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161038">
+</head>
+<body>
+<header>
+<h1>K000161038: Config processor TimeoutException during Guided Configuration API Security deployment on BIG-IP 21.0.0</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-05-09</dd>
+<dt>Updated</dt><dd>2026-05-09</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 21.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161038">https://my.f5.com/manage/s/article/K000161038</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Error message appears when deploying a second API Security Protection using Guided Configuration on BIG-IP Advanced WAF 21.0.0:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Config processor is not available: java.util.concurrent.TimeoutException: Unavailable: http://localhost:8100/mgmt/shared/iapp/processors/waf-openapispec-api-protection</span></p>
+<ul><li>The first deployment typically succeeds, but subsequent deployments fail with this error.</li><li>Increasing <strong><span style="background-color: #f1f1f1;">provision.extramb</span></strong> alone does not resolve the issue.</li><li>The error is consistent with insufficient management plane memory for Guided Configuration operations.</li></ul>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP Advanced WAF</li><li>Version: 21.0.0</li><li>High Availability (HA) pair</li><li>Guided Configuration for API Security Protection</li><li>Initial sys db values:
+<ul><li><span style="background-color: #f1f1f1;">provision.extramb = 4096</span></li><li><span style="background-color: #f1f1f1;">provision.restjavad.extramb = 2048</span></li><li><span style="background-color: #f1f1f1;">provision.tomcat.extramb = 512</span></li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p>Insufficient JVM heap memory allocated to the <strong>restjavad</strong> process for Guided Configuration operations. The value of <strong><span style="background-color: #f1f1f1;">provision.restjavad.extramb</span></strong> directly controls the heap size, and the default or previously set value may be inadequate for multiple deployments.</p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li><strong>Increase restjavad Heap Memory</strong><br>On each BIG-IP unit, run:<br><span style="background-color: #f1f1f1;">tmsh modify sys db provision.restjavad.extramb value 3200</span><br><span style="background-color: #f1f1f1;">bigstart restart restjavad</span><br><span style="background-color: #f1f1f1;">sleep 20</span><br><span style="background-color: #f1f1f1;">bigstart restart restnoded</span><br>Verify the new heap size:<br><span style="background-color: #f1f1f1;">grep -i &quot;Heap size&quot; /var/log/ltm | tail -5</span><br>You should see output similar to:<br><p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Maximum JVM heap size is 3200 MB and Minimum heap size is 3200 MB</span></p>
+</li><li><strong>Apply Changes Individually</strong><br>These settings do not sync between HA peers. Repeat the above steps on each unit.</li><li><strong>Retry Deployment</strong><br>After confirming the heap size increase, retry the API Security Protection deployment.</li><li><strong>If Issue Persists</strong><br>Check for stuck iApp blocks:<br><span style="background-color: #f1f1f1;">restcurl /mgmt/shared/iapp/blocks -u admin:admin | jq &#39;.items[] | select(.state == &quot;ERROR&quot; or .state == &quot;BINDING&quot;) | {id, name, state}&#39;</span><br>Remove or correct any blocks in ERROR or BINDING state as appropriate.<br>Restart REST services:<br><span style="background-color: #f1f1f1;">bigstart restart restjavad</span><br><span style="background-color: #f1f1f1;">sleep 20</span><br><span style="background-color: #f1f1f1;">bigstart restart restnoded</span></li><li><strong>Collect Logs for Further Troubleshooting</strong><br>If the error continues, collect:<br><span style="background-color: #f1f1f1;">tail -300 /var/log/restjavad.0.log</span><br><span style="background-color: #f1f1f1;">tail -300 /var/log/restnoded</span><br><span style="background-color: #f1f1f1;">tail -200 /var/log/restjavad-gc.log.0.current</span></li></ol>
+<h2>Additional Information</h2>
+<ul><li>Increasing <strong><span style="background-color: #f1f1f1;">provision.extramb</span></strong> alone does not affect the JVM heap size for <strong>restjavad</strong> on BIG-IP 21.0.0. The heap is controlled solely by <strong><span style="background-color: #f1f1f1;">provision.restjavad.extramb</span></strong>.</li><li>Do not exceed 4000 MB for <strong><span style="background-color: #f1f1f1;">provision.restjavad.extramb</span></strong> without further consultation.</li><li>Always perform these changes during a maintenance window, as service restarts are traffic-impacting and may trigger HA failover.</li></ul>
+</article>
+</body>
+</html>

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K12812536: Telemetry Streaming System CPU output calculation</title>
+<meta name="description" content="Support Solution: Telemetry Streaming System CPU output calculation — How is the &quot;cpu&quot; value calculated from Telemetry Streaming System Information output?">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K12812536">
+</head>
+<body>
+<header>
+<h1>K12812536: Telemetry Streaming System CPU output calculation</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-03-28</dd>
+<dt>Updated</dt><dd>2026-07-14</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>F5 Automation and Orchestration</li><li>F5 BIG-IP Telemetry Streaming</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K12812536">https://my.f5.com/manage/s/article/K12812536</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+<p>How is the &quot;cpu&quot; value calculated from Telemetry Streaming System Information output?<br><br>https://clouddocs.f5.com/products/extensions/f5-telemetry-streaming/latest/output-example.html#system-information<br>&lt;snippet&gt;<br> </p>
+<pre> {     &quot;system&quot;: {         &quot;hostname&quot;: &quot;telemetry.bigip.com&quot;,</pre>
+<pre>         &quot;cpu&quot;: 0,         &quot;memory&quot;: 0,         &quot;swap&quot;: 0,         &quot;tmmCpu&quot;: 0,         &quot;tmmMemory&quot;: 0, } </pre>
+<p>&lt;/snippet&gt;</p>
+<p><span class="sectiontitle">Environment</span></p>
+<p>Telemetry Streaming declaration configured a System Poller definition.<br><br>https://clouddocs.f5.com/products/extensions/f5-telemetry-streaming/latest/telemetry-system.html#system-poller</p>
+<p><span class="sectiontitle">Cause</span></p>
+<pre>ref:
+<a href="https://clouddocs.f5.com/products/extensions/f5-telemetry-streaming/latest/poller-default-output-reference.html#cpu" target="_blank">https://clouddocs.f5.com/products/extensions/f5-telemetry-streaming/latest/poller-default-output-reference.html#cpu</a>
+
+cpu
+Parent:	system
+Endpoint:	/mgmt/tm/sys/host-info
+HTTP Method:	GET
+
+e.g. (VE with 2 cpu cores)
+&lt;snippet&gt;
+# curl -sku &lt;admin:password&gt; <a href="https://10.155.50.42/mgmt/tm/sys/host-info" target="_blank">https://{bigIP MGMT IP}/mgmt/tm/sys/host-info</a> | jq .
+  &quot;entries&quot;: {
+    &quot;<a href="https://localhost/mgmt/tm/sys/host-info/0" target="_blank">https://localhost/mgmt/tm/sys/host-info/0</a>&quot;: {
+      &quot;nestedStats&quot;: {
+        &quot;entries&quot;: {
+          &quot;activeCpuCount&quot;: {
+            &quot;value&quot;: 2
+          },
+          &quot;cpuCount&quot;: {
+            &quot;value&quot;: 2
+          },
+          &quot;<a href="https://localhost/mgmt/tm/sys/hostInfo/0/cpuInfo" target="_blank">https://localhost/mgmt/tm/sys/hostInfo/0/cpuInfo</a>&quot;: {
+            &quot;nestedStats&quot;: {
+              &quot;entries&quot;: {
+                &quot;<a href="https://localhost/mgmt/tm/sys/hostInfo/0/cpuInfo/0" target="_blank">https://localhost/mgmt/tm/sys/hostInfo/0/cpuInfo/0</a>&quot;: {
+                  &quot;nestedStats&quot;: {
+                    &quot;entries&quot;: {
+                      &quot;oneMinAvgSystem&quot;: {
+                        &quot;value&quot;: 4
+                      },
+	&quot;<a href="https://localhost/mgmt/tm/sys/hostInfo/0/cpuInfo/1" target="_blank">https://localhost/mgmt/tm/sys/hostInfo/0/cpuInfo/1</a>&quot;: {
+			          &quot;oneMinAvgSystem&quot;: {
+                        &quot;value&quot;: 5
+                      },
+&lt;/snippet&gt;
+
+The &quot;cpu&quot; value is calculated as a rounded average of each CPU &quot;oneMinAvgSystem&quot; value. 
+i.e. 
+Based on the returned oneMinAvgSystem output above: ((4 + 5) / 2) = 4.5 The output is then rounded up to 5.
+
+The tmsh equivalent of the System CPU value from the endpoint /mgmt/tm/sys/host-info:
+
+# tmsh show sys host-info
+
+----------------------------------------------------------------
+Sys::Host: 0
+----------------------------------------------------------------
+Global
+  CPU Count                    2
+  Active CPU Count             2
+
+Memory (bytes)
+  Total                     7.7G
+  Used                      2.7G
+
+CPU: 0 (clock ticks)  Last 5 sec  Last 1 min  Last 5 min   Total
+  -                    (avg/sec)   (avg/sec)   (avg/sec)       -
+  User                         8           8           8    2.9M
+  Niced                        0           0           0  113.2K
+  System                       5           6           5    2.0M
+  Idle                        81          79          80   42.1M
+  Irq                          0           0           0       0
+  Softirq                      0           0           0  143.6K
+  Iowait                       0           2           2    2.8M
+  Stolen                       0           0           0       0
+  Util% (last 5 sec)           -           -           -      14
+
+CPU: 1 (clock ticks)  Last 5 sec  Last 1 min  Last 5 min   Total
+  -                    (avg/sec)   (avg/sec)   (avg/sec)       -
+  User                        11           8           8    2.8M
+  Niced                        0           0           0  118.0K
+  System                       6           6           5    2.0M
+  Idle                        77          79          76   41.8M
+  Irq                          0           0           0       0
+  Softirq                      0           0           0  127.1K
+  Iowait                       0           2           5    3.1M
+  Stolen                       0           0           0       0
+  Util% (last 5 sec)           -           -           -      18
+
+*System : Last 1 min (avg/sec)</pre>
+<pre><span class="sectiontitle"></span></pre>
+</article>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K13444958: Extending Prometheus storage without deleting data for Aspen Mesh Metrics Collector</title>
+<meta name="description" content="Support Solution: Extending Prometheus storage without deleting data for Aspen Mesh Metrics Collector — $ kubectl get pods -n istio-system aspen-mesh-metrics-collector-85f7866d77-wjww8 -o yaml">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K13444958">
+</head>
+<body>
+<header>
+<h1>K13444958: Extending Prometheus storage without deleting data for Aspen Mesh Metrics Collector</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-07-27</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K13444958">https://my.f5.com/manage/s/article/K13444958</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>Prometheus instance running in Aspen Mesh Metrics Collector is using Persistent Volume Claim (PVC) to store metrics collected from the mesh. The PVC filesystem is mounted to <strong>/metrics-collector/tsdb</strong> directory in <strong>metrics-collector</strong> container:</p>
+
+<p><span class="example2">$ kubectl get pods -n istio-system aspen-mesh-metrics-collector-85f7866d77-wjww8 -o yaml  <br>…<br>  containers:<br>    name: metrics-collector<br>    - mountPath: /metrics-collector/tsdb<br>      name: datastore<br>…<br>- name: datastore<br>    persistentVolumeClaim:<br>      claimName: aspen-mesh-metrics-collector</span></p>
+
+<p>By default, PVC is deployed by helm chart with 10Gi of storage requirements.</p>
+
+<p>Here is the part of the default configuration for <strong>aspenmesh-metrics-ccollector</strong> chart extracted from Helm values yaml file:</p>
+
+<p><span class="example2">aspen-mesh-metrics-collector:<br>  server:<br>  persistentVolume:<br>    enabled: true<br>    accessModes:<br>      - ReadWriteOnce<br>    annotations: {}<br>    existingClaim: &quot;&quot;<br>    size: 10Gi<br>    # storageClass: &quot;-&quot;</span></p>
+
+<p>Metrics collector collects data from all PODs in the mesh. The number of metrics exposed by every POD depends on multiple factors like the size of the mesh and the traffic patterns. One Envoy proxy may create hundreds or even thousands of metrics. In time 10 Gi storage might be not enough for the large mesh.</p>
+
+<p>Int this article we show how to increase Persistent Volume Claim size without deleting data stored by Prometheus.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Kubernetes: 1.17x,1.18.x,1.19.x,1.20.x  </li><li>Aspen Mesh:  1.6.x, 1.9.x, 1.11.x, 1.14.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+N/A
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>Persistent volume expansion was implemented in Kubernetes in early versions and was promoted to beta since version 1.11. Using this feature users do not have to manually modify storage backend or filesystem to extend the size of the volume. Shrinking the volume is not supported. Not all kubernetes volume plugins allow PVC expansion. For more information, please refer too Kubernetes documentation. Examples are also shown <a href="https://kubernetes.io/blog/2018/07/12/resizing-persistent-volumes-using-kubernetes/" target="_self">here</a>.</p>
+
+<p>To increase PVC size assigned to <strong>aspenmesh-metrics-collector</strong>, perform the following procedure:</p>
+
+<ol><li>
+	<p>Verify the actual size of the Persistent Volume Claim provisioned to Aspen Mesh Metrics Collector using the following command:</p>
+
+	<p><span class="code">kubectl get pvc -n istio-system aspen-mesh-metrics-collector</span></p>
+
+	<p>The output appears similar to the following example:</p>
+
+	<p><span class="example2">NAME                           STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS    AGE<br>	aspen-mesh-metrics-collector   Bound    pvc-34dce652-4005-4275-abcb-765130dc4df8   1Gi        RWO            kops-ssd-1-17   164m</span></p>
+	</li><li>
+	<p>Verify that StorageClass used by the PVC allows storage capacity expansion using the following command:</p>
+
+	<p><span class="code">kubectl get storageclass kops-ssd-1-17</span></p>
+
+	<p>The output appears similar to the following example:</p>
+
+	<p><span class="example2">NAME                      PROVISIONER             RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE<br>	kops-ssd-1-17 (default)   kubernetes.io/aws-ebs   Delete          WaitForFirstConsumer   true                   35d</span></p>
+	</li><li>
+	<p>Check current disk usage on Prometheus <strong>metrics-collector</strong> container by opening a shell and running <strong>df -kh</strong> command:</p>
+
+	<p><span class="code">/metrics-collector/tsdb $ df -kh</span></p>
+
+	<p>The output appears similar to the following example:</p>
+
+	<p><span class="example2">Filesystem                Size      Used Available Use% Mounted on<br>	…<br>	/dev/nvme1n1            975.9M    939.7M     20.2M  98% /metrics-collector/tsdb</span></p>
+	</li><li>
+	<p>Modify override global values yaml file for Istiod Helm chart and configure the storage size you want to use. For example:</p>
+
+	<p><span class="example2">aspen-mesh-metrics-collector:<br>	  server:<br>	    persistentVolume:<br>	      size: 10Gi</span></p>
+	</li><li>
+	<p>Upgrade Istiod Helm deployment with the following command:</p>
+
+	<p><span class="code">helm upgrade istiod manifests/charts/istio-control/istio-discovery --namespace istio-system --values values.yaml</span></p>
+	</li><li>
+	<p>Verify that the PVC was extended and the filesystem inside container shows a new size. For detail, refer to the following commands and example outputs:</p>
+
+	<p><span class="code">kubectl get pvc -n istio-system aspen-mesh-metrics-collector</span><br>	<span class="example2">NAME                           STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS    AGE<br>	aspen-mesh-metrics-collector   Bound    pvc-34dce652-4005-4275-abcb-765130dc4df8   1Gi        RWO            kops-ssd-1-17   164m</span></p>
+
+	<p><span class="code">kubectl get storageclass kops-ssd-1-17</span><br>	<span class="example2">NAME                      PROVISIONER             RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE<br>	kops-ssd-1-17 (default)   kubernetes.io/aws-ebs   Delete          WaitForFirstConsumer   true                   35d</span></p>
+
+	<p><span class="code">kubctl get pvc -n istio-system aspen-mesh-metrics-collector</span><br>	<span class="example2">NAME                           STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS    AGE<br>	aspen-mesh-metrics-collector   Bound    pvc-34dce652-4005-4275-abcb-765130dc4df8   10Gi       RWO            kops-ssd-1-17   166m</span></p>
+
+	<p><span class="code">kubectl exec -n istio-system aspen-mesh-metrics-collector-85f7866d77-l64sw -c metrics-collector-- sh</span><br>	<span class="example2">/metrics-collector/tsdb $ df -kh<br>	Filesystem                Size      Used Available Use% Mounted on<br>	…<br>	/dev/nvme1n1              9.8G    944.1M      8.9G   9% /metrics-collector/tsdb</span></p>
+	</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+None
+</article>
+</body>
+</html>

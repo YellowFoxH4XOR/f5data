@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162303: BIG-IP LTM Pool Members Remain Offline When an HTTPS Monitor Checks HTTP Services</title>
+<meta name="description" content="Support Solution: BIG-IP LTM Pool Members Remain Offline When an HTTPS Monitor Checks HTTP Services — Newly added BIG-IP LTM pool members remain offline even though they are enabled and their service ports are reachable. The monitor status reports &quot;No successful responses received before deadline&quot;…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162303">
+</head>
+<body>
+<header>
+<h1>K000162303: BIG-IP LTM Pool Members Remain Offline When an HTTPS Monitor Checks HTTP Services</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-02</dd>
+<dt>Updated</dt><dd>2026-08-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.5.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162303">https://my.f5.com/manage/s/article/K000162303</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Newly added BIG-IP LTM pool members remain offline even though they are enabled and their service ports are reachable. The monitor status reports &quot;No successful responses received before deadline&quot; and &quot;Monitor Status: down.&quot; When an HTTPS monitor is assigned to a backend service that uses plain HTTP, TLS testing fails with &quot;SSL23_GET_SERVER_HELLO:unknown protocol.&quot;</p>
+<p> </p>
+<h2>Environment</h2>
+<p>BIG-IP LTM version 17.5.0</p>
+<p>Load-balancing pool with newly added members</p>
+<p>Backend services listening on ports such as 3001 and 3002</p>
+<p>Pool assigned an HTTPS monitor</p>
+<p>Backend application protocol confirmed as HTTP</p>
+<p>TCP connectivity to service ports is available</p>
+<p>Node-level monitoring not enabled; member availability determined by pool monitorCause</p>
+<p> </p>
+<h2>Cause</h2>
+<p>The pool was using an HTTPS health monitor against backend services that served plain HTTP. The monitor initiated a TLS handshake, but the backend returned non-TLS HTTP data, producing the SSL23_GET_SERVER_HELLO:unknown protocol error.</p>
+<p> </p>
+<p>Consequently, the monitor marked the members offline even though TCP connectivity was available. Assigning an HTTP monitor resolved the issue.</p>
+<p> </p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li>Confirm the protocol used by the backend service on each affected port.</li><li>Test TCP connectivity from the BIG-IP system to the backend service port: 
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>nc -v &lt;node_ip&gt; &lt;port&gt;</code></pre>
+</li><li>If the service uses plain HTTP, create an HTTP monitor with request and response values appropriate for the application: 
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh create ltm monitor http /alg-nonprod/http-monitor 
+  defaults-from http 
+  interval 5 
+  timeout 16 
+  send &quot;GET / HTTP/1.1\r Host: &lt;hostname_or_IP&gt;\r Connection: close\r \r &quot; 
+  recv &quot;200&quot;</code></pre>
+Confirm the correct request path, Host value, and expected response with the application team.</li><li>Assign the HTTP monitor to the pool: 
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify ltm pool /alg-nonprod/https-pool monitor /alg-nonprod/http-monitor</code></pre>
+</li><li>Save the BIG-IP configuration: tmsh save /sys config partitions all</li><li>Verify the pool-member status: 
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code> tmsh show ltm pool /alg-nonprod/https-pool members</code></pre>
+ Members should transition to Available after the HTTP monitor receives the expected response.</li><li>If the pool contains both HTTP and HTTPS services, use one of the following designs:
+<ol><li>Assign protocol-appropriate monitors at the individual member level.</li><li>Separate HTTP and HTTPS services into different pools.</li></ol>
+</li><li>For member-specific monitoring, assign the HTTP monitor only to the applicable HTTP member: 
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>msh modify ltm pool /alg-nonprod/https-pool members modify {
+  /alg-nonprod/&lt;http_member&gt;:&lt;port&gt; {
+    monitor /alg-nonprod/http-monitor
+  }
+}</code></pre>
+</li></ol>
+<p> </p>
+<h2>Additional Information</h2>
+<ul><li>A member can be enabled while its availability is offline. These are separate states.</li><li>A node may show &quot;Availability: unknown&quot; and &quot;Node address does not have service checking enabled&quot; when no node-level monitor is assigned. In that configuration, pool-member availability is controlled by the pool-level monitor.</li><li>Use HTTPS monitors only when the monitored backend service supports HTTPS/TLS on the specified port.</li><li>Use an application-appropriate receive string, such as &quot;200&quot;, to validate the expected health response rather than checking only TCP connectivity.</li></ul>
+</article>
+</body>
+</html>

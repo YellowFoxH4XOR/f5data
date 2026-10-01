@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000135553: Change the log level of DNS Controller without restarting the pod</title>
+<meta name="description" content="Support Solution: Change the log level of DNS Controller without restarting the pod — Logging level for DNS Controller can be set when installing the feature by defining the level in the values file however if you need to increase or reduce the logging level for troubleshooting…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000135553">
+</head>
+<body>
+<header>
+<h1>K000135553: Change the log level of DNS Controller without restarting the pod</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-07-21</dd>
+<dt>Updated</dt><dd>2023-07-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.14</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000135553">https://my.f5.com/manage/s/article/K000135553</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>Logging level for DNS Controller can be set when <a href="https://clouddocs.f5.com/products/aspen-service-mesh/1.14/dns-controller/dc-perform-a-clean-installation.html#install-a-dns-controller-instance" target="_blank">installing the feature</a> by defining the level in the <a href="https://clouddocs.f5.com/products/aspen-service-mesh/1.14/dns-controller/dc-perform-a-clean-installation.html#create-an-override-values-file-for-the-dns-controller-instance" target="_blank">values file</a> however if you need to increase or reduce the logging level for troubleshooting purposes you can do it on the fly i.e. without restarting the DNS controller pod after a helm upgrade.</p>
+
+<pre class="ckeditor_codeblock">
+# This section can be modified while installing the DNS controller to
+# set the logging level. It controls the amount of logging emitted by the
+# dns-controller. Valid values are debug, info, warn, and error.
+<strong>loggingLevel: info</strong></pre>
+
+<p> </p>
+
+<h2><strong>Environment</strong></h2>
+
+<ul><li>Aspen Mesh 1.14.6-am4</li><li>DNS Controller</li></ul>
+
+<h2><br><strong>Cause</strong></h2>
+
+<p>Logging level may need to be changed without restarting the DNS Controller pod for troubleshooting purposes.</p>
+
+<h2><br><strong>Recommended Actions</strong></h2>
+
+<h4><strong>Identify the current DNS-controller pod leader</strong></h4>
+In order to identify the current leader we need to get the lease name first and then we can get the name of the pod that is working as leader. In this example the DNS Controller was installed on the <em>dns-controller</em> namespace.
+
+<pre class="ckeditor_codeblock">
+❯ kubectl get lease -n dns-controller
+NAME                                 HOLDER                                                                 AGE
+dnscontrollerinstance.aspenmesh.io   dns-controller-65b66d485c-rdpft_a7b47cee-ea85-4ee5-aac1-abf29a4da56e   51m
+
+<em>##dnscontrollerinstance.aspenmesh.io is the lease name and it&#39;s used in the next command</em>
+
+❯ kubectl get lease -n dns-controller dnscontrollerinstance.aspenmesh.io -o json | jq -r &#39;.spec.holderIdentity&#39; | gawk &#39;match($0, /^(.*)_.*$/, a) { print a[1] }&#39;
+dns-controller-65b66d485c-rdpft
+
+<em>##dns-controller-65b66d485c-rdpft is the name of the pod that is currently working as a leader​​​​​</em></pre>
+
+<h3> </h3>
+
+<h4><strong>Forward a local port to the DNS Controller leader pod</strong></h4>
+We need to forward a local port to the DNS Controller leader pod to be able to change the logging level. Using the pod name identified in the previous step, we need to do the following in a new terminal window:
+
+<pre class="ckeditor_codeblock">
+❯ kubectl port-forward dns-controller-65b66d485c-rdpft -n dns-controller 8080
+Forwarding from 127.0.0.1:8080 -&gt; 8080
+Forwarding from [::1]:8080 -&gt; 8080</pre>
+
+<h3> </h3>
+
+<h4><strong>Send a request using cURL to the <em>/log/level </em>endpoint to review and/or change the logging level</strong></h4>
+We can send a GET request to view the current logging level and a PUT request to change the logging level
+
+<pre class="ckeditor_codeblock">
+❯ curl http://localhost:8080/log/level ##curl defaults to GET method if none is specified with -X
+{&quot;level&quot;:&quot;info&quot;} <em>## current level = info</em>
+
+❯ curl -X PUT http://localhost:8080/log/level -d level=&quot;debug&quot;
+{&quot;level&quot;:&quot;debug&quot;} <em>## level changed to debug</em>
+
+❯ curl http://localhost:8080/log/level
+{&quot;level&quot;:&quot;debug&quot;} <em>## confirm level was changed to debug</em>
+
+❯ curl -X PUT http://localhost:8080/log/level -d level=&quot;info&quot;
+{&quot;level&quot;:&quot;info&quot;} <em>## changing the level back to info</em>
+
+❯ curl http://localhost:8080/log/level
+{&quot;level&quot;:&quot;info&quot;} <em>## level changed back to info</em></pre>
+In the other terminal window where the port-forwarding is running you will see a new line for each submitted request
+
+<pre class="ckeditor_codeblock">
+❯ kubectl port-forward dns-controller-65b66d485c-rdpft -n dns-controller 8080
+Forwarding from 127.0.0.1:8080 -&gt; 8080
+Forwarding from [::1]:8080 -&gt; 8080
+Handling connection for 8080
+Handling connection for 8080
+Handling connection for 8080
+Handling connection for 8080
+Handling connection for 8080</pre>
+ 
+
+<h2><strong>Additional Information</strong></h2>
+
+<p>You can check the DNS controller leader pod logs and see that there are DEBUG and INFO log entries after setting the level to debug.</p>
+
+<pre class="ckeditor_codeblock">
+❯ kubectl logs -n dns-controller dns-controller-65b66d485c-rdpft
+2023-07-21T00:50:11.031Z    INFO    controllers/dnsstaticentry_controller.go:351    ServiceEntry NOT UP TO DATE, updating...    {&quot;host&quot;: &quot;www.example.com&quot;, &quot;requeueAfter&quot;: &quot;19.999999639s&quot;}
+2023-07-21T00:50:31.034Z    INFO    controllers/dnsstaticentry_controller.go:345    ServiceEntry looks up to date    {&quot;host&quot;: &quot;www.example.com&quot;, &quot;requeueAfter&quot;: &quot;4.999999639s&quot;}
+2023-07-21T00:50:36.223Z    DEBUG    controllers/dnsstaticentry_controller.go:261    DNS Results    {&quot;host&quot;: &quot;www.example.com&quot;, &quot;results&quot;: {&quot;V4Ips&quot;:[&quot;192.0.2.10&quot;],&quot;V6Ips&quot;:[&quot;2001:db8::2004&quot;],&quot;TTL&quot;:30,&quot;NegativeTTL&quot;:300,&quot;SOARecord&quot;:false}}
+2023-07-21T00:50:36.223Z    INFO    controllers/dnsstaticentry_controller.go:351    ServiceEntry NOT UP TO DATE, updating...    {&quot;host&quot;: &quot;www.example.com&quot;, &quot;requeueAfter&quot;: &quot;29.999999338s&quot;}
+2023-07-21T00:50:36.235Z    DEBUG    controllers/dnsstaticentry_controller.go:252    Exiting reconcile, ServiceEntry generation already at known value    {&quot;host&quot;: &quot;www.example.com&quot;, &quot;requeueAfter&quot;: &quot;29.987518988s&quot;}
+</pre>
+</article>
+</body>
+</html>

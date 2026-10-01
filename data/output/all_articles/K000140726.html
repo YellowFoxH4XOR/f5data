@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000140726: Aspen Mesh Sidecar CRD conflict when multiple sidecar resources target the same workload</title>
+<meta name="description" content="Support Solution: Aspen Mesh Sidecar CRD conflict when multiple sidecar resources target the same workload — When a global Sidecar resource (without a workloadSelector) is applied, typically to enforce namespace isolation. it is expected to affect all workloads within the mesh. However, if a…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000140726">
+</head>
+<body>
+<header>
+<h1>K000140726: Aspen Mesh Sidecar CRD conflict when multiple sidecar resources target the same workload</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-06-22</dd>
+<dt>Updated</dt><dd>2025-06-22</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.14, 1.11</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000140726">https://my.f5.com/manage/s/article/K000140726</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When a global Sidecar resource (without a workloadSelector) is applied, typically to enforce namespace isolation. it is expected to affect all workloads within the mesh. However, if a workload-specific Sidecar is later applied with a workloadSelector targeting a particular workload, the global configuration stops to be applied to that workload.</p>
+<p>For example, we have the following global Sidecar in the istio-system namespace to isolate all workloads, so they can only communicate within their own namespace and the istio-system namespace:</p>
+<pre class="ckeditor_codeblock" style="box-sizing: border-box;overflow: auto;font-family: Menlo, Monaco, Consolas, &#39;Courier New&#39;, monospace;font-size: 14px;white-space: pre-wrap;overflow-wrap: break-word;background: none 0% 0% / auto repeat scroll padding-box border-box rgb(245, 245, 245);display: block;padding: 8px;border-image: none 100% / 1 / 0 stretch;margin: 10px 0px;color: #222222;border: 0.727273px solid #cccccc;">apiVersion: networking<strong>.</strong>istio<strong>.</strong>io/v1alpha3<br>kind: Sidecar<br>metadata:<br>  name: namespace-isolation<br>  namespace: istio-system<br>spec:<br>  egress:<br>  - hosts:<br>    - &quot;<strong>.</strong>/*&quot;<br>    - &quot;istio-system/*&quot;</pre>
+<p>Later, we apply this workload-specific Sidecar in the default namespace to redirect traffic for a workload labeled &quot;app: httpbin&quot;:</p>
+<pre class="ckeditor_codeblock" style="box-sizing: border-box;overflow: auto;font-family: Menlo, Monaco, Consolas, &#39;Courier New&#39;, monospace;font-size: 14px;white-space: pre-wrap;overflow-wrap: break-word;background: none 0% 0% / auto repeat scroll padding-box border-box rgb(245, 245, 245);display: block;padding: 8px;margin: 10px 0px;color: #222222;border: 0.727273px solid rgb(204, 204, 204);">apiVersion: networking<strong>.</strong>istio<strong>.</strong>io/v1beta1<br>kind: Sidecar<br>metadata:<br>  name: server-redirect-8080<br>  namespace: default<br>spec:<br>  ingress:<br>  - defaultEndpoint: 0<strong>.</strong>0<strong>.</strong>0<strong>.</strong>0:8080<br>    port:<br>      name: server-http2-8080<br>      number: 8080<br>      protocol: HTTP<br>  workloadSelector:<br>    labels:<br>      app: httpbin</pre>
+<p>After this second resource is applied, the httpbin workload will no longer have the namespace isolation defined in the global Sidecar. The traffic restrictions from the global config will be overridden without any error, and httpbin will be able to access services in other namespaces.</p>
+<h2>Environment</h2>
+<ul style="box-sizing: border-box;margin: 0px 0px 12px 24px;padding: 0px;list-style-type: disc;color: #222222;font-family: ProximaNova-Reg, Arial, Helvetica, sans-serif;font-size: 14px;white-space: normal;background-color: #ffffff;"><li style="box-sizing: border-box;font-family: ProximaNova-Reg, Arial, Helvetica, sans-serif;font-size: 14px;line-height: 21px;margin-bottom: 0px;">Aspen Mesh 1<strong style="box-sizing: border-box;font-family: ProximaNova-Bold, Arial, Helvetica, sans-serif;font-size: 14px;line-height: 21px;">.</strong>11<strong style="box-sizing: border-box;font-family: ProximaNova-Bold, Arial, Helvetica, sans-serif;font-size: 14px;line-height: 21px;">.</strong>X 1<strong style="box-sizing: border-box;font-family: ProximaNova-Bold, Arial, Helvetica, sans-serif;font-size: 14px;line-height: 21px;">.</strong>14<strong style="box-sizing: border-box;font-family: ProximaNova-Bold, Arial, Helvetica, sans-serif;font-size: 14px;line-height: 21px;">.</strong>X 1<strong>.</strong>18<strong>.</strong>X 1<strong>.</strong>21<strong>.</strong>X</li><li>Istio Sidecar CRD</li></ul>
+<h2>Cause</h2>
+<p>Aspen Mesh only allows one Sidecar resource to be applied per workload. When multiple Sidecar configurations exist:<br><br></p>
+<ul><li>If one or more Sidecar resources use a workloadSelector, Aspen Mesh gives priority to the most specific match, the Sidecar whose selector matches the workload’s labels.</li><li>A Sidecar resource without a workloadSelector (commonly used for namespace or mesh-wide configuration) will not be applied to any workload that is matched by a Sidecar with a selector.</li></ul>
+<h2>Recommended Actions</h2>
+<p>To ensure the workload receives both Sidecar configuration (global sidecar and with workload selector):<br><br></p>
+<ul><li>Merge the desired configurations into a single Sidecar CRD that uses a workloadSelector matching the target workload and the global one. For example:</li></ul>
+<pre class="ckeditor_codeblock" style="box-sizing: border-box;overflow: auto;font-family: ProximaNova-Reg, Arial, Helvetica, sans-serif;font-size: 13px;white-space: pre-wrap;overflow-wrap: break-word;background: none 0% 0% / auto repeat scroll padding-box border-box rgb(245, 245, 245);display: block;padding: 8px 8px 8px 48px;margin: 10px 0px;color: #181818;border: 0.727273px solid rgb(204, 204, 204);">apiVersion: networking<strong>.</strong>istio<strong>.</strong>io/v1beta1<br>kind: Sidecar<br>metadata:<br>  name: httpbin-combined-sidecar<br>  namespace: default<br>spec:<br>  workloadSelector:<br>    labels:<br>      app: httpbin<br>  <strong>ingress:</strong><br>  - defaultEndpoint: 0<strong>.</strong>0<strong>.</strong>0<strong>.</strong>0:8080<br>    port:<br>      name: server-http2-8080<br>      number: 8080<br>      protocol: HTTP<br>  <strong>egress:</strong><br>  - hosts:<br>    - &quot;<strong>.</strong>/*&quot;<br>    - &quot;istio-system/*&quot;</pre>
+<p> </p>
+<p style="padding-left: 40px;">In this case, we combined both ingress and egress (global and per workload) Sidecar config into one so we can have both configurations.  </p>
+<p> </p>
+<h2>Additional Information</h2>
+<p>This behavior is consistent with other Istio resources like DestinationRule and VirtualService, where only one resource should be targeted per workload.</p>
+</article>
+</body>
+</html>

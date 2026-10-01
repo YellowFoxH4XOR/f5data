@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K13820: Configuring BIG-IP monitor socket reuse behavior</title>
+<meta name="description" content="Knowledge: Configuring BIG-IP monitor socket reuse behavior — You want your BIG-IP system to open a new socket for each monitor request.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K13820">
+</head>
+<body>
+<header>
+<h1>K13820: Configuring BIG-IP monitor socket reuse behavior</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2015-09-22</dd>
+<dt>Updated</dt><dd>2025-12-19</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.1, 16.0.0, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 17.5.1, 17.5.0, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.0, 21.0.0, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 11.6.5, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 11.5.1, 11.5.0, 11.4.1, 11.4.0, 11.3.0, 11.2.1, 11.2.0, 11.0.0, 11.2.X, 14.X.X, 13.X.X, 12.X.X, 11.X.X, 11.5.X, 11.4.X, 11.3.X, 11.1.0, 11.1.X, 11.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 11.6.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K13820">https://my.f5.com/manage/s/article/K13820</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>You should consider using this procedure under the following condition:</p>
+
+<ul><li>You want your BIG-IP system to open a new socket for each monitor request.</li></ul>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisite to use this procedure:</p>
+
+<ul><li>You must be able to use the TMOS Shell (<strong>tmsh</strong>) to access your BIG-IP system.</li></ul>
+<h3>Description</h3><p>By default, if the BIG-IP monitoring process <strong>bigd</strong> has an open socket to the monitored node and a subsequent monitor request is sent before a response to the previous request has been received, the <strong>bigd</strong> process reuses the existing open socket for that monitor request.<br><br>Sockets are reused under the following conditions:</p>
+
+<ul><li>For TCP:
+	<ul><li>The TCP connection is successfully established.</li><li>No response is received from the server.</li><li>The connection is not shut down (FIN) or terminated (RST).</li></ul>
+	</li><li>For UDP:
+	<ul><li>No response is received from the server.</li><li>No error (such as ICMP Destination Unreachable) is received in response to UDP datagrams.</li></ul>
+	</li></ul>
+
+<p>If the <strong>bigd </strong> process is able to establish a TCP connection to a node but the node is not responding in any other way, the BIG-IP system may prematurely mark down the node, even if other connections to that node respond correctly. Similarly, if a UDP monitor&#39;s transmitted data is successfully delivered to a node, but the node does not respond in any way, the BIG-IP system may prematurely mark the node down. For UDP monitors, since there is no connection, this behavior appears as multiple datagrams from the same source port.</p>
+
+<p>The following examples demonstrate instances when reuse of an existing source port may result in the system unexpectedly marking down a node:</p>
+
+<ul><li>You have an HTTP monitor configured to monitor a node, and, after the initial TCP three-way handshake, the node doesn’t respond before the next monitor interval. The BIG-IP system sends subsequent monitor requests over the same open socket, expecting a response and marking the host down after the timeout. Reasons for the lack of response from the node are usually external to the BIG-IP system, such as if a node must query a database server that doesn&#39;t respond. Other connections to this node may still respond as expected, so this host is unexpectedly marked down.</li><li>You have a DNS monitor configured to monitor a node, and no response is received to a query before the next monitor interval. The BIG-IP system sends subsequent queries over the same open socket (from the same source port), expecting a response and marking the host down after the timeout. This may occur if a single response is lost, then the DNS server ignores additional queries from the same source port.</li></ul>
+
+<p>By disabling the <strong>bigd.reusesocket</strong> database key, you can force the <strong>bigd</strong> process to open a new socket for every monitor request.</p>
+
+<p><span class="sectiontitle">Procedures</span></p>
+
+<p><span class="subsectiontitle">Disabling the bigd.reusesocket database key</span></p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Disabling the <strong>bigd.reusesocket</strong> database key affects all monitors on the system and in rare cases may cause port exhaustion.</span></p>
+
+<ol><li>Log in to <strong>tmsh</strong> by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>To disable the <strong>bigd.reusesocket</strong> database key, type the following command:
+	<p><span class="code">modify sys db bigd.reusesocket value disable</span></p>
+	</li><li>Save the change by typing the following command:
+	<p><span class="code">save /sys config</span></p>
+	</li></ol>
+</article>
+</body>
+</html>

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000159906: BIG-IP GTM/DNS iQuery Connection Failure Due to Missing Extended Key Usage (EKU) Extensions in Device Certificates</title>
+<meta name="description" content="Support Solution: BIG-IP GTM/DNS iQuery Connection Failure Due to Missing Extended Key Usage (EKU) Extensions in Device Certificates — &quot;SSL error:14090086:SSL routines:ssl3_get_server_certificate:certificate verify failed&quot;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000159906">
+</head>
+<body>
+<header>
+<h1>K000159906: BIG-IP GTM/DNS iQuery Connection Failure Due to Missing Extended Key Usage (EKU) Extensions in Device Certificates</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-05</dd>
+<dt>Updated</dt><dd>2026-02-24</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000159906">https://my.f5.com/manage/s/article/K000159906</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>1. Description</h2>
+<p>LTM virtual servers appear up locally but are shown as down on the GTM (BIG-IP DNS). iQuery connections between GTM and LTM devices fail after replacing expired device certificates with third-party CA-signed certificates. The following error messages appear in /var/log/ltm:</p>
+<ul><li>&quot;big3d SSL cert EXPIRED at IP &lt;IP_ADDRESS&gt;&quot;</li><li>&quot;SSL error:14090086:SSL routines:ssl3_get_server_certificate:certificate verify failed&quot;</li><li>&quot;SSL error:14094413:SSL routines:ssl3_read_bytes:sslv3 alert unsupported certificate&quot;</li></ul>
+<p>Attempts to use bigip_add to exchange certificates fail, and only a subset of LTM virtual servers may appear available on the GTM even when all are operational on the LTM. The issue persists even after certificate renewal if the replacement certificates lack required Extended Key Usage (EKU) extensions.</p>
+<h2>2. Environment</h2>
+<ul><li>BIG-IP DNS (GTM) versions 17.1.1 and later</li><li>BIG-IP LTM versions 17.1.3 and later</li><li>Platforms: F5-BIG-R5800, C129, and similar</li><li>iQuery mesh between GTM and LTM devices</li><li>Device certificates expired or replaced with third-party CA-signed certificates</li><li>Certificates missing clientAuth and/or serverAuth EKU extensions</li><li>Certificate store may contain duplicate, expired, or mismatched certificates</li><li>Recent certificate renewal or replacement activities</li></ul>
+<h2>3. Cause</h2>
+<p>Expired big3d SSL device certificates on LTM systems, or replacement with third-party CA-signed certificates that lack the required Extended Key Usage (EKU) extensions. iQuery connections require both clientAuth (SSL Client) and serverAuth (SSL Server) EKU extensions for mutual authentication. The big3d process operates as a server (requiring serverAuth), while the gtmd process operates as a client (requiring clientAuth). Certificates missing either extension prevent successful iQuery communication, resulting in GTM marking LTM virtual servers as down. Additionally, duplicate or expired certificates in the trusted certificate store can cause partial visibility issues where only some virtual servers appear available.</p>
+<h2>4. Answer/Recommended Actions</h2>
+<p><strong>Verify Certificate EKU Extensions</strong></p>
+<ol><li>Check if the current device certificate includes both required EKU extensions:</li><li><span style="font-family: monospace;font-size: 11.8125px;">openssl x509 -noout -purpose -in /config/httpd/conf/ssl.crt/server.crt | grep -iE &#39;client|server&#39;</span></li><li>The output must show &quot;Yes&quot; for both SSL client and SSL server:</li><li><span style="font-family: monospace;font-size: 11.8125px;">SSL client : Yes</span></li><li><span style="font-family: monospace;font-size: 11.8125px;">SSL client CA : No</span></li><li><span style="font-family: monospace;font-size: 11.8125px;">SSL server : Yes</span></li><li><span style="font-family: monospace;font-size: 11.8125px;">SSL server CA : No</span></li></ol>
+<p><strong>If Using Third-Party CA Certificates</strong></p>
+<ol><li>Request new certificates from your CA with both clientAuth and serverAuth EKU extensions explicitly included in the certificate template.</li><li>Verify the new certificate before installation using the command in step 1.</li><li>Follow K9114 to create and install the new device certificate with proper EKU extensions.</li></ol>
+<p><strong>If Using Self-Signed Certificates (Recommended)</strong></p>
+<ol><li>Generate new self-signed certificates (which include required EKUs by default) following K9114.</li><li>Install the new certificates on all GTM and LTM devices.</li></ol>
+<p><strong>Clean Up Certificate Store</strong></p>
+<ol><li>Remove duplicate or expired certificates from the trusted certificate store on all devices:</li></ol>
+<ul><li>Navigate to System &gt; Certificate Management &gt; Device Certificate Management &gt; Device Trust Certificates</li><li>Navigate to DNS &gt; GSLB &gt; Servers &gt; Trusted Server Certificates</li><li>Delete any old, expired, or duplicate certificates</li></ul>
+<p><strong>Restart Services and Exchange Certificates</strong></p>
+<ol><li>Restart httpd, gtmd, and big3d services after certificate updates:</li><li><span style="font-family: monospace;font-size: 11.8125px;">bigstart restart httpd</span></li><li><span style="font-family: monospace;font-size: 11.8125px;">bigstart restart gtmd big3d</span></li><li><strong>Note:</strong> Restarting gtmd and big3d will temporarily disrupt iQuery connections. Perform during a maintenance window.</li><li>Run bigip_add on GTM devices to exchange certificates with LTM devices:</li><li><span style="font-family: monospace;font-size: 11.8125px;">bigip_add &lt;LTM_IP_address&gt;</span></li><li>or</li><li><span style="font-family: monospace;font-size: 11.8125px;">bigip_add &lt;username&gt;@&lt;LTM_IP_address&gt;</span></li><li>Verify iQuery connectivity:</li><li><span style="font-family: monospace;font-size: 11.8125px;">tmsh show gtm iquery</span></li><li>Confirm that all connections show &quot;State: connected&quot;</li><li>Verify virtual server status on GTM to ensure all LTM virtual servers are now visible and showing correct status.</li></ol>
+<h2>5. Additional Information</h2>
+<p><strong>Self-Signed vs. Third-Party CA Certificates</strong></p>
+<ul><li>Self-signed certificates include both clientAuth and serverAuth EKU extensions by default and are the recommended approach for iQuery mesh communication.</li><li>Third-party CA certificates must explicitly include both EKU extensions. Contact your CA to ensure the certificate template includes these extensions.</li><li>If you are planning to use self-signed certificates, F5 recommends creating the self-signed certificates with extended expiration dates (10 years) to minimize certificate management overhead.</li></ul>
+<p><strong>Industry Changes Affecting Public CA Certificates</strong></p>
+<p>Google and other public Certificate Authorities are requiring separation of serverAuth and clientAuth roots, which prevents using a single public CA certificate with both EKU extensions. This industry change may impact the use of public CA-signed device certificates for GTM/DNS iQuery communication. Organizations should plan to use either:</p>
+<ul><li>Self-signed certificates</li><li>Private/internal CA certificates that support both EKU extensions</li><li>Separate certificate infrastructure for iQuery communication</li></ul>
+<p><strong>Partial Virtual Server Visibility</strong></p>
+<p>When only some LTM virtual servers appear on the GTM while all are operational on the LTM, this typically indicates:</p>
+<ul><li>Duplicate certificates in the trusted certificate store with the same x509 Subject</li><li>GTM matching certificates by x509 Subject in order from top to bottom</li><li>The first matched certificate being expired or invalid</li><li>Removing duplicate/expired certificates resolves this issue</li></ul>
+<p><strong>Certificate File Locations</strong></p>
+<ul><li>Device Certificate: /config/httpd/conf/ssl.crt/server.crt</li><li>Device Key: /config/httpd/conf/ssl.key/server.key</li><li>Trusted Device Certificates: /config/big3d/client.crt</li><li>Trusted Server Certificates: /config/gtm/server.crt</li></ul>
+</article>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K02391029: vCMP guest not responding to SYN packets coming from clients due to incorrect FDB entry on vCMP host</title>
+<meta name="description" content="Support Solution: vCMP guest not responding to SYN packets coming from clients due to incorrect FDB entry on vCMP host — vCMP guest is not receiving traffic (for example, SYN packets) seen in interface level captures on the vCMP host, and span port captures on the connected switch.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K02391029">
+</head>
+<body>
+<header>
+<h1>K02391029: vCMP guest not responding to SYN packets coming from clients due to incorrect FDB entry on vCMP host</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-07-26</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>VIPRION Platforms</li><li>BIG-IP</li><li>BIG-IP LTM: 16.X.X, 15.X.X, 14.X.X, 13.X.X, 17.0.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 17.0.0, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 17.X.X, 13.1.0, 13.0.1, 13.0.0, 16.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K02391029">https://my.f5.com/manage/s/article/K02391029</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>vCMP guest is not receiving traffic (for example, SYN packets) seen in interface level captures on the vCMP host, and span port captures on the connected switch.</p>
+
+<p>Packets in question appear valid, with no bit flips or similar issues.</p>
+
+<p>Problem appears to affect virtual servers reachable via specific VLANs only.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>
+	<p>vCMP guest running on a single slot:</p>
+
+	<p><span class="example2">vcmp guest ltm-guest-1 {<br>	    &lt;...&gt;<br>	    assigned-slots { 1 }<br>	    &lt;...&gt;<br>	    vlans {<br>	        /Common/vlan100<br>	        /Common/vlan200<br>	        /Common/vlan300<br>	    }<br>	}</span></p>
+	</li><li>
+	<p>With trunk members on multiple slots:</p>
+
+	<p><span class="example2">net vlan /Common/vlan300 {<br>	    interfaces {<br>	        repro_trunk {<br>	            tagged<br>	        }<br>	    }<br>	    tag 300<br>	}<br>	<br>	net trunk External {<br>	    interfaces {<br>	        1/1.1<br>	        3/1.1<br>	    }<br>	    lacp enabled<br>	}</span></p>
+	</li><li>
+	<p>MAC Masquerade configured on vCMP guest:</p>
+
+	<p><span class="example2">cm traffic-group /Common/traffic-group-1 {<br>	    mac 01:23:e9:bc:50:00<br>	}</span></p>
+	</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Host&#39;s <strong>FDB entry</strong> is invalid on the slot where guest doesn&#39;t run, and maps the guest&#39;s MAC address as reachable via an external trunk.</p>
+
+<p><span class="example2">tmsh show net fdb vlan all-records -hidden<br>----------------------------------------------------------------------<br>Net::FDB<br>VLAN                      Mac Address        Member            Dynamic<br>----------------------------------------------------------------------<br>vlan100                   01:23:e9:bc:50:00  trunk:32          yes<br>vlan200                   01:23:e9:bc:50:00  trunk:32          yes<br><strong>vlan300                   01:23:e9:bc:50:00  trunk:External    yes</strong></span></p>
+
+<p>Continuing with the example described in the <strong>Environment</strong>, slot 3&#39;s FDB entry shows the guest&#39;s MAC masquerade address <strong>01:23:e9:bc:50:00</strong> as reachable out of trunk <strong>External </strong>for <strong>vlan300</strong>.<br><strong>trunk:32</strong> is the correct, expected value, since this is the virtual trunk mapped to the guest.</p>
+
+<p>The mapping to <strong>External </strong>is invalid, and will lead to packets destined for that MAC address being dropped at the host level on slot 3.</p>
+
+<p>The root cause of this issue is that the BIG-IP received a frame from the guest&#39;s MAC address via the <strong>External </strong>trunk. This should not happen unless there is a MAC address conflict with another device, or ARP spoofing is taking place in the network.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>FDB entries on the host are updated when a unicast frame leaves the guest and egresses via a trunk member.<br>However, in the case of a guest running on a single slot, with trunk members on multiple slots, unicast egress frames will only leave via the slot where the guest is running. This is due to the default <strong>optimized </strong>value of <strong>sys db trunk.cluster.distribution</strong>.<br>FDB entries will also be updated when a broadcast frame is sent from the guest.</p>
+
+<p><span class="subsectiontitle">Clearing the issue</span></p>
+
+<p>To clear the errant FDB entry, disable and re-enable ARP for an affected virtual address. For example:</p>
+
+<p><span class="code">tmsh modify ltm virtual-address /Common/10.10.10.1 arp disabled<br>tmsh modify ltm virtual-address /Common/10.10.10.1 arp enabled</span></p>
+
+<p>This should trigger a series of GARPs (i.e. broadcast frames), updating the FDB on the affected slot.</p>
+
+<p>Review the output of <strong>show net fdb vlan all-records -hidden</strong> on the vCMP host to confirm that the issue is cleared.</p>
+
+<p><span class="subsectiontitle">Preventing the issue</span></p>
+
+<p>Investigate other network devices in the same layer 2 environment to determine if there is a MAC address conflict or misbehaving system.</p>
+
+<p>Re-configuring the vCMP guest to run on all slots where trunk members reside will avoid the issue. This will cause unicast frames to leave via both slots, which would clear any errant FDB entries much faster.</p>
+
+<p>Modifying <strong>sys db trunk.cluster.distribution</strong> to <strong>balanced </strong>on the vCMP guest will also avoid the issue, since unicast frames will leave via all trunk members.</p>
+
+<p><span class="code">tmsh modify sys db trunk.cluster.distribution value balanced</span></p>
+
+<p>However, it should be noted that this increases backplane utilization, which can have performance implications in high traffic scenarios. This option is therefore discouraged</p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>Packets can be dropped due to a large number of possible reasons. This issue is unlikely to occur in the vast majority of vCMP environments.</p>
+</article>
+</body>
+</html>

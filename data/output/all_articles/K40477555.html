@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K40477555: BIG-IP AFM DoS Protection profile thresholds are enforced globally</title>
+<meta name="description" content="Knowledge: BIG-IP AFM DoS Protection profile thresholds are enforced globally — In versions prior to BIG-IP AFM 12.1.0, the detection thresholds and limits configured in denial-of-service (DoS) Protection profiles are enforced for each Traffic Management Microkernel (TMM).">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K40477555">
+</head>
+<body>
+<header>
+<h1>K40477555: BIG-IP AFM DoS Protection profile thresholds are enforced globally</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2019-01-16</dd>
+<dt>Updated</dt><dd>2026-06-18</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP AFM: 13.0.0, 14.0.1, 14.0.0, 13.1.X, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.X, 13.0.1, 21.X.X, 17.X.X, 16.X.X, 15.X.X, 14.X.X, 13.X.X, 21.1.X, 21.1.0, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.6, 12.1.0, 12.1.1, 12.1.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K40477555">https://my.f5.com/manage/s/article/K40477555</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Issue</h3><p><span class="sectiontitle">Old Behavior</span></p>
+
+<p>In versions prior to BIG-IP AFM 12.1.0, the detection thresholds and limits configured in denial-of-service (DoS) Protection profiles are enforced for each Traffic Management Microkernel (TMM).</p>
+
+<p>You can configure detection thresholds and limits for known attack types in DoS Protection profiles. You can then apply the DoS Protection profiles to virtual servers to provide protection against DoS attacks.</p>
+
+<p>The following example shows the configured settings for the <strong>DNS A Query</strong> attack type in a DoS Protection profile:</p>
+
+<ul><li><strong>Detection Threshold Packets Per Second</strong>: 250000</li><li><strong>Detection Threshold Percent</strong>: 500</li><li><strong>Rate Limit Packets Per Second</strong>: 2500000</li></ul>
+
+<p>In versions prior to BIG-IP AFM 12.1.0, the system reports an attack started when any of the TMMs on the device detect more than 250000 packets per second (PPS) matching the attack type. For BIG-IP AFM systems with multiple TMMs, the total PPS detected by the system globally across all TMMs can exceed the configured threshold before an attack is triggered. For example, a device with four TMMs could potentially receive as much as 1000000 PPS (250000 x 4) before an attack is detected if the packets are distributed evenly.</p>
+
+<p><span class="sectiontitle">New Behavior</span></p>
+
+<p>Beginning in BIG-IP AFM 12.1.0, the detection thresholds and limits configured in DoS Protection profiles are enforced globally for the device.</p>
+
+<p>Instead of enforcing detection thresholds for each TMM on the device, the BIG-IP AFM system considers the total PPS across all TMMs on the device.</p>
+
+<p>Using the example configuration from above, when the BIG-IP AFM system detects more than 250000 PPS matching this attack type globally across all TMMs on the device, the BIG-IP AFM reports that an attack started. For example, if the system has two TMMs, PPS for TMM0 could be 240000 but if PPS for TMM1 is only 9000, the BIG-IP AFM system does not detect an attack. However, if PPS for TMM1 suddenly increases by more than 1000 PPS and PPS for TMM0 does not decrease, the BIG-IP AFM system reports an attack started and and logs a message similar to the following example in the <strong>/var/log/ltm</strong> file:</p>
+
+<p><span class="example2">err tmm[19917]: 01010252:3: A DNS &lt;virtual_server_name&gt; DOS attack start was detected for vector A query DOS, Attack ID 228892298.</span></p>
+
+<p>When the number of globally detected PPS matching this attack falls below the configured threshold, the BIG-IP AFM system reports the attack has stopped and logs a message similar to the following in the <strong>/var/log/ltm</strong> file:</p>
+
+<p><span class="example2">notice tmm[19917]: 01010253:5: A DNS &lt;virtual_server_name&gt; DOS attack has stopped for vector A query DOS, Attack ID 2976291543.</span></p>
+
+<p><span class="note"><strong>Note</strong>: DoS Device Protection (called <strong>Device Configuration</strong> in BIG-IP versions prior to 14.0.0) protects the system as a whole. DoS Device Protection vector thresholds for detection and mitigation are still interpreted per-TMM. The Single Endpoint Sweep and Single Endpoint Flood vectors are an exception; the threshold settings for these vectors are interpreted globally for Device Protection as well as DoS Protection profiles.</span></p>
+
+<p><span class="sectiontitle">Impact</span></p>
+
+<p>As a result of this change, consider the following:</p>
+
+<ul><li>When upgrading from previous BIG-IP AFM versions to BIG-IP 12.1.0, DoS Protection profile thresholds and limits are automatically increased in accordance with the new behavior. For example, if your BIG-IP AFM system has four TMMs and you configure the <strong>Detection Threshold</strong> for the <strong>DNS A Query</strong> attack type to be <strong>250000</strong>, the <strong>Detection Threshold</strong> increases to <strong>1000000</strong> when upgrading to BIG-IP 12.1.0 or later.</li><li>You may see a message similar to the following when attempting to load the configuration following an upgrade to BIG-IP AFM 12.1.0 or later:
+	<p><span class="example2">Dos vector limit has been changed from per tmm thread to total tmm threads per box</span></p>
+	</li><li>Using detection threshold or limit settings from a version prior to BIG-IP APM 12.1.0 on a system running 12.1.0 or later with multiple TMMs results in attack detection occurring sooner because the setting is enforced globally rather than per-TMM. To convert the older settings, multiply the setting value by the number of TMMs on the system. You can determine the number of TMMs running on your system by typing the following command:
+	<p><span class="code">tmsh show /sys tmm-info | grep &quot;Sys::TMM&quot;</span></p>
+
+	<p>The following output shows four TMMs on this system:</p>
+
+	<p><span class="note"><strong>Note:</strong> This example is from a system with Hyper-Threading Technology and HTSplit enabled. For more information about the HTSplit feature, refer to <a href="https://my.f5.com/manage/s/article/K23505424" target="_blank">K23505424: Overview of the HTSplit feature</a>.</span></p>
+
+	<p><span class="example2">Sys::TMM: 0.0<br>	Sys::TMM: 0.2<br>	Sys::TMM: 0.4<br>	Sys::TMM: 0.6</span></p>
+	</li></ul>
+<h3>Recommended Actions</h3>When configuring DoS Protection profile detection thresholds and limits on BIG-IP AFM 12.1.0 and later, you should set the value based on the global PPS for the device.  
+</article>
+</body>
+</html>

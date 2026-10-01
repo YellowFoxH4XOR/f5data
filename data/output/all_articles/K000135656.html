@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000135656: Change in the DNS cache sizing formula in BIG-IP 15.0.0</title>
+<meta name="description" content="Support Solution: Change in the DNS cache sizing formula in BIG-IP 15.0.0 — When you configure the DNS cache feature, the BIG-IP system resolves DNS requests and responds to repeated DNS queries by serving answers from the cache. The DNS cache feature optimizes responses to…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000135656">
+</head>
+<body>
+<header>
+<h1>K000135656: Change in the DNS cache sizing formula in BIG-IP 15.0.0</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-07-31</dd>
+<dt>Updated</dt><dd>2025-06-12</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 17.X.X, 16.X.X, 15.X.X, 14.X.X, 13.X.X, 12.X.X, 17.1.X, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0, 13.1.X, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.X, 13.0.1, 13.0.0, 12.1.X, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.X, 12.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000135656">https://my.f5.com/manage/s/article/K000135656</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When you configure the DNS cache feature, the BIG-IP system resolves DNS requests and responds to repeated DNS queries by serving answers from the cache. The DNS cache feature optimizes responses to DNS queries.</p>
+<p>There were DNS cache scalability and sizing enhancements in BIG-IP 15.0.0, and it changed how each Traffic Management Microkernel (TMM) maintains the dns cache. In both pre-v15 and post-v15 versions, there are no checks preventing sizing a cache so large that it runs the TMM out of memory, and appropriate sizing of the amount of cache is important during deployment.</p>
+<p><em><span style="color: #27ae60;"><strong>Note</strong>: The article assumes you understand the difference between a TMM <strong>process</strong> and <strong>thread</strong>, which is described in </span><a href="https://my.f5.com/manage/s/article/K14358" target="_blank"><span style="color: #27ae60;">K14358: Overview of Clustered Multiprocessing (11.3.0 and later)</span></a><span style="color: #27ae60;">.</span></em></p>
+<h3 style="font-size: 16px;">For versions prior to BIG-IP 15.0.0</h3>
+<p>Each TMM <strong>thread</strong> holds and maintains a replicated copy of the dns cache. This means all <strong>threads</strong> try to mirror each other and have the same data.</p>
+<p>The general guideline for DNS cache sizing considering the point is the formula:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>(msg + rrset + NS * 250b) * 2.5 * (# of TMMs per device/blade) &lt;= 1/2 allocated TMM memory</code></pre>
+<p>where:</p>
+<ul><li>msg: Message Cache, a sub-cache of the DNS cache that contains the response to a specific DNS query.</li><li>rrset: RRset Cache, a sub-cache of the DNS cache that contains the resource record set data referenced by the message cache. In the case of very simple A/AAAA queries, responses may be generated directly from the RRSet cache.</li><li>NS: Nameserver Cache, a sub-cache of the DNS cache that contains metadata about nameservers used to resolve DNS queries. Information in this sub-cache is used to aid back-end name resolution, and is only used on a cache miss. Transparent caches do not have a nameserver sub-cache.</li><li>250b: a fixed size of 250 Bytes.</li></ul>
+<h3 style="font-size: 16px;">For versions after BIG-IP 15.0.0</h3>
+<p>Each TMM <strong>process</strong> holds and maintains its own copy of the dns cache, and it is not mirrorred between <strong>processes</strong>. The configured size is the size shared across the TMM <strong>processes</strong>, and it is split against each TMM <strong>process</strong>. For example, when total of 10MB max memory is configured on a device or a blade having 2 <strong>threads</strong> and 2 <strong>processes</strong>, then each <strong>process</strong> will have 5MB each.</p>
+<p>The general guideline for DNS cache sizing considering the point is the formula:</p>
+<div>
+<div>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>msg + rrset + NS * 250b + (Memory allocated for number of concurrent TCP and UDP connections) &lt;= 1/2 allocated TMM memory</code></pre>
+</div>
+<div> </div>
+<div>Where the memory allocated for number of concurrent TCP and UDP connections:
+<div>
+<ul><li>Approximate allocated memory for number of tcp connections for each cache = 70 KB * (number of tmm threads) * (maximum number of concurrent tcp flows)</li><li>Approximate allocated memory for number of udp connections for each cache = 0.5 KB * (number of tmm threads) * (maximum number of concurrent udp flows)</li></ul>
+</div>
+</div>
+</div>
+<h2>Environment</h2>
+<ul><li>DNS Cache is in use</li></ul>
+<h2>Cause</h2>
+<p>BIG-IP 15.0.0 introduced the change in behavior as a result of DNS cache scalability and sizing enhancements.</p>
+<h2>Recommended Actions</h2>
+<p>Ensure that the sum of all of the configured cache <strong>Message Cache Size</strong>, <strong>Resource Record Cache Size</strong>, and <strong>Name Server Cache Count</strong> settings is half the value or less of the total memory allocated to TMM. To do so, perform the following procedure:</p>
+<p><em><span style="color: #27ae60;"><strong>Note</strong>: For VIPRION systems, the total value and total memory calculation applies to a single blade, not the sum of all installed blades in the chassis.</span></em></p>
+<ol><li>
+<p>Determine the number of TMMs and the total memory available, type the following command:</p>
+<p><span class="code">tmsh show sys tmm-info global</span></p>
+<p>In the following example, the system has 16 TMMs, and they have total 42.9 GB of memory.<br><em><span style="color: #27ae60;"><strong>Note</strong>: For VIPRION systems, devide the number of TMMs and the memory total by the number of blades in the system.</span></em></p>
+<pre>--------------------------
+Sys::TMM
+--------------------------
+Global
+  TMM Count             16
+
+Memory (bytes)
+  Total              42.9G
+  Used                2.1G
+
+CPU Usage Ratio (%)
+  Last 5 Seconds         1
+  Last 1 Minute          4
+  Last 5 Minutes         2
+</pre>
+<p><em><span style="color: #27ae60;"><strong>Note</strong>: Based on 42.9 GB, the sum of all of the DNS cache sizes should not exceed 21.45 GB.</span></em></p>
+</li><li>
+<p>Configure DNS cache so that sum of cache size from all DNS cache does not exceed the memory size derived in step 1.</p>
+<p><em><span style="color: #27ae60;"><strong>Note</strong>: Each DNS cache configuration independently maintains DNS cache. For example, when there are DNS cache configurations dns-cache1 with total max size 1GB configured and dns-cache2 with total max size 1GB configured, the device will consume up to 2GB plus a little more for internally managing the cache.</span></em></p>
+</li></ol>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

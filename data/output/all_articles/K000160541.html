@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160541: How to Display Last Logon Time For End-Users When Connecting to Big-IP APM</title>
+<meta name="description" content="Support Solution: How to Display Last Logon Time For End-Users When Connecting to Big-IP APM — You&#x27;d like user&#x27;s last login timestamp displayed on the APM login screen before the user connects to the VPN or authenticate further. The solution retrieves the lastLogon attribute from Active…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160541">
+</head>
+<body>
+<header>
+<h1>K000160541: How to Display Last Logon Time For End-Users When Connecting to Big-IP APM</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-03-31</dd>
+<dt>Updated</dt><dd>2026-03-31</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160541">https://my.f5.com/manage/s/article/K000160541</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description </strong></h2>
+<p>You&#39;d like user&#39;s last login timestamp displayed on the APM login screen before the user connects to the VPN or authenticate further. The solution retrieves the lastLogon attribute from Active Directory, converts the Windows FILETIME format to a human-readable format, and adjusts the time to a preferred timezone, in this case Central European Time (CET).</p>
+<h2><strong>Environment</strong></h2>
+<ul><li>Big-IP APM</li><li>Active Directory</li></ul>
+<h2><strong>Cause</strong></h2>
+<p>None</p>
+<h2><strong>Recommended Actions</strong></h2>
+<p>To display the last login time in CET on the login screen, follow these steps:</p>
+<p>(1) Configure AD Query in VPE</p>
+<ul><li>Add an AD Query action before AD Auth.</li><li>In the AD Query properties, add lastLogon to Required Attributes.</li><li>The value will be available as: session.ad.last.attr.lastLogon.</li></ul>
+<p>(2) Add an iRule Event to Convert Timestamp: </p>
+<ul><li>Add an iRule Event action after the AD Query (before AD Auth).</li><li>Set Agent ID to lastLogon.</li><li>Attach the following iRule to the virtual server:</li></ul>
+<pre class="language-javascript" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when ACCESS_POLICY_AGENT_EVENT {
+    if { [ACCESS::policy agent_id] eq &quot;lastLogon&quot; } {
+        set offset 11644473610
+        set adtime &quot;[ACCESS::session data get session.ad.last.attr.lastLogon]&quot;
+        if { $adtime ne &quot;&quot; &amp;&amp; $adtime != 0 } {
+            set secs [expr {($adtime / 10000000) - $offset}]
+            set lastloginstr [clock format $secs -format &quot;%Y-%m-%d %H:%M:%S CET&quot;]
+        } else {
+            set lastloginstr &quot;No previous login recorded&quot;
+        }
+        ACCESS::session data set session.custom.lastLoginDisplay $lastloginstr
+    }
+}</code></pre>
+<p>(3) Add a Message Box to Display the Last Login</p>
+<p>After the iRule Event, add a Message Box action in the VPE and configure the message to display:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>Your last login was: %{session.custom.lastLoginDisplay}
+Please click Continue to proceed with your VPN connection.</code></pre>
+<p>(4) Apply the Access Policy </p>
+<h2><strong>Additional information</strong></h2>
+<p>(1) iRules do not natively handle time zones or daylight saving time, Manual adjustment is needed.</p>
+<p>(2) Considerations for lastLogon vs. lastLogonTimestamp</p>
+<ul><li>lastLogon is not replicated across Domain Controllers; it reflects the last login on the specific DC queried.</li><li>lastLogonTimestamp is replicated but may lag up to 14 days.</li><li>Confirm with your AD team which attribute is best for your environment.</li></ul>
+<p> </p>
+</article>
+</body>
+</html>

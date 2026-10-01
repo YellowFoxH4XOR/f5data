@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163378: Configuring client-max-body-size for NGINX Ingress Controller VirtualServers with Traffic Splits</title>
+<meta name="description" content="Support Solution: Configuring client-max-body-size for NGINX Ingress Controller VirtualServers with Traffic Splits — The client-max-body-size ConfigMap setting may not apply to the initial location of a VirtualServer route that uses traffic splitting. Requests larger than the default 1 MB limit can fail with 413…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163378">
+</head>
+<body>
+<header>
+<h1>K000163378: Configuring client-max-body-size for NGINX Ingress Controller VirtualServers with Traffic Splits</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-09-22</dd>
+<dt>Updated</dt><dd>2026-09-22</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Ingress Controller</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163378">https://my.f5.com/manage/s/article/K000163378</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>The <strong>client-max-body-size</strong> ConfigMap setting may not apply to the initial location of a VirtualServer route that uses traffic splitting. Requests larger than the default 1 MB limit can fail with <span style="font-family: &#39;courier new&#39;, courier, monospace;">413 Request Entity Too Large</span> before being internally redirected to a split location.</p>
+<h2>Environment</h2>
+<ul><li>NGINX Ingress Controller</li><li>Kubernetes VirtualServer resource</li><li>VirtualServer route configured with traffic splitting</li><li>ConfigMap parameter:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">client-max-body-size: 50m</span></p>
+</li><li>Traffic-split route such as <span style="font-family: &#39;courier new&#39;, courier, monospace;">/coffee</span></li></ul>
+<h2>Cause</h2>
+<p>NGINX evaluates the request body size in the initially matched location before executing the internal rewrite to the traffic-split location.</p>
+<p>The generated configuration can contain the configured directive in the internal split locations but not in the initial route location:</p>
+<p><code>location /coffee {<br> rewrite ^ $vs_cafe_jcafe_splits_0 last;<br>}<br><br>location /internal_location_splits_0_split_0 {<br> client_max_body_size 50m;<br>}<br></code></p>
+<p>Because <span style="font-family: &#39;courier new&#39;, courier, monospace;">client_max_body_size</span> is not explicitly configured in the initial location or at the server level, NGINX uses its default limit of 1 MB. A request with a 2 MB body is rejected before reaching the internal split location.</p>
+<p>Relevant log messages include:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">http cl:2097152 max:1048576</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">client intended to send too large body: 2097152 bytes</span></p>
+<p>The response is:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">413 Request Entity Too Large</span></p>
+<h2>Recommended Actions</h2>
+<p>Configure <span style="font-family: &#39;courier new&#39;, courier, monospace;">client_max_body_size</span> at the VirtualServer server context by using <span style="font-family: &#39;courier new&#39;, courier, monospace;">server-snippets</span>:</p>
+<p><code>apiVersion: k8s<strong>.</strong>nginx<strong>.</strong>org/v1<br>kind: VirtualServer<br>metadata:<br> name: cafe<br>spec:<br> host: Web_1.example.com<br> server-snippets: |<br>  client_max_body_size 50m;<br></code></p>
+<p>Apply the updated VirtualServer configuration and verify that the generated NGINX configuration contains the directive at the server level:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">client_max_body_size 50m;</span></p>
+<p>Retest the request against the traffic-split route. Configuring the directive at the server level ensures that the limit is available when NGINX first matches the request, before the internal rewrite occurs.</p>
+<h2>Additional Information</h2>
+<p>Traffic-split internal locations redirect requests to fully configured locations. Duplicating all route directives in the internal redirect locations is unnecessary. Because the request body-size check occurs before the internal redirect, configure the required limit at the server context for traffic-split routes that need a limit greater than 1 MB.</p>
+</article>
+</body>
+</html>

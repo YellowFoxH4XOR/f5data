@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161301: Unable to Access F5OS rSeries Management IP using SSH and ICMP while the device is accessible using GUI</title>
+<meta name="description" content="Support Solution: Unable to Access F5OS rSeries Management IP using SSH and ICMP while the device is accessible using GUI — On newly deployed F5 rSeries appliances running F5OS, CLI access via SSH and ICMP (ping) is completely unavailable, while WebUI (HTTPS/port 443) access remains fully functional.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161301">
+</head>
+<body>
+<header>
+<h1>K000161301: Unable to Access F5OS rSeries Management IP using SSH and ICMP while the device is accessible using GUI</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-05-20</dd>
+<dt>Updated</dt><dd>2026-05-20</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS</li><li>F5OS-A: 1.5.0, 1.5.2, 1.5.1, 1.8.X, 1.5.X, 1.8.4, 1.8.3, 1.8.0, 1.5.4, 1.5.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161301">https://my.f5.com/manage/s/article/K000161301</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong> Description</strong></h2>
+<p>On newly deployed F5 rSeries appliances running F5OS, CLI access via SSH and ICMP (ping) is completely unavailable, while WebUI (HTTPS/port 443) access remains fully functional. </p>
+<p>Despite correct credentials, a running SSH daemon, and the device listening on port 22, all SSH connection attempts fail, and ICMP traffic is dropped.</p>
+<p>The following behavior may be observed in audit logs:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>type=USER_ERR msg=audit(...): pid=27269 uid=0 auid=4294967295 ses=4294967295
+
+msg=&#39;op=PAM:bad_ident grantors=? acct=&quot;?&quot; exe=&quot;/usr/sbin/sshd&quot;
+
+terminal=ssh res=failed&#39;</code></pre>
+<p>Additionally, the SSH iptable allow rule counter does <strong>not</strong> increment during SSH connection attempts, indicating that packets are not reaching the allow rule in the chain:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>[0:0] -A SSH_ALLOW_RULES -p tcp -m state --state NEW -m tcp --dport 22 -j ACCEPT</code></pre>
+<p> </p>
+<h2><strong>Environment</strong></h2>
+<ul><li>Platform: F5 rSeries R2600 (applicable to rSeries appliances generally)</li><li>Configuration: Management IP and subnet configured within an RFC6598 address space
+<ul></ul>
+</li></ul>
+<h2><strong>Cause</strong></h2>
+<p>Observed state:</p>
+<p><span><strong>system network state configured-network-range-type RFC6598</strong></span></p>
+<p> </p>
+<p>The management IP and subnet overlapped with the rSeries internal RFC6598 network range used for inter-component communication. This caused incorrect iptables rule generation during initialization, resulting in SSH and ICMP traffic being misrouted or dropped, while HTTPS traffic remained unaffected due to different iptables chain traversal.</p>
+<h2><strong>Recommended Actions</strong></h2>
+<ul style="list-style-type: disc;"><li>Identify the current internal network range via console access:<span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">    </span></li></ul>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code> show system network state</code></pre>
+<p> </p>
+<ul><li>Confirm whether <span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">configured-network-range-type</span> is set to <span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">RFC6598</span> and whether it overlaps with your management IP subnet.</li></ul>
+<p> </p>
+<ul style="list-style-type: disc;"><li><strong>Identify the management IP configuration:</strong><strong></strong></li></ul>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>show running-config system mgmt-ip config ipv4</code></pre>
+<p> </p>
+<ul><li><strong>Change the internal network range</strong> to a valid RFC1918 subnet that does not overlap with the management IP, any connecting host, or any other address space in use on your network.</li></ul>
+<p style="padding-left: 40px;">Valid RFC1918 ranges: <span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">10.0.0.0/8</span>, <span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">172.16.0.0/12</span>, <span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">192.168.0.0/16</span></p>
+<p> </p>
+<ul><li><strong>Perform a full power cycle</strong> of the rSeries device after changing the internal network range. This is required to regenerate the iptables rules correctly.</li></ul>
+<p> </p>
+<ul><li><strong>Verify SSH and ICMP access</strong> are restored after the device completes its boot sequence.</li></ul>
+<p> </p>
+<h2><strong>Additional Information</strong></h2>
+<ul><li>This behavior is <strong>expected</strong> given the misconfiguration — it is not a bug or exceptional platform misbehavior. The rSeries platform generates iptables rules based on the configured internal network range at initialization. An overlapping address space causes those rules to misroute or silently drop SSH and ICMP traffic.</li></ul>
+<p> </p>
+</article>
+</body>
+</html>

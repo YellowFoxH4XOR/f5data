@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000156878: What are TCP connections without message integrity protections? How can I implement safeguards to ensure data integrity?</title>
+<meta name="description" content="Support Solution: What are TCP connections without message integrity protections? How can I implement safeguards to ensure data integrity? — You are concerned about TCP connections that do not have message integrity protections, which could expose your systems to tampering or interception. This article outlines how to verify such…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000156878">
+</head>
+<body>
+<header>
+<h1>K000156878: What are TCP connections without message integrity protections? How can I implement safeguards to ensure data integrity?</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-10-06</dd>
+<dt>Updated</dt><dd>2025-10-17</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000156878">https://my.f5.com/manage/s/article/K000156878</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<p>You are concerned about TCP connections that do not have message integrity protections, which could expose your systems to tampering or interception. This article outlines how to verify such connections and implement safeguards to ensure data integrity.<br><br></p>
+<ul dir="auto" style="list-style-type: disc;"><li>Plain TCP only checks for random bit-flips with a simple checksum. It does not cryptographically protect messages. An attacker on the path can change bytes and neither endpoint will know.</li><li>Message integrity is provided by cryptography (for example, TLS/SSL record MAC or AEAD like AES-GCM/ChaCha20-Poly1305), IPsec, or application-layer signing. With integrity, tampering is detected.</li></ul>
+<p dir="auto">In practice, “TCP without message integrity” means any cleartext TCP protocol (HTTP on 80, LDAP 389, IMAP 143, POP3 110, SMTP 25 without enforced STARTTLS, custom TCP apps without TLS), or traffic that F5 passes at L4 without a protection layer. TLS gives both encryption and integrity.</p>
+<h2><strong>Environment</strong></h2>
+<ul><li>TCP connections used by your application or service</li><li>No encryption or message validation mechanisms implemented</li><li>Configurations using plaintext communication or inadequate security controls</li></ul>
+<h2><strong>Cause</strong></h2>
+<p>Not using cryptographic protocols such as TLS or additional message signing mechanisms results in unprotected communication, making it susceptible to attacks such as data interception or manipulation.</p>
+<h2><strong>Recommended Actions</strong></h2>
+<ol><li>Identify all TCP connections in your environment by reviewing logs and configurations.</li><li>Check if the connections are secured using cryptographic protocols like TLS (Transport Layer Security). Non-secure connections often rely on plaintext communication.</li><li>Enable TLS to provide encryption and ensure message integrity protection. Update configurations to enforce secure communication protocols.</li><li>For applications requiring additional validation at the application layer, implement message signing using HMAC or other cryptographic methods.</li><li>Run a security audit using tools like Wireshark or tcpdump to detect unencrypted TCP connections.</li><li>Regularly monitor logs for suspicious activity and adjust security measures accordingly.</li><li>Educate teams on secure coding practices to prevent insecure configurations.</li></ol>
+<h2><strong>Additional Information</strong></h2>
+<p>Securing TCP connections is critical for protecting data integrity and privacy during transmission. F5 products such as BIG-IP SSL Orchestrator can help manage encrypted traffic and enhance communication security.</p>
+<h3 dir="auto"><strong>How to check on BIG-IP if traffic has integrity protection</strong></h3>
+<ol start="1" dir="auto" style="list-style-type: decimal;"><li>Check each Virtual Server (data plane)</li></ol>
+<ul dir="auto" style="list-style-type: disc;"><li>In the GUI: Local Traffic &gt; Virtual Servers &gt; Virtual Server List &gt; click a VS &gt; Profiles.
+<ul dir="auto" style="list-style-type: disc;"><li>If you see a Client SSL profile attached: client-to-BIG-IP traffic is protected.</li><li>If you also see a Server SSL profile: BIG-IP-to-server traffic is protected (end-to-end).</li><li>If neither profile is present: there is no TLS integrity on that side.</li><li>If only Client SSL is present: only the client side is protected; traffic to the pool is plaintext.</li></ul>
+</li><li>In tmsh (CLI):
+<ul dir="auto" style="list-style-type: disc;"><li>tmsh list ltm virtual &lt;vs_name&gt; profiles<br>• Look for clientssl and/or serverssl in the profiles block.</li><li>To review SSL profile details (versions, ciphers):<br>• tmsh list ltm profile client-ssl &lt;profile_name&gt; all-properties<br>• tmsh list ltm profile server-ssl &lt;profile_name&gt; all-properties</li></ul>
+</li></ul>
+<div> </div>
+<ol start="2" dir="auto" style="list-style-type: decimal;"><li>Spot plaintext listeners by port</li></ol>
+<ul dir="auto" style="list-style-type: disc;"><li>VS listening on ports like 80, 21, 25, 110, 143, 389, or a custom TCP port, with no Client SSL profile, are almost certainly plaintext.</li><li>In the GUI: check each VS’s Destination port and Profiles.</li><li>In tmsh: tmsh list ltm virtual one-line
+<ul dir="auto" style="list-style-type: disc;"><li>Scan for VIPs on cleartext ports that lack clientssl.</li></ul>
+</li></ul>
+<div> </div>
+<ol start="3" dir="auto" style="list-style-type: decimal;"><li>Verify with a quick packet capture (when in doubt)</li></ol>
+<ul dir="auto" style="list-style-type: disc;"><li>On BIG-IP: tcpdump -nni 0.0:nnn -s0 host &lt;client_or_server_ip&gt; and port &lt;port&gt;
+<ul dir="auto" style="list-style-type: disc;"><li>If you see TLS Client Hello/Encrypted Handshake, it’s protected.</li><li>If you see readable ASCII (HTTP/1.1 GET, LDAP binds, etc.), it’s plaintext.</li></ul>
+</li></ul>
+<div> </div>
+<ol start="4" dir="auto" style="list-style-type: decimal;"><li>Management plane (admin access to BIG-IP)</li></ol>
+<ul dir="auto" style="list-style-type: disc;"><li>Web UI should be HTTPS only; SSH should be used instead of Telnet.</li><li>tmsh list sys httpd
+<ul dir="auto" style="list-style-type: disc;"><li>Check ssl-port (usually 443). Ensure no plain HTTP mgmt exposure.</li></ul>
+</li><li>tmsh list sys sshd
+<ul dir="auto" style="list-style-type: disc;"><li>Ensure SSH is enabled and Telnet is not enabled.</li></ul>
+</li><li>SNMP: Prefer SNMPv3 (integrity and encryption) over v1/v2c.
+<ul dir="auto" style="list-style-type: disc;"><li>tmsh list sys snmp | grep -i version</li></ul>
+</li></ul>
+<h3 dir="auto"><strong>How to prevent TCP without message integrity on BIG-IP</strong></h3>
+<ol start="1" dir="auto" style="list-style-type: decimal;"><li>Terminate TLS on the VIP (Client SSL)</li></ol>
+<ul dir="auto" style="list-style-type: disc;"><li>Create/attach a Client SSL profile to the Virtual Server.</li><li>Use modern TLS:
+<ul dir="auto" style="list-style-type: disc;"><li>On newer TMOS, prefer TLS 1.2 and TLS 1.3 with AEAD ciphers (AES-GCM or ChaCha20-Poly1305).</li><li>Use built-in cipher groups like f5-secure (or your org’s approved group).</li></ul>
+</li><li>tmsh example:
+<ul dir="auto" style="list-style-type: disc;"><li>tmsh create ltm profile client-ssl my_clientssl defaults-from clientssl</li><li>tmsh modify ltm profile client-ssl my_clientssl ciphers DEFAULT cipher-group f5-secure</li><li>tmsh modify ltm virtual &lt;vs_name&gt; profiles add { my_clientssl }</li></ul>
+</li></ul>
+<div> </div>
+<ol start="2" dir="auto" style="list-style-type: decimal;"><li>Re-encrypt to servers (Server SSL)</li></ol>
+<ul dir="auto" style="list-style-type: disc;"><li>If you need end-to-end protection, also attach a Server SSL profile so BIG-IP re-encrypts to the pool.</li><li>Optionally enable server certificate validation (set the proper CA, require SNI).</li><li>tmsh example:
+<ul dir="auto" style="list-style-type: disc;"><li>tmsh create ltm profile server-ssl my_serverssl defaults-from serverssl</li><li>tmsh modify ltm virtual &lt;vs_name&gt; profiles add { my_serverssl }</li></ul>
+</li></ul>
+<div> </div>
+<ol start="3" dir="auto" style="list-style-type: decimal;"><li>Eliminate or control plaintext protocols</li></ol>
+<ul dir="auto" style="list-style-type: disc;"><li>For web apps:
+<ul dir="auto" style="list-style-type: disc;"><li>Redirect HTTP to HTTPS at the VIP (LTM Policy or iRule).</li><li>Add HSTS to prevent SSL stripping (insert Strict-Transport-Security header).</li></ul>
+</li><li>For email, directory, and mail clients:
+<ul dir="auto" style="list-style-type: disc;"><li>Enforce TLS/STARTTLS or move to implicit TLS ports (e.g., 465/993/995/636).</li></ul>
+</li><li>For custom TCP apps:
+<ul dir="auto" style="list-style-type: disc;"><li>Wrap with TLS on BIG-IP (Client/Server SSL) or implement TLS in the app.</li><li>If you must run L4 only (FastL4), use IPsec tunnels between sites to protect traffic.</li></ul>
+</li></ul>
+<div> </div>
+<ol start="4" dir="auto" style="list-style-type: decimal;"><li>Management plane hardening</li></ol>
+<ul dir="auto" style="list-style-type: disc;"><li>Disable any plaintext management access.</li><li>Use SSH, HTTPS, and SNMPv3 only.</li><li>Restrict management access by source IPs and use firewall/AFM if licensed.</li></ul>
+<div> </div>
+<ol start="5" dir="auto" style="list-style-type: decimal;"><li>Validate your posture</li></ol>
+<ul dir="auto" style="list-style-type: disc;"><li>Scan VIPs externally with nmap or sslyze to confirm TLS is used and only strong suites are offered.</li><li>Capture briefly with tcpdump to confirm no sensitive flows remain in cleartext.</li></ul>
+<p> </p>
+</article>
+</body>
+</html>

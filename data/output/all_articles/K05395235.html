@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K05395235: DNSSEC Responses are failing with Thales netHSM. No RRSIG in response.</title>
+<meta name="description" content="Support Solution: DNSSEC Responses are failing with Thales netHSM. No RRSIG in response. — BIG-IP DNS no longer responds to DNSSEC queries with a RRSIG record.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K05395235">
+</head>
+<body>
+<header>
+<h1>K05395235: DNSSEC Responses are failing with Thales netHSM. No RRSIG in response.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-06-11</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 15.X.X, 13.X.X, 12.X.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 14.X.X, 12.1.0, 12.0.0, 12.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K05395235">https://my.f5.com/manage/s/article/K05395235</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br><br>BIG-IP DNS no longer responds to DNSSEC queries with a RRSIG record.<br><br>You can verify this by sending the query directly to the gtm listener IP address:</p>
+
+<p><span class="code">dig @&lt;GTM_LISTENER_IP&gt; +dnssec +multi example.com</span></p>
+
+<p>Note that the following message is logged indicating that RRSIG was not added:<br><br>/var/log/ltm</p>
+
+<pre>
+<span class="example2">warning tmm[23514]: 01010231:4: DNSSEC: Did not add RRSIGs to response RR set (owner: example.com).</span>
+</pre>
+
+<p>Review the dnssec zsk key assigned to the DNSSEC zone to see if &quot;generation&quot; data is available. Lack of generation data means that the key has not been successfully generated/assigned. No &quot;generation&quot; data exists in the following example:</p>
+
+<pre>
+<span class="example2">ltm dns dnssec key /Common/example.com_zsk {
+    algorithm rsasha256
+    bit-width 2048
+    expiration-period 30:0:0:0
+    rollover-period 20:0:0:0
+    use-fips external
+}</span>
+
+</pre>
+
+<p>The failure to generate a new key on roll over is why BIG-IP is no longer responding with RRSIG record after the old key expires.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP DNS</li><li>Thales netHSM</li><li>DNSSEC</li><li>2000+ keys in <strong>/opt/nfast/kmdata/local/</strong></li></ul>
+
+<p><span class="sectiontitle">Cause</span><br><br><a href="https://cdn.f5.com/product/bugtracker/ID807157.html" target="_self">ID807157</a></p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+Key generation timeouts can occur if too many key generation requests happen at the same time.  For example if all the DNSSEC keys have the same roll-over period and are created at the same time.  Timeouts result in a failed key generation and redundant keys can accumulate in <strong>/opt/nfast/kmdata/local/ </strong><br><br>Having too many keys stored in <strong>/opt/nfast/kmdata/local/</strong> can also increase the time it takes to generate a key so it is important to maintain the keys in<strong> /opt/nfast/kmdata/local/</strong> by removing unused key files.<br><br>Use the following command to count the number of keys stored in <strong>/opt/nfast/kmdata/local/</strong>
+
+<p><span class="code">ls /opt/nfast/kmdata/local/key_pkcs* | wc -l</span></p>
+
+<p>For optimal performance, the number of keys should be maintained at less than 2000.<br><br>The following procedure can be used for a BIG-IP system which uses Thales netHSM solely to manage DNSSEC keys:<br> </p>
+
+<ol><li>Backup key files:<br>	<span class="code">mkdir /shared/tmp/kmdata_key_backup</span><br>	<span class="code">cp /opt/nfast/kmdata/local/key_pkcs* /shared/tmp/kmdata_key_backup</span></li><li>List dnssec key handles to file:<br>	<span class="code">tmsh list ltm dns dnssec key| grep handle | awk &#39;{print $2}&#39; &gt; /shared/tmp/key_handles</span></li><li>List key file/key object to file:<br>	<span class="code">/opt/nfast/bin/nfkminfo -l &gt; /shared/tmp/nfkminfol.txt</span></li><li>Remove list of key_handles from nfkminfol.txt so you&#39;re left with a list of unused keys:<br>	<span class="code">for i in $(cat /shared/tmp/key_handles); do sed -i &quot;/$i/d&quot; /shared/tmp/nfkminfol.txt; done</span></li><li>Check for any &#39;custom&#39; keys you don&#39;t want to delete:<br>	<span class="note">Note: Custom keys refer to manually generated keys on BIG-IP for some purpose unknown to F5.  It is assumed the name of these keys do not contain _Common_</span><br>	<span class="code">grep -v &quot;_Common_&quot; /shared/tmp/nfkminfol.txt</span><br>	Manually remove these keys (if any) from <strong>/shared/tmp/nfkminfol.txt </strong>to avoid deletion</li><li>Create unused key list:<br>	<span class="code">awk &#39;{print $1}&#39; /shared/tmp/nfkminfol.txt | grep key_pkcs &gt; /shared/tmp/unused_keys</span></li><li>Remove unused keys from<strong> /opt/nfast/kmdata/local/</strong>:<br>	<span class="warning">Important: The following command will delete all the keys listed in /shared/tmp/unused_keys </span><br>	<span class="code">for i in $(cat /shared/tmp/unused_keys); do rm -f /opt/nfast/kmdata/local/$i; done</span></li><li>Regenerate new dnssec keys and apply to dnssec zones that are failing to respond with RRSIG<br>	Example:<br>	<span class="code">tmsh</span><br>	<span class="code">create ltm dns dnssec key example.com_zsk2 { algorithm rsasha256 bit-width 2048 expiration-period 30:0:0:0 rollover-period 20:0:0:0 use-fips external }</span><br>	<span class="code">modify ltm dns dnssec zone example.com keys replace-all-with { example.com_ksk1 example.com_zsk2 }</span></li></ol>
+
+<p><br><br><span class="sectiontitle">Additional Information</span><br><br>In order to avoid too many key generations to be simultaneously requested, consider staggering the <strong>rollover-period</strong> when creating multiple dnssec keys at the same time.<br><br>For Example:<br><br><span class="code">create ltm dns dnssec key example1.com_zsk { algorithm rsasha256 bit-width 2048 expiration-period 30:0:0:0 rollover-period 20:0:0:0 use-fips external }<br>create ltm dns dnssec key example2.com_zsk { algorithm rsasha256 bit-width 2048 expiration-period 30:0:0:0 rollover-period 20:0:0:0 use-fips external }<br>create ltm dns dnssec key example3.com_zsk { algorithm rsasha256 bit-width 2048 expiration-period 30:0:0:0 rollover-period 20:0:0:0 use-fips external }<br>create ltm dns dnssec key example4.com_zsk { algorithm rsasha256 bit-width 2048 expiration-period 30:0:0:0 rollover-period 20:0:0:0 use-fips external }<br>create ltm dns dnssec key example5.com_zsk { algorithm rsasha256 bit-width 2048 expiration-period 30:0:0:0 rollover-period 20:0:0:0 use-fips external }<br>create ltm dns dnssec key example6.com_zsk { algorithm rsasha256 bit-width 2048 expiration-period 30:0:0:0 rollover-period 20:0:5:0 use-fips external }<br>create ltm dns dnssec key example7.com_zsk { algorithm rsasha256 bit-width 2048 expiration-period 30:0:0:0 rollover-period 20:0:5:0 use-fips external }<br>create ltm dns dnssec key example8.com_zsk { algorithm rsasha256 bit-width 2048 expiration-period 30:0:0:0 rollover-period 20:0:5:0 use-fips external }<br>create ltm dns dnssec key example9.com_zsk { algorithm rsasha256 bit-width 2048 expiration-period 30:0:0:0 rollover-period 20:0:5:0 use-fips external }<br>create ltm dns dnssec key example10.com_zsk { algorithm rsasha256 bit-width 2048 expiration-period 30:0:0:0 rollover-period 20:0:5:0 use-fips external }<br>create ltm dns dnssec key example11.com_zsk { algorithm rsasha256 bit-width 2048 expiration-period 30:0:0:0 rollover-period 20:0:10:0 use-fips external }<br>create ltm dns dnssec key example12.com_zsk { algorithm rsasha256 bit-width 2048 expiration-period 30:0:0:0 rollover-period 20:0:10:0 use-fips external }<br>create ltm dns dnssec key example13.com_zsk { algorithm rsasha256 bit-width 2048 expiration-period 30:0:0:0 rollover-period 20:0:10:0 use-fips external }<br>create ltm dns dnssec key example14.com_zsk { algorithm rsasha256 bit-width 2048 expiration-period 30:0:0:0 rollover-period 20:0:10:0 use-fips external }<br>create ltm dns dnssec key example15.com_zsk { algorithm rsasha256 bit-width 2048 expiration-period 30:0:0:0 rollover-period 20:0:10:0 use-fips external }</span></p>
+</article>
+</body>
+</html>

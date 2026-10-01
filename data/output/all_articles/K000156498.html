@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000156498: How to Disable mTLS for Specific Paths in NGINX Plus</title>
+<meta name="description" content="Support Solution: How to Disable mTLS for Specific Paths in NGINX Plus — NGINX Plus configured with mutual TLS (mTLS) on specific ports for API access can present challenges when integrating monitoring tools that do not support mTLS, such as New Relic (NR).">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000156498">
+</head>
+<body>
+<header>
+<h1>K000156498: How to Disable mTLS for Specific Paths in NGINX Plus</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-10-25</dd>
+<dt>Updated</dt><dd>2025-11-21</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Plus: R13, R16, R15, R14, R35, R33, R32, R31, R30, R29, R28, R27, R26, R25, R24, R23, R22, R21, R20, R19, R18, R17, R34</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000156498">https://my.f5.com/manage/s/article/K000156498</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<p>NGINX Plus configured with mutual TLS (mTLS) on specific ports for API access can present challenges when <span style="text-decoration: underline;">integrating monitoring tools that <strong>do not</strong> support mTLS</span>, such as New Relic (NR).</p>
+<p>Attempts to disable mTLS for a particular path (e.g., /nginx_status) using <strong>ssl_verify_client off</strong> <em>inside a location block</em> are <em>invalid </em>and result in configuration errors. The error message typically encountered is:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>nginx: [emerg] &quot;ssl_verify_client&quot; directive is not allowed here.</code></pre>
+<p>Monitoring agents unable to perform mTLS handshake will fail to connect to endpoints exposed on ports where mTLS is enforced.</p>
+<p> </p>
+<h2><strong>Environment</strong></h2>
+<ul><li>Product: NGINX Plus</li></ul>
+<p> </p>
+<h2><strong>Cause</strong></h2>
+<p>SSL/TLS handshakes and client certificate verification in NGINX occur before the request is mapped to a location block. Therefore, directives like<strong> ssl_verify_client</strong> are only <em>valid</em> at the <span style="text-decoration: underline;">server {}</span> or <span style="text-decoration: underline;">http {}</span> context level and <em>cannot </em>be set per-<span style="text-decoration: underline;">location</span>. This architectural limitation means it is not possible to selectively disable mTLS for individual paths within a server block.</p>
+<p>Configuration that caused the error:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>server {
+    listen 6443 ssl;
+   
+    location /nginx_status {
+        ssl_verify_client off;
+        stub_status;
+    }
+}</code></pre>
+<p> </p>
+<h2><strong>Recommended Actions</strong></h2>
+<ul><li>Configure <em><strong>separate</strong></em> <span style="text-decoration: underline;">server {}</span> blocks for API access (with mTLS enabled) and monitoring endpoints (without mTLS), each listening on different ports.<br>Example configuration: 
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>server {
+  listen 8443 ssl;
+  ssl_verify_client off;
+  location /nginx_status {
+    stub_status;
+  }
+  location /nginx_api_status {
+    api;
+  }
+  location / {
+    proxy_pass https://127.0.0.1:6443;
+  }
+}
+server {
+  listen 6443 ssl;
+  ssl_verify_client on;
+}</code></pre>
+</li><li>Expose monitoring endpoints such as <em>/nginx_status</em> or <em>/nginx_api</em>_status only on non-mTLS ports. These endpoints provide global statistics for the entire NGINX instance, including traffic handled by all other server blocks.</li><li>For richer metrics, including HTTP status codes, use the <strong>ngx_http_api_module</strong>. Query its endpoint via a port without mTLS enabled.</li><li>The <strong>ngx_http_api_module</strong> comes bundled with NGINX Plus; no additional installation is required. It does not appear in the output of <em>nginx -V</em>.</li><li>When configuring third-party monitoring integrations (e.g., New Relic), ensure they query the correct endpoint and port. Some integrations may require separate monitors per port, but querying the API module endpoint from any non-mTLS port provides global metrics.</li></ul>
+<h2>Additional Information</h2>
+<ul><li><a href="https://docs.nginx.com/nginx/admin-guide/monitoring/new-relic-plugin/" target="_blank">Monitoring NGINX and NGINX Plus with the New Relic Plug-In | NGINX Documentation</a></li><li><a href="https://nginx.org/en/docs/http/ngx_http_ssl_module.html#ssl_verify_client" target="_blank">Module ngx_http_ssl_module</a></li><li><a href="https://nginx.org/en/docs/http/ngx_http_stub_status_module.html" target="_blank">Module ngx_http_stub_status_module</a></li></ul>
+</article>
+</body>
+</html>

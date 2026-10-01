@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000157888: F5OS SDAG hash randomisation can cause performance degradation in CGNAT deployments</title>
+<meta name="description" content="Support Solution: F5OS SDAG hash randomisation can cause performance degradation in CGNAT deployments — The CMP feature (Clustered Multiprocessing) allows BIG-IP platforms that contain multiple CPUs to run multiple TMM threads. With multiple TMM threads simultaneously processing traffic, system…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000157888">
+</head>
+<body>
+<header>
+<h1>K000157888: F5OS SDAG hash randomisation can cause performance degradation in CGNAT deployments</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-11-20</dd>
+<dt>Updated</dt><dd>2025-11-22</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP AFM: 17.0.0, 17.1.0, 17.0.X, 17.X.X, 21.X.X, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000157888">https://my.f5.com/manage/s/article/K000157888</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>The CMP feature (Clustered Multiprocessing) allows BIG-IP platforms that contain multiple CPUs to run multiple TMM threads. With multiple TMM threads simultaneously processing traffic, system performance is enhanced, and traffic management capacity is expanded.  With multiple TMM threads, traffic needs to be disaggregated evenly between all available threads. On F5OS platforms, SDAG is the mechanism used for such disaggregation.<br>When Traffic Management Microkernel (TMM) restarts or a blade reboots, SDAG hash tables on F5OS devices can change dynamically. This behavior can negatively affect CGNAT environments, where unnecessary CMP connection redirects may be seen (which can lead to higher CPU usage).<br>This article provides details on the issue&#39;s impact and addresses methods for mitigating and resolving this behavior.</p>
+<h2>Environment</h2>
+<ul><li>F5OS</li><li>CGNAT</li></ul>
+<h2>Cause</h2>
+<p>CGNAT translation IP&#39;s in PBA mode are allocated to a client having in account the client IP.  The idea is to allocate a CGNAT translation IP which falls on the same TMM as the client, so that no redirections happen. SDAG hashes play a role as they dictate how traffic is disaggregated (to what TMM) given a certain hash.<br>When for example a TMM restarts or a blade reboots, the SDAG hash tables are randomised. This means that earlier CGNAT persistence entries (created having in account previous hashes) will still be in place but now with a different SDAG hash, which may point the translation address to a different TMM.  Since these persistence entries still have to be honoured by the BIG-IP, this may result in increased packet redirects (between TMM&#39;s) which may cause a degradation in system performance.</p>
+<p>Key technical manifestations include the following:</p>
+<ul><li>Changed tmctl tmm/sdaglib_hash_table and tmctl tmm/sdaglib_mirror_table tables post-event<br><span style="background-color: #f1f1f1;">tmctl -d blade tmm/sdaglib_hash_table</span><br><span style="background-color: #f1f1f1;">tmctl -d blade tmm/sdaglib_mirror_table</span></li><li>Heavy CMP connection redirects tracked in tmm_stat table outputs<br><span style="background-color: #f1f1f1;">tmctl tmm_stat -s slot_id,cpu,client_side_traffic.tot_conns,cmp_conn_redirected</span></li></ul>
+<h2>Recommended Actions</h2>
+<p><strong>Mitigation</strong></p>
+<ol><li>Apply Fixes for ID1966941 and ID1966945<br>Install the relevant hotfix or firmware updates to include fixes for these known bugs, which enable configuring static SDAG hash tables.</li><li>Set Static SDAG Hash Values<br>Depending on whether your tenant version contains the fix for ID2037409 or not, <strong>perform one of the following procedures</strong>.</li></ol>
+<p><strong>Procedure 1: For Versions Without the Fix for ID2037409</strong></p>
+<ol style="list-style-type: upper-alpha;"><li>Fetch Current SDAG hash values<br>Use the following commands to obtain hash and mirror tables (respectively):<br><span style="background-color: #f1f1f1;">tmctl -d blade tmm/sdaglib_hash_table -s table -c | grep -v table | uniq</span><br><span style="background-color: #f1f1f1;">tmctl -d blade tmm/sdaglib_mirror_table -s table -c | grep -v table | uniq</span></li><li>Set static SDAG hash values using sys db keys from point A<br>Copy the output values into the following commands (first one hash table, second one mirror table):<br><span style="background-color: #f1f1f1;">tmsh modify sys db sdag.runtime.hashtable value &quot;hash&quot;</span><br><span style="background-color: #f1f1f1;">tmsh modify sys db sdag.runtime.mirror.hashtable value &quot;hash&quot;</span></li><li>Save Configuration Persistently<br>Save your changes:<br><span style="background-color: #f1f1f1;">tmsh save sys config</span><strong><br></strong><span style="background-color: #f1f1f1;"></span></li></ol>
+<h3 dir="auto"><strong></strong></h3>
+<p><strong></strong><strong>Procedure 2: For Versions With the Fix for ID2037409</strong></p>
+<ol style="list-style-type: upper-alpha;"><li>Download and Use Python Script for Translation<br>Use the following Python script to interpret tmctl outputs into the appropriate sys db format. Save this file as /var/tmp/dag_hashes.py<br><pre class="language-python" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>import sys
+def parse_hex_list(s):
+    return [int(token, 16) for token in s.split(&#39;:&#39;) if token]
+def main():
+    if len(sys.argv) != 3:
+        print(f&quot;usage: {sys.argv[0]} did_table table&quot;)
+        sys.exit(0)
+    dids = parse_hex_list(sys.argv[1])
+    table = parse_hex_list(sys.argv[2])
+    output = [f&quot;{dids[i]:x}&quot; for i in table]
+    print(&#39;:&#39;.join(output))
+if __name__ == &quot;__main__&quot;:
+    main()</code></pre>
+And make the script executable:<br><span style="background-color: #f1f1f1;">chmod u+x /var/tmp/dag_hashes.py</span></li><li>Extract and translate SDAG hash tables<br>Fetch did_table and table outputs from both<span style="background-color: #ffffff;"> sdaglib_hash_table and sdaglib_mirror_table from </span>your device:<br><span style="background-color: #f1f1f1;">tmctl -d blade tmm/sdaglib_hash_table -s did_table -c | grep -v did_table | uniq</span><br><span style="background-color: #f1f1f1;">tmctl -d blade tmm/sdaglib_hash_table -s table -c | grep -v table | uniq<br><span style="background-color: #ffffff;">Using the values obtained above commands (&#39;did_table&#39; and &#39;table&#39;, respectively), run the Python script to translate the did_table and table into a single output:</span><br>python3.8 /var/tmp/dag_hashes.py &lt;did_table&gt; &lt;table&gt;<br></span><em><span style="color: #15891f;"><strong>Note</strong>: the python output will be used later on, under point D, to set the &quot;translated_hash&quot; value</span></em></li><li>Extract and translate SDAG mirror tables<br>Fetch did_table and table outputs from both sdaglib_hash_table and sdaglib_mirror_table from your device:<br><span style="background-color: #f1f1f1;">tmctl -d blade tmm/sdaglib_mirror_table -s did_table -c | grep -v did_table | uniq</span><br><span style="background-color: #f1f1f1;">tmctl -d blade tmm/sdaglib_mirror_table -s table -c | grep -v table | uniq</span><br>Using the values obtained above commands (&#39;did_table&#39; and &#39;table&#39;, respectively), run the Python script to translate the did_table and table into a single output:<br><span style="background-color: #f1f1f1;">python3.8 /var/tmp/dag_hashes.py &lt;did_table&gt; &lt;table&gt;</span><br><span style="color: #15891f;"><em><strong>Note</strong>: the python output will be used later on, under point D, to set the &quot;translated_mirror_hash&quot; value</em></span></li><li>Set static SDAG hash tables<br>Use the translated outputs as the static hashes. Configure the sys db keys:<br><span style="background-color: #f1f1f1;">tmsh modify sys db sdag.runtime.hashtable value &quot;translated_hash&quot;<br>tmsh modify sys db sdag.runtime.mirror.hashtable value &quot;translated_mirror_hash&quot;</span></li><li>Save Configuration Persistently:<br>Save your configuration to ensure persistence:<br><span style="background-color: #f1f1f1;">tmsh save sys config</span></li></ol>
+<h2>Additional Information</h2>
+<p><strong>Verification Steps:</strong><br>After setting static SDAG hash values, confirm SDAG hash tables remain consistent post-reboot:<br><span style="background-color: #f1f1f1;">tmctl -d blade tmm/sdaglib_hash_table -s table -c | grep -v table | sort | uniq</span><br><span style="background-color: #f1f1f1;">tmctl -d blade tmm/sdaglib_mirror_table -s table -c | grep -v table | sort | uniq</span></p>
+</article>
+</body>
+</html>

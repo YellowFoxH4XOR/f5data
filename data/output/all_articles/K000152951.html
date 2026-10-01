@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000152951: ASM false positives for legitimate traffic after an upgrade to version 17.1.x</title>
+<meta name="description" content="Support Solution: ASM false positives for legitimate traffic after an upgrade to version 17.1.x — On BIG-IP Advanced WAF (AWAF) version 17.1.x, legitimate requests may be incorrectly blocked with &quot;Illegal method&quot; violations, such as HTTP POST or GET, even when these methods are explicitly allowed…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000152951">
+</head>
+<body>
+<header>
+<h1>K000152951: ASM false positives for legitimate traffic after an upgrade to version 17.1.x</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-08-11</dd>
+<dt>Updated</dt><dd>2025-08-11</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 17.1.1, 17.1.2, 17.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000152951">https://my.f5.com/manage/s/article/K000152951</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>On BIG-IP Advanced WAF (AWAF) version 17.1.x, legitimate requests may be incorrectly blocked with &quot;Illegal method&quot; violations, such as HTTP POST or GET, even when these methods are explicitly allowed in the security policy.</p>
+<p>Error messages and logs may include the following:</p>
+<ul><li style="font-family: &#39;courier new&#39;, courier, monospace;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">ASM subsystem error: Watchdog detected failure for process. Process name: asm_config_server.pl, Failure: Insufficient number of threads (required: 3, found: 0).</span></li><li style="font-family: &#39;courier new&#39;, courier, monospace;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">dcc|ERR| [tsconfd::ASMCONFIG_CALL, update mcp device group device] Failed due to Thrift exception: connect() failed: Connection refused</span></li></ul>
+<h2>Environment</h2>
+<ul><li>BIG-IP Advanced WAF (AWAF) / ASM 17.1.x, including 17.1.2.1</li><li>Large number of ASM policies, for example, 200 or more </li><li>/var partition sized below the recommended value, for example, 4.5 GB</li><li>Upgrades or configuration sync operations involving ASM policies</li></ul>
+<h2>Cause</h2>
+<p>A change introduced in BIG-IP version 17.1.x altered how running ASM configurations are loaded into the bd process, requiring significantly more space in the /var partition than previous versions. If /var does not have sufficient free space during policy load, upgrade, or config sync operations, temporary files can fill the partition and cause MySQL DCC database corruption. This leads to unpredictable ASM behavior including blocking of legitimate HTTP methods and policy misalignment. This issue is tracked as Bug <a href="https://cdn.f5.com/product/bugtracker/ID1694693.html" target="_blank" rel="noopener noreferrer">ID1694693</a>.</p>
+<h2>Recommended Actions</h2>
+<p>There are two methods to fix the issue:</p>
+<ol><li>Follow the workaround for <a href="https://cdn.f5.com/product/bugtracker/ID1694693.html" target="_blank" rel="noopener noreferrer">ID1694693</a>, and then perform the upgrade again.</li><li>Export and re-import the security policies that demonstrate the misbehavior. This action will repopulate the ASM databases and will fix the issue. In case of large configurations and the desire to follow the same action for all policies for proactive reasons, the script below can be used.</li></ol>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>1. Create the bash script export_import_apply.sh, you can use vim or nano.
+
+# vim export_import_apply_partition.sh
+
+2. Paste the script below and save the file.
+
+#!/bin/bash
+
+# --- Configuration ---
+EXPORT_DIR=&quot;/var/tmp&quot; # Directory on BIG-IP where policies will be temporarily saved
+EXPORT_FORMAT=&quot;bin-file&quot; # Use &#39;bin-file&#39; for .plc, &#39;xml-file&#39; for .xml, &#39;min-xml-file&#39; for compact xml
+DATE_SUFFIX=$(date +%Y%m%d%H%M%S) # Unique suffix for exported files
+
+# --- Partition Argument ---
+# Usage: $0 [/PARTITIONNAME]
+# Defaults to /Common if no argument given.
+# Accepts partition with or without leading &#39;/&#39; (e.g. &quot;TESTPARTITION&quot; or &quot;/TESTPARTITION&quot;).
+RAW_PARTITION=&quot;${1:-/Common}&quot;
+PARTITION=&quot;/${RAW_PARTITION#/}&quot; # Ensure leading &#39;/&#39;
+PARTITION=&quot;${PARTITION%/}&quot;       # Strip any trailing &#39;/&#39;
+
+echo &quot;--- Starting ASM Policy Export/Import/Apply Script ---&quot;
+echo &quot;Partition:        $PARTITION&quot;
+echo &quot;Export Directory: $EXPORT_DIR&quot;
+echo &quot;Export Format:    $EXPORT_FORMAT&quot;
+echo &quot;Timestamp:        $DATE_SUFFIX&quot;
+echo &quot;&quot;
+
+# --- Step 1: List all security policies in the specified partition ---
+echo &quot;1. Listing security policies in partition &#39;$PARTITION&#39;...&quot;
+POLICIES=$(tmsh -q -c &quot;cd ${PARTITION}; list asm policy&quot; | grep &#39;asm policy&#39; | awk &#39;{print $3}&#39;)
+
+if [ -z &quot;$POLICIES&quot; ]; then
+    echo &quot;No ASM policies found in partition &#39;$PARTITION&#39;. Exiting.&quot;
+    exit 1
+fi
+
+echo &quot;Found policies:&quot;
+echo &quot;$POLICIES&quot;
+echo &quot;&quot;
+
+# --- Step 2: Export each security policy ---
+echo &quot;2. Exporting security policies...&quot;
+for POLICY_NAME in $POLICIES; do
+    EXPORT_FILE=&quot;${EXPORT_DIR}/${POLICY_NAME}_${DATE_SUFFIX}.${EXPORT_FORMAT/bin-file/plc}&quot;
+
+    echo &quot;  Exporting policy &#39;$POLICY_NAME&#39; to &#39;$EXPORT_FILE&#39;...&quot;
+    tmsh -q -c &quot;cd ${PARTITION}; save asm policy ${POLICY_NAME} ${EXPORT_FORMAT} ${EXPORT_FILE}&quot;
+    if [ $? -eq 0 ]; then
+        echo &quot;    Export successful.&quot;
+    else
+        echo &quot;    ERROR: Failed to export policy &#39;$POLICY_NAME&#39;.&quot;
+    fi
+done
+echo &quot;Finished exporting policies.&quot;
+echo &quot;&quot;
+
+# --- Step 3: Import each security policy ---
+echo &quot;3. Importing security policies...&quot;
+for POLICY_NAME in $POLICIES; do
+    IMPORT_FILE=&quot;${EXPORT_DIR}/${POLICY_NAME}_${DATE_SUFFIX}.${EXPORT_FORMAT/bin-file/plc}&quot;
+
+    echo &quot;  Importing policy &#39;$POLICY_NAME&#39; from &#39;$IMPORT_FILE&#39;...&quot;
+    # The &#39;overwrite&#39; keyword is crucial for re-importing existing policies.
+    tmsh -q -c &quot;cd ${PARTITION}; load asm policy ${POLICY_NAME} overwrite file ${IMPORT_FILE}&quot;
+    if [ $? -eq 0 ]; then
+        echo &quot;    Import successful.&quot;
+    else
+        echo &quot;    ERROR: Failed to import policy &#39;$POLICY_NAME&#39;.&quot;
+    fi
+done
+echo &quot;Finished importing policies.&quot;
+echo &quot;&quot;
+
+# --- Step 4: Apply (Publish) each imported security policy ---
+echo &quot;4. Applying (publishing) security policies...&quot;
+for POLICY_NAME in $POLICIES; do
+    echo &quot;  Publishing policy &#39;$POLICY_NAME&#39;...&quot;
+    tmsh -q -c &quot;cd ${PARTITION}; publish asm policy ${POLICY_NAME}&quot;
+    if [ $? -eq 0 ]; then
+        echo &quot;    Publish successful.&quot;
+    else
+        echo &quot;    ERROR: Failed to publish policy &#39;$POLICY_NAME&#39;.&quot;
+    fi
+done
+echo &quot;Finished publishing policies.&quot;
+echo &quot;&quot;
+
+# --- Cleanup (Optional) ---
+echo &quot;5. Cleaning up exported policy files from $EXPORT_DIR...&quot;
+# Uncomment below to enable cleanup:
+# find &quot;$EXPORT_DIR&quot; -maxdepth 1 -name &quot;*_${DATE_SUFFIX}.*&quot; -delete
+# echo &quot;  Temporary files deleted.&quot;
+echo &quot;Cleanup step skipped for this example. Files remain in $EXPORT_DIR.&quot;
+echo &quot;&quot;
+
+echo &quot;--- ASM Policy Export/Import/Apply Script Completed ---&quot;
+
+3. Run the script to process the policies in the /Common partition, and wait for the process to finish.
+
+# bash export_import_apply_partition.sh
+
+4. If you have additional security policies in partitions other than /Common, run the following command to process the policies in all custom partitions.
+
+# for partition in `tmsh list auth partition one-line | awk &#39;{print &quot;/&quot; $3}&#39; | grep -v Common`; do bash /var/tmp/export_import_apply_partition.sh $partition ;done</code></pre>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K37856565: iRule executing and issuing 302 redirection after Local Traffic Policy&#x27;s &#x27;&#x27;shutdown&#x27;&#x27; action</title>
+<meta name="description" content="Support Solution: iRule executing and issuing 302 redirection after Local Traffic Policy&#x27;s &#x27;&#x27;shutdown&#x27;&#x27; action — This policy intends to reset the TCP connection when a HTTP request is received with a Host header that is not www.example.com.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K37856565">
+</head>
+<body>
+<header>
+<h1>K37856565: iRule executing and issuing 302 redirection after Local Traffic Policy&#x27;s &#x27;&#x27;shutdown&#x27;&#x27; action</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-01-12</dd>
+<dt>Updated</dt><dd>2023-10-16</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.X.X, 15.X.X, 14.X.X, 13.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 13.1.0, 13.0.1, 13.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K37856565">https://my.f5.com/manage/s/article/K37856565</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>A Local Traffic Policy is configured to reset the connection with the <strong>shutdown</strong> action on matching HTTP requests, for example:</p>
+
+<p><span class="example2">ltm policy /Common/block_hosts {<br>    requires { http }<br>    rules {<br>        block_1 {<br>            actions {<br>                0 {<br>                    shutdown<br>                    connection<br>                }<br>            }<br>            conditions {<br>                0 {<br>                    http-header<br>                    name Host<br>                    not<br>                    values { www.example.com }<br>                }<br>            }<br>        }<br>    }<br>    strategy /Common/first-match<br>}</span></p>
+
+<p>This policy intends to <strong>reset </strong>the TCP connection when a HTTP request is received with a <strong>Host </strong>header that is <strong>not </strong>www.example.com.</p>
+
+<p>An iRule is also configured to take action during the same event, for example:</p>
+
+<p><span class="example2">when HTTP_REQUEST {<br>    HTTP::redirect https://[getfield [HTTP::host] &quot;:&quot; 1][HTTP::uri]<br>}</span></p>
+
+<p>The iRule is executing and returning a <strong>302 response</strong>, even for requests that meet the policy actions with a non-matching <strong>Host </strong>header.</p>
+
+<p>Result shown in a packet trace:</p>
+
+<p><span class="example2">172.16.10.5 → 10.10.10.80  TCP IN   s1/tmm0 : 49542 → 80 [SYN]<br>10.10.10.80 → 172.16.10.5  TCP OUT  s1/tmm0 : 80 → 49542 [SYN, ACK]<br>172.16.10.5 → 10.10.10.80  TCP IN   s1/tmm0 : 49542 → 80 [ACK]<br>172.16.10.5 → 10.10.10.80  HTTP IN  s1/tmm0 : GET / HTTP/1.1<br>10.10.10.80 → 172.16.10.5  HTTP OUT s1/tmm0 : HTTP/1.0 302 Moved Temporarily<br>10.10.10.80 → 172.16.10.5  TCP OUT  s1/tmm0 : 80 → 49542 [RST, ACK] [F5RST: reset by policy]<br>172.16.10.5 → 10.10.10.80  TCP IN   s1/tmm0 : 49542 → 80 [ACK]<br>10.10.10.80 → 172.16.10.5  TCP OUT  s1/tmm0 : 80 → 49542 [RST, ACK] [F5RST: No flow found for ACK]</span></p>
+
+<p>Expected behaviour is for the connection to be reset <strong>before </strong>the iRule&#39;s execution of the <strong>HTTP_REQUEST</strong> event.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Traffic Policy</li><li>iRule</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p><a href="https://cdn.f5.com/product/bugtracker/ID867985.html" target="_self">Bug ID 867985: LTM policy with a &#39;shutdown&#39; action incorrectly allows iRule execution</a></p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>There is no fix for bug <strong>ID 867985</strong> at the time of this article&#39;s publication.</p>
+
+<p>A workaround is to set a <strong>TCL variable</strong> in the policy actions to<strong> [event disable all]</strong>. This prevents all iRule events from running in that connection.</p>
+
+<p>For example:</p>
+
+<p><span class="example2">ltm policy /Common/block_hosts_fixed {<br>    requires { http }<br>    rules {<br>        block_1 {<br>            actions {<br>                0 {<br>                    shutdown<br>                    connection<br>                }<br>                1 {                                     &lt;---<br>                    tcl                                 &lt;---<br>                    set-variable                        &lt;---<br>                    expression &quot;[event disable all]&quot;    &lt;---<br>                    name ID867985                       &lt;---<br>                }                                       &lt;---<br>            }   <br>            conditions {<br>                0 {<br>                    http-header<br>                    name Host<br>                    not<br>                    values { www.example.com }<br>                }<br>            }<br>        }<br>    }<br>    strategy /Common/first-match<br>}</span></p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

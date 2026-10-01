@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K15634284: Nethsm: pkcs11_op_enqueue queue full</title>
+<meta name="description" content="Support Solution: Nethsm: pkcs11_op_enqueue queue full — LTM logs show &quot;FIPS acceleration device failure: cannot locate key&quot; messages">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K15634284">
+</head>
+<body>
+<header>
+<h1>K15634284: Nethsm: pkcs11_op_enqueue queue full</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-01-03</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K15634284">https://my.f5.com/manage/s/article/K15634284</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>Intermittently SSL traffic fails on a virtual server.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<p>The BIG-IP uses Safenet HSM</p>
+
+<ul><li>LTM logs show &quot;FIPS acceleration device failure: cannot locate key&quot; messages</li><li>Daemon logs show &quot;Nethsm: pkcs11_op_enqueue queue full qhead 1151 qtail 639&quot;</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>The error &quot;Nethsm: pkcs11_op_enqueue queue full qhead 1151 qtail 639&quot; indicates HSM is not fast enough processing handshakes. It could be slow pkcs11d, slow network or slow HSM. </p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>The actions or steps required to address the topic covered in the description.</p>
+
+<ol><li>Collect concurrent tcpdumps on the BIG-IP &amp; HSM.
+	<ul><li>Check for connectivity issues.</li><li>Note any impacted tmms.<br>		 </li></ul>
+	</li><li>Enable HSM debug &amp; logging
+	<ul><li>tmsh modify sys db log.pkcs11d.level value debug<br>		 </li></ul>
+	</li><li>Make a copy of the Safenet client library under a different name
+	<ul><li>cp /usr/lunasa/lib/libCryptoki2_64.so /usr/lunasa/lib/libCryptoki2_64.so.orig<br>		 </li></ul>
+	</li><li>Edit /etc/Chrystoki.conf and add this section:<br>	 
+	<ul><li>CkLog2 = {<br>		   LibUNIX64=/usr/lunasa/lib/libCryptoki2_64.so.real;<br>		   Enabled=1;<br>		   File=/var/log/cklog.log;<br>		   Error=/var/log/cklog-error.log;<br>		   NewFormat=1;<br>		   LoggingMask=ALL_FUNC;<br>		}</li></ul>
+	</li><li>Replace /usr/lunasa/lib/libCryptoki2_64.so with a symlink to libcklog2.so, as pkcs11d is hardcoded to try to open &quot;/usr/lunasa/lib/libCryptoki2_64.so&quot;.
+	<ul><li>ln -sf /usr/lunasa/lib/libcklog2.so /usr/lunasa/lib/libCryptoki2_64.so<br>		 </li></ul>
+	</li><li>Restart pkcs11d
+	<ul><li>tmsh restart sys service pkcs11d</li><li>Note: This requires restarting pkcs11d so it could resolve the issue. It is also traffic impacting so perform during a maintenance window.</li></ul>
+	</li><li>If the problem persists, collect another set of simultaneous packet captures on the BIG-IP and HSM.<br>	 </li><li>Generate a diagnostic core of tmm.
+	<ul><li>killall -v -s 6 tmm</li><li>Note: This is traffic impacting so perform during a maintenance window.<br>		 </li></ul>
+	</li><li>Undo HSM debug &amp; logging.
+	<ul><li>Replace /usr/lunasa/lib/libCryptoki2_64.so with the original (actual) library:
+		<ul><li>rm -f /usr/lunasa/lib/libCryptoki2_64.so</li><li>cp /usr/lunasa/lib/libCryptoki2_64.so.orig /usr/lunasa/lib/libCryptoki2_64.so</li></ul>
+		</li><li>Restart pkcs11d
+		<ul><li>bigstart restart pkcs11d</li></ul>
+		</li><li>Remove the CkLog2 section from /etc/Chrystoki.conf (Optional)</li><li>Disable debug on HSM
+		<ul><li>tmsh modify sys db log.pkcs11d.level value error<br>			</li></ul>
+		</li></ul>
+	</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>Enable Policy 16 on the HSM to test if this resolves the issue. Policy 16 removes RSA blinding and improves performance, but reduces security.<br><br>Policy 16 = ON<br>If this is allowed, the partition may run in a mode that does not use RSA blinding.<br><br>Policy 16 = OFF<br>If feature is disallowed, the partition will always run in RSA blinding mode; performance will be lower than SafeNet published performance.<br><br>Thales Luna Network HSM Documentation<br>https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/policies/partition_capabilities_and_policies.htm</p>
+</article>
+</body>
+</html>

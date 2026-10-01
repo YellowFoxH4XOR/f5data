@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000157059: MySQL health monitor fails due to ProxySQL config</title>
+<meta name="description" content="Support Solution: MySQL health monitor fails due to ProxySQL config — java.sql.SQLException: Unknown system variable &#x27;transaction_isolation&#x27;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000157059">
+</head>
+<body>
+<header>
+<h1>K000157059: MySQL health monitor fails due to ProxySQL config</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-10-19</dd>
+<dt>Updated</dt><dd>2025-10-19</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.0.0, 17.1.0, 17.0.X, 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000157059">https://my.f5.com/manage/s/article/K000157059</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>MySQL health monitor on BIG-IP LTM fails with the error:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">java.sql.SQLException: Unknown system variable &#39;transaction_isolation&#39;</span></p>
+<p>ProxySQL query traces show that the following SQL statement is sent during monitoring attempts:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">SELECT @@session.auto_increment_increment AS auto_increment_increment, </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">@@character_set_client AS character_set_client, </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">@@character_set_connection AS character_set_connection, </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">@@character_set_results AS character_set_results, </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">@@character_set_server AS character_set_server, </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">@@collation_server AS collation_server, </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">@@collation_connection AS collation_connection, </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">@@init_connect AS init_connect, </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">@@interactive_timeout AS interactive_timeout, </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">@@license AS license, </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">@@lower_case_table_names AS lower_case_table_names, </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">@@max_allowed_packet AS max_allowed_packet, </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">@@net_buffer_length AS net_buffer_length, </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">@@net_write_timeout AS net_write_timeout, </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">@@sql_mode AS sql_mode, </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">@@system_time_zone AS system_time_zone, </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">@@time_zone AS time_zone,<br>@@transaction_isolation AS transaction_isolation,<br>@@wait_timeout AS wait_timeout</span></p>
+<p>This error occurs regardless of the configured &quot;send string&quot; in the BIG-IP MySQL monitor.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>ProxySQL</li><li>MariaDB</li><li>MySQL monitor</li></ul>
+<h2>Cause</h2>
+<p>The error is not caused by the specific &quot;send string&quot; configured in the BIG-IP MySQL monitor. It is triggered by an initial query sent by the JDBC connector used by BIG-IP to retrieve global variables including <code>transaction_isolation</code>. ProxySQL acts as a proxy and presents itself to clients (such as BIG-IP) as a MySQL server version defined by its <code>mysql-server_version</code> setting. If this value is set to greater than 8.0 or matches a MariaDB version number directly (e.g., 10.x), the JDBC connector expects the presence of a <code>transaction_isolation</code> variable which does not exist in MariaDB as it does in MySQL 8+. This mismatch results in the reported error.</p>
+<h2>Recommended Actions</h2>
+<ul><li>Set ProxySQL&#39;s global variable <strong>mysql-server_version</strong> to a MySQL version compatible with MariaDB (for example: <strong>5.7</strong>). This ensures that the JDBC connector uses compatible queries and avoids requesting unsupported variables.</li><li>After changing <code>mysql-server_version</code>, existing TCP connections from BIG-IP may persist and continue using old session parameters; thus health monitors may not immediately detect changes.
+<ul><li>To reset connections after changing ProxySQL settings:
+<ul><li>Restart the <strong>bigd process on BIG-IP.</strong> </li><li>Alternatively, manually delete relevant TCP connections using TMOS commands:<br><p><span style="font-family: &#39;courier new&#39;, courier ,monospace;">show sys connection ss-server-addr &lt;IP&gt; ss-server-port &lt;PORT&gt;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier ,monospace;">delete sys connection ss-server-addr &lt;IP&gt; ss-server-port &lt;PORT&gt;</span></p>
+Replace &lt;IP&gt; and &lt;PORT&gt; with your actual ProxySQL server address and port.</li></ul>
+</li></ul>
+</li><li>There is no configuration option on BIG-IP or within JDBC to make it natively recognize MariaDB behind ProxySQL;  compatibility must be managed through correct ProxySQL configuration.</li><li>Always ensure health monitor connections are reset after any change to how ProxySQL presents its backend database version.</li></ul>
+<h2>Additional Information</h2>
+<p>None.</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000148473: How do I allow access to a specific URL from only a selected IP address on BIG-IP ASM/WAF?</title>
+<meta name="description" content="Support Solution: How do I allow access to a specific URL from only a selected IP address on BIG-IP ASM/WAF? — To allow access to a specific URL only from one designated IP address, we can use LTM objects instead of an application security policy.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000148473">
+</head>
+<body>
+<header>
+<h1>K000148473: How do I allow access to a specific URL from only a selected IP address on BIG-IP ASM/WAF?</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-11-11</dd>
+<dt>Updated</dt><dd>2024-11-18</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.0.0, 17.X.X, 16.X.X, 15.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000148473">https://my.f5.com/manage/s/article/K000148473</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>To allow access to a specific URL only from one designated IP address, we can use LTM objects instead of an application security policy. </p>
+<h2>Environment</h2>
+<ul><li>BIG-IP</li></ul>
+<h2>Cause</h2>
+<p>None</p>
+<h2>Recommended Actions</h2>
+<p>You can either create an iRule or an LTM traffic policy for this purpose.</p>
+<ul><li>Using an iRule to Allow Access Only from a specified IP</li><li>Using an LTM traffic policy to allow access only from the specified IP</li></ul>
+<p><span style="background-color: #f1f1f1;color: #c20025;"><em><strong>Important: </strong>It is essential to adjust the parameters according to your specific requirements and thoroughly test in a staging environment before implementing in production. The provided examples are for guidance only. If you need F5 to write an iRule or create a traffic policy for you, please contact Professional Services.</em></span></p>
+<h3>Using an iRule to Allow Access Only from a specified IP</h3>
+<ol><li>Log in to the BIG-IP system Configuration Utility.</li><li>Navigate to <strong>Local Traffic  ››  iRules : iRule List.</strong></li><li>Click on <strong>Create </strong>to create a new iRule. 
+<ul><li>Example 1: When the client directly connects with BIG-IP without an address translation device (Proxy, NAT or firewall) in between, allow the access to &quot;/special-url&quot; only from 192.168.1.10
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when HTTP_REQUEST {
+# Check if the requested URL matches /special-url
+    if { [HTTP::uri] starts_with &quot;/special-url&quot; } {
+        # Allow only a specific IP to access the URL
+        if { [IP::client_addr] ne &quot;192.168.1.10&quot; } {    
+            # Block access for other IPs
+            reject
+        }
+    }
+}</code></pre>
+</li><li>Example 2: When the client connects to BIG-IP through an address translation device (Proxy, NAT or firewall), allow access to <strong>&quot;/special-url&quot;</strong> only from <strong>192.168.1.10</strong>. Ensure that the request includes an <strong>X-Forwarded-For</strong> header containing the original client ip address.
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when HTTP_REQUEST {
+    # Check if the requested URL matches /special-url
+    if { [HTTP::uri] starts_with &quot;/special-url&quot; } {
+        # Extract the client&#39;s real IP from the X-Forwarded-For header
+        set client_ip [HTTP::header &quot;X-Forwarded-For&quot;]
+
+        # Allow only a specific IP to access the URL
+        if { $client_ip ne &quot;192.168.1.10&quot; } {
+            # Block access for other IPs
+            reject
+        }
+    }
+}</code></pre>
+</li></ul>
+</li><li>Attach iRule to the virtual server.</li></ol>
+<p><span style="color: #15891f;"><em><strong>Note:</strong> If you need access from multiple IP Addresses, you can modify the iRule syntax to match multiple IPs rather than a single one.</em></span></p>
+<h3>Using an LTM traffic policy rule to allow access only from the specified IP</h3>
+<p>Below is an example of a traffic policy that resets the connection if an HTTP request for a specified URI is received from any IP other than 192.168.1.10.</p>
+<ol><li>Log in to the BIG-IP system Configuration Utility.</li><li>Navigate to <strong>Local Traffic  ››  Policies : Policy List.</strong></li><li>Click on <strong>Create </strong>to create a new draft security policy.  </li><li>Create a new rule within the created policy with the following conditions.
+<ul><li>Example 1: When the client connects directly to BIG-IP without an address translation device (such as a proxy, NAT or firewall) in between, allow access to &quot;/special-url&quot; only from 192.168.1.10
+<ul><li>HTTP URI path is <span>&#39;/special-url&#39;</span> at request time.</li><li>TCP address does not match <span>&#39;192.168.1.10&#39;</span> at request time.</li></ul>
+</li><li>Example 2: When the client connects to BIG-IP through an address translation device (such as a proxy, NAT or firewall), allow access to &quot;/special-url&quot; only from 192.168.1.10. Ensure that the request contains X-Forwarded-For header with the original client ip address.
+<ul><li>HTTP URI path is <span>&#39;/special-url&#39;</span> at request time.</li><li>HTTP Header full string <span>named &#39;X-Forwarded-For&#39; </span>is <span>&#39;192.168.1.10&#39;</span> at request time.</li></ul>
+</li></ul>
+</li><li>Add the following action.
+<ul><li>Reset traffic connection at request time.</li></ul>
+</li><li>Publish the traffic policy and attach to the virtual server.</li></ol>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

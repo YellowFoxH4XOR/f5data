@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000156518: Tenants may become unreachable via their main IP addresses, while remaining accessible through management ports.</title>
+<meta name="description" content="Support Solution: Tenants may become unreachable via their main IP addresses, while remaining accessible through management ports. — Failure for data/openconfig-system:system/f5-system-redundancy-details:redundancy-details/state/hardware API. The server or an underlying service is unreachable.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000156518">
+</head>
+<body>
+<header>
+<h1>K000156518: Tenants may become unreachable via their main IP addresses, while remaining accessible through management ports.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-09-17</dd>
+<dt>Updated</dt><dd>2025-09-17</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS</li><li>F5OS-C: 1.X.X, 1.8.X, 1.8.1, 1.8.0, 1.6.X, 1.6.2, 1.6.1, 1.6.0, 1.5.X, 1.5.1, 1.5.0, 1.3.X, 1.3.2, 1.3.1, 1.3.0, 1.2.X, 1.2.2, 1.2.1, 1.2.0, 1.1.X, 1.1.4, 1.1.3, 1.1.2, 1.1.1, 1.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000156518">https://my.f5.com/manage/s/article/K000156518</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Tenants may become unreachable via their main IP addresses, while remaining accessible through management ports. The partition manager GUI can become slow and unresponsive, with frequent hanging. System interactions may produce errors such as:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Failure for data/openconfig-system:system/f5-system-redundancy-details:redundancy-details/state/hardware API. The server or an underlying service is unreachable.</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Request failed with status code 500</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Network Error</span></p>
+<p>Affected tenants show TMM not ready status, and logs include:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">SDAG CDP ERROR: Error - SDAGLIB context request expired</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Couldn&#39;t bulk write DagState for tenant ... confd_errno=45 confd_errstr=&quot;Lost connection to ConfD&quot;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">DB waiting for ready NAME=&quot;CdbDagStateWriter&quot;</span></p>
+<h2>Environment</h2>
+<ul><li>Product: F5OS - Chassis (VELOS)</li><li>Configuration: Multi-slot chassis with multiple tenants, partition manager, dual system controllers</li><li>Extended uptime (controllers/blades &gt;500 days)</li></ul>
+<h2>Cause</h2>
+<p>The root cause is high memory utilization and a memory leak in NetworkManager after prolonged uptime (<a href="https://cdn.f5.com/product/bugtracker/ID1926585.html" target="_blank">Bug ID 1926585</a>), resulting in out-of-memory (OOM) state on controller-1 and loss of confd connectivity. Additional triggers include partition Qkview generation causing connectivity issues (<a href="https://cdn.f5.com/product/bugtracker/ID1559525.html" target="_blank">Bug ID 1559525</a>) and duplicate MAC addresses on different tenants (<a href="https://cdn.f5.com/product/bugtracker/ID1576241.html" target="_blank">Bug ID 1576241</a>). All these bugs affect F5OS-C version 1.6.2-22734.</p>
+<h2>Recommended Actions</h2>
+<ol><li><strong>Stop All Tenants:</strong><br>Stop all tenants before proceeding.</li><li><strong>Reboot Controllers:</strong><br>Reboot the standby controller (controller-1) using either:<br><span style="background-color: #f1f1f1;">system reboot controllers controller standby</span><br>or SSH to controller-1 and run<br><span style="background-color: #f1f1f1;">reboot</span> from bash.<br>Once controller-1 is online, fail over to it and reboot controller-2.</li><li><strong>Apply Workaround for Bug ID 1559525:</strong><br>On each blade, run:
+<p><code>for layer in $(docker inspect partition_fpga | jq --join-output &#39;.[0].GraphDriver.Data | .LowerDir, &quot;:&quot;, .MergedDir&#39; | tr &#39;:&#39; &#39; &#39;); do<br>  if [ -f &quot;$layer/etc/qkview-collect/fpgatoolFpgaVqfSnapshotCmds.txt&quot; ]; then<br>    sed -i &#39;s/^linkscan/#linkscan/g&#39; $layer/etc/qkview-collect/fpgatoolFpgaVqfSnapshotCmds.txt<br>  fi<br>done<br></code></p>
+</li><li><strong>Reboot Blades:</strong><br>Use one of the following methods:<br>From the partition:<br><span style="background-color: #f1f1f1;">cluster nodes node &lt;blade&gt; reboot</span><br>From bash on the blades:<br><span style="background-color: #f1f1f1;">reboot</span><br>Or from controller:
+<p><code>for i in blade-{1,2,3}; do ssh $i &#39;shutdown -r +1&#39;; done<br></code></p>
+</li><li><strong>Verify Blade Status:</strong><br>Use <span style="background-color: #f1f1f1;">show cluster</span> and <span style="background-color: #f1f1f1;">show system redundancy</span> in the partition to confirm:
+<ul><li>Each blade reaches running-state <code>&#39;running&#39;</code></li><li>Status of each blade is <code>&#39;replica&#39;</code></li><li>fpga-state is <code>&#39;FPGA_RDY&#39;</code></li><li>dma-agent-state is <code>&#39;DMA_AGENT_RDY&#39;</code></li></ul>
+</li><li><strong>Start Tenants:</strong> Restart tenants once blades are fully operational.</li><li><strong>Upgrade Recommendation:</strong> Upgrade to a later F5OS-C version (e.g., 1.8.1 or newer) to prevent recurrence of these issues.</li></ol>
+<p><em><strong>Impact of workaround</strong>: The system will not be available while performing multiple restarts.</em></p>
+<h2>Additional Information</h2>
+<p>(none)</p>
+<h2>Related Content</h2>
+<ul></ul>
+</article>
+</body>
+</html>

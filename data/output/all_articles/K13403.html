@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K13403: Configuring L3 nPath load balancing and monitoring</title>
+<meta name="description" content="Knowledge: Configuring L3 nPath load balancing and monitoring — You want to use Layer 3 (L3) nPath load balancing (also known as Direct Server Return or Asymmetric Routing).">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K13403">
+</head>
+<body>
+<header>
+<h1>K13403: Configuring L3 nPath load balancing and monitoring</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2015-04-08</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 11.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K13403">https://my.f5.com/manage/s/article/K13403</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>You should consider using this procedure under the following conditions:</p>
+
+<ul><li>You want to use Layer 3 (L3) nPath load balancing (also known as Direct Server Return or Asymmetric Routing).</li><li>You want to monitor the origin web servers from the BIG-IP system.</li><li>You have L3 client requests that need to be load balanced on the BIG-IP system, with server responses returning directly to the client.</li></ul>
+
+<p><span class="note"><strong>Note: </strong>The recommendations included in this article are only valid for BIG-IP 11.1.0. Beginning in BIG-IP 11.2.0, the way you create network tunnels changed. To locate the options for creating network tunnels in BIG-IP 11.2.0 and later, access the Configuration utility and then navigate to <strong>Network</strong> &gt; <strong>Tunnels</strong>.</span></p>
+<h3>Description</h3><p>L3 nPath routing enables traffic to be load balanced over a routed topology. In this deployment, the server sends its responses directly back to the client instead of the BIG-IP system, even when the servers and any intermediate routers are on different networks. This load balancing method uses IP encapsulation to create a uni-directional outbound tunnel from the server pool to the server. The origin web server unencapsulates the original client IP information, which is then used to route the return traffic directly to the client.</p>
+
+<p>The available encapsulation protocols are GRE and IPIP. The protocol you choose for building the encapsulation tunnel may depend on the requirements of your environment.</p>
+
+<ul><li>GRE supports unicast and multicast traffic, IPv4, and IPv6.</li><li>IPIP supports unicast traffic and IPv4.</li></ul>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisites to use this procedure:</p>
+
+<ul><li>You have a properly configured network path from the origin web servers to clients that does not traverse the BIG-IP system.</li><li>You have a system user account with Traffic Management Shell (<strong>tmsh</strong>) utility access; you cannot perform certain steps in the process from the Configuration utility.</li><li>You are conversant in the following configurations for the operating system of your origin web servers:
+	<ul><li>IPIP and GRE tunnel configuration</li><li>Loopback interface configuration</li><li>Web services configuration</li></ul>
+	</li></ul>
+
+<p><span class="sectiontitle">Procedures</span></p>
+
+<p>To use this topology, perform the following procedures and create the following objects:</p>
+
+<ul><li>Configuring BIG-IP</li><li>Enabling the monitor encapsulation variable</li><li>Creating a load balancing pool with an encapsulation profile</li><li>Creating a transparent monitor</li><li>Creating a FastL4 profile</li><li>Creating a virtual server</li><li>Configuring an origin web server configuration
+	<ul><li>Configuring a loop back IP address</li><li>Configuring an encapsulation tunnel</li><li>Configuring the web service</li></ul>
+	</li></ul>
+
+<p><span class="subsectiontitle">Enable the monitor encapsulation variable</span></p>
+
+<p>To monitor the pool member over an encapsulated tunnel, enable the <strong>tm.m</strong><strong>onitorencap</strong> variable by performing the following procedure:</p>
+
+<p><em><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</em></p>
+
+<ol><li>Log in to the <strong>tmsh</strong> utility by entering the following command:
+
+	<p><span class="code">tmsh</span></p>
+
+	<p><span class="note"><strong>Note</strong>: For the remainder of this article, you must be logged in to the <strong>tmsh </strong>utility<strong>.</strong> Subsequent procedures in this article assume you are logged in to the <strong>tmsh </strong>utility<strong> </strong>from this step onward.</span></p>
+	</li><li>Enable the <strong>tm.m</strong><strong>onitorencap</strong> variable by entering the following command:
+	<p><span class="code">modify sys db tm.monitorencap value enable</span></p>
+	</li></ol>
+
+<p><strong>Create a load balancing pool</strong></p>
+
+<p>Create a load balancing pool that references the desired encapsulation profile and the origin web servers as pool members.</p>
+
+<p><em><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</em></p>
+
+<p>To perform this procedure, enter the following command syntax:</p>
+
+<p><span class="code">create ltm pool &lt;pool name&gt; profiles add  { &lt;ipip/gre&gt; } members add { &lt;ip address&gt;:any }</span></p>
+
+<p>Use the following examples to help you perform this procedure:</p>
+
+<ul><li>To create a pool named <strong>ipip_pool</strong>, referencing an IPIP profile, and using the server <strong>10.104.5.1</strong> as the pool member, you enter a command similar to following example:
+
+	<p><span class="example2">create ltm pool ipip_pool profiles add { ipip } members add { 10.104.5.1:any }</span></p>
+
+	<p><span class="note"><strong>Note</strong>: The pool member is the physical IP address of the server that is hosting the virtual IP that must be load balanced.</span></p>
+	</li><li>To create a pool that includes multiple pool members, you enter a command similar to following example:
+	<p><span class="example2">create ltm pool ipip.pool profiles add { ipip } members add { 10.104.5.1:any 10.104.5.2:any 10.104.5.3:any }</span></p>
+	</li></ul>
+
+<p><span class="subsectiontitle">Create a transparent monitor</span></p>
+
+<p>You use a transparent monitor to monitor the virtual IP and service hosted on the loopback interface of the physical origin web server. You create the loopback server later in this article.</p>
+
+<p><em><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</em></p>
+
+<p>Use the following command syntax to perform this operation:</p>
+
+<p><span class="code">create ltm monitor &lt;monitor type&gt; &lt;name&gt; defaults-from &lt;monitor&gt; destination &lt;ip address&gt;:&lt;port&gt; send &lt;string&gt;  recv &lt;string&gt; transparent enabled interval &lt;integer&gt; timeout &lt;integer&gt;</span></p>
+
+<p>For example, to create a monitor named <strong>ipip.m</strong><strong>on</strong> to monitor the service at <strong>10.200.1.100:80</strong>, you enter the following command:</p>
+
+<p><span class="example2">create ltm monitor tcp ipip.mon defaults-from tcp destination 10.200.1.100:80 send &#39;GET / HTTP1.1\r\nHost: \r \nConnection: Close\r\n&#39; recv &#39;It works!&#39; transparent enabled interval 5 timeout 16</span></p>
+
+<p><span class="note"><strong>Notes</strong>:</span></p>
+
+<ul><li><span class="note">This example monitor expects a receive string that contains the following example value in the HTTP response from the virtual service: &quot;It Works!&quot; You must change this value to match a valid string appropriate to your environment. For more information about send and receive strings, and monitor time out values, refer to the <strong>Supplemental Information</strong> section of this article.</span></li><li><span class="note">The following destination is the IP address and port for the virtual server that resides on the loopback of the origin web server: <strong>&lt;ip address&gt;:&lt;port&gt;</strong>.</span></li></ul>
+
+<p><span class="subsectiontitle">Create a FastL4 profile</span></p>
+
+<p>Create a FastL4 profile to disable hardware acceleration for the virtual server.</p>
+
+<p><em><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</em></p>
+
+<p>Create the FastL4 profile by using the following command syntax:</p>
+
+<p><span class="code">create ltm profile fastl4 &lt;name&gt; pva-acceleration none</span></p>
+
+<p>For example, to create a profile named<strong> ipip.fastl4</strong>, you enter the following command:</p>
+
+<p><span class="example2">create ltm profile fastl4 ipip.fastl4 pva-acceleration none</span></p>
+
+<p><strong>Create a virtual server</strong></p>
+
+<p>Create a virtual server to answer client requests and forward the requests to the pool members.</p>
+
+<p><em><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</em></p>
+
+<ol><li>Create the virtual server using the following command syntax:
+	<p><span class="code">create ltm virtual &lt;name&gt; destination &lt;ip address&gt;:any pool &lt;pool name&gt; profiles add { &lt;name of fastL4&gt; }  translate-address disabled ip-protocol &lt;tcp or udp&gt;</span></p>
+
+	<p>For example, to create a virtual server with the name <strong>ipip.v</strong><strong>ip</strong> and the address <strong>10.200.1.100:any</strong>, which references the load balancing pool and FastL4 profile created in the previous steps, you enter the following command:</p>
+
+	<p><span class="example2">create ltm virtual ipip.vip destination 10.200.1.100:any pool ipip.pool profiles add { ipip.fastl4 } translate- address disabled ip-protocol t</span><span class="example2">cp</span></p>
+
+	<p><span class="note"><strong>Note</strong>: The destination IP address of the virtual server must be the same as that of the virtual service hosted on the loopback interface of the origin web server.</span></p>
+	</li><li>After you complete all the steps on the BIG-IP system, save the configuration by entering the following command:
+	<p><span class="code">tmsh save sys config</span></p>
+	</li></ol>
+
+<p><strong>Configure a loopback IP</strong></p>
+
+<p>Configure the origin web server with an IP address on the loopback interface that matches the destination IP address on the BIG-IP virtual server and the one in the BIG-IP transparent monitor.</p>
+
+<p><em><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</em></p>
+
+<p><span class="note"><strong>Note</strong>: The following command examples are for a web server running a generic GNU/Linux operating system. They are provided for guidance only. For more information about configuring your specific operating system, refer to your documentation.</span></p>
+
+<p>To assign the IP address <strong>10.200.1.100</strong> to the loopback interface, use a command similar to the following example:</p>
+
+<p><span class="example2">ip addr add 10.200.1.100 label lo:0 dev lo scope global</span></p>
+
+<p><span class="note"><strong>Note</strong>: <strong>Scope</strong> must be set to <strong>global</strong> to ensure this IP address is routable.</span></p>
+
+<p><strong>Configure an encapsulation tunnel</strong></p>
+
+<p>Configure the origin web server to listen for encapsulated packets destined for the loopback IP address.</p>
+
+<p><em><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</em></p>
+
+<p><span class="note"><strong>Note</strong>: The following command examples are for a web server running a generic GNU/Linux operating system. They are provided for guidance only. For more information about configuring your specific operating system, refer to your documentation.</span></p>
+
+<ul><li>To configure the origin web server for an IPIP tunnel, use a series of commands similar to the following example:
+	<p><span class="example2">sysctl -w net.ipv4.conf.all.arp_ignore=3<br>	sysctl -w net.ipv4.conf.all.arp_announce=2<br>	modprobe ipip<br>	ip link set tunl0 up<br>	ip addr add 10.200.1.100 scope host dev tunl0<br>	sysctl -w net.ipv4.conf.all.rp_filter=0<br>	sysctl -w net.ipv4.conf.tunl0.rp_filter=0</span></p>
+	</li><li>To configure the origin web server for a GRE tunnel, use a series of commands similar to the following example:<br>	<br>	<span class="example2">sysctl -w net.ipv4.conf.all.arp_ignore=3<br>	sysctl -w net.ipv4.conf.all.arp_announce=2<br>	modprobe ipgre<br>	ip link set gre0 up<br>	ip addr add 10.200.1.100 scope host dev gre0<br>	sysctl -w net.ipv4.conf.all.rp_filter=0<br>	sysctl -w net.ipv4.conf.gre0.rp_filter=0</span></li></ul>
+
+<p><strong>Configure the web service</strong></p>
+
+<p>Configure the web service running on the origin web server to listen on the IP address that you just configured on the loopback interface, in the previous steps of this article.</p>
+
+<p><em><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</em></p>
+
+<p>To maintain consistency with the example configuration in this article, you create the web service at: <strong>10.200.1.100:80</strong>.</p>
+
+<p>For information about configuring the web service on the loopback interface of the origin web server, refer to your web server documentation.</p>
+</article>
+</body>
+</html>

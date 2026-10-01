@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K31632053: Open Distro not initialized</title>
+<meta name="description" content="Support Solution: Open Distro not initialized — The output of the following command to check the health of Elastic Search in a BIG-IQ environment is Open Distro not initialized.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K31632053">
+</head>
+<body>
+<header>
+<h1>K31632053: Open Distro not initialized</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-11-09</dd>
+<dt>Updated</dt><dd>2025-01-15</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li><li>BIG-IQ Centralized Management: 8.0.0, 8.X.X, 8.3.X, 8.3.0, 8.2.X, 8.2.0, 8.1.X, 8.1.0, 8.0.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K31632053">https://my.f5.com/manage/s/article/K31632053</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+<p>The output of the following command to check the health of Elastic Search in a BIG-IQ environment is <strong>Open Distro not initialized</strong>.<br><br><span class="code">curl -su admin: -k &quot;https://localhost:9200/_cluster/health?pretty&quot;</span><br><span class="example2">Open Distro not initialized</span></p>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>BIG-IQ Centralized Management (CM)</li><li>BIG-IQ Data Collection Device (DCD) cluster</li><li>DCD disconnected</li><li>Unable to query Elastic Search</li><li>Error: The system returned an unexpected error (500 Server Error). Connection refused.</li></ul>
+<p><span class="sectiontitle">Cause</span></p>
+<p>Unknown</p>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<ol><li>Log in to the BIG-IQ CM using SSH to perform this procedure.</li><li>Run the following command to disable Open Distro security (run below command as a whole) in BIG-IQ CM only. You will get a <strong>parse error</strong> if you perform it on a BIG-IQ DCD:<br><p><span class="code">ENA=false; URL=$(curl -su admin: localhost:8100/cm/shared/esmgmt/cluster-ssl-task -H &#39;Content-type: application/json&#39; -d &quot;{\&quot;enable\&quot;:\&quot;$ENA\&quot;}&quot; | jq .selfLink -r | egrep -o &quot;/cm.*&quot;); STA=STARTED; while [ $STA == STARTED ]; do STA=$(restcurl $URL | jq .status -r); echo &quot;$(date) - Status is: $STA&quot;; grep cluster-ssl-task /var/log/restjavad.0.log | tail -n1; sleep 10; done</span></p>
+</li><li>Wait for the command to complete. This can take some time on large systems. Once the process has finished (<strong>Status is: FINISHED</strong>), confirm that Open Distro was disabled by accessing the cluster endpoint over HTTP using the following command:
+<p><span class="code">curl -s &quot;http://localhost:9200/_cluster/health?pretty&quot; </span></p>
+</li><li>Re-enable Open Distro security in the BIG-IQ CM. Run the command below to enable Open Distro security (run below command as a whole):
+<p><span class="code">ENA=true; URL=$(curl -su admin: localhost:8100/cm/shared/esmgmt/cluster-ssl-task -H &#39;Content-type: application/json&#39; -d &quot;{\&quot;enable\&quot;:\&quot;$ENA\&quot;}&quot; | jq .selfLink -r | egrep -o &quot;/cm.*&quot;); STA=STARTED; while [ $STA == STARTED ]; do STA=$(restcurl $URL | jq .status -r); echo &quot;$(date) - Status is: $STA&quot;; grep cluster-ssl-task /var/log/restjavad.0.log | tail -n1; sleep 10; done</span></p>
+</li><li>Wait for the command to complete. This can take some time on large systems. Once the process has finished (<strong>Status is: FINISHED</strong>), confirm that Open Distro was enabled by accessing the same endpoint over HTTPS:
+<p><span class="code">curl -su admin: -k &quot;https://localhost:9200/_cluster/health?pretty&quot;</span></p>
+</li></ol>
+<p>It will take some time for the ES cluster to rebuild and for the status to turn green.  If everything worked as expected, Open Distro should have been re-enabled, and the Elastic Search cluster should now work over SSL.</p>
+<p><span class="sectiontitle">Additional Information</span></p>
+<p>If the disable and re-enable of Open Distro security does not resolve the issue, further troubleshooting will be required.</p>
+<ol><li>Re-run step 2 to disable Open Distro security.</li><li>Query <span class="code">curl -s &quot;http://localhost:9200/_cluster/health?pretty&quot;</span> until the cluster status is green.</li><li>If you get a response, and the cluster is green, then run the following command (run below command as a whole) to collect data for troubleshooting:<br><span class="code">rm -rf /var/tmp/esdebug ;<br>mkdir /var/tmp/esdebug  ;<br>date &gt; /var/tmp/esdebug/start ;<br>curl -k &quot;http://localhost:9200/_cat/shards?bytes=b&amp;s=store:desc&amp;v=true&quot; -so /var/tmp/esdebug/shards ;<br>curl -k &quot;http://localhost:9200/_cat/indices?bytes=b&amp;s=store.size:desc&amp;v=true&quot; -so /var/tmp/esdebug/indices ;<br>curl -k &quot;http://localhost:9200/_cat/health?v&quot; -so /var/tmp/esdebug/health ;<br>curl -k &quot;http://localhost:9200/_cat/nodes?v&quot; -so /var/tmp/esdebug/nodes ;<br>curl -k &quot;http://localhost:9200/_cat/allocation?v&quot; -so /var/tmp/esdebug/allocation ;<br>curl -k &quot;http://localhost:9200/book*/_search?size=1000&quot; -so /var/tmp/esdebug/book.json ;<br>curl -k &quot;http://localhost:9200/meta*/_search?size=1000&quot; -so /var/tmp/esdebug/meta.json ;<br>curl -k &quot;http://localhost:9200/_cluster/allocation/explain?pretty&quot; -so /var/tmp/esdebug/allo_explain.json ;<br>date &gt; /var/tmp/esdebug/end ;<br>tar -czf /var/tmp/esdebug.tgz /var/tmp/esdebug</span></li><li>Generate QKViews on ALL BIG-IQ CM/DCD nodes.</li><li>Open a case with F5 support and upload files for further analysis. Refer to <a href="https://my.f5.com/manage/s/article/K2633" target="_blank">K2633: Submit a support case</a>.</li></ol>
+</article>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K36519121: ElasticSearch shard in index &#x27;&#x27;.opendistro_security&#x27;&#x27;  shows &#x27;&#x27;UNASSIGNED&#x27;&#x27;</title>
+<meta name="description" content="Support Solution: ElasticSearch shard in index &#x27;&#x27;.opendistro_security&#x27;&#x27;  shows &#x27;&#x27;UNASSIGNED&#x27;&#x27; — # curl -s -k https://localhost:9200/_cat/shards | grep opendistro_security">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K36519121">
+</head>
+<body>
+<header>
+<h1>K36519121: ElasticSearch shard in index &#x27;&#x27;.opendistro_security&#x27;&#x27;  shows &#x27;&#x27;UNASSIGNED&#x27;&#x27;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-05-13</dd>
+<dt>Updated</dt><dd>2025-04-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K36519121">https://my.f5.com/manage/s/article/K36519121</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>The only ElasticSearch shard in index &quot;.opendistro_security&quot; shows &quot;UNASSIGNED&quot; on one or more nodes in the cluster. For example, when querying for shards list using ElasticSearch REST API:<br><br><span class="example2"># curl -s -k https://localhost:9200/_cat/shards | grep opendistro_security<br>.opendistro_security    0     p    STARTED    5  27.7kb 192.168.3.12 e91fd2d2-d1dc-11ec-9d64-0242ac120002<br>.opendistro_security    0     r    STARTED    5  27.7kb 192.168.3.13 e91fd55c-d1dc-11ec-9d64-0242ac120002<br>.opendistro_security    0     r    STARTED    5  27.7kb 192.168.3.14 e91fd688-d1dc-11ec-9d64-0242ac120002<br>.opendistro_security    0     r    STARTED    5  24.9kb 192.168.3.15 e91fd7e6-d1dc-11ec-9d64-0242ac120002<br>.opendistro_security    0     r    STARTED    5  27.7kb 192.168.3.16 e91fda98-d1dc-11ec-9d64-0242ac120002<br>.opendistro_security    0     r    STARTED    5  27.7kb 192.168.3.17 e91fdbc4-d1dc-11ec-9d64-0242ac120002<br>.opendistro_security    0     r    UNASSIGNED</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IQ with DCD</li><li>DCDs are assigned to two or more zones</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br>The index &quot;.opendistro_security&quot; contains one shard only. The index setting &quot;auto_expand_replicas&quot; is configured to &quot;0-all&quot; by default on this index, which means all data nodes (DCDs) in the cluster should contain a copy (primary copy or replica copy) of the shard in the index.<br><br>When DCDs are assigned to two or more zones, and the numbers of DCDs in each zone are unbalanced, the replica may not be allocated on the DCD residing in a zone with more nodes than other zones. This behaviour is described in the following ElasticSearch document.<br><br><em>&quot;The number of attribute values determines how many shard copies are allocated in each location. If the number of nodes in each location is unbalanced and there are a lot of replicas, replica shards might be left unassigned.&quot;</em><br><br><a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/modules-cluster.html" target="_self">https://www.elastic.co/guide/en/elasticsearch/reference/current/modules-cluster.html</a></p>
+
+<p><span class="note">Note: This link takes you to a resource outside of AskF5, and the third party could remove the document without our knowledge.</span></p>
+
+<p>You can access the shard allocation explain API to verify the shard decider explanation, try to locate the stanza related to the DCD node on where the shard of index &quot;.opendistro_security&quot; is not assigned in the JSON output.<br><br><span class="example2"># curl -kX GET -H &quot;Content-Type:application/json&quot; https://localhost:9200/_cluster/allocation/explain?pretty -d &#39;{&quot;index&quot;:&quot;.opendistro_security&quot;, &quot;shard&quot;:0, &quot;primary&quot;:false}&#39;<br>*snipped for brevity*<br> {<br>      &quot;node_id&quot; : &quot;abcde_fghijklmnopqrstu&quot;,<br>      &quot;node_name&quot; : &quot;e91fdbe6-d1dc-11ec-9d64-0242ac120002&quot;,<br>      &quot;transport_address&quot; : &quot;192.168.3.18:9300&quot;,<br>      &quot;node_attributes&quot; : {<br>        &quot;zone&quot; : &quot;zone1&quot;<br>      },<br>      &quot;node_decision&quot; : &quot;no&quot;,<br>      &quot;deciders&quot; : [<br>        {<br>          &quot;decider&quot; : &quot;awareness&quot;,<br>          &quot;decision&quot; : &quot;NO&quot;,<br>          &quot;explanation&quot; : &quot;there are too many copies of the shard allocated to nodes with attribute [zone], there are [7] total configured shard copies for this shard id and [2] total attribute values, expected the allocated shard count per attribute [5] to be less than or equal to the upper bound of the required number of shards per attribute [4]&quot;<br>        }<br>      ]<br>},<br>*snipped for brevity*</span><br><br>In this example, the DCD cluster contains 7 DCDs that reside in 2 zones in an unbalanced distribution. One zone contains 5 DCDs and the other zone contains 2 DCDs.<br><br>Zone1: 192.168.3.12; 192.168.3.13; 192.168.3.14; 192.168.3.17; 192.168.3.18<br>Zone2: 192.168.3.15; 192.168.3.16<br><br>The output of the shard allocation explain API tells us that the maximum number of shard copies for each zone can not exceed the ceiling value of number of &quot;total shard copies&quot; divided by the number of &quot;total attribute value&quot;.<br><br>In this example, the number of &quot;total shard copies&quot; is 7 because there are 7 DCDs and the index setting &quot;auto_expand_replicas&quot; is configured to &quot;0-all&quot;, the number of  &quot;total attribute value&quot; is 2 because all DCDs are split into 2 zones. The ceiling division result of these two values is 4. Therefore the allocated shard count per zone cannot be larger than 4. For zone1 which contains 5 DCDs, only 4 of them can have one allocated copy of shard, the other DCD in the same zone will be left and the status of the shard on it will be &quot;UNASSIGNED&quot;.<br><br><span class="sectiontitle">Recommended Actions</span></p>
+
+<ol><li>The &quot;UNASSIGNED&quot; shard of index &quot;.opendistro_security&quot; is an expected behaviour if the DCDs are assigned to two or more zones in an unbalanced way. It can be safely ignored if the number of shard copies in each zones is sufficient to recover the shard from loss of nodes in their residing zones respectively.</li><li>The &quot;UNASSIGNED&quot; replica shard will be allocated to all DCDs if the DCD nodes distribution among zones becomes more balanced (for example, 4 DCDs in zone1 and 3 DCDs in zone2, instead of 5 DCDs in zone1 and 2 DCDs in zone2).</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span><br>None</p>
+</article>
+</body>
+</html>

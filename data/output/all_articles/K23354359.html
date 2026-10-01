@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K23354359: Add New or Change Existing NTP Servers on Traffix SDC/EMS</title>
+<meta name="description" content="Support Solution: Add New or Change Existing NTP Servers on Traffix SDC/EMS — Below is a procedure to replace or add the NTP servers on the SDC or EMS systems.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K23354359">
+</head>
+<body>
+<header>
+<h1>K23354359: Add New or Change Existing NTP Servers on Traffix SDC/EMS</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-05-14</dd>
+<dt>Updated</dt><dd>2024-10-01</dd>
+<dt>Applies to</dt><dd><ul><li>Traffix SDC: 5.2.X, 5.2.0, 5.1.0, 5.1.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K23354359">https://my.f5.com/manage/s/article/K23354359</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h1><span class="sectiontitle">Description</span></h1>
+
+<p>Adding or changing existing NTP Servers on Traffix SDC/EMS.</p>
+
+<h1><span class="sectiontitle">Environment</span></h1>
+
+<ul><li>Traffix SDC/EMS</li><li>NTP</li></ul>
+
+<h1><span class="sectiontitle">Cause</span></h1>
+
+<p>None</p>
+
+<h1><span class="sectiontitle">Recommended Actions</span></h1>
+Below is a procedure to replace or add the NTP servers on the SDC or EMS systems. <br><br><em><span style="color: #27ae60;"><span class="note"><strong>Note: </strong>Adding an NTP server will replace existing NTP server you configured. If you are adding secondary NTP server, you need to mention the first NTP server as well as the second.</span></span></em><br><br>This will add the existing NTP server you have.<br>As this is managed by Salt in SDC 5.1, you can check the below procedure from Section &quot;13: Replacing NTP Serviers&quot; of <a href="https://techdocs.f5.com/kb/en-us/products/traffix-sdc/manuals/product/sdc-bare-metal-system-maintenance-5-1-0.html" target="_self">SDC Maintenance guide</a>:<br><br><em><span style="color: #27ae60;"><span class="note"><strong>Note: </strong> This procedure you need perform separately on the master EMS and SDC servers.</span></span></em><br><br><strong>Replacing NTP Servers</strong>
+
+<div style="margin-left: 40px;">Using an API command, you can replace the NTP servers that were previously configured to synchronize time zones between other servers.<br>The changeNtp API request to the master Installer is to replace the NTP servers.<br>This request deletes all the existing NTP servers and replaces them with the new NTP servers that are defined in the Site Topology XML snippet file.<br>The changeNtp API request refers to the new XML snippet file (@changentp.xml) and by doing so the newly created XML is saved and merged with the Site Topology file in Cassandra.</div>
+<br><strong>Verifying the Authentication Token</strong>
+
+<div style="margin-left: 40px;">Changing an NTP server is performed with an API request. To apply the REST API, you need to have a valid authentication token that is not expired. If the authentication token is expired, you need to request a new one (see Generating an Authentication Token).<br>You can check your token using the command:
+<pre class="ckeditor_codeblock">
+# curl -ksi https://localhost:8000/login -H &quot;Accept: application/json&quot; -d username=&#39;saltuser&#39; -d password=&#39;traffix&#39; -d eauth=&#39;pam&#39;</pre>
+</div>
+<strong>Updating the Site Topology File with New NTP Servers</strong>
+
+<div style="margin-left: 40px;">The site topology file must be updated to include the definitions for any new NTP server.<br>This is done by creating a new Topology XML file (a snippet) that is then uploaded to the Cassandra database and merged with the Site Topology file, once the changeNtp API flow request is completed.<br>To create a new Topology XML file, fill in the following parameters:</div>
+
+<ul style="margin-left: 40px;"><li>ntpServer name</li><li>ip</li></ul>
+
+<div style="margin-left: 40px;"><span class="note"><em><span style="color: #27ae60;"><strong>Note</strong>: The &quot;ntpServers&quot; are the new NTP servers and for each one you need to define a name (ntpServer name) and IP address. You can add multiple NTP servers, but matter how many are added, all of the previously configured NTP servers are removed.</span></em><br>Refer to the <a href="https://techdocs.f5.com/kb/en-us/products/traffix-sdc/manuals/product/sdc-bare-metal-system-maintenance-5-1-0.html" target="_self">F5 SDC Bare Metal Installation Guide</a>: Site Topology File Structure for more information about these parameters.</span><br><br>The following is an example of a Topology file for changing an NTP server:<br> 
+<pre class="ckeditor_codeblock">
+# vi changentp.xml
+ntpServers=&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;
+&lt;topology&gt;
+ &lt;siteProperties name=&quot;SDC_Site&quot;&gt;
+       &lt;ntpServers&gt;
+           &lt;ntpServer name=&quot;first&quot; ip=&quot;192.168.16.5&quot;/&gt;
+           &lt;ntpServer name=&quot;second&quot; ip=&quot;192.168.16.6&quot;/&gt;
+       &lt;/ntpServers&gt;
+ &lt;/siteProperties&gt;
+&lt;/topology&gt;</pre>
+</div>
+<br><strong>&quot;changeNtp&quot; API Request</strong>
+
+<div style="margin-left: 40px;">The following is the changeNtp API request:
+<pre class="ckeditor_codeblock">
+# TOKEN=$(curl -ksi https://localhost:8000/login -H &#39;Accept: application/json&#39; -d username=&#39;saltuser&#39; -d password=&#39;traffix&#39; -d eauth=&#39;pam&#39; | grep return|jq -r &#39;.return[]| .token&#39;)
+
+# curl -ksi https://localhost:8000 -H &quot;Accept: application/x-yaml&quot; -H &quot;X-Auth-Token:$TOKEN&quot; -d client=&quot;runner&quot; -d fun=&quot;traffix.changeNtp&quot; -X POST -d @changentp.xml</pre>
+<br><span class="example"><span class="example2">A successful response will include the following response:</span></span>
+
+<pre class="ckeditor_codeblock">
+return:
+- 0
+- Successfully changed the NTP servers</pre>
+</div>
+ 
+
+<h1><span class="sectiontitle">Additional Information</span></h1>
+
+<p>In case the above procedure does not sync up the time with NTP server, you can restart the NTP service and then check the status again.</p>
+
+<pre class="ckeditor_codeblock">
+# ntpq -p
+# service ntpd restart
+# service ntpd status</pre>
+
+<p> </p>
+</article>
+</body>
+</html>

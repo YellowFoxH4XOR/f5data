@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000159854: Resolving /var Storage Size Discrepancy on Data Collection Device During Rolling Upgrade</title>
+<meta name="description" content="Support Solution: Resolving /var Storage Size Discrepancy on Data Collection Device During Rolling Upgrade — The /var storage for DCD was previously increased. To avoid data loss, increase the storage for the new active volume before you upgrade. See AskF5 article K16103 for more information.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000159854">
+</head>
+<body>
+<header>
+<h1>K000159854: Resolving /var Storage Size Discrepancy on Data Collection Device During Rolling Upgrade</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-12</dd>
+<dt>Updated</dt><dd>2026-02-12</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li><li>BIG-IQ Centralized Management: 8.3.X, 8.4.X, 8.4.1, 8.4.0, 8.3.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000159854">https://my.f5.com/manage/s/article/K000159854</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>During a BIG-IQ rolling upgrade, the upgrade process may pause at certain % on a Data Collection Device (DCD) with the following alert message:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">The /var storage for DCD was previously increased. To avoid data loss, increase the storage for the new active volume before you upgrade. See AskF5 article <a href="https://my.f5.com/manage/s/article/K16103" target="_self">K16103</a> for more information.</span></p>
+<p>This alert appears when:</p>
+<ul><li>The DCD has a previously extended /var partition</li><li>The new boot volume&#39;s /var partition is smaller than the old boot volume&#39;s /var partition</li><li>The upgrade process detects a size mismatch that could result in data loss</li></ul>
+<p>The upgrade will pause and wait for user intervention before continuing.</p>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IQ Centralized Management with Data Collection Devices (DCD)</li><li>Upgrade scenario: Rolling upgrade to version 8.3 or later</li><li>Configuration: DCD with previously extended /var storage (e.g., 266 GB or larger)</li><li>Symptom: Upgrade pauses at (e.g., 65%) completion with storage alert</li><li>System state: DCD has already booted into the new boot volume</li></ul>
+<h2>Cause</h2>
+<p>During the BIG-IQ upgrade process, the system creates a new boot volume with default /var partition sizes. When a DCD has a previously extended /var partition, the upgrade process will not automatically replicate the extended size to the new boot volume.</p>
+<p>The upgrade safety mechanism detects that the /var storage on the new boot volume is smaller than the /var storage on the old boot volume, triggering an alert to prevent potential data loss. This discrepancy occurs because the previously extended /var storage was not automatically expanded to match the old boot volume size during the upgrade process.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>To resolve the /var storage size discrepancy and continue the upgrade:</p>
+<h3>Step 1: Verify which boot volume is currently active</h3>
+<p>Before making any changes, confirm which boot volume the system is currently running on:</p>
+<ul><li>Run: <span style="background-color: #f1f1f1;">tmsh show sys software status</span></li><li>Look for the boot location marked as &quot;yes&quot; in the &quot;Active&quot; column</li><li>Example output:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Sys::Software Status</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Volume Product Version Build Active Status</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">---------------------------------------------------------------</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">HD1.1 BIG-IQ 8.3.0 0.0.2 yes complete</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">HD1.2 BIG-IQ 7.1.0 2.0.3 no complete</span></p>
+</li></ul>
+<ul><li>In this example, HD1.1 is the active (new) boot volume</li><li>The system should be booted into the new boot volume after the upgrade process has started</li></ul>
+<p><span style="color: #c20025;"><em><strong>Important</strong>: If the system is not on the new boot volume, do not proceed with these steps. Contact F5 Support for assistance.</em></span></p>
+<h3>Step 2: Verify the current /var storage allocation</h3>
+<ul><li>Run: <span style="background-color: #f1f1f1;">tmsh show sys disk directory</span>
+<ul><li>This shows the current disk usage and available space</li></ul>
+</li></ul>
+<h3>Step 3: Compare the /var volume sizes between old and new boot volumes</h3>
+<ul><li>Run: <span style="background-color: #f1f1f1;">lvs --unit=k | grep var</span></li><li>Identify the active boot location (new boot volume) and the previous boot location (old boot volume)</li><li>The output shows logical volumes with &quot;o&quot; flag indicating the active volume</li><li>Example output:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">set.1._var vg-db-vda -wi-a<strong>o</strong>---- 283115520k (269.9GB) ← New boot volume (active - note the &quot;<strong>o</strong>&quot;)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">set.2._var vg-db-vda -wi-a----- 304861184k (290.7GB) ← Old boot volume</span></p>
+</li></ul>
+<ul><li>The volume with <span style="background-color: #f1f1f1;">-wi-ao----</span> (note the &quot;o&quot;) is the active/open volume (currently mounted)</li><li>The volume with <span style="background-color: #f1f1f1;">-wi-a-----</span> (no &quot;o&quot;) is the inactive volume</li><li>Calculate the size difference that needs to be added to the new boot volume</li></ul>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: Cross-reference the active boot location from Step 1 with the logical volume naming:</em></span></p>
+<ul><li>HD1.1 typically corresponds to set.1._var</li><li>HD1.2 typically corresponds to set.2._var</li></ul>
+<h3>Step 4: Check available free space in the volume group</h3>
+<p>Before attempting to resize, verify that sufficient free space is available:</p>
+<ul><li>Run: <span style="background-color: #f1f1f1;">vgs --unit=k</span></li><li>Look for the <span style="background-color: #f1f1f1;">VFree</span> column to see available free space in the volume group (typically <span style="background-color: #f1f1f1;">vg-db-vda</span>)</li><li>Example output:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">VG #PV #LV #SN Attr VSize VFree</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">vg-db-vda 1 10 0 wz--n- 524288000k 50000000k</span></p>
+</li></ul>
+<ul><li>Calculate if the free space is sufficient:
+<ul><li>Required space = (Old boot volume size) - (New boot volume size)</li><li>Example: 304861184k - 283115520k = 21745664k (~20.7 GB required)</li><li>Ensure <span style="background-color: #f1f1f1;">VFree</span> is greater than the required space</li></ul>
+</li></ul>
+<p><span style="color: #c20025;"><em><strong>Important</strong>: If insufficient free space is available, you must expand the underlying virtual disk before proceeding. Refer to <a href="https://my.f5.com/manage/s/article/K16103" target="_self">K16103</a> for instructions on expanding disk space on BIG-IQ Virtual Edition.</em></span></p>
+<h3>Step 5: Check current disk usage on /var</h3>
+<ul><li>Run: <span style="background-color: #f1f1f1;">df -h /var</span></li><li>Verify that the current usage is well below the target size to ensure the resize operation will succeed</li><li>Example output:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Filesystem Size Used Avail Use% Mounted on</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">/dev/mapper/vg--db--vda-set.1._var 270G 180G 90G 67% /var</span></p>
+</li></ul>
+<ul><li>Confirm the filesystem path matches the active boot volume identified in Step 1 and Step 3</li></ul>
+<h3>Step 6: Resize the /var volume on the new boot volume</h3>
+<p>Below steps are referrencing KB <a href="https://my.f5.com/manage/s/article/K30902515" target="_self">K30902515</a>:</p>
+<ul><li>Run: <span style="background-color: #f1f1f1;">resizevol /var &lt;size_in_kilobytes&gt;</span></li><li>Example: <span style="background-color: #f1f1f1;">resizevol /var 304861184</span></li><li><span style="color: #c20025;"><em><strong>Important</strong>:</em></span>
+<ul><li>Use the exact size in kilobytes from the old boot volume</li><li>Do not specify a size smaller than the currently used space</li><li>Ensure the size does not exceed available free space in the volume group</li><li>The <span style="background-color: #f1f1f1;">resizevol</span> command will resize /var on the currently active boot volume</li></ul>
+</li></ul>
+<h3>Step 7: Save the system configuration</h3>
+<ul><li>Run: <span style="background-color: #f1f1f1;">tmsh save sys config</span></li></ul>
+<h3>Step 8: Reboot the DCD</h3>
+<ul><li>Run: <span style="background-color: #f1f1f1;">reboot now</span></li></ul>
+<h3>Step 9: Wait for the system to stabilize</h3>
+<ul><li>Allow 3–5 minutes after reboot for the system to fully initialize</li></ul>
+<h3>Step 10: Verify the resize operation</h3>
+<p>After reboot, confirm the /var partition has been resized correctly:</p>
+<ul><li>Run: <span style="background-color: #f1f1f1;">tmsh show sys software status</span>
+<ul><li>Verify the system is still booted into the same boot volume</li></ul>
+</li><li>Run: <span style="background-color: #f1f1f1;">df -h /var</span>
+<ul><li>Verify the new size is reflected</li></ul>
+</li><li>Run: <span style="background-color: #f1f1f1;">lvs --unit=k | grep var</span>
+<ul><li>Verify that the active boot volume now matches or exceeds the old boot volume size</li></ul>
+</li><li>Example verification output:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">set.1._var vg-db-vda -wi-ao---- 304861184k (290.7GB) ← Now matches old boot volume</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">set.2._var vg-db-vda -wi-a----- 304861184k (290.7GB) ← Old boot volume</span></p>
+</li></ul>
+<h3>Step 11: Continue the upgrade process</h3>
+<ul><li>In the BIG-IQ rolling upgrade interface, click the &quot;<em><strong>Continue</strong></em>&quot; button</li></ul>
+<h3>Step 12: Monitor the remaining upgrade process</h3>
+<ul><li>Verify that all remaining DCDs and the Central Manager complete the upgrade successfully</li></ul>
+<h2>Additional Information</h2>
+<ul><li>The alert and upgrade pause are expected safety behaviors designed to prevent data loss when <strong><em>/var</em></strong> storage has been previously extended.</li><li>On DCDs without previously extended <em><strong>/var</strong></em> partitions, the upgrade process typically completes without this alert.</li><li>The <span style="background-color: #f1f1f1;">resizevol</span> command affects <em><strong>/var</strong></em> on the currently active boot volume. Always verify which boot volume is active before proceeding.</li><li>Do not specify a size smaller than the currently used space in <em><strong>/var</strong></em> to <span style="color: #c20025;"><em>avoid data loss</em></span>.</li><li>If the volume group does not have sufficient free space, you must expand the underlying virtual disk at the hypervisor level before attempting to resize /var.</li><li><span style="color: #c20025;"><strong>Important</strong>: The BIG-IQ upgrade process does NOT preserve custom <em><strong>/var</strong></em> partition sizes.</span> During upgrade to BIG-IQ v8.x, the new boot volume is created with the default <em><strong>/var</strong></em> size of 75 GB, regardless of the size configured on the old boot volume. If the<em><strong> /var</strong></em> partition was previously extended beyond 75 GB, you must follow the procedure in <a href="https://my.f5.com/manage/s/article/K86200286" target="_self">K86200286</a> to set the desired <em><strong>/var</strong></em> size on the new boot volume before starting the upgrade.</li><li>This procedure should be performed on each DCD that encounters this alert during the rolling upgrade.</li><li>Always verify available free space and the active boot volume before attempting any disk resize operation to prevent system instability or data loss.</li><li>The logical volume naming convention typically follows: set.1._var corresponds to HD1.1, set.2._var corresponds to HD1.2, etc.</li></ul>
+</article>
+</body>
+</html>

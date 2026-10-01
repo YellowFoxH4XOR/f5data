@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K84221832: Understanding CGNAT port block allocation sizing and tools for LSN pools</title>
+<meta name="description" content="Knowledge: Understanding CGNAT port block allocation sizing and tools for LSN pools — This article covers Port Block Allocation (PBA) mode for Large Scale NAT (LSN) pool configuration.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K84221832">
+</head>
+<body>
+<header>
+<h1>K84221832: Understanding CGNAT port block allocation sizing and tools for LSN pools</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2018-03-14</dd>
+<dt>Updated</dt><dd>2026-03-04</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 14.1.0, 14.0.0, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0</li><li>BIG-IP PEM: 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 14.1.0, 14.0.0, 13.1.1, 13.1.0, 13.0.1, 13.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K84221832">https://my.f5.com/manage/s/article/K84221832</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3>
+<p>This article covers Port Block Allocation (PBA) mode for Large Scale NAT (LSN) pool configuration.</p>
+<p>PBA is a translation mode option that reduces CGNAT logging overhead by creating a log entry only when a subscriber first establishes a network connection, assigning a port block, and when the system releases the block when no more connections are using it.</p>
+<p>There isn&#39;t a single correct solution to adequately configure PBA because each customer environment is different. The following information helps you understand the issues involved and outlines some of the tools available. If you require further assistance deploying PBA in your environment, contact <a href="https://my.f5.com/manage/s/article/K000135931" target="_blank">F5 Technical Support</a> .</p>
+<h3>Description</h3>
+<ul><li><a href="#1">Understanding and configuring PBA sizing options</a>
+<ul><li><a href="#a">Choosing the optimum block size</a></li><li><a href="#b">Other block size considerations</a></li><li><a href="#c">Inbound connections</a></li><li><a href="#d">Block Lifetime and Block Idle Timeout options</a></li><li><a href="#e">Zombie blocks</a></li></ul>
+</li><li><a href="#2">Troubleshooting tools for fine-tuning PBA deployments</a>
+<ul><li><a href="#f">Viewing CGNAT port block usage using the TMOS Shell (tmsh)</a></li><li><a href="#g">The lsndb command</a></li><li><a href="#h">Monitoring CGNAT errors</a></li></ul>
+</li></ul>
+<p><br><span class="sectiontitle"><a id="1" name="1"></a>Understanding and configuring PBA sizing options </span></p>
+<p>CGNAT PBA works allocates a contiguous set of source translation endpoints called port blocks. These port blocks are associated to a client by one IP address and a block of ports. Port blocks are allocated on-demand and have a fixed size.</p>
+<p>LSN pool configuration settings are closely interrelated and determine how the blocks are allocated to the clients. Choose these settings carefully to adequately and efficiently service clients that may require a different number of simultaneous connections. Careful analysis and testing is required to find optimal values.</p>
+<p>The following LSN pool configuration settings are covered in this article:</p>
+<ul><li><strong>Member List</strong>: Specifies the set of translation IP addresses available in the pool as a collection of IP prefixes with their prefix lengths.  All public-side addresses come from the subnets entered in this property in CIDR format.</li><li><strong>Port Block Allocation</strong>: Configures the port block settings for PBA mode, which include:
+<ul><li><strong>Block Size</strong>: The number of ports allocated in a block. The default value is 64.</li><li><strong>Client Block Limit</strong>: The maximum number of blocks assigned to a single subscriber. The default is 1.</li></ul>
+</li><li><strong>Port Range Low</strong>: Specifies the lowest range port number available for use with translation IP addresses. The default value is 1025.</li><li><strong>Port Range High</strong>: Specifies the highest range port number available for use with translation IP addresses. The default value is 65535.</li><li><strong>Inbound Connections</strong>: Specifies the inbound-connection mode for incoming connections to translation endpoints.</li></ul>
+<p><span class="subsectiontitle"><a id="a" name="a"></a>Choosing the optimum block size</span></p>
+<p>You can estimate the number of total available blocks on a BIG-IP system configured with CGNAT PBA with the following formula:</p>
+<p><span class="example2">(port-range * IP Pool Size) / block-size</span></p>
+<p>For example, you use the following settings:</p>
+<p><span class="example2">Port Range Low: 1025<br>Port Range High: 65535   <br>Member List:  10.1.1.0/21<br>Block Size: 128</span></p>
+<p>This example provides 64510 ports per IP address, 2046 usable IP addresses, and 128 ports per IP. A total of (64510 * 2046) / 128 = <strong>1031152 </strong>blocks are available for allocation to clients.</p>
+<p>In an ideal configuration, the majority of clients will use only one port block. To accommodate clients who require more ports, you must increase the <strong>Client Block Limit</strong> from the default value of 1 to a greater value. Increasing the <strong>Client Block Limit</strong> and allowing clients to use more than one block is preferable to choosing a larger block size, which may result in a large number of ports in a block to remain unused. Unused ports will not be available to other clients because you can only allocate a port block to one client at a time.</p>
+<p>Choosing the optimum block size is a trade-off based on balancing operational priorities.</p>
+<p>When you increase the block size, you may encounter the following behaviors:</p>
+<ul><li>Less processing is required.</li><li>Less logging is required.</li><li>Blocks are allocated less efficiently.  A subscriber who cannot make use of all the ports in a block will waste ports that are unused because you cannot share them with other subscribers.</li><li>The blocks may be distributed unevenly across the different Traffic Management Microkernels (TMMs), resulting in prematurely exhausted address space.</li></ul>
+<p>When you reduce the block size, you may encounter the following behaviors:</p>
+<ul><li>More processing is required.</li><li>More logging is required.</li><li>Blocks are allocated more efficiently.</li><li>Performance may be impaired.</li><li>Can interfere with some applications, such as peer-to-peer, as the IP translation address changes more frequently. You can mitigate this issue by enabling the PBA persistence option.</li><li>Setting the block size to a value significantly less than the default value of 64 will reduce the maximum achievable connection rate and number of concurrent connections</li></ul>
+<p><span class="subsectiontitle"><a id="b" name="b"></a>Other block size considerations</span></p>
+<p>Blocks at the end of the port range that are smaller than the block size will be unused. </p>
+<p><span class="note"><strong>Note</strong>: Selecting a port block size that is not evenly divisible by the number of translation ports available will cause the BIG-IP Configuration utility to produce a warning message.</span></p>
+<p>For example:</p>
+<p><span class="example2">Port Range Low: 1025<br>Port Range High: 65535  <br>Block Size: 64</span></p>
+<p>A total of 64510 translation ports available. Therefore, 1007 port blocks are available per member list IP, and 62 ports are unused. </p>
+<p><span class="subsectiontitle"><a id="c" name="c"></a>Inbound connections</span></p>
+<p>By default, the <strong>Inbound Connections</strong> setting is set to <strong>disabled</strong>. When disabled, the number of potential connections available per client and per block increase because you can reuse the same translation endpoint for concurrent connections from the same subscriber to multiple destinations. This option allows you to use port blocks efficiently.</p>
+<p>For example:</p>
+<p>Reusing the same translation endpoint when disabled:</p>
+<p><span class="example2">CLIENT (internal address:port)          CLIENT (external address:port)               SERVER (host endpoint)<br>10.50.0.1:2001                 &lt;-&gt;      <strong>40.0.0.100:1026</strong>                  &lt;-&gt;         60.0.0.10:80<br>10.50.0.1:2002                 &lt;-&gt;      <strong>40.0.0.100:1026</strong>                  &lt;-&gt;         70.0.0.20:80</span></p>
+<p>If the <strong>Inbound Connections</strong> option is set to<strong> Automatic</strong>, a translation endpoint within a given block has a unique map to each server host endpoint and may not be shared. The <strong>Automatic</strong> setting uses port blocks less efficiently, but may be required for SIP or peer-to-peer protocols.</p>
+<p>A new translation endpoint in use when set to <strong>Automatic</strong>:</p>
+<p><span class="example2">CLIENT (internal address:port)           CLIENT (external address:port)        SERVER (host endpoint)<br>10.50.0.1:2001                    &lt;-&gt;    <strong>40.0.0.100:1026</strong>                 &lt;-&gt;   60.0.0.10:80<br>10.50.0.1:2002                    &lt;-&gt;    <strong>40.0.0.100:</strong></span></p>
+<ul></ul>
+<p><strong>1051</strong>                 &lt;-&gt;   70.0.0.20:80</p>
+<p><span class="subsectiontitle"><a id="d" name="d"></a>Block Lifetime and Block Idle Timeout options</span></p>
+<p>The <strong>Block Lifetime</strong> option sets the time that a client may use a block, even if there are existing connections. The default setting for this option is zero, which is the equivalent to an infinite time out. Therefore, a client uses the same block until the <strong>Block Idle Timeout</strong> option times out all of their connections<strong>.  </strong>A block idle timeout value of zero results in less logging, but clients may reuse the same set of ports indefinitely, which RFC6056 states can make attacks based on guessing ephemeral ports easier to mount. Alternatively, you can specify a finite (non-zero) block lifetime<strong> </strong>value, which helps randomize port allocation and a useful way to recycle a few small blocks.</p>
+<p>For example:</p>
+<p><span class="example">Block Lifetime: 0<br>Block Idle Timeout: 3600</span></p>
+<p>Clients will use the same port block until all of their connections are idle for 3600 seconds (1 hour), after which the block is released into the pool for other clients.</p>
+<p><span class="example">Block Lifetime: 3600<br>Block Idle Timeout: 3600</span></p>
+<p>In the previous example, after a client uses a port block for 3600 seconds and requests a new outbound connection, the client is assigned a new block. Existing connections continue to use the originally assigned block, and all new connections use the newly assigned block. The newly assigned block is now the active block, and the original block is designated as a zombie block.</p>
+<p><span class="subsectiontitle"><a id="e" name="e"></a>Zombie blocks</span></p>
+<p>A port block becomes a zombie block when new subscribers can no longer use the block because its block lifetime expired and it still has active connections. One or more zombie blocks may accumulate under the following conditions:</p>
+<ol><li>You set the <strong>Block Lifetime</strong> option to a non-zero value.</li><li>Subscriber connections are long-lived.</li><li>You make a configuration change that invalidates a block and turns it into a zombie.</li></ol>
+<p>To help control zombie blocks, you can set a non-zero zombie timeout value. When this timer expires, the associated long-lived zombie block connections are killed, but the persistence records are not deleted until the persistence timeout<em> </em>expires. If the application reconnects before the persistence records expire, PBA will attempt to reallocate the same block. However, this action may not be possible if the subscriber has reached their block limit or another subscriber is using that block. </p>
+<p><span class="note"><strong>Note</strong>: Zombie blocks do not count towards the client block limit.</span></p>
+<p>For more information about CGNAT persistence, refer to <a href="https://my.f5.com/manage/s/article/K14823" target="_blank">K14823: Overview of CGNAT Persistence</a>.</p>
+<p><span class="sectiontitle"><a id="2" name="2"></a>Troubleshooting tools for fine-tuning PBA deployments</span></p>
+<p>You can monitor the CGNAT port block usage several different ways. The following tools may assist you in fine-tuning PBA configurations.</p>
+<p><span class="subsectiontitle"><a id="f" name="f"></a>Viewing CGNAT port block usage using the TMOS Shell (tmsh) </span></p>
+<p>You can use the <strong>show ltm lsn-pool &lt;LSN-POOL-NAME&gt; raw </strong>command syntax to view the following information:</p>
+<ul><li>Active, requested, and failed translation mappings</li><li>Persistence request failures</li><li>Active port blocks (currently allocated)</li><li>Clients using max port blocks</li><li>Total port block allocations, failures and freed</li><li>Total failed client connections caused by block limit reached</li><li>Active zombie port blocks</li><li>Total zombie port blocks created and deleted</li></ul>
+<p>For example:</p>
+<pre>-----------------------------------------------------------------
+Ltm::LSN Pool: lsnpool
+-----------------------------------------------------------------
+General                                                     Count
+  Translation Mappings
+    Active                                                      0
+    Request                                                     3
+    Failure                                                     0
+    Persistence Request Failure                                 0
+    From Backup Pool                                            0
+  Hairpin Connection
+    Request                                                     0
+    Active                                                      0
+    Failure                                                     0
+  Total End Points                                          64510
+Logging
+  Attempt                                                       0
+  Failure                                                       0
+Port Control Protocol
+  Announce Request                                              0
+  Announce Response Unicast                                     0
+  Announce Response Multicast                                   0
+  Map Request                                                   0
+  Map Response                                                  0
+  Peer Request                                                  0
+  Peer Response                                                 0
+  Invalid Request Errors                                        0
+  Unavailable Resource Errors                                   0
+  Not Authorized Errors                                         0
+  Other Errors                                                  0
+PBA                                                         Count
+  Active Port Blocks                                            0
+  Clients Using Max Port Blocks                                 0
+  Total Port Block Allocations                                  1
+  Total Port Block Allocation Failures                          0
+  Total Port Blocks Freed                                       1
+  Total Failed Client Connections From Block Limit Reached      0
+  Active Zombie Port Blocks                                     0
+  Total Zombie Port Blocks Created                              0
+  Total Zombie Port Blocks Deleted                              0
+  Total Zombie Port Blocks Connections Killed                   0</pre>
+<p><span class="note"><strong>Note</strong>: You can also view CGNAT statistics in graphical charts by using BIG-IP Analytics.</span></p>
+<p><span class="subsectiontitle"><a id="g" name="g"></a>The lsndb command</span></p>
+<p><span class="warning"><strong>Important</strong>: This command may add some resource usage stress to a system already under significant traffic load. Use with caution.</span></p>
+<ul><li><strong>lsndb list client: </strong>Displays the number of ports that are used out of the allocated block, per client. You can determine how efficiently clients are using port blocks.
+<p>The <strong>lsndb list client</strong> command output appears similar to the following example:</p>
+<p><span class="example2">LSN Client Connections<br>Client                                              Connections<br>-------------------------------------------------------------------<br>100.97.31.204                                       1<br>100.96.56.36                                       62<br>100.27.76.133                                      28<br>100.7.76.139                                        0<br>100.27.4.42                                        10<br>100.17.47.38                                        0</span></p>
+</li><li><strong>lsndb list pba: </strong>Displays the list of allocated port blocks. You can determine how many clients have more than one allocated port block.</li><li><strong>lsndb list persistence</strong>: Displays the list of all persistence entries per client.</li><li><strong>lsndb list endpoint:</strong>  Displays reserved endpoints.</li><li><strong>lsndb list inbound:</strong> Displays only the inbound mappings.</li></ul>
+<p><span class="subsectiontitle"><a id="h" name="h"></a>Monitoring CGNAT errors</span></p>
+<p>When the BIG-IP platform cannot find the translation endpoint for a subscriber, PBA logs a message similar to the following in the<strong> /var/log/ltm</strong> file:</p>
+<p><span class="example2">info tmm[25077]: 1 &quot;Apr 29 2019 14:38:39 PDT&quot;,&quot;192.168.1.1&quot;,&quot;test.example.com&quot;,&quot;LSN_ERR&quot;,&quot;PBA - Translation failed&quot;,&quot;10.10.1.1&quot;,&quot;2982&quot;,&quot;0&quot;,&quot;UDP&quot;,&quot;::&quot;,&quot;0&quot;,&quot;0&quot;</span></p>
+<p>A timeout triggers this log message when the BIG-IP system looks for a new port block for a client, but can&#39;t find it due to a shortage of available blocks, or the systems takes too long to find an available port block.</p>
+<p>An insufficient number of available blocks may cause a sudden increase in the number of these log messages, which indicates that you need to change the block allocation configuration.</p>
+</article>
+</body>
+</html>

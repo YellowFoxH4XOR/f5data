@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160447: VELOS time synchronisation - debug and troubleshoot</title>
+<meta name="description" content="Support Solution: VELOS time synchronisation - debug and troubleshoot — VELOS uses chrony to synchronise time. This article is about where to look when troubleshooting the system time.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160447">
+</head>
+<body>
+<header>
+<h1>K000160447: VELOS time synchronisation - debug and troubleshoot</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-03-24</dd>
+<dt>Updated</dt><dd>2026-03-24</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS</li><li>F5OS-C: 1.8.2</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160447">https://my.f5.com/manage/s/article/K000160447</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>VELOS uses chrony to synchronise time. This article is about where to look when troubleshooting the system time.</p>
+<h2>Environment</h2>
+<p>F5OS on VELOS</p>
+<h2>Overview</h2>
+<p>The controllers are in symmetric mode.</p>
+<p>The Reference time in chrony command outputs does not display the current system time.</p>
+<p><a href="https://datatracker.ietf.org/doc/html/rfc5905" target="_self">RFC5905</a></p>
+<blockquote>
+<p>Reference Timestamp: Time when the system clock was last set or<br>corrected, in NTP timestamp format.</p>
+</blockquote>
+<p>When looking at NTP packet captures, the Origin Timestamp may also appear strange (see below) but is not necessarily a problem indicator (ref: https://datatracker.ietf.org/doc/html/draft-ietf-ntp-data-minimization-04)&lt;/p&gt;&lt;p&gt;</p>
+<blockquote>
+<p>Internet Protocol Version 4, Src: 192.0.2.1, Dst: 192.0.2.2<br>User Datagram Protocol, Src Port: 123, Dst Port: 54645<br>Network Time Protocol (NTP Version 4, server)<br> Flags: 0x24, Leap Indicator: no warning, Version number: NTP Version 4, Mode: server<br> [Request In: 91]&lt;/p&gt;&lt;p&gt; [Delta Time: 25.816000 milliseconds]<br> Peer Clock Stratum: secondary reference (2)<br> Peer Polling Interval: 10 (1024 seconds)<br> Peer Clock Precision: -25 (0.000000030 seconds)<br> Root Delay: 0.000732 seconds<br> Root Dispersion: 0.000519 seconds<br> Reference ID: 10.86.19.1<br> Reference Timestamp: Feb 5, 2026 09:17:42.186432374 UTC<br> <strong>Origin Timestamp: Mar 18, 2103 08:38:00.581148928 UTC</strong><br> Receive Timestamp: Feb 5, 2026 09:22:24.912435518 UTC<br> Transmit Timestamp: Feb 5, 2026 09:22:24.912463647 UTC</p>
+</blockquote>
+<h2>Debug and Troubleshooting Commands</h2>
+<p>The following troubleshooting commands show examples from a healthy system.</p>
+<p>chrony <strong>conf files</strong> are not collected in a qkview. Check:</p>
+<p>- /etc/chrony.conf - should be the same on both controllers</p>
+<p>- /etc/chrony.keys - should be empty</p>
+<p> </p>
+<p>Check file permissions:</p>
+<p>[root@controller-1(VEL410-R81-S7):Active ~]# ls -la /etc/chrony.keys<br>lrwxrwxrwx. 1 root root 39 Feb 24 19:29 /etc/chrony.keys -&gt; /var/system/confgen-configs/chrony.keys</p>
+<p> </p>
+<p>[root@controller-1(VEL410-R81-S7):Active ~]# ssh controller-2 &#39;ls -la /etc/chrony.keys&#39;<br>lrwxrwxrwx. 1 root root 39 Mar 2 13:16 /etc/chrony.keys -&gt; /var/system/confgen-configs/chrony.keys</p>
+<p> </p>
+<p>Verify port 123:</p>
+<p>[root@controller-1(VEL410-R81-S7):Active ~]# nc -zvu controller-2.chassis.local 123<br>Ncat: Version 7.50 ( https://nmap.org/ncat )<br>Ncat: Connected to 100.65.3.52:123.<br>Ncat: UDP packet sent successfully<br>Ncat: 1 bytes sent, 0 bytes received in 2.09 seconds.</p>
+<p>[root@controller-1(VEL410-R81-S7):Active ~]# ssh controller-2 &#39;nc -zvu controller-1.chassis.local 123&#39;<br>Ncat: Version 7.50 ( https://nmap.org/ncat )<br>Ncat: Connected to 100.65.3.51:123.<br>Ncat: UDP packet sent successfully<br>Ncat: 1 bytes sent, 0 bytes received in 2.08 seconds.<br><br></p>
+<p>What a <strong>fail </strong>looks like (using port 124):</p>
+<p>[root@controller-1(VEL410-R81-S7):Active ~]# ssh controller-2 &#39;nc -zvu controller-1.chassis.local 124&#39;<br>Ncat: Version 7.50 ( https://nmap.org/ncat )<br>Ncat: Connected to 100.65.3.51:124.<br>Ncat: No route to host.</p>
+<p> </p>
+<p>Check <strong>iptables</strong>:</p>
+<p>[root@controller-1(VEL410-R81-S7):Active ~]# iptables -L -n -v | grep -i 123</p>
+<p>4945 375K ACCEPT udp -- * * 100.65.3.0/24 0.0.0.0/0 state NEW udp dpt:123</p>
+<p> </p>
+<p>[root@controller-1(VEL410-R81-S7):Active ~]# ssh controller-2 &#39;iptables -L -n -v | grep -i 123&#39;</p>
+<p>721 54749 ACCEPT udp -- * * 100.65.3.0/24 0.0.0.0/0 state NEW udp dpt:123</p>
+<p> </p>
+<p>Check <strong>bindings</strong>:</p>
+<p> </p>
+<p>[root@controller-1(VEL410-R81-S7):Active ~]# netstat -ulnp | grep chronyd</p>
+<p>udp 0 0 0.0.0.0:123 0.0.0.0:* 28133/chronyd</p>
+<p>udp 0 0 127.0.0.1:323 0.0.0.0:* 28133/chronyd</p>
+<p>udp6 0 0 ::1:323 :::* 28133/chronyd</p>
+<p> </p>
+<p>[root@controller-1(VEL410-R81-S7):Active ~]# ssh controller-2 &#39;netstat -ulnp | grep chronyd&#39;</p>
+<p>udp 0 0 0.0.0.0:123 0.0.0.0:* 19412/chronyd</p>
+<p>udp 0 0 127.0.0.1:323 0.0.0.0:* 19412/chronyd</p>
+<p>udp6 0 0 ::1:323 :::* 19412/chronyd</p>
+<p> </p>
+<p><strong>ausearch </strong>is a tool to search the Linux Audit logs (part of the auditd).</p>
+<p>[root@controller-1(VEL410-R81-S7):Active ~]# ausearch -m avc -ts recent | grep chrony</p>
+<p>&lt;no matches&gt;</p>
+<p> </p>
+<p>[root@controller-1(VEL410-R81-S7):Active ~]# ssh controller-2 &#39;ausearch -m avc -ts recent | grep chrony&#39;</p>
+<p>&lt;no matches&gt;</p>
+<p> </p>
+<p>Dump the latest <strong>journal </strong>logs:</p>
+<p>[root@controller-1(VEL410-R81-S7):Active ~]# journalctl -u chronyd | grep -Ei &quot;peer|controller&quot;<br>...</p>
+<p>[root@controller-1(VEL410-R81-S7):Active ~]# ssh controller-2 &#39;journalctl -u chronyd | grep -Ei &quot;peer|controller&quot;&#39;<br>...</p>
+<h2>Chrony Debug Script</h2>
+<p>The provided bash script dumps the chrony states for all controllers and blades. It should be run on one controller. The output is printed to screen and appended to logfile.</p>
+<p>The script could use some improvement in detecting what blades are available before trying to connect repeatedly to them ( currently assumes 8 blades).</p>
+<p>#!/bin/bash<br># <br># 1. scp this script (chrony-interrogate.sh) on a controller<br># 2. chmod 755 chrony-interrogate.sh<br># 3. Set $logfile name if you want<br># 4  Run ./chrony-interrogate.sh<br># 4. Send logfile to support</p>
+<p>logfile=&quot;chrony-interrogate.log&quot;</p>
+<p>for h in 1 2 3 4 5 6 7 8 50 51 52; do <br>   for c in &quot;date&quot; &quot;timedatectl status&quot; &quot;chronyc tracking&quot; &quot;chronyc sources -v&quot; &quot;chronyc sourcestats -v&quot; &quot;chronyc ntpdata&quot;; do<br>   echo -e &quot;\n10.65.3.$h | $c ********************\n&quot;<br>      #echo -e &quot;\n*** $c ***\n&quot;<br>      ssh &quot;100.65.3.$h&quot; &quot;$c&quot;<br>   done | tee -a &quot;$logfile&quot;<br>done</p>
+<p>echo<br>echo &quot;Script finished, send $logfile to F5 support.&quot;</p>
+<p>exit 0</p>
+</article>
+</body>
+</html>

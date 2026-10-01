@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160940: Understanding waf_exclusion_policy Requirements in Volterra (F5 XC) Terraform Provider for HTTP Load Balancer Routes</title>
+<meta name="description" content="Support Solution: Understanding waf_exclusion_policy Requirements in Volterra (F5 XC) Terraform Provider for HTTP Load Balancer Routes — Terraform plan always reports changes: + waf_exclusion_policy {} even when no configuration changes were made.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160940">
+</head>
+<body>
+<header>
+<h1>K000160940: Understanding waf_exclusion_policy Requirements in Volterra (F5 XC) Terraform Provider for HTTP Load Balancer Routes</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-04-22</dd>
+<dt>Updated</dt><dd>2026-06-12</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Distributed Cloud Services</li><li>F5 Distributed Cloud</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160940">https://my.f5.com/manage/s/article/K000160940</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When configuring the <span style="background-color: #f1f1f1;">waf_exclusion_policy</span> block within the <span style="background-color: #f1f1f1;">volterra_http_loadbalancer</span> resource using the Volterra (F5 Distributed Cloud/XC) Terraform provider, users may encounter errors such as:</p>
+<ul><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">Error: Insufficient waf_exclusion_policy blocks</span></li><li>Terraform plan always reports changes: <span style="font-family: &#39;courier new&#39;, courier, monospace;">+ waf_exclusion_policy {}</span> even when no configuration changes were made.</li></ul>
+<p>This article clarifies whether <span style="background-color: #f1f1f1;">waf_exclusion_policy</span> is optional or required at the route level, explains observed Terraform plan drift, and outlines correct configuration patterns.</p>
+<h2>Environment</h2>
+<ul><li>Product: F5 Distributed Cloud HTTP Load Balancer</li><li>Terraform Provider: volterraedge/volterra (tested with v0.11.48)</li><li>Resource: <span style="background-color: #f1f1f1;">volterra_http_loadbalancer</span></li><li>Configuration objects:
+<ul><li><span style="background-color: #f1f1f1;">waf_exclusion_policy</span></li><li><span style="background-color: #f1f1f1;">waf_exclusion_inline_rules</span></li><li><span style="background-color: #f1f1f1;">routes.simple_route.advanced_options</span></li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p>Wrong syntax used.</p>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>Key Configuration Rules</strong></p>
+<ul><li>At the load balancer level (<span style="background-color: #f1f1f1;">waf_exclusion {}</span> block), configure either <span style="background-color: #f1f1f1;">waf_exclusion_policy {}</span> or <span style="background-color: #f1f1f1;">waf_exclusion_inline_rules {}</span>—not both. These are mutually exclusive. The provider will only use the first one found and ignore the other.</li><li>At the route level (<span style="background-color: #f1f1f1;">routes.simple_route.advanced_options</span>), the <span style="background-color: #f1f1f1;">waf_exclusion_policy {}</span> block is independent of the LB-level exclusion. It is not required unless you want to override the LB-level policy for a specific route.</li></ul>
+<p><strong>When is <span style="background-color: #f1f1f1;">waf_exclusion_policy {}</span> Required at the Route Level?</strong></p>
+<ul><li>Required if you want to override the LB-level WAF exclusion with a route-specific policy.</li><li>Not required if:
+<ul><li>You set <span style="background-color: #f1f1f1;">inherited_waf_exclusion = true</span> (the route inherits the LB-level exclusion).</li><li>You set <span style="background-color: #f1f1f1;">disable_waf = true</span> (WAF is disabled for the route).</li><li>Neither <span style="background-color: #f1f1f1;">inherited_waf_exclusion</span> nor <span style="background-color: #f1f1f1;">waf_exclusion_policy</span> is set (the route uses the LB-level exclusion by default).</li></ul>
+</li></ul>
+<p><strong>Example Patterns</strong></p>
+<p><strong>1. LB-level policy, route-level override:</strong></p>
+<p><code>resource &quot;volterra_http_loadbalancer&quot; &quot;example&quot; {<br>  waf_exclusion {<br>    waf_exclusion_policy {<br>      name      = &quot;global-policy&quot;<br>      namespace = &quot;production&quot;<br>    }<br>  }<br>  routes {<br>    simple_route {<br>      advanced_options {<br>        # Option A: inherit LB-level exclusion<br>        inherited_waf_exclusion = true<br>        # Option B: override with a different policy<br>        # waf_exclusion_policy {<br>        #   name      = &quot;route-specific-policy&quot;<br>        #   namespace = &quot;production&quot;<br>        # }<br>      }<br>    }<br>  }<br>}</code></p>
+<p><strong>2. LB-level inline rules, route-level override:</strong></p>
+<p><code>resource &quot;volterra_http_loadbalancer&quot; &quot;example&quot; {<br>  waf_exclusion {<br>    waf_exclusion_inline_rules {<br>      rules {<br>        metadata {<br>          name = &quot;my-rule&quot;<br>        }<br>        any_domain          = true<br>        any_path            = true<br>        waf_skip_processing = true<br>      }<br>    }<br>  }<br>  routes {<br>    simple_route {<br>      advanced_options {<br>        waf_exclusion_policy {<br>          name      = &quot;route-specific-policy&quot;<br>          namespace = &quot;production&quot;<br>        }<br>      }<br>    }<br>  }<br>}</code></p>
+<h2>Additional Information</h2>
+<ul><li>The route-level <span style="background-color: #f1f1f1;">waf_exclusion_policy {}</span> is always available and independent of the LB-level configuration.</li><li>There is no dependency or expectation between LB-level and route-level WAF exclusion configuration.</li><li>If both <span style="background-color: #f1f1f1;">waf_exclusion_policy {}</span> and <span style="background-color: #f1f1f1;">waf_exclusion_inline_rules {}</span> are present at the LB level, only the first is used; the other is ignored.</li><li>To avoid errors, ensure only one of <span style="background-color: #f1f1f1;">waf_exclusion_policy {}</span> or <span style="background-color: #f1f1f1;">waf_exclusion_inline_rules {}</span> is present at the LB level.</li></ul>
+</article>
+</body>
+</html>

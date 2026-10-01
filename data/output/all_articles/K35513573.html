@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K35513573: Using F5 Modules for Ansible to conditionally force a node offline</title>
+<meta name="description" content="Knowledge: Using F5 Modules for Ansible to conditionally force a node offline — You want to use F5 Modules for Ansible to force a node offline, but only if it does not take a pool offline.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K35513573">
+</head>
+<body>
+<header>
+<h1>K35513573: Using F5 Modules for Ansible to conditionally force a node offline</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2019-09-27</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>F5 Automation and Orchestration</li><li>BIG-IP LTM: 14.X.X, 13.X.X, 12.X.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 15.X.X, 12.0.0, 12.1.0</li><li>F5 Modules for Ansible</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K35513573">https://my.f5.com/manage/s/article/K35513573</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>You should consider using this procedure under the following condition:</p>
+
+<ul><li>You want to use F5 Modules for Ansible to force a node offline, but only if it does not take a pool offline.</li></ul>
+<h3>Description</h3><p>Before forcing a node offline for maintenance, you often need to determine to which pools it is a member of and the active member count in each so that you aren&#39;t taking out the only active pool member. You can automate the steps to complete this on a single BIG-IP system or numerous BIG-IP systems using Ansible, which is a tool that automates and manages multi-machine configuration and deployment.</p>
+
+<p><span class="subsectiontitle">Example playbook</span></p>
+
+<p>The following is an example of a playbook that gathers the <strong>ltm-pools</strong> fact subset from <strong>bigip_device_facts</strong>, finds all the pools that a given node belongs to, collects all the active member counts of those pools and finds the smallest one, and, if the smallest number is greater than 1, offlines the node. Use the procedures in this article to create a similar playbook:</p>
+
+<p><span class="example2">---<br>- name: Conditionally force a node offline<br>  hosts: bigip15-0.askf5team.local:bigip14-1.askf5team.local<br>  gather_facts: False<br>  vars:<br>    provider:<br>      password: &quot;{{ bigip_password }}&quot;<br>      server: &quot;{{ ansible_host }}&quot;<br>      user: &quot;{{ bigip_username }}&quot;<br>      validate_certs: False<br>    active_list: []<br><br>  vars_prompt:<br>    - name: node<br>      prompt: &quot;What is the node address? &quot;<br>      private: no<br><br>  tasks:<br>    - name: Collect bigip facts<br>      bigip_device_facts:<br>        gather_subset:<br>          - ltm-pools<br>        provider: &quot;{{ provider }}&quot;<br>      register: pools<br><br>    - name: Determine pools the node is in and record their active member counts<br>      set_fact:<br>        active_list: &quot;{{ active_list + [ item[1] ] }}&quot;<br>      when: node in item[2]<br>      loop: &quot;{{ pools | json_query(&#39;ltm_pools[].[name, active_member_count, members[*].address]&#39;) }}&quot;<br><br>    - name: Display active member count list<br>      debug: var=active_list<br><br>    - name: Display count with the least amount of active members<br>      debug: msg=&quot;Minimum active member count from all pools {{ active_list | min }}&quot;<br><br>    - name: Force node offline<br>      bigip_node:<br>        state: offline<br>        name: &quot;{{ node }}&quot;<br>        provider: &quot;{{ provider }}&quot;<br>      delegate_to: localhost<br>      when:  active_list | min | int &gt; 1</span></p>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisites to use these procedures:</p>
+
+<ul><li>You are familiar with using Ansible.</li><li>You read the <strong>User&#39;s Guide</strong> section of <a href="https://clouddocs.f5.com/products/orchestration/ansible/devel/" target="_blank">F5 Modules for Ansible Documentation</a>.</li><li>You have Ansible 2.8 or later installed on the control machine.</li><li>You have BIG-IP 12.x or later installed on the devices in the environment.</li><li>The Python packages required for each module or filter you want to use on the control machine are installed. For example, the F5 Modules require the <strong>f5-sdk</strong> package and the JSON Query filter requires the <strong>jmespath </strong>package. For more information, refer to <a href="https://docs.ansible.com/ansible/latest/modules/modules_by_category.html" target="_blank">Module Index</a> in the <em><strong>Ansible User Guide</strong></em>.
+	<p><span class="note"><strong>Note</strong>: This link takes you to a resource outside of AskF5. The third-party could remove the document without our knowledge.</span></p>
+	</li></ul>
+
+<p><span class="sectiontitle"><a id="procedures" name="procedures"></a>Procedures</span></p>
+
+<ul><li><a href="#play_settings">Defining initial play settings</a></li><li><a href="#vars">Including variables in the playbook</a></li><li><a href="#task_facts">Creating a task that collects the pool facts</a></li><li><a href="#task_member_count">Creating a task that determines the pools the node belongs to and records the active member count of each pool</a> </li><li><a href="#task_debug">(Optional) Creating debug tasks that display variable values</a></li><li><a href="#task_disable">Creating a task that conditionally forces a given node offline</a></li><li><a href="#run">Running the playbook</a></li></ul>
+
+<p><span class="subsectiontitle"><a id="play_settings" name="play_settings"></a>Defining initial play settings</span></p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to your control machine.</li><li>Create a playbook file called <strong>conditional_node_offline.yml</strong>.</li><li>Start composing your playbook YML file and set the <strong>hosts</strong> to the BIG-IP or group of BIG-IP devices you want to force a node offline on. Gathering system facts is not necessary for this playbook.</li><li>In the <strong>vars</strong> parameter, create a playbook variable called <strong>provider</strong>. Add the BIG-IP connection details as the values to the <strong>provider </strong>variable. In the example, group variables from the group the hosts belong to are used. You can reference the <strong>provider </strong>variable in the <strong>provider </strong>parameter of the F5 Module for Ansible. You can encrypt BIG-IP passwords for the playbook by placing them in the vault. For more information, refer to <a href="https://my.f5.com/manage/s/article/K64450989" target="_blank">K64450989: Using the &#39;ansible-vault&#39; command to encrypt BIG-IP passwords used in a playbook</a>.</li><li>Also in <strong>vars</strong>, create an empty list called <strong>active_list</strong>.</li></ol>
+
+<p>The following is the initial play settings section from the example playbook showing all the elements described in this procedure:<br><span class="example2">---<br>- name: Conditionally force a node offline<br>  hosts: bigip15-0.askf5team.local:bigip14-1.askf5team.local<br>  gather_facts: False<br>  vars:<br>    provider:<br>      password: &quot;{{ bigip_password }}&quot;<br>      server: &quot;{{ ansible_host }}&quot;<br>      user: &quot;{{ bigip_username }}&quot;<br>      validate_certs: False<br>    active_list: []</span></p>
+
+<p><br><span class="subsectiontitle"><a id="vars" name="vars"></a>Including variables in the playbook</span></p>
+
+<p>There are a variety of methods for including a variable in the playbook for the node you want. The following procedure describes how to use a prompt to define the variable. When the playbook is executed, it prompts the user for input on the command line.<br>You can follow the procedure to use prompts or you can use another method to include variables. For more information, refer to the <a href="https://docs.ansible.com/ansible/latest/user_guide/playbooks_variables.html" target="_blank">Using Variables</a> page of the <em><strong>Ansible User Guide</strong></em>. </p>
+
+<p><span class="note"><strong>Note</strong>: The previous link takes you to a resource outside of AskF5, and it is possible that the information may be removed without our knowledge.</span><br><span class="warning"><strong>Important</strong>: The playbook gathers the node address from the user and uses it to find pool membership in the <strong>ltm_pools</strong> fact subset and uses it in the <strong>bigip_node</strong> module which requires the node name. The playbook assumes that you use the common practice of using the node IP address as the node name.</span></p>
+
+<p><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</p>
+
+<ol><li>Create a <strong>vars_prompt</strong> section.</li><li>Create a variable for the node IP address and the prompt that appears to the user. Include <strong>private: no</strong> so that the input is echoed to the screen. </li></ol>
+
+<p>The following <strong>var_prompts</strong> section from the example playbook shows the elements described in this procedure:</p>
+
+<p><span class="example2">  vars_prompt:<br><br>    - name: node<br>      prompt: &quot;What is the node address? &quot;<br>      private: no</span></p>
+
+<p><span class="subsectiontitle"><a id="task_facts" name="task_facts"></a>Creating a task that collects the pool facts</span></p>
+
+<p>An Ansible fact is a characteristic about a remote machine, such as its IP address or operating system. The <strong>bigip_device_facts</strong> module collects facts about your BIG-IP devices. The <strong>ltm_pools</strong> subset facts of the <strong>bigip_device_facts</strong> module collects the pool configuration on the BIG-IP. This includes, among other properties, the name, the members, and how many members are active, the <strong>active_member_count</strong>.</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Start your list of tasks with the <strong>tasks</strong> statement.</li><li>Create a task that uses the <strong>bigip_device_facts</strong> module to gather the <strong>ltm_pools</strong> subset from the hosts defined in the playbook. Register the gathered facts in a variable called <strong>pools</strong>.</li><li>Configure the <strong>provider </strong>parameter.</li></ol>
+
+<p>The following task from the example playbook shows the elements described in this procedure:</p>
+
+<p><span class="example2">  tasks:<br>    - name: Collect bigip facts<br>      bigip_device_facts:<br>        gather_subset:<br>          - ltm-pools<br>        provider: &quot;{{ provider }}&quot;<br>      register: pools</span></p>
+
+<p><span class="subsectiontitle"><a id="task_member_count" name="task_member_count"></a>Creating a task that determines the pools the node belongs to and records the active member count of each pool</span></p>
+<p>The <strong>set_fact </strong>module allows you to set a variable for a host in a task. In this procedure you collect the <strong>active_member_count</strong> data using the <strong>json_query </strong>filter and place it in a list variable. The task appends contents to the list only when the <strong>node </strong>variable matches an address in the list of pool members for each pool so you&#39;re only getting <strong>active_member_count</strong> data from the pools the node belongs to.</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Create a task that uses the <strong>set_fact </strong>module. You&#39;ll use the <strong>json_query</strong> filter to gather specific data about the pool configuration.</li><li>Create a fact called <strong>active_list </strong>that appends the <strong>active_member_count</strong> which you reference as <strong>item[1]</strong> to the empty list you created previously.</li><li>Add a <strong>when</strong> statement that appends contents to the list only when the <strong>node </strong>variable matches an address in the list of pool members, <strong>item[2]</strong>.</li><li>Add a <strong>loop </strong>statement where the value is a list created with the <strong>json_query </strong>filter. Search in the <strong>ltm_pools </strong>fact subset for the pool name, <strong>active_member_count</strong>, and the member addresses.</li></ol>
+
+<p>The following task from the example playbook shows the elements described in this procedure:</p>
+<span class="example2">    - name: Determine pools the node is in and record their active member counts<br>      set_fact:<br>        active_list: &quot;{{ active_list + [ item[1] ] }}&quot;<br>      when: node in item[2]<br>      loop: &quot;{{ pools | json_query(&#39;ltm_pools[].[name, active_member_count, members[*].address]&#39;) }}&quot;</span><br> 
+<p><span class="subsectiontitle"><a id="task_debug" name="task_debug"></a>(Optional) Creating debug tasks that display variable values</span></p>
+
+<p>Using the debug module, you can display the contents of the <strong>active_list </strong>and the <strong>ltm_pools</strong> fact subset data that is collected by the <strong>json_query</strong> filter.</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Create a task that uses the <strong>debug </strong>module.</li><li>Display the contents of <strong>active_list </strong>with the <strong>var </strong>parameter.</li><li>Create a second task that uses the <strong>debug </strong>module</li><li>Display the minimum active member count with the <strong>min</strong> filter in the <strong>msg </strong>parameter. This number uses the <strong>when </strong>statement for the <strong>bigip_node</strong> task.</li></ol>
+
+<p>The following tasks from the example playbook show the elements described in this procedure:</p>
+
+<p><span class="example2">    - name: Display active member count list<br>      debug: var=active_list<br><br>    - name: Display count with the least amount of active members<br>      debug: msg=&quot;Minimum active member count from all pools {{ active_list | min }}&quot;</span><br> </p>
+
+<p><span class="subsectiontitle"><a id="task_disable" name="task_disable"></a>Creating a task that conditionally forces a given node offline</span></p>
+
+<p>After you have obtained the list of active members from each pool the node is a member of you can then combine the <strong>bigip_node</strong> module with the <strong>when </strong>statement to conditionally force the node offline.<br><span class="warning"><strong>Important</strong>: The playbook gathers the node address from the user and uses it to find pool membership in the <strong>ltm_pools</strong> fact subset and uses it in the <strong>bigip_node</strong> module which requires the node name. The playbook assumes that you use the common practice of using the node IP address as the node name.</span></p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Create a task with the <strong>bigip_node </strong>module.</li><li>Configure the task to update the node status by including <strong>state: offline</strong>.</li><li>Include the <strong>node </strong>variable as the value for the <strong>name </strong>parameter.</li><li>Configure the <strong>provider </strong>parameter.</li><li>Add <strong>delegate_to: localhost</strong> so the task is performed on the control machine itself which is required for all F5 Modules for Ansible.</li><li>Add a <strong>when</strong> statement so that the task is performed when the lowest number in the active list obtained with the <strong>min </strong>filter (the number that represents the pool with the least amount of active members) is greater than 1. This ensures you force the node offline only if it is not taking a pool offline.</li></ol>
+
+<p>The following tasks from the example playbook show the elements described in this procedure:</p>
+
+<p><span class="example2">    - name: Force node offline<br>      bigip_node:<br>        state: offline<br>        name: &quot;{{ node }}&quot;<br>        provider: &quot;{{ provider }}&quot;<br>      delegate_to: localhost<br>      when:  active_list | min | int &gt; 1</span></p>
+
+<p><br><span class="subsectiontitle"><a id="run" name="run"></a>Running the playbook</span></p>
+
+<p>You can now run the playbook from your control machine to make configuration changes to the BIG-IP devices in the play.</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure forces a node offline on the BIG-IP system; therefore, only active connections are allowed.</span></p>
+
+<ol><li>Log in to your control machine.</li><li>Change the working directory to the one with your playbooks.</li><li>To run the playbook from the command line of your control machine, type the following command:
+	<p><span class="code">ansible-playbook conditional_node_offline.yml</span></p>
+
+	<p>The output from the command appears similar to the <strong>Example playbook output</strong> section of this article.</p>
+	</li></ol>
+
+<p><span class="sectiontitle"><a id="output" name="output"></a>Example playbook output</span><br></p><p>When you run the playbook, the output is similar to the following example. In the output, note that the <strong>bigip14-1.askf5team.local</strong> host only had one pool with <strong>10.154.210.207</strong> in it and this pool only had one active member so the <strong>Force node offline</strong> task is skipped for this host.</p>
+
+<p><span class="example2">What is the node address? : 10.154.210.207<br><br>PLAY [Conditionally force a node offline] ****************************************<br><br>TASK [Collect bigip facts] ****************************************<br>changed: [bigip14-1.askf5team.local]<br>changed: [bigip15-0.askf5team.local]<br><br>TASK [Determine pools the node is in and record their active member counts] ****************************************<br>ok: [bigip15-0.askf5team.local] =&gt; (item=[u&#39;askf5_pool2&#39;, 2, [u&#39;10.154.210.207&#39;, u&#39;172.16.1.110&#39;, u&#39;172.16.1.111&#39;, u&#39;172.16.1.112&#39;]])<br>ok: [bigip14-1.askf5team.local] =&gt; (item=[u&#39;documentation_pool&#39;, 1, [u&#39;10.154.210.207&#39;, u&#39;192.0.2.1&#39;, u&#39;192.0.2.2&#39;, u&#39;192.0.2.3&#39;]])<br>ok: [bigip15-0.askf5team.local] =&gt; (item=[u&#39;askf5_pool&#39;, 3, [u&#39;10.154.210.207&#39;, u&#39;172.16.1.110&#39;, u&#39;172.16.1.111&#39;, u&#39;172.16.1.112&#39;]])<br>skipping: [bigip14-1.askf5team.local] =&gt; (item=[u&#39;example_pool&#39;, 2, [u&#39;172.16.1.114&#39;, u&#39;172.16.1.111&#39;, u&#39;172.16.1.112&#39;, u&#39;172.16.1.113&#39;]])<br>skipping: [bigip15-0.askf5team.local] =&gt; (item=[u&#39;documentation_pool&#39;, 0, [u&#39;192.0.2.1&#39;, u&#39;192.0.2.2&#39;, u&#39;192.0.2.3&#39;]])<br>skipping: [bigip14-1.askf5team.local] =&gt; (item=[u&#39;ldap_pool&#39;, 0, [u&#39;172.16.1.111&#39;]])<br>ok: [bigip15-0.askf5team.local] =&gt; (item=[u&#39;example_pool&#39;, 2, [u&#39;10.154.210.207&#39;, u&#39;172.16.1.110&#39;, u&#39;172.16.1.111&#39;, u&#39;172.16.1.112&#39;]])<br>skipping: [bigip15-0.askf5team.local] =&gt; (item=[u&#39;ldap_pool&#39;, 0, [u&#39;172.16.1.111&#39;]])<br>skipping: [bigip15-0.askf5team.local] =&gt; (item=[u&#39;web_pool&#39;, 0, [u&#39;192.0.2.1&#39;, u&#39;192.0.2.2&#39;]])<br>skipping: [bigip15-0.askf5team.local] =&gt; (item=[u&#39;web_pool&#39;, 0, [u&#39;192.0.2.1&#39;, u&#39;192.0.2.2&#39;]])<br><br>TASK [Display active member count list] ****************************************<br>ok: [bigip15-0.askf5team.local] =&gt; {<br>    &quot;active_list&quot;: [<br>        2,<br>        3,<br>        2<br>    ]<br>}<br>ok: [bigip14-1.askf5team.local] =&gt; {<br>    &quot;active_list&quot;: [<br>        1<br>    ]<br>}<br><br>TASK [Display count with the least amount of active members] ****************************************<br>ok: [bigip15-0.askf5team.local] =&gt; {<br>    &quot;msg&quot;: &quot;Minimum active member count from all pools 2&quot;<br>}<br>ok: [bigip14-1.askf5team.local] =&gt; {<br>    &quot;msg&quot;: &quot;Minimum active member count from all pools 1&quot;<br>}<br><br>TASK [Force a node offline] ****************************************<br>skipping: [bigip14-1.askf5team.local]<br>changed: [bigip15-0.askf5team.local -&gt; localhost]<br><br>PLAY RECAP ****************************************<br>bigip14-1.askf5team.local  : ok=4    changed=1    unreachable=0    failed=0    skipped=2    rescued=0    ignored=0<br>bigip15-0.askf5team.local  : ok=5    changed=2   unreachable=0    failed=0    skipped=0    rescued=0    ignored=0</span></p>
+</article>
+</body>
+</html>

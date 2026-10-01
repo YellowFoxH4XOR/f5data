@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160120: Ansible UCS Backup Timeout After AS3 Deployment on BIG-IP</title>
+<meta name="description" content="Support Solution: Ansible UCS Backup Timeout After AS3 Deployment on BIG-IP — TimeoutError: The read operation timed out (during bigip_ucs_fetch while waiting for the async UCS creation to complete)">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160120">
+</head>
+<body>
+<header>
+<h1>K000160120: Ansible UCS Backup Timeout After AS3 Deployment on BIG-IP</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-23</dd>
+<dt>Updated</dt><dd>2026-04-27</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160120">https://my.f5.com/manage/s/article/K000160120</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When AS3 (Application Services 3 Extension) and related iAppLX packages such as f5-service-discovery are installed on BIG-IP systems, automated UCS (User Configuration Set) backups initiated via Ansible using the bigip_ucs_fetch module may fail with timeout errors. The typical error message observed is:</p>
+<p><span style="font-family: courier;">TimeoutError: The read operation timed out (during bigip_ucs_fetch while waiting for the async UCS creation to complete)</span></p>
+<p>This issue occurs because iAppLX packages significantly increase the time required to generate UCS archives, which can exceed the default timeout values configured in both BIG-IP system database variables and Ansible playbook settings.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM version 17.5.1 (or other versions with AS3 installed)</li><li>AS3 (f5-appsvcs) RPM package installed</li><li>f5-service-discovery iAppLX package installed</li><li>UCS backups automated via Ansible using the bigip_ucs_fetch module</li></ul>
+<h2>Cause</h2>
+<p>The presence of iAppLX packages (such as AS3, f5-service-discovery, Telemetry Streaming, and Cloud Failover Extension) significantly increases the time required to create UCS backups. During UCS creation, the system must build RPM packages for each installed iAppLX application, which can exceed default timeout values on both the BIG-IP system and in the Ansible automation framework.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>To resolve UCS backup timeout issues when AS3 and other iAppLX packages are installed, implement the following configuration changes:</p>
+<p>On the BIG-IP System:</p>
+<p>Increase the timeout values for  iapplxrpm, restjavad, restnoded and icrd</p>
+<p><span style="font-family: courier;">tmsh modify sys db iapplxrpm.timeout value 300<br>tmsh modify sys db restjavad.timeout value 300<br>tmsh modify sys db restnoded.timeout value 180<br>tmsh modify sys db icrd.timeout value 180<br>tmsh save sys config</span></p>
+<p>Restart the restjavad and restnoded services:</p>
+<p><span style="font-family: courier;">bigstart restart restjavad<br>bigstart restart restnoded</span></p>
+<p>In the Ansible Playbook:</p>
+<p>Set the timeout parameter in the bigip_ucs_fetch task to at least 300 seconds:</p>
+<p>Config</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>- name: Create a new UCS
+ f5networks.f5_bigip.bigip_ucs_fetch:
+  src: &quot;{{ ucs }}&quot;
+  dest: &quot;{{ &#39;/var/tmp/&#39; + inventory_hostname + &#39;/&#39; + ucs }}&quot;
+  async_timeout: 300</code></pre>
+<p>Configure the Ansible persistent connection timeout in ansible.cfg:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>[persistent_connection]
+command_timeout=300</code></pre>
+<p>Additionally , execute UCS backups sequentially rather than in parallel to avoid resource contention on the BIG-IP system.</p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

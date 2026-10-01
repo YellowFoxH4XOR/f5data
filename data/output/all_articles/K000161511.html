@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161511: VELOS System Controller Partition Fails Due to XFS Filesystem Corruption on Logical Volume</title>
+<meta name="description" content="Support Solution: VELOS System Controller Partition Fails Due to XFS Filesystem Corruption on Logical Volume — A VELOS system partition may enter a failed state and is unable to recover across reboots due to XFS filesystem corruption on the partition configuration logical volume. The affected controller…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161511">
+</head>
+<body>
+<header>
+<h1>K000161511: VELOS System Controller Partition Fails Due to XFS Filesystem Corruption on Logical Volume</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-01</dd>
+<dt>Updated</dt><dd>2026-06-04</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS</li><li>F5OS-C: 1.6.X, 1.8.X, 1.8.2, 1.8.1, 1.8.0, 1.6.4, 1.6.2, 1.6.1, 1.6.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161511">https://my.f5.com/manage/s/article/K000161511</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>A VELOS system partition may enter a failed state and is unable to recover across reboots due to XFS filesystem corruption on the partition configuration logical volume. The affected controller repeatedly fails to mount the partition LVs, causing a cascade of daemon failures and ultimately transitioning the partition to a failed state.</p>
+<p><strong>Symptoms include:</strong><strong></strong></p>
+<ul><li>Partition shown in failed state via <span style="background-color: #f1f1f1;">show partitions</span> on the system controller CLI</li><li>ConfD fails to connect; multiple daemons are killed</li><li>XFS corruption errors repeating approximately every 60–65 seconds in <span style="background-color: #f1f1f1;">/var/log/messages</span>:</li></ul>
+<pre><span style="font-family: &#39;courier new&#39;, courier, monospace;">kernel: XFS (dm-X): Metadata corruption detected at xfs_inode_buf_verify</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">kernel: XFS (dm-X): Unmount and run xfs_repair</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">kernel: XFS (dm-X): metadata I/O error in &quot;xlog_recover_do..(read#2)&quot; at daddr 0x10be0c0 len 32 error 117</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">kernel: XFS (dm-X): log mount/recovery failed: error -117</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">kernel: XFS (dm-X): log mount failed</span></pre>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">For example in messages log:</span></p>
+<pre><span dir="ltr">messages:May 29 03:19:57 controller-1 kernel: XFS (dm-2): Metadata corruption detected at xfs_inode_buf_verify+0x169/0x180 [xfs], xfs_inode block 0x10be0c0 xfs_inode_buf_verify</span></pre>
+<ul><li>Mount failure on <span style="background-color: #f1f1f1;">/var/F5/partition1</span>:</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">mount /dev/mapper/partition_config-partition1 on /var/F5/partition1 failed: Structure needs cleaning</span></p>
+<ul><li>Docker/container errors in logs:</li><ul><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">dockerd: No such container: part_1_part_vers_[version]_vers</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">dockerd: No such image: part_1_part_vers_[version]_vers</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">dockerd: get partition1-gui-volume: no such volume</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">dockerd: get tmstat1: no such volume</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">dockerd: network partition-net1 not found</span></li></ul></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">For example in messages log:</span></p>
+<pre><span dir="ltr">messages.1:May 27 06:03:03 controller-1 dockerd-current: time=&quot;2026-05-27T06:03:03.273490233+01:00&quot; level=error msg=&quot;Handler for GET /v1.26/containers/part_1_part_vers_1.6.4-44800_vers/json returned error: No such container: part_1_part_vers_1.6.4-44800_vers&quot;</span><br><br><span dir="ltr">messages:May 29 03:10:59 controller-1 dockerd-current: time=&quot;2026-05-29T03:10:59.645360165+01:00&quot; level=error msg=&quot;Handler for GET /v1.26/images/part_1_part_vers_1.6.4-44800_vers/json returned error: No such image: part_1_part_vers_1.6.4-44800_vers&quot;</span><br><br><span dir="ltr">messages:May 29 03:10:18 controller-1 dockerd-current: time=&quot;2026-05-29T03:10:18.526183346+01:00&quot; level=error msg=&quot;Handler for GET /v1.24/volumes/partition1-gui-volume returned error: get partition1-gui-volume: no such volume&quot;</span><br><br><span dir="ltr">messages:May 29 03:10:40 controller-1 dockerd-current: time=&quot;2026-05-29T03:10:40.571771355+01:00&quot; level=error msg=&quot;Handler for GET /v1.26/volumes/part_1_part_vers_1.6.4-44800_vers returned error: get part_1_part_vers_1.6.4-44800_vers: no such volume&quot;</span></pre>
+<p> </p>
+<ul><li>Partition LVs absent from <span style="background-color: #f1f1f1;">df</span> output - failed to mount</li><li>The same corrupted block address (eg, <span style="font-family: &#39;courier new&#39;, courier, monospace;">0x10be0c0 above</span>) appears consistently across all reboots (device node may change due to LVM re-enumeration). For example</li></ul>
+<pre><span dir="ltr">May 24 03:06:15 controller-1 kernel: XFS (dm-8): Metadata corruption detected at xfs_inode_buf_verify</span><br><span dir="ltr">May 24 03:06:15 controller-1 kernel: XFS (dm-8): Unmount and run xfs_repair</span><br><span dir="ltr">May 24 03:06:15 controller-1 kernel: XFS (dm-8): metadata I/O error in &quot;xlog_recover_do..(read#2)&quot; at daddr 0x10be0c0 len 32 error 117</span><br><span dir="ltr">May 24 03:06:15 controller-1 kernel: XFS (dm-8): log mount/recovery failed: error -117</span><br><span dir="ltr">May 24 03:06:15 controller-1 kernel: XFS (dm-8): log mount failed</span></pre>
+<p> </p>
+<ul><li>The redundant controller remains unaffected and holds the running-active role — no service impact, but redundancy is lost</li></ul>
+<h2>Environment</h2>
+<ul><li>Platform: F5 VELOS</li><li>Software: F5OS-C (Chassis)</li><li>Component: System controller (one affected, one unaffected)</li><li>Filesystem: XFS on LVM logical volume</li><li>Condition: XFS log corruption present on the partition configuration LV, triggered/exposed upon controller reboot when the volume is remounted from scratch</li><li>History: Corruption may be latent — present before the triggering reboot but not visible while the volume remained continuously mounted; exposed only when a remount is attempted after an unclean shutdown</li></ul>
+<h2>Cause</h2>
+<p>XFS log corruption on the partition configuration logical volume, most likely caused by an unclean/unsafe shutdown of the system controller. Evidence includes:</p>
+<ul><li><span style="background-color: #f1f1f1;">wtmp</span> records showing a reboot event with no preceding clean shutdown entry</li><li>NVMe SMART data reporting unsafe shutdowns</li><li>The corruption was latent while the volume stayed mounted; it became visible only after a controller reboot forced a fresh mount attempt, at which point XFS detected the corrupted log and refused to mount</li></ul>
+<h2>Answer/Recommended Actions</h2>
+<p>First step is to attempt a recovery of the file system via xfs_repair.</p>
+<p>If unsuccessful, <span dir="ltr">then you may need to run </span><strong><span dir="ltr">xfs_repair -L</span></strong><span dir="ltr">, which forces the filesystem log (journal) to be zeroed and erased. It is used as a last resort when the journal is severely corrupted and prevents the filesystem from mounting, or when xfs_repair itself fails to proceed because it cannot replay a dirty log</span></p>
+<p><span dir="ltr">This should allow the affected controller to mount successfully with a clean log and won&#39;t need to replay any journal entries, eliminating the 0x10be0c0 read during log recovery. </span><span dir="ltr"> </span></p>
+<p><span style="color: #c0392b;background-color: #ecf0f1;"><em><span dir="ltr"><strong>Important</strong>: Using xfs_repair <strong>-L </strong>clears the filesystem log and may result in metadata loss; in some cases, files or directories that cannot be reconnected to their original location may be recovered as orphaned inodes and placed in the lost+found directory, potentially requiring manual inspection and restoration. If in doubt please contact F5 Support.</span></em></span></p>
+<p><span style="color: #c20025;"><span style="background-color: #f1f1f1;"><em><strong>Important</strong>: This procedure requires a maintenance window (estimated 15–30 minutes of partition downtime). A partition configuration backup and ISO images should be taken beforehand if possible. <span style="background-color: #f1f1f1;">xfs_repair</span> recovers metadata and is non-destructive to data.</em></span></span></p>
+<p><strong>Pre-checks (no impact):<br><br></strong><strong></strong></p>
+<ul><li>Take a partition configuration backup:<br><p><span style="font-family: &#39;courier new&#39;, courier, monospace;">syscon-2-active# config<br></span><span style="font-family: &#39;courier new&#39;, courier, monospace;">syscon-2-active(config)# system database config-backup name pre-xfs-repair-backup<br></span><span style="font-family: &#39;courier new&#39;, courier, monospace;">syscon-2-active(config)# exit<br><br></span></p>
+Download the backup to a local computer.</li></ul>
+<p><strong><br>Disable the partition (downtime begins):<br><br></strong></p>
+<ul start="3"><li>Disable the affected partition:<br><p><span style="font-family: &#39;courier new&#39;, courier, monospace;">syscon-2-active(config)# partitions partition &lt;partition-name&gt; config disabled<br></span><span style="font-family: &#39;courier new&#39;, courier, monospace;">syscon-2-active(config)# commit<br><br></span></p>
+</li><li>Wait until the partition is fully stopped on both controllers:<br><p><span style="font-family: &#39;courier new&#39;, courier, monospace;">syscon-2-active# show partitions<br><br></span></p>
+The partition should show disabled on both controllers.<br><br></li></ul>
+<p><strong>Unmount the partition LVs:<br><br></strong></p>
+<ul start="5"><li>SSH to the <strong>affected</strong> controller bash shell and verify mount status:<br><p><span style="font-family: &#39;courier new&#39;, courier, monospace;">$ mount | grep partition1<br><br></span></p>
+</li><li>If any mounts remain, unmount in this order:<br><p><span style="font-family: &#39;courier new&#39;, courier, monospace;">$ umount /var/F5/partition1/shared<br></span><span style="font-family: &#39;courier new&#39;, courier, monospace;">$ umount /var/F5/partition1/IMAGES<br></span><span style="font-family: &#39;courier new&#39;, courier, monospace;">$ umount /var/F5/partition1<br><br></span></p>
+</li><li>Confirm no mounts remain:<br><p><span style="font-family: &#39;courier new&#39;, courier, monospace;">$ mount | grep partition1<br><br></span></p>
+Expected: no output.<br><br></li></ul>
+<p><strong>Run xfs_repair:<br><br></strong></p>
+<ul start="8"><li>Execute the repair on the unmounted logical volume:<br><p><span style="font-family: &#39;courier new&#39;, courier, monospace;">$ xfs_repair /dev/partition_config/partition1<br><br></span></p>
+<ul><li>Capture and save the full output for records.</li><li>A successful run completes all 7 phases and ends with:</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Phase 7 - verify and correct link counts... done<br><br></span></p>
+<ul><li>If the tool reports the filesystem is still dirty or exits with errors, do not proceed. Escalate to F5 Support immediately.</li></ul>
+</li></ul>
+<p><strong><br>Reboot the affected controller only:<br><br></strong></p>
+<ul start="9"><li>Reboot the affected controller to force a fresh mount attempt on the repaired volume:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"># system reboot controllers controller standby<br><br></span></p>
+(Verify standby status with <span style="background-color: #f1f1f1;">show partitions</span> before rebooting.)<br><br></li></ul>
+<p><strong>Verify recovery:<br><br></strong></p>
+<ul start="11"><li>Check partition state:<br><p><span style="font-family: &#39;courier new&#39;, courier, monospace;"># show partitions<br><br></span></p>
+Expected:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">running-active<br></span><span style="font-family: &#39;courier new&#39;, courier, monospace;">running-standby<br><br></span></p>
+</li><li>Verify no XFS errors in logs:<br><p><span style="font-family: &#39;courier new&#39;, courier, monospace;">$ egrep -i &quot;xfs&quot; /var/log/messages | tail -20<br><br></span></p>
+Expected: clean mount messages with no corruption errors.<br><br></li><li>Collect a new qkview for verification once recovery is confirmed.</li></ul>
+<p> </p>
+<p><strong>Re-enable partition if it is still disabled</strong></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">syscon-2-active(config)# partitions partition &lt;partition-name&gt; config enabled<br></span><span style="font-family: &#39;courier new&#39;, courier, monospace;">syscon-2-active(config)# commit</span></p>
+<p> </p>
+<p><strong>If recovery fails:<br><br></strong>If XFS errors persist after repair and reboot, the logical volume may have unrecoverable corruption. Proceed with next steps of zeroing out the XFS log:</p>
+<p> </p>
+<p><span style="text-decoration: underline;"><strong>Next steps:</strong></span></p>
+<p> </p>
+<ul><li>Follow through as above with ensuring the partition is disabled and unmounted. <br><br></li><li>Run xfs_repair via the affected controller:<span dir="ltr"></span></li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">   $ xfs_repair -L /dev/mapper/partition_config/partition1<br><br></span></p>
+<ul><li><span dir="ltr">Reboot the affected controller only</span><span dir="ltr">. <br><br></span></li></ul>
+<p><strong>Verify recovery:</strong></p>
+<p> </p>
+<ul><li>Check partition state:</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">   syscon-2-active# show partitions<br><br></span>       Expected:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">   running-active<br></span><span style="font-family: &#39;courier new&#39;, courier, monospace;">   running-standby<br><br></span></p>
+<ul><li> Verify no XFS errors in logs:</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">   $ egrep -i &quot;xfs&quot; /var/log/messages | tail -20<br>   <br>   </span><span style="font-family: &#39;courier new&#39;, courier, monospace;"></span>Expected: clean mount messages with no corruption errors.<br><br></p>
+<p> </p>
+<p><span dir="ltr"> </span></p>
+<h2>Additional Information</h2>
+<ul><li>The XFS corruption is confined to the affected controller&#39;s logical volume. The redundant controller is unaffected, so there is no traffic/service impact — only redundancy is lost while the issue persists.</li><li>The corrupted block address remains consistent across all reboots; only the device node changes due to LVM re-enumeration after each reboot.</li><li>The corruption pattern — latent while the volume is continuously mounted, exposed only on remount — is characteristic of XFS log corruption caused by an unclean shutdown.</li><li><span style="background-color: #f1f1f1;">xfs_repair</span> must be run while the target volume is unmounted and not actively attempting to remount. Running it against a mounted or actively-remounting volume will fail.</li><li>NVMe SMART data (unsafe_shutdowns counter) can be used as supporting evidence to identify whether unclean shutdowns have occurred during the device&#39;s lifetime.</li></ul>
+</article>
+</body>
+</html>

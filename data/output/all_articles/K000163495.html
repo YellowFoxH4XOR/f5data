@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163495: FQDN pool member remains forced down even though associated FQDN template node object is re-enabled.</title>
+<meta name="description" content="Support Solution: FQDN pool member remains forced down even though associated FQDN template node object is re-enabled. — When FQDN node object is once forced down and then re-enabled, a pool member with the FQDN node object should also become available. However, FQDN pool member object may stuck with &quot;Forced down&quot;…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163495">
+</head>
+<body>
+<header>
+<h1>K000163495: FQDN pool member remains forced down even though associated FQDN template node object is re-enabled.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-01</dd>
+<dt>Updated</dt><dd>2026-10-01</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.3, 21.1.0, 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163495">https://my.f5.com/manage/s/article/K000163495</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When FQDN node object is once forced down and then re-enabled, a pool member with the FQDN node object should also become available. However, FQDN pool member object may stuck with &quot;Forced down&quot; status. Here is example of how issue happens.</p>
+<p> </p>
+<p>First, when FQDN template node object is forced down, FQDN template/ephemeral node status becomes as follows. This is expected behavior.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>root@(bigip2)(cfg-sync In Sync)(Active)(/Common)(tmos)# show ltm node | grep -B 1 -A 9 &quot;Ltm::Node:&quot;
+------------------------------------------
+Ltm::Node: _auto_10.2.2.10 (10.2.2.10)
+------------------------------------------
+Status
+  Availability   : offline
+  State          : disabled
+  Reason         : Forced down
+  Monitor        : none
+  Monitor Status : user-down
+  Session Status : user-disabled
+
+--
+------------------------------------------
+Ltm::Node: www.test1.local (::)
+------------------------------------------
+Status
+  Availability   : available
+  State          : disabled
+  Reason         : The DNS server(s) are available
+  Monitor        : none
+  Monitor Status : fqdn-up
+  Session Status : user-disabled
+
+root@(bigip2)(cfg-sync In Sync)(Active)(/Common)(tmos)#</code></pre>
+<p> </p>
+<p>And once parent FQDN template node object is forced down, FQDN pool member status also becomes forced down with reason &quot;Parent down&quot;. This is also expected behavior.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>root@(bigip2)(cfg-sync In Sync)(Active)(/Common)(tmos)# show ltm pool members | grep -B 1 -A 11 &quot;Ltm::Pool Member:&quot;
+  --------------------------------------------------------------
+  | Ltm::Pool Member: _auto_10.2.2.10:80
+  --------------------------------------------------------------
+  | Status
+  |   Availability   : offline
+  |   State          : disabled-by-parent
+  |   Reason         : Parent down
+  |   Monitor        : tcp (pool monitor)
+  |   Monitor Status : address-down
+  |   Session Status : addr-disabled
+  |   Pool Name      : fqdn_pool
+  |   IP Address     : 10.2.2.10
+  |
+--
+  --------------------------------------------------------------
+  | Ltm::Pool Member: www.test1.local:80
+  --------------------------------------------------------------
+  | Status
+  |   Availability   : offline
+  |   State          : disabled-by-parent
+  |   Reason         : Forced down
+  |   Monitor        : tcp (pool monitor)
+  |   Monitor Status : user-down
+  |   Session Status : addr-disabled
+  |   Pool Name      : fqdn_pool
+  |   IP Address     : ::
+  |
+root@(bigip2)(cfg-sync In Sync)(Active)(/Common)(tmos)#</code></pre>
+<p> </p>
+<p>When the associated FQDN template node object is re-enabled, node object status get back to proper status &quot;available &amp;&amp; enabled&quot;. This is also expected behavior.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>root@(bigip2)(cfg-sync In Sync)(Active)(/Common)(tmos)# show ltm node | grep -B 1 -A 9 &quot;Ltm::Node:&quot;
+------------------------------------------
+Ltm::Node: _auto_10.2.2.10 (10.2.2.10)
+------------------------------------------
+Status
+  Availability   : unknown
+  State          : enabled
+  Reason         : Node address does not have service checking enabled
+  Monitor        : none
+  Monitor Status : unchecked
+  Session Status : enabled
+
+--
+------------------------------------------
+Ltm::Node: www.test1.local (::)
+------------------------------------------
+Status
+  Availability   : available
+  State          : enabled
+  Reason         : The DNS server(s) are available
+  Monitor        : none
+  Monitor Status : fqdn-up
+  Session Status : enabled
+
+root@(bigip2)(cfg-sync In Sync)(Active)(/Common)(tmos)#</code></pre>
+<p> </p>
+<p>However, FQDN pool with the re-enabled FQDN node object is left as &quot;offline &amp;&amp; enabled&quot; with reason &quot;Forced down&quot;. When FQDN node object gets back online, FQDN pool member should also get back to &quot;Available (Enabled)&quot; status.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>root@(bigip2)(cfg-sync In Sync)(Active)(/Common)(tmos)# show ltm pool members | grep -B 1 -A 11 &quot;Ltm::Pool Member:&quot;
+  --------------------------------------------------------------
+  | Ltm::Pool Member: _auto_10.2.2.10:80
+  --------------------------------------------------------------
+  | Status
+  |   Availability   : offline			&lt;=== !!! unexpected
+  |   State          : enabled
+  |   Reason         : Forced down		&lt;=== !!! unexpected
+  |   Monitor        : tcp (pool monitor)
+  |   Monitor Status : user-down
+  |   Session Status : enabled
+  |   Pool Name      : fqdn_pool
+  |   IP Address     : 10.2.2.10
+  |
+--
+  --------------------------------------------------------------
+  | Ltm::Pool Member: www.test1.local:80
+  --------------------------------------------------------------
+  | Status
+  |   Availability   : offline
+  |   State          : enabled
+  |   Reason         : Forced down
+  |   Monitor        : tcp (pool monitor)
+  |   Monitor Status : user-down
+  |   Session Status : enabled
+  |   Pool Name      : fqdn_pool
+  |   IP Address     : ::
+  |
+root@(bigip2)(cfg-sync In Sync)(Active)(/Common)(tmos)#</code></pre>
+<p> </p>
+<p>On GUI, FQDN pool member availability is shown as &quot;Offline (Enabled) - Forced down&quot;.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000sSlh&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000vM4FR" alt="" style="display: block;margin-left: auto;margin-right: auto;" width="1020" height="309"></img></p>
+<p style="text-align: center;"><span style="color: #666666;">Figure: Pool member status after FQDN node is re-enabled</span></p>
+<p> </p>
+<p> </p>
+<h2>Environment</h2>
+<ul><li>FQDN node object is used in a pool.</li><li>FQDN node object is once forced down and then re-enabled.</li><li>Software version with <a href="https://cdn.f5.com/product/bugtracker/ID1571817.html" target="_blank" rel="noopener noreferrer">Bug ID1571817</a> fix (17.1.3.3 or later, 17.5.1.7 or later, or 21.1.0.1 or later, at the time of article publication).</li></ul>
+<p> </p>
+<p> </p>
+<h2>Cause</h2>
+<p><a href="https://cdn.f5.com/product/bugtracker/ID2488345.html" target="_blank" rel="noopener noreferrer"><span style="text-decoration: underline;">Bug ID2488345</span></a>.</p>
+<p> </p>
+<p> </p>
+<h2>Answer/Recommended Actions</h2>
+<p>To recover FQDN pool member with &quot;forced down&quot; status, manually enable FQDN pool member.</p>
+<p>On GUI, navigate to &quot;Local Traffic &gt;&gt; Pools : Pool List &gt;&gt; [pool name]&quot;, check FQDN template pool member checkbox, and press &quot;Enable&quot; button.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000sSlh&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000vM3G9" alt="" style="display: block;margin-left: auto;margin-right: auto;" width="951" height="309"></img></p>
+<p style="text-align: center;"><span style="color: #666666;">Figure: re-enable FQDN template pool member</span></p>
+<p> </p>
+<p>On CLI, run &quot;modify ltm pool [pool name] members modify { [fqdn-pool-member] { state user-up } }&quot;.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>root@(bigip2)(cfg-sync In Sync)(Active)(/Common)(tmos)# list ltm pool fqdn_pool members { www.test1.local:http { session state } }
+ltm pool fqdn_pool {
+    members {
+        www.test1.local:http {
+            session user-enabled
+            state user-down
+        }
+    }
+}
+root@(bigip2)(cfg-sync In Sync)(Active)(/Common)(tmos)# modify ltm pool fqdn_pool members modify { www.test1.local:http { state user-up } }
+root@(bigip2)(cfg-sync In Sync)(Active)(/Common)(tmos)#</code></pre>
+<p> </p>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None.</p>
+<p> </p>
+</article>
+</body>
+</html>

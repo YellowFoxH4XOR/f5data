@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000147051: Create CR/CRD for Virtual K8s Services</title>
+<meta name="description" content="Support Solution: Create CR/CRD for Virtual K8s Services — Create custom resource (CR)/customer resource definition (CRD) to enable Seldon (a platform to deploy AI/ML models) and Ambassador&#x27;s Emissary ingress on F5 App Stack sites.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000147051">
+</head>
+<body>
+<header>
+<h1>K000147051: Create CR/CRD for Virtual K8s Services</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-11-08</dd>
+<dt>Updated</dt><dd>2025-02-19</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Distributed Cloud Services</li><li>F5 Distributed Cloud</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000147051">https://my.f5.com/manage/s/article/K000147051</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2 id="h_01HYHJ5TZCZEQ5PXY5FWV168QK">Description</h2>
+<p>Create custom resource (CR)/customer resource definition (CRD) to enable Seldon (a platform to deploy AI/ML models) and Ambassador&#39;s Emissary ingress on F5 App Stack sites.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000HsdV&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000GH86Q" alt="" width="814" height="846"></img></p>
+<h2 id="h_01HYHJ5TZCW39K7RFTGBFAYQ1J">Environment</h2>
+<ul><li>F5 Distributed Cloud Services</li></ul>
+<h2 id="h_01J0P7G9AZDV6ASTGCRH31DKS7">Prerequisites</h2>
+<p>The minimum instance types required for CustomResourceDefinition (CRD) are the following:</p>
+<ul><li>AWS: minimum size: t3.2xlarge</li><li>GCP: minimum size: n1-standard-8</li><li>Azure: minimum size: Standard_D4_v2</li></ul>
+<h2 id="h_01HYHJ5TZC03TVD4840X056GMZ">Resolution/Answer</h2>
+<p>1. In F5 Distributed Cloud Console or API, create two cloud App Stack sites with local K8s API access enabled (also known as Managed K8s)​. For each site:</p>
+<ul><li style="list-style-type: none;">
+<ul><li>Enable the option for <strong>VoltConsole Access</strong>.</li><li>Allow the option for <strong>Cluster Scoped RBAC and Webhook Resource Access</strong> to enable creation of cluster role and cluster role bindings for emissary CRDs.</li><li>Allow the option for <strong>Vk8s Namespace Access</strong>.</li></ul>
+</li></ul>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000HsdV&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000GH8uP" alt="" width="1060" height="578"></img></p>
+<ul><li style="list-style-type: none;">
+<ul><li>Enter the following command: export KUBECONFIG=$HOME/Downloads/ves_system_person-seldon_kubeconfig_global.yaml</li></ul>
+</li></ul>
+<p>2. For each App Stack site, download Helm and get repositories:</p>
+<ul><li style="list-style-type: none;">
+<ul><li>curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash</li><li>helm repo add datawire <a href="https://app.getambassador.io" target="_blank">https://app.getambassador.io</a></li><li>helm repo update</li></ul>
+</li></ul>
+<p>3. For each App Stack site, use managed K8s API install Ambassador and Seldon Helm charts:</p>
+<p><strong>Note:</strong> This is the step where the CRDs are installed on the App Stack sites. Their installation status will be reflected in the visual k8s instance created later.</p>
+<ul><li style="list-style-type: none;">
+<ul><li>kubectl create namespace emissary</li><li>kubectl apply -f <a href="https://app.getambassador.io/yaml/emissary/3.8.1/emissary-crds.yaml" target="_blank">https://app.getambassador.io/yaml/emissary/3.8.1/emissary-crds.yaml</a></li><li>kubectl wait --timeout=90s --for=condition=available deployment emissary-apiext -n emissary-system</li><li>helm install emissary-ingress --namespace emissary datawire/emissary-ingress</li><li>kubectl -n emissary wait --for condition=available --timeout=90s deploy -lapp.kubernetes.io/instance=emissary-ingress</li><li>kubectl create namespace seldon-system</li><li>helm install seldon-core seldon-core-operator --repo https://storage.googleapis.com/seldon-charts --set usageMetrics.enabled=false --namespace seldon-system --set ambassador.enabled=true --set storageInitializer.image=docker.io/seldonio/rclone-storage-initializer:1.18.0-dev --set predictor_servers.SKLEARN_SERVER.protocols.seldon.image=docker.io/seldonio/sklearnserver</li></ul>
+</li></ul>
+<p dir="auto">4. Install an Ambassador listener with<code>kubectl apply -f default-listener.yaml</code>.</p>
+<pre class="code highlight"><span>apiVersion: getambassador.io/v3alpha1</span>
+<span>kind: Listener</span>
+<span>metadata:</span>
+<span>  name: emissary-ingress-listener-8080</span>
+<span>  namespace: emissary</span>
+<span>spec:</span>
+<span>  port: 8080</span>
+<span>  protocol: HTTP</span>
+<span>  securityModel: XFP</span>
+<span>  hostBinding:</span>
+<span>    namespace:</span>
+<span>      from: ALL</span>
+</pre>
+<p>5. Create a virtual site <strong>seldon-cluster</strong>, with label key and value​.</p>
+<p>6. Attach the label to the two App Stack sites to form a fleet.​</p>
+<p>7. In Distributed Cloud Console or with API, create a namespace <strong>f5xc-seldon</strong> and virtual K8s instance, which selects the virtual site <strong>seldon-cluster</strong>​.</p>
+<p>8. Install sample custom resource by creating a file with iris-model.yaml. Apply the CR in the SLI with <strong>kubectl apply -f iris-model.yaml</strong>, or paste the content of the CR in the Console. To apply the above CR via the Console, under the <strong>Custom Resources</strong> tab, click on the <strong>Add Custom Resource</strong> and paste the CR, with the appropriate vk8s namespace and click <strong>Save</strong>. Afterwards, the panel should be updated with the deployment status on each site, with a description of what version is available on each site and whether the deployment is successful.</p>
+<pre class="code highlight"><span>apiVersion: machinelearning.seldon.io/v1</span>
+<span>kind: SeldonDeployment</span>
+<span>metadata:</span>
+<span>  name: iris-model</span>
+<span>  namespace: f5xc-seldon</span>
+<span>spec:</span>
+<span>  name: iris</span>
+<span>  predictors:</span>
+<span>  - graph:</span>
+<span>      implementation: SKLEARN_SERVER</span>
+<span>      modelUri: gs://seldon-models/v1.18.0-dev/sklearn/iris</span>
+<span>      name: classifier</span>
+<span>    name: default</span>
+<span>    replicas: 1<br></span></pre>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000HsdV&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000GH8xd" alt="" width="1724" height="899"></img></p>
+<p>9. Verify that all resources are deployed to all sites in the virtual site. Also, verify that any corresponding services are available and serving.</p>
+<p>10. Create a Distributed Cloud Services L4 TCP load balancer advertised on virtual site <strong>seldon-cluster</strong>, with origin, and select emissary-ingress service in <strong>emissary</strong> namespace. Advertise on the outside network of the site.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000HsdV&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000GH8zF" alt="" width="652" height="435"></img></p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000HsdV&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000GH945" alt="" width="664" height="263"></img></p>
+<p>11. In the load balancer config, enable the health check option. Add an ambassador Mappings CR. Add the <strong>Path</strong> as <strong>/live</strong>.</p>
+<p>12. Make a request to the prediction model using <strong>curl</strong> command. You should see a 200 response with <strong>{&quot;data&quot;:{&quot;names&quot;:[&quot;t:0&quot;,&quot;t:1&quot;,&quot;t:2&quot;],&quot;ndarray&quot;:[[0.0006985194531162835,0.00366803903943666,0.995633441507447]]},&quot;meta&quot;:{&quot;requestPath&quot;:{&quot;classifier&quot;:&quot;docker.io/seldonio/sklearnserver:1.17.1”}}}</strong>.</p>
+<h2> </h2>
+<h2 id="h_01J0P7G9AZZ03VB7TC4TPX13C2"><strong>Deploying emissary-ingress on Baremetal/VMware/KVM Kubernates Clusters</strong></h2>
+<p>In an on-premise data center, emissary-ingress is deployed on the Kubernetes cluster. Instead of exposing it via the Load Balancer service type, emissary-ingress needs to be exposed as a NodePort. Traffic is sent to a specific port on any of the nodes in the cluster, which route the traffic to emissary-ingress, which then routes the traffic to seldon services running in Kubernetes. This is because Kubernetes does not offer an implementation of network load balancers (Services of type LoadBalancer) for bare-metal clusters. The implementations of network load balancers that Kubernetes does ship with are all glue code that calls out to various IaaS platforms (GCP, AWS, or Azure).</p>
+<p>To install NodePort, apply the following:</p>
+<p>---<br>apiVersion: v1<br>kind: Service<br>metadata:<br>name: ambassador<br>spec:<br>type: NodePort<br>ports:<br>- name: http<br>port: 8088<br>targetPort: 8080<br>nodePort: 30036 # Optional: Define the port you would like exposed<br>protocol: TCP<br>selector:<br>service: ambassador</p>
+<p>Then follow the instructions at <a href="https://metallb.universe.tf/installation/" target="_blank">https://metallb.universe.tf/installation/</a>.</p>
+<p>a. Follow the prerequisite steps - <a href="https://metallb.universe.tf/installation/#preparation" target="_blank">https://metallb.universe.tf/installation/#preparation</a></p>
+<p>b. You can install the CRDs using helm by following the steps available at <a href="https://metallb.universe.tf/installation/#installation-with-helm" target="_blank">https://metallb.universe.tf/installation/#installation-with-helm</a> and the steps following to set up MetalLB.</p>
+<p><br>Commands to run from the above site:</p>
+<ul><li>helm repo add metallb <a href="https://metallb.github.io/metallb" target="_blank">https://metallb.github.io/metallb</a></li><li>helm install metallb metallb/metallb <strong style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Helvetica, Arial, sans-serif;">OR</strong><span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Helvetica, Arial, sans-serif;"> kubectl apply -f <a href="https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml" target="_blank">https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml</a>.</span><span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Helvetica, Arial, sans-serif;"></span></li></ul>
+<h2 id="h_01J0P7R7Z12V3HYQ569VGQ74N2"><span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Helvetica, Arial, sans-serif;">Known Issues</span></h2>
+<p>Issue 1: When the iris-model CR is applied and it fails on some sites. The likely cause for this is the site does not have enough resources - CPU and/or memory and therefore failing to apply the CR. Check the Kubernetes logs or the events for this CR to verify resource issues.</p>
+<p>Issue 2: While applying the emissary-ingress helm chart: <strong>helm install emissary-ingress --namespace emissary datawire/emissary-ingress</strong>. This may sometimes fail with the error <strong>Error: INSTALLATION FAILED</strong>. If this error occurs, reapply the helm chart to fix the issue.</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K31100432: Website content is being blocked with &#x27;&#x27;Mixed Content&#x27;&#x27; warning</title>
+<meta name="description" content="Support Solution: Website content is being blocked with &#x27;&#x27;Mixed Content&#x27;&#x27; warning — When you try to access a website but get an error similar to: Your connection to this site is not fully secure.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K31100432">
+</head>
+<body>
+<header>
+<h1>K31100432: Website content is being blocked with &#x27;&#x27;Mixed Content&#x27;&#x27; warning</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-04-28</dd>
+<dt>Updated</dt><dd>2025-04-01</dd>
+<dt>Applies to</dt><dd><ul><li>F5 App Protect</li><li>BIG-IP</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K31100432">https://my.f5.com/manage/s/article/K31100432</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>When you try to access a website but get an error similar to:<span class="example2"> Your connection to this site is not fully secure</span>.</p>
+
+<p>When you check into it, by either looking at the <strong>Learn more</strong> link, or <strong>Developer Tools</strong> in the browser, you are informed that the site was blocked due to <strong>Mixed Content</strong>.</p>
+
+<p>You can also see an error similar to the following example, on a HAR capture file:</p>
+
+<p><span class="example2">[Mixed-Content] The origin &#39;https://example.mydomain.com&#39; was loaded in a secure context but tried to load an insecure document resource at &#39;https://example.mydomain.com/blank.html&#39;.</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Website with both <strong>HTTPS</strong> and <strong>HTTP</strong> content</li><li>Client browser</li><li>Stream Profile</li><li>iRules</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>In January 2020 Chrome update 80 included, by default, the blocking of mixed content. Along with this the other major browsers are also following suit. This will become even more ardent with Chrome in version 81.</p>
+
+<p>The traffic was sent from the client using https but some of the content will be returned with http. This can be seen in a packet capture.</p>
+
+<p>The reason for this change is due to the need for increased security. However, some web pages can be neither entirely HTTPS nor completely HTTP. Some web pages are delivered over a secure HTTPS connection, but they pull in images, scripts, or other resources via an unencrypted HTTP connection. Such web pages have &quot;mixed content&quot; because they are not fully secure. The web page itself couldn’t be tampered with, but it may pull in a script, image, or iFrame (a web page inside a &quot;frame&quot; on another web page) that could have been tampered with.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>Follow the steps required to address the topic covered in the description.</p>
+
+<ul><li>The only real fix is to fix the legacy issues within the application. The application developer will need to re-code the application and use https for the objects.</li><li>A workaround, depending on the browser, you can choose to load the traffic by clicking <strong>Load Unsafe Scripts</strong>, <strong>Display Mixed Content</strong>, or similar messages.</li></ul>
+The BIG-IP can be used to mitigate the issue using <strong>Stream Profile</strong>. The <strong>Stream Profile</strong> will change http code to https. This should not be a permanent fix as using Stream Profile will increase CPU utilization.<br><br>If the web server is returning compressed content, the iRule method will be required because the LTM does not decompress response content, so it won&#39;t be able to make the replacement.  Either the web server needs to have compression disabled, or the iRule can be used to prevent the web server from sending a compressed response by removing the compression offerings from the client.
+<ul><li><a href="#irule" target="_self">The BIG-IP may be able to mitigate the issue with the use of a <strong>iRule</strong></a></li><li><a href="#VS" target="_self">The BIG-IP may be able to mitigate the issue by using a <strong>Steam Profile</strong> in the Virtual Server. </a></li></ul>
+
+<p><strong><a id="irule" name="irule"></a>To mitigate the issue with the use of a iRule follow these steps:</strong></p>
+
+<ol><li>Create an iRule with the following syntax:<br>	<br>	<span class="example2">when HTTP_REQUEST {<br>	   # Disable the stream filter for all requests<br>	   STREAM::disable<br>	   # LTM does not decompress response content, so if the server has compression enabled<br>	   # and it cannot be disabled on the server, we can prevent the server from<br>	   # sending a compressed response by removing the compression offerings from the client<br>	   HTTP::header remove &quot;Accept-Encoding&quot;<br>	}<br>	when HTTP_RESPONSE {<br>	   # Check if response type is text<br>	      if {[HTTP::header value Content-Type] contains &quot;text&quot;}{<br>	      # Replace http:// with https://<br>	      STREAM::expression {@http://@https://@}<br>	      # Enable the stream filter for this response only<br>	      STREAM::enable<br>	      }<br>	}</span><br>	 </li><li>Assign the iRule to the Virtual Server.</li><li>Assign a<strong> Stream Profile</strong> to you Virtual Server, in order for the <span class="code">STREAM::</span> Commands to work. This can be an empty or the default Stream Profile.  On the GUI navigate to: <strong>Local Traffic</strong> &gt; <strong>Profiles</strong> &gt; <strong>Other</strong> &gt; Stream.</li></ol>
+
+<p><span class="warning">Important: Please test this thoroughly before putting it into place. In some cases, it will now allow the traffic through, but due to the age of the app or other factors and it may not render in the browser.</span><br> </p>
+
+<p><strong><a id="VS" name="VS"></a>To mitigate the issue using only a Stream Profile in the Virtual Server:</strong></p>
+
+<ol><li>Login into the Configuration Utility.</li><li>Navigate to <strong>Local Traffic &gt; Profiles &gt; Other &gt; Stream</strong>.</li><li>Click <strong>Create</strong>.</li><li>Give a name to the <strong>Steam Profile</strong> such as <strong>http-to-https</strong>.</li><li>Check the <strong>Custom </strong>options.</li><li>In Source enter <strong>http</strong>.</li><li>In Target enter <strong>https</strong>.</li><li>Click <strong>Finished</strong>.</li><li>Navigate to <strong>Local Traffic &gt; Virtual Servers &gt; Virtual Server List</strong>.</li><li>Click on the <strong>Virtual Server </strong>which having the issue.</li><li>In <strong>Configuration</strong>, from <strong>Basic </strong>choose <strong>Advanced</strong>.</li><li>In the <strong>Stream Profile</strong>, choose the new <strong>Stream Profile</strong> which as created. For example <strong>http-to-https</strong>.</li><li>Click <strong>Update</strong>.</li></ol>
+<span class="warning">Important: Please test this thoroughly before putting it into place. In some cases, it will now allow the traffic through, but due to the age of the app or other factors and it may not render in the browser.</span>
+
+<p><br><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

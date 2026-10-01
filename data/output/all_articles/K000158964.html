@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000158964: VELOS tenant unable to receive traffic due to backplane VOQ synchronization failure between blades</title>
+<meta name="description" content="Support Solution: VELOS tenant unable to receive traffic due to backplane VOQ synchronization failure between blades — On F5OS VELOS systems, a tenant deployed on a specific blade may be unable to receive ingress traffic when active network interfaces are on a different blade. Traffic arrives at the blade with active…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000158964">
+</head>
+<body>
+<header>
+<h1>K000158964: VELOS tenant unable to receive traffic due to backplane VOQ synchronization failure between blades</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-12-31</dd>
+<dt>Updated</dt><dd>2025-12-31</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000158964">https://my.f5.com/manage/s/article/K000158964</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>On F5OS VELOS systems, a tenant deployed on a specific blade may be unable to receive ingress traffic when active network interfaces are on a different blade. Traffic arrives at the blade with active interfaces, but is not forwarded across the backplane to the blade hosting the tenant, while inter-tenant communication between blades continues to function normally.</p>
+<p>The issue so far occurs after system upgrade to 1.8.2.</p>
+<p>Symptoms include:</p>
+<ul><li>Tenant self-IP is not reachable from external networks</li><li>Traffic is seen on partition level, but tenant does not receive packets</li><li>Other tenants on different blades can receive traffic</li><li>Direct inter-blade communication between tenants is working (direct blade-to-blade traffic)</li></ul>
+<p>Error messages in logs:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">fpgamgr[12]: priority=&quot;Err&quot; msg=&quot;Failed to delete CDB component&quot; ERROR=&quot;locked&quot; LASTERR=&quot;Could not acquire lock&quot;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">or</span><span style="font-family: &#39;courier new&#39;, courier, monospace;"></span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">fpgamgr[13]: priority=&quot;Err&quot; msg=&quot;Failed to create CDB component&quot; COMPONENT=&quot;/voq-states/voq-state{%d %d}&quot; ERROR=&quot;locked&quot; LASTERR=&quot;Could not acquire lock&quot; ERRNO=10. </span></p>
+<p>Diagnostic indicators:</p>
+<ul><li><span style="background-color: #f1f1f1;">show voq-states</span> command shows missing VOQ entries from the blade with active interfaces to the affected blade (that doesn&#39;t have active interfaces)</li><li><span style="background-color: #f1f1f1;">vqf_voq</span> table shows imm_enabled set to 0 for queues from the ingress blade to the affected blade</li><li>Packet captures on the partition show traffic arriving but not being forwarded to the tenant blade</li></ul>
+<p>Note: there is a bug with a bit similar symptoms ID1696325: <a href="https://cdn.f5.com/product/bugtracker/ID1696325.html" target="_blank">https://cdn.f5.com/product/bugtracker/ID1696325.html</a>, but it was resolved in F5OS-C 1.8.1, so it&#39;s not applicable here.</p>
+<h2>Environment</h2>
+<ul><li><strong>Platform:</strong> VELOS chassis platforms (F5-VEL-BTA-CX410-AC, F101, etc.)</li><li><strong>Affected Versions:</strong> F5OS-C 1.8.2</li></ul>
+<h2>Cause</h2>
+<p>The issue is a result of a known <a href="https://cdn.f5.com/product/bugtracker/ID2140617.html" target="_blank">Bug ID2140617</a> - race condition occurs during blade initialization where the blade fails to write to the Configuration Database (CDB) after enabling its Egress Memory Manager (EMM) registers.</p>
+<p>This results in the Ingress Memory Manager (IMM) on other blades not being properly enabled for queues destined to the affected blade, preventing traffic from being forwarded across the backplane from the blade receving ingress traffic to the tenant blade.</p>
+<h2>Recommended Actions</h2>
+<p>Immediate workaround:</p>
+<ol><li>Reboot the affected blade (the blade hosting the non-working tenant) using partition CLI:<br><span style="background-color: #f1f1f1;">cluster nodes node blade-&lt;X&gt; reboot</span><br><span style="color: #15891f;"><em><strong>Note</strong>: Replace &lt;X&gt; with the blade number hosting the non-working tenant.</em></span></li><li>Verify VOQ states are properly synchronized after reboot:<br><span style="background-color: #f1f1f1;">show voq-states</span> - confirm that all blade-to-blade entries show enabled VOQs (for example, if interfaces 1.0 and 2.0 are used on a blade, it should result in [ 4 9 15 ] VOQ numbers in show voq-states output)</li><li>Check velos.log on a partition to confirm there are no voq-related CDB errors for fpgamgr.</li><li>Test connectivity from the tenant to verify traffic flow is restored.</li></ol>
+<p> </p>
+<p>Permanent Resolution:</p>
+<ul><li>Upgrade to F5OS-C version 1.8.3 or later when available</li><li>Contact F5 Support to request an Engineering Hotfix (EHF) for version 1.8.2 if immediate resolution is required</li></ul>
+</article>
+</body>
+</html>

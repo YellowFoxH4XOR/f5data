@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162765: How F5OS-A Handles a Forced Password Change Under &#x27;PasswordAuthentication&#x27; vs &#x27;keyboard-interactive&#x27;</title>
+<meta name="description" content="Support Solution: How F5OS-A Handles a Forced Password Change Under &#x27;PasswordAuthentication&#x27; vs &#x27;keyboard-interactive&#x27; — This is intended to clarify a commonly misunderstood mechanism: it may appear that the forced password-change conversation (&quot;You are required to change your password immediately,&quot; followed by…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162765">
+</head>
+<body>
+<header>
+<h1>K000162765: How F5OS-A Handles a Forced Password Change Under &#x27;PasswordAuthentication&#x27; vs &#x27;keyboard-interactive&#x27;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-05</dd>
+<dt>Updated</dt><dd>2026-08-05</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS Products</li><li>F5OS-A: 1.8.X, 1.7.X, 1.5.X, 1.8.4, 1.8.3, 1.8.0, 1.7.0, 1.5.4, 1.5.3, 1.5.2, 1.5.1, 1.5.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162765">https://my.f5.com/manage/s/article/K000162765</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>This is intended to clarify a commonly misunderstood mechanism: it may appear that the forced password-change conversation (&quot;You are required to change your password immediately,&quot; followed by current/new/confirm prompts) requires a special SSH protocol extension unique to password authentication</p>
+<p>How F5OS-A communicates a forced password change (for example, triggered by last-change being reset to 0, or first login after an administrator uses set-password) to an SSH client when the device is configured to allow plaintext password authentication (PasswordAuthentication yes).</p>
+<h2>Environment</h2>
+<p>F5OS-A (rSeries)<br>SSH access as root or any local user<br>PasswordAuthentication &#39;yes&#39; configured in &#39;/etc/ssh/sshd_config&#39;<br>Password change forced via GUI-initiated password change, CLI set-password, or last-change field reset to 0</p>
+<h2>Cause</h2>
+<ul></ul>
+<ul><li>
+<p>This is expected/by-design SSH and PAM behavior. </p>
+<p>Forced password-change prompts appearing after a shell session is already established (PAM-driven, occurs when password auth is enabled).<br>Forced password-change prompts appearing during SSH authentication itself, before any shell exists (SSH-protocol-driven via keyboard-interactive, occurs when password auth is disabled).</p>
+</li><li>
+<p>When troubleshooting a forced password-change scenario, check whether the prompts appear before or after the SSH session establishes a shell/PTY (visible in ssh -vvv output via the presence of pty-req and shell request accepted messages) to determine which mechanism is in play.</p>
+</li></ul>
+<h2>Answer/Recommended Actions</h2>
+<p>  ​​<span style="text-decoration: underline;">Behavior When Only &#39;PasswordAuthentication&#39; Is Available:</span></p>
+<p> </p>
+<ul><li>The client authenticates using the password method. Authentication completes successfully at the SSH protocol layer — the server issues SSH_MSG_USERAUTH_SUCCESS even though the account has a forced password change pending. The SSH authentication layer has no visibility into account-aging state; it only validates the submitted password.</li><li>The client then requests a pseudo-terminal (PTY) and shell, which the server confirms.</li><li>Once the interactive shell session is open, the PAM (Pluggable Authentication Modules) account-management phase takes over — this is a Linux-level mechanism, separate from SSH itself. PAM detects that the account&#39;s last-change value forces an immediate password change and invokes the standard Linux password-change conversation:<br>You are required to change your password immediately (root enforced)<br>Changing password for root.<br>(current) UNIX password:<br>   New <br>   Retype new </li><li>Because this conversation happens inside an already-open interactive terminal session (not during SSH authentication), it behaves exactly like manually running the passwd command at a shell prompt. Each character typed is transmitted immediately to F5OS-A and echoed back individually — this is standard interactive PTY behavior, not a special protocol feature tied to password authentication.</li><li>Key clarification: No special SSH authentication protocol extension is involved in this flow on F5OS-A. The forced password change is entirely a post-authentication, shell-level PAM interaction — it happens after SSH login succeeds, not as part of the SSH login exchange itself.</li></ul>
+<p><span style="text-decoration: underline;">Behavior When Only keyboard-interactive Is Available:</span></p>
+<p> </p>
+<ul><li>On F5OS-A versions/configurations where PasswordAuthentication no is set (see K000149804 for when this applies), password is not offered by the server at all. In that case, the forced password-change conversation must occur during SSH authentication itself, using keyboard-interactive&#39;s native SSH_MSG_USERAUTH_INFO_REQUEST / SSH_MSG_USERAUTH_INFO_RESPONSE exchange — because no shell/PTY session can exist yet at that stage, and keyboard-interactive is the only method capable of carrying a multi-step, server-driven conversation before authentication completes.</li></ul>
+<p>Depending on the sshd_config state of a given F5OS-A system:</p>
+<p>With password enabled: the forced password change is a post-authentication, PAM-driven shell interaction.<br>With only keyboard-interactive available: the forced password change is a pre-authentication, SSH-protocol-driven interaction.</p>
+<p>Both methods accomplish the same end result — the user is required to set a new password before proceeding — but the underlying mechanism and protocol layer involved are fundamentally different.</p>
+<h2>Additional Information</h2>
+<p>None</p>
+<p> </p>
+</article>
+</body>
+</html>

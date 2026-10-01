@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K90932505: Wireshark may provide misleading TLS version info during SSL handshake</title>
+<meta name="description" content="Support Solution: Wireshark may provide misleading TLS version info during SSL handshake — 11:10:30.972128 0 0.000012 3040 1.1.1.1 55467 2.2.2.2 443 TLSv1 379 OUT s1/tmm1 : Client Hello">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K90932505">
+</head>
+<body>
+<header>
+<h1>K90932505: Wireshark may provide misleading TLS version info during SSL handshake</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-07-20</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>VIPRION Platforms</li><li>BIG-IP Platforms</li><li>BIG-IP</li><li>NGINX Products</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K90932505">https://my.f5.com/manage/s/article/K90932505</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>TLS version shown in wireshark could not indicate the TLS version the client actually supports, this can confuse the user and lead to thinking the client-side is sending an incorrect version of TLS and that&#39;s the reason the TLS handshake is not successful. For example:<br><br><span class="example2">BIG-IP: 1.1.1.1<br>POOL MEMBER: 2.2.2.2<br><br>11:10:30.972128    0    0.000012    3040    1.1.1.1    55467    2.2.2.2    443    TLSv1    379    OUT s1/tmm1 : Client Hello<br>11:10:30.972627    0    0.000499    3040    2.2.2.2    443    1.1.1.1    55467    TCP    157    443 → 55467 [RST, ACK] Seq=983821354 Ack=3528904392 Win=0 Len=0</span><br><br>The first packet shows &quot;TLSv1&quot; in wireshark, which is not accurate. The user may think Bigip doesn&#39;t use TLS 1.2 to start the TLS negotiation as it&#39;s configured in serverssl profile.<br><br><br>Here is an example of serverssl profile in this case. As you can see, the tls 1.0 and tls 1.1 is disabled and ciphers is set to tls 1.2 only.<br><br><span class="example2">ltm profile server-ssl /Common/serverssl_test {<br>    app-service none<br>    cipher-group none<br>    ciphers TLSv1_2<br>    defaults-from /Common/serverssl<br>    options { dont-insert-empty-fragments no-tlsv1.1 no-tlsv1 }<br>}</span><br><br>In fact, the BIG-IP does use TLS 1.2 to start the ssl. Here is a more expanded version of the client hello (sending by BIG-IP on server-side ssl)<br><br><span class="example2">TLSv1.2 Record Layer: Handshake Protocol: Client Hello<br>  Content Type: Handshake (22)<br>  Version: TLS 1.0 (0x0301)                       &lt;-- envelop version<br>  Length: 512<br>  Handshake Protocol: Client Hello<br>    Handshake Type: Client Hello (1)<br>    Length: 508<br>    Version: TLS 1.2 (0x0303)                     &lt;-- highest supported client version, for negotiation</span><br><br>+ The envelop version is just stating that the version of the envelope delivering the protocol negotiations is TLS 1.0.<br>+ The version in the Client Hello record layer stats the highest supported TLS version.<br><br>As BIG-IP is using TLS 1.2, why does wireshark show the client hello as TLSv1?<br><br>Here is the explanation found on wireshark website:<br><br><a href="https://www.wireshark.org/lists/wireshark-users/201701/msg00004.html" target="_self">https://www.wireshark.org/lists/wireshark-users/201701/msg00004.html</a><br><br><span class="note">Note: These links takes you to a resource outside of AskF5, and it is possible that the document may be removed or modified without our knowledge.</span><br><br>&quot;<br>Browsing the SSL dissector&#39;s code it appears that the SSL session version is based on not just the client hello but also the server hello.  So it would seem that in file-c.pcap the server has responded that TLS v1.2 is used while in file-u.pcap either the server&#39;s response was not seen or responded that TLS 1.0 will be used.<br>&quot;<br><br>So BIG-IP does use TLS 1.2 in this case. This is not the root cause for server reset the ssl handshake. The user should check other possible causes on the backend server.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>TLS handshake is needed between two devices and multiple TLS versions are supported by the client-side.</li><li>No answer is received from the server-side.</li><li>Probably an RST is received or just a FIN. </li></ul>
+<span class="sectiontitle">Cause</span>
+
+<p>To initiate the TLS handshake the client  sends a Client Hello.<br><br>Wireshark application tags the TLS version based not only on the Client Hello but on the Server hello message, if only the Client hello is received wireshark could tag incorrectly the Client hello message causing the user may think the problem is on the client-side, but not necessarily, additional investigation should be performed to find out the actual reason the server-side is not accepting the Client hello message.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span><br><br>If you find out only client hello and no server hello, and the client hello is tagged in wireshark as TLSv1. Don&#39;t simply conclude the TLSv1 is the cause because the TLS handshake is not being successful.</p>
+<br>Look at the client hello in detail, reviewing in the envelop level and the handshake level. Those different versions could be considered the minimum version (in the envelope) and the maximum version (in the handshake) that are supported by the client-side.  This concept of minimum and maximum version apply for TLSv1.0, TLSv1.1, and TLSv1.2, for TLSv1.3 is slightly different, you would see a maximum version of TLSv1.2 but a different set of ciphers. 
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p><a href="https://www.wireshark.org/lists/wireshark-users/201701/msg00004.html" target="_self">https://www.wireshark.org/lists/wireshark-users/201701/msg00004.html</a><br><br><span class="note">Note: These links takes you to a resource outside of AskF5, and it is possible that the document may be removed or modified without our knowledge.</span><br> </p>
+</article>
+</body>
+</html>

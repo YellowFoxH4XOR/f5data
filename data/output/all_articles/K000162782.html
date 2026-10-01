@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162782: BIG-IP LTM HTTP Proxy CONNECT and Redirect Errors Caused by Absolute-Form URI Handling</title>
+<meta name="description" content="Support Solution: BIG-IP LTM HTTP Proxy CONNECT and Redirect Errors Caused by Absolute-Form URI Handling — BIG-IP LTM proxy traffic can generate malformed HTTP CONNECT requests and HTTP redirects when an HTTP redirect iRule concatenates [HTTP::host] with an absolute-form [HTTP::uri]. The upstream proxy…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162782">
+</head>
+<body>
+<header>
+<h1>K000162782: BIG-IP LTM HTTP Proxy CONNECT and Redirect Errors Caused by Absolute-Form URI Handling</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-05</dd>
+<dt>Updated</dt><dd>2026-08-05</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162782">https://my.f5.com/manage/s/article/K000162782</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>BIG-IP LTM proxy traffic can generate malformed HTTP <span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">CONNECT</span> requests and HTTP redirects when an HTTP redirect iRule concatenates <span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">[HTTP::host]</span> with an absolute-form <span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">[HTTP::uri]</span>. The upstream proxy may interpret the resulting hostname incorrectly and return <span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">504 Unknown Host</span>.</p>
+<p> </p>
+<p>Example:</p>
+<p><span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">CONNECT Web_1.example.comhttp:443 HTTP/1.1</span></p>
+<p> </p>
+<p>Expected format:</p>
+<p><span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">CONNECT Web_1.example.com:443 HTTP/1.1</span></p>
+<p> </p>
+<p>Proxy response:</p>
+<p><span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">HTTP/1.1 504 Unknown Host</span></p>
+<p> </p>
+<p>A malformed redirect may also contain a duplicated host and scheme:</p>
+<p><span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">Location: https://Web_1.example.comhttp://Web_1.example.com/path/bookmark.jsp...</span></p>
+<p> </p>
+<h2>Environment</h2>
+<p>BIG-IP</p>
+<p> </p>
+<h2>Cause</h2>
+<p>The redirect iRule assumes that <span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">[HTTP::uri]</span> contains only a path, such as <span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">/path/bookmark.jsp</span>.</p>
+<p>Proxy traffic can instead contain an absolute-form URI that includes the scheme and hostname:</p>
+<p><span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">http://Web_1.example.com/path/bookmark.jsp</span></p>
+<p> </p>
+<p>The iRule concatenates the host and complete URI:</p>
+<p><span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">https://[HTTP::host][HTTP::uri]</span></p>
+<p> </p>
+<p>When <span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">[HTTP::uri]</span> already contains an absolute-form URI, this produces an invalid redirect similar to:</p>
+<p><span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">https://Web_1.example.comhttp://Web_1.example.com/path/bookmark.jsp</span></p>
+<p> </p>
+<p>The malformed redirect can subsequently generate an invalid <span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">CONNECT</span> request. The upstream proxy interprets <span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">Web_1.example.comhttp</span> as the destination hostname and returns <span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">504 Unknown Host</span>.</p>
+<p> </p>
+<h2>Answer/Recommended Actions</h2>
+<ul><li>Review the iRule applied to the HTTP redirector virtual server.</li><li>Confirm whether the iRule concatenates <span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">[HTTP::host]</span> and <span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">[HTTP::uri]</span> without accounting for absolute-form URIs.</li><li>Update the iRule to remove the applicable absolute-form prefix before constructing the redirect. Adapt the prefix to the application and proxy traffic.</li></ul>
+<p class="ql-indent-2" style="padding-left: 40px;">The logic should:</p>
+<ul><li style="list-style-type: none;">
+<ul><li>Detect whether <span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">[HTTP::uri]</span> begins with the expected absolute-form prefix.</li><li>Remove only that prefix. You may need to modify the redirector iRule as shown below:</li></ul>
+</li></ul>
+<pre style="padding-left: 120px;"><em><span style="font-size: 12px;">when HTTP_REQUEST { </span></em><br><em><span style="font-size: 12px;">   if {[HTTP::uri] starts_with &quot;<span style="font-family: &#39;JetBrains Mono&#39;, monospace;">Web_1.example.com/</span>&quot;} {</span></em><br><em><span style="font-size: 12px;">     HTTP::uri [string map {&quot;<span style="font-family: &#39;JetBrains Mono&#39;, monospace;">Web_1.example.com/</span>&quot; &quot;&quot;} [HTTP::uri]]</span></em><br><em><span style="font-size: 12px;">   }</span></em><br><em><span style="font-size: 12px;">     HTTP::redirect https://[HTTP::host][HTTP::uri] </span></em><br><em><span style="font-size: 12px;"> }</span></em><br><em><span style="font-size: 12px;">}</span></em></pre>
+<ul><li style="list-style-type: none;">
+<ul><li>Preserve the remaining path, query string, and encoded characters.</li><li>Construct the HTTPS redirect using the normalized URI.</li></ul>
+</li></ul>
+<ul><li>Test the change with:
+<ul><li>Standard origin-form requests:<br><span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;"> GET /path HTTP/1.1</span><span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;"></span></li></ul>
+</li></ul>
+<ul><li style="list-style-type: none;">
+<ul><li>Absolute-form requests:<br><span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;"> GET http://host/path HTTP/1.1</span><span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;"></span></li></ul>
+</li></ul>
+<ul><li style="list-style-type: none;">
+<ul><li>HTTPS <span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">CONNECT</span> requests:<br><span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;"> CONNECT host:443 HTTP/1.1</span></li></ul>
+</li></ul>
+<ul><li style="list-style-type: none;">
+<ul><li>Requests containing query parameters.</li><li>Requests containing encoded characters.</li><li>Requests traversing both the forward-proxy and application virtual servers.</li></ul>
+</li></ul>
+<p> </p>
+<ul><li>If the issue recurs, capture traffic on both sides of the BIG-IP virtual server and compare:
+<ul><li>The request received from the client or downstream proxy.</li><li>The request sent by BIG-IP to the upstream proxy.</li><li>Any HTTP redirect returned by the application server.</li></ul>
+</li></ul>
+<ul><li>Determine whether the malformed request was:
+<ul><li>Received from the client.</li><li>Modified by BIG-IP processing or an iRule.</li><li>Introduced by another proxy in the chain.</li></ul>
+</li></ul>
+<p> </p>
+<ul><li>Review the BIG-IP configuration for additional HTTP profiles, traffic policies, iRules, proxy-chaining settings, or access policies that may modify the request or response.</li><li>Removing and re-adding the HTTP and HTTP Proxy Connect profiles may reinitialize proxy-processing state or existing connections, but this should be treated as a recovery action rather than the root-cause correction.</li></ul>
+<p> </p>
+<h2>Additional Information</h2>
+<p> </p>
+</article>
+</body>
+</html>

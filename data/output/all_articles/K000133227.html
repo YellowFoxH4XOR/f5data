@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000133227: DNS::is_wideip output may mis-lead if the DNS query type is not correctly filtered.</title>
+<meta name="description" content="Support Solution: DNS::is_wideip output may mis-lead if the DNS query type is not correctly filtered. — Using the DNS::is_wideip in the irule to log if the request is for a wideip.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000133227">
+</head>
+<body>
+<header>
+<h1>K000133227: DNS::is_wideip output may mis-lead if the DNS query type is not correctly filtered.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-03-28</dd>
+<dt>Updated</dt><dd>2026-07-17</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 15.1.8</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000133227">https://my.f5.com/manage/s/article/K000133227</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong style="font-family: &#39;Arial&#39;, sans-serif;font-size: 18pt;">Description</strong></h2>
+<ul><li>Using the DNS::is_wideip in the irule to log if the request is for a wideip.</li><li>Drop the request if it is not for a wide-ip existing on the box.</li><li>irule configured exactly as shown in the article: <a href="https://clouddocs.f5.com/api/irules/DNS__is_wideip.html" target="_self">https://clouddocs.f5.com/api/irules/DNS__is_wideip.html</a> and modified to log as shown below:</li></ul>
+<p>when DNS_REQUEST priority {</p>
+<p>   if {![DNS::is_wideip [DNS::question name]]} {</p>
+<p>        log local0. &quot;[DNS::question name] is NOT wideIP&quot;</p>
+<p>        DNS::drop</p>
+<p>        return</p>
+<p>    } else {</p>
+<p>             log local0. &quot;[DNS::question name] is a wideIP&quot;</p>
+<p>             return</p>
+<p>            }</p>
+<p>}</p>
+<p> </p>
+<h2><strong style="font-family: &#39;Arial&#39;, sans-serif;font-size: 18pt;">Environment</strong></h2>
+<ul><li>GTM/DNS configured with wide-ip</li><li>Customer wants to drop all the queries for non-existent wide-ip&#39;s.</li><li>The irule is intermittently logging the existent wide-ip as &quot;not wide-ip&quot; as shown below:</li><li>WIde-IPs are configured for A record only.</li></ul>
+<p>Mar 28 01:09:51 test.local info tmm1[30300]: Rule /Common/wide_or_not &lt;DNS_REQUEST&gt;: the dns question name is test1.rest.com</p>
+<p>Mar 28 01:09:51 test.local info tmm1[30300]: Rule /Common/wide_or_not &lt;DNS_REQUEST&gt;: test1.rest.com is a wideIP</p>
+<p>Mar 28 01:26:05 test.local info tmm3[30300]: Rule /Common/wide_or_not &lt;DNS_REQUEST&gt;: the dns question name is test1.rest.com</p>
+<p>Mar 28 01:26:05 test.local info tmm3[30300]: Rule /Common/wide_or_not &lt;DNS_REQUEST&gt;: test1.rest.com is NOT wideIP</p>
+<p> </p>
+<p> </p>
+<h2><strong style="font-family: &#39;Arial&#39;, sans-serif;font-size: 18pt;">Cause</strong></h2>
+<p><span style="font-family: &#39;Arial&#39;, sans-serif;font-size: 10.5pt;">The irule doesnt take into account the DNS Questions::type. So if client are sending the DNS query for A record type, the irule will work fine, however, if the type is changed anything other than A, the irule will log as &quot;NOT wideip&quot;.</span></p>
+<p> </p>
+<p><span style="font-family: &#39;Arial&#39;, sans-serif;font-size: 10.5pt;">This might mislead the reader of the logs to believe that the irule is failing to detect the wideip. </span></p>
+<p> </p>
+<p> </p>
+<h2><span style="font-family: &#39;Arial&#39;, sans-serif;font-size: 10.5pt;"> </span><strong style="font-family: &#39;Arial&#39;, sans-serif;font-size: 18pt;">Recommended Actions</strong></h2>
+<ol><li><span style="font-family: &#39;Arial&#39;, sans-serif;font-size: 10.5pt;">A better way to re-write this irule would be to first check if the DNS question type is A or not. Only proceed if the record type is A (note this is just an example, you may need to change the syntax to suit your environment).</span></li></ol>
+<p>when DNS_REQUEST priority {</p>
+<p>log local0. &quot;the dns question name is [DNS::question name] and type: [DNS::question type]&quot;</p>
+<p> if { [DNS::question type] eq &quot;A&quot;} {</p>
+<p>      log local0. &quot;The DNS questions type is [DNS::question type] check if this is a wide-ip or not&quot;</p>
+<p>         if {![DNS::is_wideip [DNS::question name]]} {</p>
+<p>               log local0. &quot;[DNS::question name] is NOT wideIP&quot;</p>
+<p>               DNS::drop</p>
+<p>               return</p>
+<p>            } else {</p>
+<p>                     log local0. &quot;[DNS::question name] is a wideIP with a valid [DNS::question type] record &quot;</p>
+<p>                     return</p>
+<p>                    }</p>
+<p>    }</p>
+<p>    log local0. &quot;The DNS questions type is [DNS::question type] and is not allowed&quot;</p>
+<p>    DNS::drop</p>
+<p>    return</p>
+<p>}</p>
+<p> </p>
+<p> </p>
+<p>In this irule, we are checking if the DNS question type is A, if yes, only then proceeds to check if this is a request for wide-ip or not.</p>
+<p> </p>
+<p> </p>
+<h2><strong style="font-family: &#39;Arial&#39;, sans-serif;font-size: 18pt;">Additional Information</strong></h2>
+<p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_DNS_is_wideip.html" target="_self">https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_DNS_is_wideip.html</a></p>
+</article>
+</body>
+</html>

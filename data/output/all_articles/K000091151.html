@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000091151: &quot;Connection reset by peer&quot; log is stored on NIC</title>
+<meta name="description" content="Support Solution: &quot;Connection reset by peer&quot; log is stored on NIC — 2021/12/09 09:43:51 \[error\] 123#123: \*68 recv() failed (104: Connection reset by peer) while proxying and reading from upstream, client: 10.244.94.186, server: 0.0.0.0:3306, upstream…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000091151">
+</head>
+<body>
+<header>
+<h1>K000091151: &quot;Connection reset by peer&quot; log is stored on NIC</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-12-13</dd>
+<dt>Updated</dt><dd>2026-07-30</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000091151">https://my.f5.com/manage/s/article/K000091151</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Nginx Ingress Controller stored follwing logs when TCP reset received from upstream:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">2021/12/09 09:43:51 \[error\] 123#123: \*68 recv() failed (104: Connection reset by peer) while proxying and reading from upstream, client: 10.244.94.186, server: 0.0.0.0:3306, upstream: &quot;10.200.145.21:3306&quot;, bytes from/to client:792/2564, bytes from/to upstream:2564/792</span></p>
+<h2>Environment</h2>
+<p>The configuration has been applied with Steam Snippet on configmap like below:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>apiVersion: v1
+data:
+ stream-snippets: |
+  upstream mysql-tcp {
+    zone mysql-tcp 64k;
+    server 10.200.145.24:3306;
+  }
+  server {
+    listen 3306 backlog=50000;
+    proxy_pass mysql-tcp;
+    proxy_timeout 10s;
+    status_zone mysql-tcp;
+  }
+kind: ConfigMap
+metadata:
+name: nginx-config</code></pre>
+<p>above config shows like below on Nginx-Ingress-Controller:</p>
+<p>$<span style="background-color: #f1f1f1;">kubectl exec -it &lt;Nginx-Ingress-Controller pod name&gt; -- nginx -T</span></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>stream {
+  log_format stream-main &#39;$remote_addr \[$time_local\] &#39;
+           &#39;$protocol $status $bytes_sent $bytes_received &#39;
+           &#39;$session_time &quot;$ssl_preread_server_name&quot;&#39;;
+
+  access_log /dev/stdout stream-main;
+
+
+  upstream mysql-tcp {
+    zone mysql-tcp 64k;
+    server 10.200.145.24:3306;
+  }
+  server {
+    listen 3306 backlog=50000;
+    proxy_pass mysql-tcp;
+    proxy_timeout 10s;
+    status_zone mysql-tcp;
+  }</code></pre>
+<h2>Cause</h2>
+<p>Once you applied stream-snippet on configmap, nginx-ingress-controller applied default logs format like below:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>  log_format stream-main &#39;$remote_addr \[$time_local\] &#39;
+           &#39;$protocol $status $bytes_sent $bytes_received &#39;
+           &#39;$session_time &quot;$ssl_preread_server_name&quot;&#39;;
+</code></pre>
+<p>therefore, this log appears when upstream send TCP reset packet with above logs format</p>
+<h2>Recommended Actions</h2>
+<p>Not NIC side issue, You may need to check the upstream device</p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

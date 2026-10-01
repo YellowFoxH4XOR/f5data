@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000158940: Configuring Required Node Annotations for F5 CIS Static Routes with Cilium CNI</title>
+<meta name="description" content="Support Solution: Configuring Required Node Annotations for F5 CIS Static Routes with Cilium CNI — WARNING: Cilium node podCIDR annotation not found on node &lt;node-name&gt;, node has spec.podCIDR ?">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000158940">
+</head>
+<body>
+<header>
+<h1>K000158940: Configuring Required Node Annotations for F5 CIS Static Routes with Cilium CNI</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-12-29</dd>
+<dt>Updated</dt><dd>2025-12-30</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>F5 Automation and Orchestration</li><li>F5 Application Services 3 Extension</li><li>F5 BIG-IP Container Ingress Services</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000158940">https://my.f5.com/manage/s/article/K000158940</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<ul><li>When deploying F5 Container Ingress Services (CIS) with Cilium CNI in static routing mode, CIS requires specific node annotations to create static routes for pod network traffic. Without these annotations, the following warning appears in CIS logs:</li></ul>
+<pre><code>WARNING: Cilium node podCIDR annotation not found on node &lt;node-name&gt;, node has spec.podCIDR ?</code></pre>
+<ul><li>This issue occurs because newer versions of Cilium do not automatically add the required annotations that CIS uses to discover pod CIDR ranges.</li><li>While the pod CIDR information exists in the node&#39;s spec.podCIDR field, CIS specifically looks for Cilium-specific annotations to configure routing.</li></ul>
+<h2>Environment</h2>
+<ul><li><strong>Product</strong>: F5 Container Ingress Services (K8S-BIGIP-Ctlr)</li><li><strong>Versions</strong>: 2.16.1, 2.20.2, and later</li><li><strong>CNI</strong>: Cilium v1.17.4 or later</li><li><strong>Kubernetes</strong>: v1.33.2 or later</li><li><strong>Configuration Requirements</strong>:
+<ul><li><code>static-routing-mode: true</code></li><li><code>orchestration-cni: cilium-k8s</code></li><li><code>pool_member_type: cluster</code></li></ul>
+</li></ul>
+<h2>Cause</h2>
+<ul><li>Newer versions of Cilium do not automatically populate the <span dir="ltr">io.cilium.network.ipv4-pod-cidr or </span><a target="_blank" title="" href="https://network.cilium.io/ipv4-pod-cidr">network.cilium.io/ipv4-pod-cidr</a><span dir="ltr"> </span>annotations on Kubernetes nodes.</li><li>CIS depends on these annotations to read the pod CIDR range and create corresponding static routes on the BIG-IP device.</li></ul>
+<h2>Recommended Actions</h2>
+<ol><li> Retrieve the pod CIDR from the node specification:</li></ol>
+<pre><code class="language-bash">kubectl get node &lt;node-name&gt; -o yaml | grep podCIDR</code></pre>
+<ol><li>2. Add the Cilium pod CIDR annotation to each node:</li></ol>
+<pre><code class="language-bash">kubectl annotate node/ &lt;node-name&gt; io.cilium.network.ipv4-pod-cidr=&lt;pod-cidr&gt;</code></pre>
+<h2>For example</h2>
+<pre><code class="language-bash">kubectl annotate node ciliumk8s-ubuntu-server io.cilium.network.ipv4-pod-cidr=10.42.0.0/16</code></pre>
+<p><strong>Note</strong>: Use the appropriate annotation format based on your Cilium version:</p>
+<ul><li><code>io.cilium.network.ipv4-pod-cidr</code> (newer versions)</li><li><code>network.cilium.io/ipv4-pod-cidr</code> (older versions)</li></ul>
+<h2>Verify F5 CIS has created the static route on the BIG-IP device:</h2>
+<pre><code class="language-bash">tmsh list net route</code></pre>
+<h2>Expected output:</h2>
+<pre><code>net route k8s/-&lt;node-name&gt;-&lt;node-ip&gt; {
+    description &lt;virtual-server-ip&gt;
+    gw &lt;node-ip&gt;
+    network &lt;pod-cidr&gt;
+    partition kubernetes
+}</code></pre>
+<h2>Verify routing information to pod</h2>
+<pre><code class="language-bash">ip r get &lt;pod-ip&gt;</code></pre>
+<h2>Expected output</h2>
+<pre><code>&lt;pod-ip&gt; via &lt;node-ip&gt; dev Internal src &lt;F5_Self_IP&gt;</code></pre>
+<h2>Additional Information</h2>
+<ul><li>CIS automatically detects which annotation format to use (io.cilium.network.ipv4-pod-cidr or network.cilium.io/ipv4-pod-cidr) based on the cilium version</li><li>The node IP address is parsed from node.Status.Addresses in the node manifest</li><li>After adding the annotation, CIS automatically creates static routes without requiring a controller restart</li><li>This configuration is only required when using CIS in static routing mode with Cilium CNI</li><li>The annotation must be present before deploying applications that require routing through CIS</li><li>If nodes are added dynamically to the cluster, ensure the annotation is added as part of the node provisioning process</li></ul>
+</article>
+</body>
+</html>

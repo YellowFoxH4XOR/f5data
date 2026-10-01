@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161488: SNMP Polling Over Management Interface Fails When SNMPv2 Trap Destinations Are Configured</title>
+<meta name="description" content="Support Solution: SNMP Polling Over Management Interface Fails When SNMPv2 Trap Destinations Are Configured — On BIG-IP systems, SNMP polling over the management interface may fail silently when SNMPv2c trap destinations are configured. SNMP GET requests are received by the device (visible in tcpdump), but…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161488">
+</head>
+<body>
+<header>
+<h1>K000161488: SNMP Polling Over Management Interface Fails When SNMPv2 Trap Destinations Are Configured</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-05-31</dd>
+<dt>Updated</dt><dd>2026-07-16</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.0, 17.1.2, 17.1.1, 17.1.X, 17.5.X, 17.5.1, 17.5.0, 17.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161488">https://my.f5.com/manage/s/article/K000161488</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>On BIG-IP systems, SNMP polling over the management interface may fail silently when SNMPv2c trap destinations are configured. SNMP GET requests are received by the device (visible in tcpdump), but no response is returned to the polling host.</p>
+<h2>Environment</h2>
+<ul><li>BIG IP</li><li>SNMPv2 Traps</li></ul>
+<h2>Cause</h2>
+<p>This issue is caused by <a href="https://cdn.f5.com/product/bugtracker/ID2251233.html" target="_blank">Bug ID 2251233</a>, which affects multiple BIG-IP versions and has no software fix as of this writing.</p>
+<p>The root cause is that the v2-traps configuration renders to a trap2sink directive, which interferes with SNMP polling over the management interface.</p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li>Remove the problematic v2 trap destination:</li></ol>
+<pre class="language-php" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify sys snmp v2-traps delete { &lt;trap-destination-name&gt; }</code></pre>
+<ol start="2"><li>Re-create the trap destination under the standard <strong><em>traps </em></strong>setcion<strong></strong></li></ol>
+<pre class="language-php" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh create sys snmp traps &lt;trap-destination-name&gt; {
+    host &lt;trap-destination-ip&gt;
+    port 162
+    network mgmt
+    community &lt;community-string&gt;
+    version 2c
+}</code></pre>
+<ol start="3"><li>Save configuration</li></ol>
+<pre class="language-php" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh save sys config</code></pre>
+<ol start="4"><li>Verify configuraition: </li></ol>
+<pre class="language-php" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh list sys snmp</code></pre>
+<p> confirm that the trap destination appears under<strong> <em>traps { } </em></strong>block and not as a seperate <strong><em>v2-traps</em></strong> entry  </p>
+<ol start="5"><li>Test SNMP polling from the external host to confirm responses are now received.</li><li>High Availability (HA) environment:</li></ol>
+<p> Once confirmed working on the active unit, sync the configuration to the standby peer: </p>
+<pre class="language-php" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh run sys config-sync to-group &lt;device-group-name&gt;</code></pre>
+<h2>Additional Information</h2>
+<p>As an example of how it was before and how it should look after modification done - run <em style="font-family: Menlo, Consolas, &#39;DejaVu Sans Mono&#39;, &#39;Courier New&#39;, monospace;">list /sys snmp </em><span style="font-family: Menlo, Consolas, &#39;DejaVu Sans Mono&#39;, &#39;Courier New&#39;, monospace;">and check the &#39;</span><em style="font-family: Menlo, Consolas, &#39;DejaVu Sans Mono&#39;, &#39;Courier New&#39;, monospace;">traps</em><span style="font-family: Menlo, Consolas, &#39;DejaVu Sans Mono&#39;, &#39;Courier New&#39;, monospace;">&#39; section.</span></p>
+<p><span style="font-family: Menlo, Consolas, &#39;DejaVu Sans Mono&#39;, &#39;Courier New&#39;, monospace;">Before:</span></p>
+<pre class="language-php" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>&lt;snip&gt;
+      traps {
+         solarwinds-TEST01{ 
+               host 10.10.10.220
+               port 162
+               network mgmt
+               community *********
+         solarwinds-TEST02 { 
+               host 10.10.10.221
+               port 162
+               network mgmt
+               community *********
+      }
+}</code></pre>
+<p>After Modification done:</p>
+<pre class="language-php" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>    traps {
+        solarwinds-TEST01 {
+            auth-password-encrypted &quot;****&quot;
+            community XXXXXXX
+            host 10.10.10.220
+            privacy-password-encrypted &quot;****&quot;
+        }
+        solarwinds-TEST02 {
+            auth-password-encrypted &quot;****&quot;
+            community XXXXXXX
+            host 10.10.10.221
+            privacy-password-encrypted &quot;****&quot;
+        }
+    }</code></pre>
+</article>
+</body>
+</html>

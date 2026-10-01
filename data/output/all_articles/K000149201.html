@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000149201: Configure iRule for logging connections via HSL</title>
+<meta name="description" content="Knowledge: Configure iRule for logging connections via HSL — This guide provides step-by-step instructions for configuring an iRule on an F5 BIG-IP system to send logs via High-Speed Logging (HSL) whenever a client connects to a virtual server. This setup…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000149201">
+</head>
+<body>
+<header>
+<h1>K000149201: Configure iRule for logging connections via HSL</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2025-01-06</dd>
+<dt>Updated</dt><dd>2025-11-20</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.0.0, 15.0.X, 15.0.1, 17.X.X, 16.X.X, 15.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000149201">https://my.f5.com/manage/s/article/K000149201</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+<p>This guide provides step-by-step instructions for configuring an iRule on an F5 BIG-IP system to send logs via High-Speed Logging (HSL) whenever a client connects to a virtual server. This setup enables centralized logging for monitoring and troubleshooting by directing logs to specific syslog servers or logging platforms and can be used a template for other specific logging scenarios.</p>
+<p><span class="sectiontitle">Procedures</span></p>
+<p><span class="subsectiontitle">Create HSL Pools</span></p>
+<p>Before creating a pool, gather the IP addresses of the servers you want to include. Ensure that the remote log servers are configured to listen to and receive log messages from the BIG-IP system.</p>
+<ol><li>Go to<strong> Local Traffic </strong>&gt;<strong> Pools</strong>.</li><li>The <strong>Pool List</strong> page opens. Click <strong>Create</strong>.</li><li>The <strong>New Pool</strong> page opens. In the <strong>Name</strong> field, type a unique name for the pool.</li><li>Using the <strong>New Members</strong> setting, add the IP address for each remote logging server:
+<ul><li>Type an IP address in the <strong>Address</strong> field, or select a node address from the <strong>Node List</strong>.</li><li>Type a service number in the <strong>Service Port</strong> field, or select a service name from the list.
+<ul><li><span class="note"><strong>Note</strong>: Typical remote logging servers require port 514.</span></li></ul>
+</li><li>Click <strong>Add</strong>.</li></ul>
+</li><li>Click <strong>Finished</strong>.</li><li>Repeat for each additional pool.</li></ol>
+<p><span class="subsectiontitle">Create log destinations</span></p>
+<ol><li>Go to <strong>System </strong>&gt;<strong> Logs </strong>&gt;<strong> Configuration </strong>&gt;<strong> Log Destinations</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong> provide a unique name for the log destination.</li><li>For <strong>Type</strong> select <strong>Remote High-Speed Log</strong>.</li><li>For <strong>Pool Name</strong> select a pool you created previously.</li><li>For <strong>Protocol</strong> select <strong>TCP</strong> or <strong>UDP</strong> depending on your log server configuration.</li><li>Select <strong>Finished</strong>.</li><li>Repeat for each pool you created.</li></ol>
+<p><span class="subsectiontitle">Create log publisher</span></p>
+<ol><li>Go to <strong>System </strong>&gt;<strong> Logs </strong>&gt;<strong> Configuration </strong>&gt;<strong> Log Publishers</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong> provide a unique name for the log publisher.</li><li>For <strong>Destinations</strong> move the log destinations you created previously from the <strong>Available</strong> list to <strong>Selected</strong>.</li><li>Select <strong>Finished</strong>.</li></ol>
+<p><span class="subsectiontitle">Create the iRule</span></p>
+<ol><li>Go to <strong>Local Traffic</strong>&gt;<strong> iRules</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong> provide a name for the iRule.</li><li>For <strong>Definition</strong> use the example iRule in this article as a guide.</li><li>Select <strong>Finished</strong>.</li></ol>
+<p>Use the following iRule to log client connections via HSL. Replace <strong>hsl_pools</strong> with the name of your log publisher. This iRule is designed to send logs to HSL pools:</p>
+<p><span class="subsubsectiontitle">iRule Example:</span></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when CLIENT_ACCEPTED {
+    set vs [IP::local_addr]:[TCP::local_port]
+
+    # Open HSL connections with configured pools
+    set hsl_pub [HSL::open -publisher /Common/hsl_pools] 
+}
+
+when SERVER_CONNECTED {
+    set client [IP::client_addr]:[TCP::client_port]
+    set srv [IP::remote_addr]:[TCP::remote_port]
+    set log_message &quot;&lt;134&gt;Client: $client connected to $vs and routed to server $srv at [clock format [clock seconds] -format {%Y-%m-%d %H:%M:%S}]&quot;
+
+    # Send logs to HSL pool
+    HSL::send $hsl_pub $log_message 
+}</code></pre>
+<p><span class="subsectiontitle">Apply the iRule to the virtual server</span></p>
+<ol><li>Navigate to <strong>Local Traffic &gt; Virtual Servers &gt; Virtual Server List</strong>.</li><li>Select <strong>Edit</strong> in the <strong>Resources</strong> column of the target virtual server.</li><li>In the <strong>iRules</strong> section select <strong>Manage</strong>.</li><li>Select the iRule from the <strong>Available</strong> list and add it to the <strong>Enabled</strong> list.</li><li>Select <strong>Finished</strong>.<a href="https://clouddocs.f5.com/api/irules/HSL__send.html" target="_blank"></a></li></ol>
+</article>
+</body>
+</html>

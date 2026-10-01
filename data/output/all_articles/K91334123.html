@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K91334123: After upgrade REST API calls fail with &#x27;&#x27;401 Authentication Failed&#x27;&#x27;</title>
+<meta name="description" content="Support Solution: After upgrade REST API calls fail with &#x27;&#x27;401 Authentication Failed&#x27;&#x27; — Since upgrading to BIG-IP versions (17.0.0, 16.1.2.2, 15.1.5.1, 14.1.4.6, 13.1.5), periodically getting 401 errors with REST calls with token-based authentication.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K91334123">
+</head>
+<body>
+<header>
+<h1>K91334123: After upgrade REST API calls fail with &#x27;&#x27;401 Authentication Failed&#x27;&#x27;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-05-25</dd>
+<dt>Updated</dt><dd>2025-05-01</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K91334123">https://my.f5.com/manage/s/article/K91334123</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong><span class="sectiontitle">Description</span></strong></h2>
+<p>Since upgrading to BIG-IP versions (17.0.0, 16.1.2.2, 15.1.5.1, 14.1.4.6, 13.1.5), periodically getting 401 errors with REST calls with token-based authentication.<br><br>This issue may occur intermittently.</p>
+<h2><strong><span class="sectiontitle">Environment</span></strong></h2>
+<ul><li>BIG-IP version 17.0.0, 16.1.2.2, 15.1.5.1, 14.1.4.6, 13.1.5</li><li>REST API calls with token-based authentication (such as using curl with a token in a script)</li><li>AS3 deployments</li><li>Ansible</li><li>Python programs that rely on token authentication</li></ul>
+<h2><strong><span class="sectiontitle">Cause</span></strong></h2>
+<p>There are a few potential causes for this issue and workarounds depending on how you are encountering the issue.  Two of which are:</p>
+<ul><li><a href="#a1" target="_self">Token generation issues on 13.1.5 and 14.1.4.6 are generally due to ID877145. </a>
+<ol><li>In some instances a token may fail to generate as a result of ID877145 on version 14.1.4.6 or 13.1.5. If that happens and your script does not test for the existence of a token and attempts to make a call with a null token value (due to failed generation) you can encounter a 401 error.</li></ol>
+</li><li><a href="#a2" target="_self">Use of that token failing to authenticate are due to ID1108181.</a></li></ul>
+<ol style="margin-left: 40px;"><li>A common issue inside of scripts is when tokenrefresh is called this is primarily used inside of the F5 modules with python. This refresh often fails. If you can modify your code to either generate a new token or continue to use the old one it will limit the instances of this 401 issue.</li><li>The third common issue where this is seen is when your script generates a token and then attempts to use it rapidly (typically in less than 1 second of generation).  If you simply introduce a delay of 1 second between token generation and use then it can remediate this issue.</li><li>Ansible playbooks and AS3 deployments will frequently encounter this - a workaround does not exist for those.</li></ol>
+<ul><li><a href="https://cdn.f5.com/product/bugtracker/ID1035661.html" target="_blank">REST Requests return 401 Unauthorized when using Basic Auth due to ID1035661</a></li></ul>
+<ol><li>Triggered when a REST request comes in using Basic Auth while an asynchronous task is executing on the BIG-IP. An example of an asynchronous task is the BIG-IP processing an AS3 declaration.  </li></ol>
+<ul><li><a href="https://cdn.f5.com/product/bugtracker/ID1146373.html" target="_blank">Basic authentication for REST admin account failing due to ID1146373</a></li></ul>
+<ol><li>If you view the restjavad.audit log you may see a username of local/null on the line showing the 401 for the rest call that was tried.</li><li><span style="font-family: Courier New,Courier,monospace;">[I][1223][05 Jan 2022 17:21:19 UTC][ForwarderPassThroughWorker] {&quot;user&quot;:&quot;local/null&quot;,&quot;method&quot;:&quot;GET&quot;,&quot;uri&quot;:&quot;<a href="http://localhost:8100/mgmt/tm/ltm/node%22,%22status%22:401,%22from%22:%2210.5.208.21%22%7D" target="_blank" title="http://localhost:8100/mgmt/tm/ltm/node%22,%22status%22:401,%22from%22:%2210.5.208.21%22%7d">http://localhost:8100/mgmt/tm/ltm/node&quot;,&quot;status&quot;:401,&quot;from&quot;:&quot;X.X.XX.X&quot;}</a></span></li></ol>
+<p><em>Note: The behavior of local/null is normal if the username and password are sent in the body of the JSON. If local/null is seen using a curl -u request, then this is an indicator that you are hitting ID1146373.</em><br> </p>
+<ul><li><a href="https://cdn.f5.com/product/bugtracker/ID1025513.html" target="_self">Bug ID 1025513: PAM Authenticator can cause authorization failure if it fails to lock /var/log/tallylog</a></li></ul>
+<ol><li>This is a similar issue with an identical log message as the previous symptom. Clients see the following message:</li><li><span style="font-family: Courier New,Courier,monospace;">{&quot;code&quot;:401,&quot;message&quot;:&quot;Authorization failed: no user authentication header or token detected. Uri:<a href="http://localhost:8100/mgmt/tm/ltm/pool/?expandSubcollections=true" target="_blank">http://localhost:8100/mgmt/tm/ltm/pool/?expandSubcollections=true</a> Referrer:&lt;ip_address&gt; Sender:&lt;ip_address&gt;,&quot;referer&quot;:&lt;ip_address&gt;,&quot;restOperationId&quot;:12338804,&quot;kind&quot;:&quot;:resterrorresponse&quot;}</span></li></ol>
+<h2><strong><span class="sectiontitle">Recommended Actions</span></strong></h2>
+<p><a id="a1" name="a1">Token generation issues on 13.1.5 and 14.1.4.6 are generally due to ID877145. </a></p>
+<ol><li>Review the /var/log/restjavad.0.log logs for the following:<br><span style="font-family: Courier New,Courier,monospace;"><span class="example2">[SEVERE][8100/shared/authn/login AuthnWorker] Error as the maximum time to wait exceeded while getting value of loginProviderName<br>[SEVERE][8100/shared/authn/login AuthnWorker] Error while setting value to loginProviderName when no loginReference and no loginProviderName were given</span></span></li><li>Upon confirmation of hitting this an engineering hotfix can be requested from support.</li></ol>
+<p><a id="a2" name="a2">Use of that token failing to authenticate are due to ID1108181.</a></p>
+<p>If you are on an affected version and suspect you are encountering ID1108181 when using a rest token, AS3, or ansible then you can <strong>enable http debugging then restart httpd/syslog and you will see this log message</strong> within /var/log/httpd/httpd_errors after you encounter it:</p>
+<ol><li>To enable debug logging for http:
+<ol><li><span style="background-color: #dddddd;">tmsh modify /sys httpd log-level debug</span></li><li><span style="background-color: #dddddd;">tmsh modify /sys syslog local6-from debug</span></li></ol>
+</li><li><span class="example2">To restart the relevant daemons:</span>
+<ol><li><span style="background-color: #dddddd;">bigstart restart httpd</span></li><li><span style="background-color: #dddddd;">bigstart restart syslog-ng</span></li></ol>
+</li><li>Review /var/log/httpd/httpd_errors logs for the following:<br><span style="font-family: Courier New,Courier,monospace;"><span class="example2">bigip.device.com debug httpd[30629]: [auth_pam:debug] [pid 30629] mod_auth_pam.c(2495): [client 10.5.1.193:47110] AUTHCACHE failed to open file Permission denied</span></span></li><li>To reset these values and the daemons back to default run<span class="example2">:</span>
+<ol><li><span style="background-color: #dddddd;">tmsh modify /sys httpd log-level warn</span></li><li><span style="background-color: #dddddd;">tmsh modify /sys syslog local6-from notice</span></li><li><span style="background-color: #dddddd;">bigstart restart httpd</span></li><li><span style="background-color: #dddddd;">bigstart restart syslog-ng</span></li></ol>
+</li><li>Upon confirmation of hitting this we recommend upgrading to a version that has a fix for <a href="https://cdn.f5.com/product/bugtracker/ID1108181.html" target="_blank">Bug ID 1108181</a></li></ol>
+<p> </p>
+<h2><strong><span class="sectiontitle">Additional Information</span></strong></h2>
+<p>Some additional client side symptoms you may encounter when on an affected version are:</p>
+<ul><li>After running an ansible playbook, Ansible fails with error:<br><span style="font-family: Courier New,Courier,monospace;"><span class="example2">&quot;Ansible error : &quot;msg&quot;: &quot;Expecting value: line 1 column 1 (char 0)&quot;</span></span></li><li>
+<p>In AS3 the response may look like this:</p>
+<pre class="ckeditor_codeblock">{&quot;message&quot;: &quot;AS3 API Response: &lt;!DOCTYPE HTML PUBLIC &#39;-//IETF//DTD HTML 2.0//EN&#39;&gt;\
+&lt;html&gt;&lt;head&gt;\
+&lt;title&gt;401 Unauthorized&lt;/title&gt;\
+&lt;/head&gt;&lt;body&gt;\
+&lt;h1&gt;Unauthorized&lt;/h1&gt;\
+&lt;p&gt;This server could not verify that you\
+are authorized to access the document\
+requested. Either you supplied the wrong\
+credentials (e.g., bad password), or your\
+browser doesn&#39;t understand how to supply\
+the credentials required.&lt;/p&gt;\
+&lt;/body&gt;&lt;/html&gt;\
+&quot;, &quot;type&quot;: &quot;web&quot;}
+2022-05-02 09:45:52: INFO: {&quot;message&quot;: &quot;AS3 API code: 401&quot;, &quot;type&quot;: &quot;web&quot;}</pre>
+</li><li>
+<p>One potential symptom on an impacted version is seeing the token file deleted and created in the /var/log/restjavad.0.log file. This is part of a normal function of rest tokens but if you see this log along with having failures then you are likely hitting this issue.<br><span style="font-family: Courier New,Courier,monospace;"><span class="example2">[I][843][25 May 2022 19:08:16 UTC][8100/shared/authz/tokens AuthTokenWorker] tokenfile is deleted!<br>[I][845][25 May 2022 19:08:16 UTC][8100/shared/authz/tokens AuthTokenWorker] Writing auth-token file succeeded</span></span></p>
+</li></ul>
+</article>
+</body>
+</html>

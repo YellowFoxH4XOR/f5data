@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000152300: How to block traffic towards virtual server matching ip addresses that belong to specific bgp ASN</title>
+<meta name="description" content="Support Solution: How to block traffic towards virtual server matching ip addresses that belong to specific bgp ASN — To block traffic towards virtual server matching ip addresses that belong to specific BGP Autonomous System Number (ASN)">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000152300">
+</head>
+<body>
+<header>
+<h1>K000152300: How to block traffic towards virtual server matching ip addresses that belong to specific bgp ASN</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-07-01</dd>
+<dt>Updated</dt><dd>2025-07-16</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.0, 17.1.2, 17.1.1, 17.5.X, 17.1.X, 17.5.1, 17.5.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000152300">https://my.f5.com/manage/s/article/K000152300</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>To block traffic towards virtual server matching ip addresses that belong to specific  BGP Autonomous System Number (ASN) </p>
+<h2>Environment</h2>
+<ul><li>Big-IP LTM only</li></ul>
+<h2>Cause</h2>
+<p>BIG-IP LTM does not have visibility into ASN information for incoming traffic because ASN data is not included in packet headers. Blocking by ASN requires mapping the ASN to its announced IP prefixes externally </p>
+<h2>Recommended Actions</h2>
+<p>Automate retrieval of BGP ASN IP prefixes from external sources, update an external data group, and apply an iRule to drop matching traffic.</p>
+<p><strong>Following in one such example:</strong></p>
+<p>1.Retrieve the list of IP prefixes for the target ASN (e.g., AS65535) and save it to  a file</p>
+<p><span style="background-color: #f1f1f1;"> # curl <a href="https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS45102" target="_blank" style="background-color: #f1f1f1;">https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS65535</a> 2&gt;/dev/null | grep &quot;prefix\&quot;&quot; | awk &#39;{print $2}&#39; | cut -d &#39;&quot;&#39; -f 2 | sed &#39;s/^/network /g; s/$/,/g&#39; &gt; /var/tmp/blockipfromAS65535.txt</span></p>
+<p><span style="color: #15891f;background-color: #ffffff;"><strong><em>Note: This link takes you to a resource outside of MyF5, and the third party could remove the document without our knowledge </em></strong></span></p>
+<p>2.Using above file create external datagroup</p>
+<p><span style="background-color: #f1f1f1;"># tmsh create ltm data-group external blockip-dg2 source-path file:/var/tmp/blockipfromAS65535.txt type ip </span></p>
+<p>3.Create an irule using above data group </p>
+<p>Example:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when FLOW_INIT {
+   if { [class match [IP::remote_addr] equals blockip-dg2]} {
+      log local0. &quot;IP [IP::client_addr] matches ASN&quot;
+      drop
+    }
+}
+</code></pre>
+<p>4. Finally attach this iRule to each relevant virtual server. </p>
+<p>5. One can make this task automated after creating it manually for the first time to update changing BGP ASN prefixes in the datagroup</p>
+<p>copy the following content into a file </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>#!/bin/bash
+
+#Get the list from external link for AS65535
+curl https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS65535 2&gt;/dev/null | grep &quot;prefix\&quot;&quot; | awk &#39;{print $2}&#39; | cut -d &#39;&quot;&#39; -f 2 | sed &#39;s/^/network /g; s/$/,/g&#39; &gt; /var/tmp/blockipfromAS65535.txt
+
+#modify the data-group to get it updated
+tmsh modify ltm data-group external blockip-dg2 source-path file:/var/tmp/blockipfromAS65535.txt
+
+#notify once done to ltm log file
+logger -p local0.notice &quot;IP list for AS65535 has been updated at $(date)&quot;</code></pre>
+<p>6. make it executable</p>
+<p><span style="background-color: #f1f1f1;"># chmod +x /var/tmp/scripts/blocklistforAS65535</span></p>
+<p><span style="background-color: #ffffff;">7. Edit crontab using below command to add a new job</span></p>
+<p><span style="background-color: #f1f1f1;">#crontab -e </span></p>
+<p><span style="background-color: #ffffff;">Example : Below will run everyday 8AM and update datagroup file </span></p>
+<p><span style="background-color: #f1f1f1;"># crontab -l</span></p>
+<p><span style="background-color: #f1f1f1;">0 8 * * * /var/tmp/scripts/blocklistforAS65535</span></p>
+<h2>Additional Information</h2>
+<p>The filestore containing the external data group will sync between HA units, but custom scripts and cron jobs will not—ensure automation exists on all units as needed. </p>
+<p>This method requires ongoing maintenance to keep up with changes in ASN allocations and their associated prefixes. Blocking by BGP ASN remains unsupported natively and relies entirely on external mapping and automation.</p>
+</article>
+</body>
+</html>

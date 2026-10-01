@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000133550: TCP::collect and TCP::payload commands does not work in conjunction with VDI Profile</title>
+<meta name="description" content="Support Solution: TCP::collect and TCP::payload commands does not work in conjunction with VDI Profile — The iRule commands TCP::collect and TCP::payload configured in an user defined irule do not work when there is a VDI Profile associated on the Virtual Server.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000133550">
+</head>
+<body>
+<header>
+<h1>K000133550: TCP::collect and TCP::payload commands does not work in conjunction with VDI Profile</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-04-20</dd>
+<dt>Updated</dt><dd>2023-04-20</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 15.1.8</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000133550">https://my.f5.com/manage/s/article/K000133550</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>The iRule commands TCP::collect and TCP::payload configured in an user defined irule do not work when there is a VDI Profile associated on the Virtual Server.<br><br> </p>
+
+<p>When the vdi profile is on the Virtual Server, the TCP::payload is empty. <br> </p>
+
+<p>A simple irule (as shown below) and vdi profile on the Virtual Server will show the issue:<br><br> </p>
+
+<p>when CLIENT_ACCEPTED {</p>
+
+<p>TCP::collect 100</p>
+
+<p>}</p>
+
+<p>when CLIENT_DATA {</p>
+
+<p>log local0. &quot;The irule1 scan is: [TCP::payload 0 100]&quot;</p>
+
+<p>TCP::release</p>
+
+<p>}<br> </p>
+
+<p>/var/log/ltm shows empty payload as below:</p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">Apr 3 06:38:54 APM-example.net</span><span style="font-family: Monaco, Menlo, Consolas, &quot;DejaVu Sans Mono&quot;, &quot;Courier New&quot;, monospace;"><span style="font-family: Courier New,Courier,monospace;"> info tmm1[31524]: Rule /Common/tcp_irule &lt;CLIENT_DATA&gt;: The scan is:</span> </span></p>
+
+<p> </p>
+
+<h2><strong>Environment</strong></h2>
+
+<p>BIG-IP APM Virtual Sever<br>VDI profile on the Virtual Server<br> </p>
+
+<p>User defined irule on the Virtual Server:<br> </p>
+
+<p>when CLIENT_ACCEPTED {</p>
+
+<p>TCP::collect 100</p>
+
+<p>}</p>
+
+<p>when CLIENT_DATA {</p>
+
+<p>log local0. &quot;The scan is: [TCP::payload 0 100]&quot;</p>
+
+<p>TCP::release</p>
+
+<p>}</p>
+
+<h2><strong>Cause</strong></h2>
+
+<p> </p>
+
+<p>The TCP::collect collects the payload but the priority of the CLIENT_DATA event determines which iRule has a chance to act on the collected data first. Lower number means higher-priority. When the higher priority CLIENT_DATA event irule releases the collected payload, there will be nothing for the lower-priority CLIENT_DATA events to examine.</p>
+
+<p> </p>
+
+<p>So with vdi profile associated on the Virtual Server, one of the internal irule /Common/_sys_APM_RDG_Redirect has a CLIENT_DATA event priority of 3 and so it gets to handle the collected TCP::payload. After acting on the data, it releases the payload. Hence the user defined irule does not have a chance to examine it which results in those empty payload logs under /var/log/ltm.</p>
+
+<p> </p>
+
+<h2><strong>Recommended Actions</strong></h2>
+1. To configure the user defined iRule with commands TCP::collect and TCP::payload and VDI profile (for VDI resources) on separate Virtual Servers.<br><br>2. To change the priority of the event CLIENT_DATA to 2 on the user defined irule<br><br><em><span style="color: #27ae60;"><strong>Note:</strong> The below workaround can have unexpected results with vdi resources.</span></em><br> 
+<p>If we set the CLIENT_DATA to priority 2 on the user defined irule, it allows it to examine the data first (when vdi profile is assigned to the Virtual Server):</p>
+
+<p> </p>
+
+<p>when CLIENT_ACCEPTED {</p>
+
+<p>TCP::collect 100</p>
+
+<p>}</p>
+
+<p>when CLIENT_DATA priority 2 {</p>
+
+<p>log local0. &quot;The scan is: [TCP::payload 0 100]&quot;</p>
+
+<p>TCP::release</p>
+
+<p>}</p>
+
+<p> </p>
+
+<p>Apr 3 11:15:23 APM-example.net info tmm1[17974]: Rule /Common/tcp_irule : The scan is: ????üO)›$6K;<br> </p>
+
+<p>For the other iRules to function properly, the above user defined irule probably should not release the data (TCP::release), so the other CLIENT_DATA (internal iRules under vdi profile) has a chance to act as well. <br> </p>
+
+<h2><strong>Additional Information</strong></h2>
+</article>
+</body>
+</html>

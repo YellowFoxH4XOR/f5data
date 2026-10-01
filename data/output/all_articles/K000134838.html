@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000134838: Preserve the Upstream Status Code from an NGINX auth_request Subrequest</title>
+<meta name="description" content="Support Solution: Preserve the Upstream Status Code from an NGINX auth_request Subrequest — NGINX converts authentication subrequest responses other than 2xx, 401, and 403 into HTTP 500 responses. The original upstream status, such as 429 or 502, must be captured and handled separately.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000134838">
+</head>
+<body>
+<header>
+<h1>K000134838: Preserve the Upstream Status Code from an NGINX auth_request Subrequest</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-27</dd>
+<dt>Updated</dt><dd>2026-08-27</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Plus: 37.0.0, 37.0.2, 37.0.1, R36, R35, R34, R33, 37.X.X, 37.0.X, 37.0.4, 37.0.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000134838">https://my.f5.com/manage/s/article/K000134838</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>NGINX converts authentication subrequest responses other than <span style="font-family: &#39;courier new&#39;, courier, monospace;">2xx</span>, <span style="font-family: &#39;courier new&#39;, courier, monospace;">401</span>, and <span style="font-family: &#39;courier new&#39;, courier, monospace;">403</span> into HTTP <span style="font-family: &#39;courier new&#39;, courier, monospace;">500</span> responses. The original upstream status, such as <span style="font-family: &#39;courier new&#39;, courier, monospace;">429</span> or <span style="font-family: &#39;courier new&#39;, courier, monospace;">502</span>, must be captured and handled separately.</p>
+<h2>Environment</h2>
+<ul><li>NGINX Plus</li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">auth_request</span> authentication subrequests</li></ul>
+<h2>Cause</h2>
+<p>This behavior is by design. The <span style="font-family: &#39;courier new&#39;, courier, monospace;">auth_request</span> module translates authentication subrequest responses other than <span style="font-family: &#39;courier new&#39;, courier, monospace;">2xx</span>, <span style="font-family: &#39;courier new&#39;, courier, monospace;">401</span>, and <span style="font-family: &#39;courier new&#39;, courier, monospace;">403</span> into an HTTP <span style="font-family: &#39;courier new&#39;, courier, monospace;">500</span> response.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>Use <span style="font-family: &#39;courier new&#39;, courier, monospace;">auth_request_set</span> to save the original upstream status, then use an <span style="font-family: &#39;courier new&#39;, courier, monospace;">error_page</span> directive to redirect the generated <span style="font-family: &#39;courier new&#39;, courier, monospace;">500</span> response to an internal named location.</p>
+<p> </p>
+<ol><li>Configure the authentication subrequest and capture its upstream status:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>location /login/ {
+    error_page 500 = @my_error_page;
+    auth_request /auth;
+    auth_request_set $actual_status $upstream_status;
+    ...
+}</code></pre>
+</li><li>Create an internal error location that returns selected status codes:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>location @my_error_page {
+    default_type text/plain;
+    if ($actual_status = 429) {
+        return 429;
+    }
+
+    if ($actual_status = 502) {
+        return 502;
+    }
+    return 500 &quot;Unsuccessful Response(s) From The Upstream Server(s): $actual_status &quot;;
+}</code></pre>
+</li><li>Add conditional handling for any additional single status codes that should be returned to the client.</li></ol>
+<h2>Additional Information</h2>
+<ul><li>A successful upstream response such as <span style="font-family: &#39;courier new&#39;, courier, monospace;">200</span> does not trigger <span style="font-family: &#39;courier new&#39;, courier, monospace;">error_page</span> handling because the authentication request succeeds.</li><li>When <span style="font-family: &#39;courier new&#39;, courier, monospace;">$actual_status</span> contains one matching unsuccessful status, such as <span style="font-family: &#39;courier new&#39;, courier, monospace;">429</span> or <span style="font-family: &#39;courier new&#39;, courier, monospace;">502</span>, the corresponding status can be returned to the client.</li><li>When <span style="font-family: &#39;courier new&#39;, courier, monospace;">$actual_status</span> contains multiple status codes, such as <span style="font-family: &#39;courier new&#39;, courier, monospace;">502, 429</span>, or contains an unsuccessful status without a corresponding condition, the configuration returns <span style="font-family: &#39;courier new&#39;, courier, monospace;">500</span> and includes the upstream status value in the response body.</li><li>The conditional comparisons shown above are intended for exact single-status matches.</li></ul>
+</article>
+</body>
+</html>

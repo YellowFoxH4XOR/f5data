@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000147590: How to configure BGP for DDoS Protection</title>
+<meta name="description" content="Support Solution: How to configure BGP for DDoS Protection — How to manipulate the advertisement of BGP routes to F5 Distributed Cloud scrubbing centers.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000147590">
+</head>
+<body>
+<header>
+<h1>K000147590: How to configure BGP for DDoS Protection</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-11-08</dd>
+<dt>Updated</dt><dd>2026-05-07</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Distributed Cloud Services</li><li>F5 Distributed Cloud Routed DDoS</li><li>F5 Distributed Cloud</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000147590">https://my.f5.com/manage/s/article/K000147590</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2 id="h_01HKJBV588HKTBYPS7VN6DBXP7">Description</h2>
+<ul><li>How to manipulate the advertisement of BGP routes to F5 Distributed Cloud scrubbing centers.</li><li>Note: at all times the customer has full control of their routing configuration, and this document should serve only as a guide.  There are many alternate ways to achieve the same results as detailed here. IP addresses are subject to change.  Please <a href="https://docs.cloud.f5.com/docs/support/support#raise-support-request-using-customer-portal" target="_blank">contact the SOC</a><span> if in any doubt.</span></li></ul>
+<p> </p>
+<h2 id="h_01HKJBV5886F1NMC8KCF2S6CHY">Environment</h2>
+<ul><li>F5® Distributed Cloud (XC) DDOS</li></ul>
+<h2 id="h_01HKJBV5889G3ERGNCPP5A9E7H">Resolution/Answer<br><br></h2>
+<p>It&#39;s very important that the BGP advertisements are configured so that in the event of an attack, the route to F5 Distributed Cloud scrubbing centers are preferred. </p>
+<p><br><br><span style="text-decoration: underline;"><strong>For customers under  AA service</strong></span> : Under normal operations both in and out traffic goes through customer ISP(s), but during an attack after XC start announcing customer prefixes, in bound traffic flows through internet &gt;&gt;XC &gt;&gt; customer.</p>
+<p><span style="text-decoration: underline;"><strong>For customers under AO Service</strong></span>: Use F5 as your primary for inbound.</p>
+<p> </p>
+<p>This can be achieved in 2 approaches :</p>
+<p> </p>
+<p><strong>1. Use Summary to ISP and Specific Routes to XC:</strong> </p>
+<p>Many  XC customers have larger prefix say 100.64.0.0/18 (Summary routes) which they break up into multiple specific routes say, into /23s and /24s. They often want DDOS protection for their some or all specific prefixes. In that case we recommend that </p>
+<ul><li><span>The announce only the summary routes to their ISPs</span></li><li><span>If they have multiple ISPs they can use AS-Prepends to de-pref one ISP over another. </span></li><li><span>Then they should use announce specific and/or summary prefixes to XC depending on what they want mitigated. </span></li><li><span>This ensures that traffic to these prefixes on internet are preferred via XC. </span></li></ul>
+<p> </p>
+<p><strong>2. Use  AS‑Path Prepend on session to local ISP/This is preferred method</strong><strong></strong></p>
+<p>If customers don&#39;t have the option to as above, e.g if a customer has only /24s, they may use as-prepend to announce </p>
+<ol><li>Create the configuration to add pre-pends to the local carrier advertisement (see example below). If customer has multiple ISPs, they can use  different AS-Prepend sizes to de-pref one ISP over another.</li><li>Test the pre-pends by routing traffic through F5 and validate for potential route leaks. 
+<ol><li>If route leaks are present, it is essential to validate with the local upstream carrier whether they honor <strong>AS-PATH prepends</strong>. It is important to note that many carriers may not honor AS-PATH prepends and instead use <strong>BGP communities</strong>, which often take precedence over AS-PATH prepends when announcing routes to the internet. In such scenarios, it is recommended to consult directly with the Internet Service Provider (ISP) to ensure proper handling of route advertisements.</li></ol>
+</li><li>Choose different paths on XC as described in <a href="/articles/Knowledge/K000146660" target="_blank">What are the F5 BGP Communities for Customer Routing Preferences and Traffic Engineering?</a></li></ol>
+<p><span>Note: The routed solution is </span><strong>asymmetric routing</strong><span>.  Inbound traffic to your prefixes will be routed through F5 by virtue of the preferences route advertisements we send upstream. </span><strong>We do not advertise any internet routes to customers, and your ISP(s) remain the default route for outbound traffic. </strong><span> </span></p>
+<p> </p>
+<h2 id="h_01HKJBV588TM92Q8JMAQ18MACD">Additional Information</h2>
+<h4 id="h_9f2a3ad6-2cf3-4c1a-8c2b-25250706a3bf"><strong>Example: Cisco AS Path Prepending</strong></h4>
+<p>As noted, there are many different ways to do this (and on different platforms than Cisco) but the concepts are the same. Here&#39;s an example of how you would setup <em>AS Path Prepending with Cisco</em> to set your BGP preferences to prefer the F5 Distributed Cloud scrubbing center.</p>
+<blockquote>
+<pre>ip prefix-list customer-public-routes permit CUSTOMER_PREFIX_1<br><br>ip prefix-list customer-public-routes permit CUSTOMER_PREFIX_2<br><br> <br><br>route-map map-route-to-f5 permit 10<br><br>match ip address prefix-list customer-public-routes<br><br>set as-path prepend 65001 65001 65001 65001    # assume 65001 is your AS </pre>
+</blockquote>
+<p> </p>
+<p>Then, to route traffic over to F5, you’d apply the route-map to the BGP neighbor you have with your ISP. </p>
+<p> </p>
+<p><strong>To Activate:</strong></p>
+<pre>### apply activation configuration ###<br><br>router bgp 65001  #your AS number<br><br>  neighbor xxx.xxx.xxx.xxx route-map CARRIERONE-f5-on out .  #this is the IP of your ISP BGP peer<br><br>  neighbor f5-dca prefix-list route-to-f5 out<br><br>  neighbor f5-sjc prefix-list route-to-f5 out<br><br><br>### clear bgp neighbors ###<br><br>clear ip bgp peer-group f5-dca soft out<br><br>clear ip bgp peer-group f5-sjc soft out<br><br>clear ip bgp xxx.xxx.xxx.xxx soft out</pre>
+<p> </p>
+<p><strong>Note: </strong>Repeat this for all upstream peers you have and this will ensure the BGP advertisements for your networks have the AS-path prepended, whereas the one to F5 won’t, ultimately meaning that the F5 route will be preferred.</p>
+<p> </p>
+<p><strong>To Deactivate:</strong></p>
+<pre> ### apply deactivation configuration ###<br><br>router bgp 65001           #whatever your ASN is<br><br>  no neighbor xxx.xxx.xxx.xxx route-map CARRIERONE-f5-on out<br><br>  neighbor f5-dca prefix-list deny-all out<br><br>  neighbor f5-sjc prefix-list deny-all out<br><br><br>### clear bgp neighbors ###<br><br>clear ip bgp xxx.xxx.xxx.xxx soft out<br><br>clear ip bgp peer-group f5-dca soft out<br><br>clear ip bgp peer-group f5-sjc soft out</pre>
+<h4 id="h_01HKJGZ73MK8T9N72MP2RZXAR3"> </h4>
+<h2 id="h_01HRAPRH806E2Z00YBHDB7VZ8V">Additional Information</h2>
+<h4 id="h_01HKJC97KGZZ8724Q42WQ6VABE"><strong>Alternatives to AS Prepends:</strong></h4>
+<ul><li>Use a <strong>BGP community</strong> on the announcements to one ISP that asks that ISP to selectively prepend towards some of their customers or peers or in some regions. The large carriers typically have such communities.</li><li>Another option is to use the<strong> &#39;no-export&#39; tag</strong> on the route-map that you do <span class="wysiwyg-underline">not</span> want propagated in the Internet.</li></ul>
+</article>
+</body>
+</html>

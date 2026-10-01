@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K595: Adding a 3-DNS Contoller to an existing DNS environment</title>
+<meta name="description" content="Knowledge: Adding a 3-DNS Contoller to an existing DNS environment — Note: This solution assumes an understanding of BIND and canonical naming (CNAME records). If you are not familiar with BIND or CNAME records, refer to the 4th edition of DNS &amp; BIND, by O&#x27;Reilly for…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K595">
+</head>
+<body>
+<header>
+<h1>K595: Adding a 3-DNS Contoller to an existing DNS environment</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2006-02-17</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>3-DNS: 4.6.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K595">https://my.f5.com/manage/s/article/K595</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p class="note"><b>Note:</b> This solution assumes an understanding of BIND and canonical naming (CNAME records). If you are not familiar with BIND or CNAME records, refer to the 4th edition of <i>DNS &amp; BIND</i>, by O&#39;Reilly for additional information.</p>
+<p>3-DNS load-balances wide-area traffic to ensure that it goes to the best possible datacenter, much like what BIG-IP does for individual servers.</p>
+<p>The best way to integrate a 3-DNS Controller into an existing DNS environment is to delegate key sites to a sub-domain so that sub-domain can sub-delegate to the 3-DNS Controller for name resolution. This configuration would consist of an entire domain sub-delegated to the 3-DNS Controller, such as <b>wip.mydomain.com</b>, where <b>mydomain.com</b> is the customer-facing domain name.</p>
+<p>In this configuration, queries for hosts within <b>wip.mydomain.com</b> are directed to the 3-DNS Controller for response, rather than the response coming directly from the primary DNS servers for <b>domain.com</b>.</p>
+<p>For example, to load balance <b>www.mydomain.com</b> with the 3-DNS Controller being the primary nameserver for <b>mydomain.com</b>, you would create a sub-domain called <b>wip.mydomain.com</b> and sub-delegate that domain to the 3-DNS Controller. For this configuration, add the following lines in the <b>mydomain.com</b> zone file (where the IP address for the 3-DNS Controller is <b>192.168.33.75</b>):</p>
+<pre class="example2">
+3dns.mydomain.com.    IN     A      192.168.33.75
+wip.mydomain.com.     IN     NS     3dns.mydomain.com.</pre>
+<p>After you have assigned the sub-delegate <b>wip.mydomain.com</b> to the 3-DNS Controller, you can add a CNAME record that points to the specific sites that you want to load balance to the 3-DNS Controller. To load balance <b>www.mydomain.com</b> and <b>customers.mydomain.com</b> using a 3-DNS Controller, add the following lines in the <b>mydomain.com</b> zone file:</p>
+<pre class="example2">
+www           IN      CNAME     www.wip.mydomain.com.
+customers     IN      CNAME     customers.wip.mydomain.com.</pre>
+<p class="note"><b>Note:</b> A CNAME is an alias to another DNS record.</p>
+<p>When in this configuration, if a query comes into the DNS server for the <b>www.mydomain.com</b> or <b>customers.mydomain.com</b> hosts, the DNS server will respond that the host has a CNAME record pointing to <b>*.wip.mydomain.com</b> and that the <b>3dns.mydomain.com</b> 3-DNS Controller is authoritative for that domain. The LDNS will then re-query the 3-DNS Controller for <b>www.mydomain.com</b> or <b>customers.mydomain.com</b>, respectively.</p>
+<p>The standard query process occurs as follows:</p>
+<ol><li>The client, or LDNS, sends a query to the primary DNS server (this is not the 3-DNS Controller) that is registered as authoritative for <b>domain.com</b>. In this example the client is looking for <b>www.domain.com</b>.</li><li>The primary DNS server responds to the client, providing the record for the query as the CNAME record that was delegated to another set of servers (the 3-DNS Controller), and to request that the 3-DNS Controller(s) responsible for <b>wip.domain.com</b> provide an answer to the client&#39;s request.</li><li>The client queries the primary DNS server requesting the address for the 3-DNS Controller that is responsible for <b>wip.domain.com</b>.</li><li>The primary DNS server returns the IP address for the 3-DNS Controller to the client.</li><li>The client sends the query for <b>www.wip.domain.com</b> to the 3-DNS Controller IP that it received from the primary DNS server.</li><li>In turn, the 3-DNS Controller responds with the IP address for the wide IP (in this example) of <b>www.wip.domain.com</b>.</li></ol>
+<p>This process illustrates that the 3-DNS Controller&#39;s wide IP and zone files are authoritative for any delegated domain that you add (in this example <b>wip.mydomain.com</b>), but is not authoritative for the parent domain (in this example, <b>mydomain.com</b>) unless you configure aliases on the 3-DNS Controller&#39;s wide IP (in the event that a client or LDNS queries the 3-DNS Controller directly for a DNS record that has been delegated to 3-DNS Controller).</p>
+<p>If the client were to direct queries to the 3-DNS Controller for <b>www.domain.com</b> without the aliases, it would fail because the 3-DNS is not authoritative for the parent domain; however, if you add an alias for <b>www.domain.com</b> to the wide IP of <b>www.wip.domain.com</b>, the client will receive an answer.</p>
+<h3>Adding an alias to wide IP</h3>
+<p>To add an alias to a wide IP perform the following steps from the Configuration utility:</p>
+<ol><li>From the navigation pane, click <b>Wide IPs</b>.</li><li>From the list, click the wide IP to which you need to add the alias.</li><li>Click <b>Modify Alias</b>.</li><li>Add the alias for in FQDN format (for this example: <b>www.domain.com</b>) in the text field.</li><li>Click the <b>Add</b> button.<p>The screen will refresh and display the alias that you added.</p>
+<p class="note"><b>Note:</b> You can assign multiple aliases for a single wide IP.</p>
+</li></ol>
+<p class="note"><b>Note:</b> For additional information about configuring 3-DNS Controller wide IPs, refer to the <a href="https://support.f5.com/content/kb/en-us/archived_products/3-dns.html" target="_blank"><b>3-DNS Controller Reference Guide</b></a>.</p>
+</article>
+</body>
+</html>

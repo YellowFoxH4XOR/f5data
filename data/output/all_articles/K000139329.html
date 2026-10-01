@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000139329: Message: 010b0909:4: crldp config error: basedn</title>
+<meta name="description" content="Support Solution: Message: 010b0909:4: crldp config error: basedn — Under specific condition, when client accesses to virtual server that uses CRLDP type authentication profile along with client-ssl profile, client access may be rejected and an error &quot;crldp config…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000139329">
+</head>
+<body>
+<header>
+<h1>K000139329: Message: 010b0909:4: crldp config error: basedn</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-04-24</dd>
+<dt>Updated</dt><dd>2024-04-24</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.X.X, 16.X.X, 17.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000139329">https://my.f5.com/manage/s/article/K000139329</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Under specific condition, when client accesses to virtual server that uses CRLDP type authentication profile along with client-ssl profile, client access may be rejected and an error &quot;crldp config error: basedn&quot; from tamd may be recorded on &quot;/var/log/ltm&quot; log file.</p>
+<p> </p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Apr 18 12:36:04 bigip.local warning tamd[19527]: 010b0909:4: crldp config error: basedn</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">Apr 18 12:36:04 bigip.local warning tamd[19527]: 010b0232:4: pam_authenticate: 6</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">Apr 18 12:36:04 bigip.local warning tamd[19527]: 010b0235:4: AUTH: Permission denied</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">Apr 18 12:36:04 bigip.local warning tmm2[24336]: 01260013:4: SSL Handshake failed for TCP 10.1.1.60:58928 -&gt; 10.1.1.151:443</span></p>
+<p> </p>
+<p>When this error happens, client side TLS connection is terminated by RST prior to certificate check with LDAP CRLDP.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po0000006aYi&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007MDaK" alt="ng-flow" style="display: block;margin-left: auto;margin-right: auto;"></img></p>
+<p style="text-align: center;"><span style="color: rgb(102, 102, 102);">Figure: packet capture when error happens</span></p>
+<p> </p>
+<p>Just for comparison, here is normal flow when error does not happen.</p>
+<ol><li>Client accesses to TLS virtual server.</li><li>TLS virtual server requests certificate to client.</li><li>Client submits its certificate to virtual server.</li><li>BIG-IP looks up the CRLDP URI inside client certificate.</li><li>To get CRL data from CRLDP, BIG-IP first resolves the host name of the CRLDP URI.</li><li>After host name is resolved, BIG-IP accesses to LDAP CRLDP server and request CRL data.</li><li>After CRL data is fetched from LDAP CRLDP server, BIG-IP checks client certificate against CRL. If client certificate is not revoked, then client is allowed to access to pool member.</li></ol>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po0000006aYi&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007MDaF" alt="ok-flow" style="display: block;margin-left: auto;margin-right: auto;"></img></p>
+<p style="text-align: center;"><span style="color: rgb(102, 102, 102);">Figure: packet capture when error does not happen</span></p>
+<p> </p>
+<p>Here is client certificate used on the above flow. Certificate contains CRLDP information in URI with host name. Certificate with different type of CRLDP may show slightly different flows (i.e., no DNS lookup is done).</p>
+<pre class="language-markup"><code>$ openssl x509 -in testuser302ldapurlcrldp.crt -text | grep -A 3 &quot;X509v3 extensions&quot;
+        X509v3 extensions:
+            X509v3 CRL Distribution Points:
+                Full Name:
+                  URI:ldap://ubuntu2004server1.f5ss.local/cn=crldp,dc=f5ss,dc=local?certificateRevocationList?base?objectClass=cRLDistributionPoint
+$</code></pre>
+<p> </p>
+<p>Both valid client certificate and revoked certificate can generate the error.</p>
+<p> </p>
+<h2>Environment</h2>
+<p>All of the following condition need to be met.</p>
+<ul><li>CRLDP type authentication profile and client-ssl profile are attached to virtual server.</li><li>CRLDP type authentication configurations refers to CRLDP Servers object.</li><li>CRLDP Servers object &quot;Base DN&quot; option is empty (default).</li><li>The client-ssl profile is configured to request client certificate.</li></ul>
+<p>Here is example configuration that meets all of the above conditions.</p>
+<pre class="language-markup"><code>ltm auth profile my_crldp_auth_profile {
+    app-service none
+    configuration my_crldp_config
+    credential-source http-basic-auth
+    defaults-from ssl_crldp
+    type ssl-crldp
+}
+ltm auth ssl-crldp my_crldp_config {
+    servers {
+        my_crldp_server
+    }
+}
+ltm auth crldp-server my_crldp_server {
+    base-dn none
+    host 192.168.10.51
+}
+ltm profile client-ssl my_clientssl_profile {
+    app-service none
+    authenticate always
+    ca-file ubuntu2004server1ca.f5ss.local
+    cache-size 0
+    cert-key-chain {
+        web1.f5ss_ubuntu2004server1ca.f5ss_0 {
+            cert web1.f5ss.local
+            chain ubuntu2004server1ca.f5ss.local
+            key web1.f5ss.local
+        }
+    }
+    defaults-from clientssl
+    inherit-ca-certkeychain true
+    inherit-certkeychain false
+    peer-cert-mode request
+}
+ltm virtual clientssl_certtificate_ldap_auth_vs {
+    auth {
+        my_crldp_auth_profile
+    }
+    destination 10.1.1.151:https
+    ip-protocol tcp
+    mask 255.255.255.255
+    pool http_pool
+    profiles {
+        my_clientssl_profile {
+            context clientside
+        }
+        tcp { }
+    }
+    serverssl-use-sni disabled
+    source 0.0.0.0/0
+    source-address-translation {
+        pool my_snatpool192
+        type snat
+    }
+    translate-address enabled
+    translate-port enabled
+}</code></pre>
+<p> </p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po0000006aYi&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007MHro" alt="configuration example" style="display: block;margin-left: auto;margin-right: auto;"></img></p>
+<p style="text-align: center;"><span style="color: rgb(102, 102, 102);">Figure: GUI configuration example 1</span></p>
+<p> </p>
+<h2>Cause</h2>
+<p>This is designed behavior. </p>
+<p> </p>
+<h2>Recommended Actions</h2>
+<p>Do not leave &#39;base-dn&#39; value empty on crldp-server object even if client certificate does not have dirName type X509v3 crlDistributionPoints attribute.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po0000006aYi&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007MHtf" alt="config-ok1.png" style="display: block;margin-left: auto;margin-right: auto;"></img></p>
+<p style="text-align: center;"><span style="color: rgb(102, 102, 102);">Figure: GUI configuration example 2</span></p>
+<p> </p>
+<p>Or if client certificate does not have dirName type X509v3 crlDistributionPoints (i.e., client certificate contains CRLDP information in URI with host name), you can detach crldp-server object from ssl-crldp authentication configuration object, as &#39;base-dn&#39; parameter is not used on that specific case.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po0000006aYi&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007MHta" alt="config-ok2.png" style="display: block;margin-left: auto;margin-right: auto;"></img></p>
+<p style="text-align: center;"><span style="color: rgb(102, 102, 102);">Figure: GUI configuration example 3</span></p>
+<p> </p>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

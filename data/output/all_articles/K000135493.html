@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000135493: Aspen Mesh Ingress gateway upgrading request to HTTP2</title>
+<meta name="description" content="Support Solution: Aspen Mesh Ingress gateway upgrading request to HTTP2 — This article provides the possible solutions when the Aspen Mesh Ingress gateway upgrades the connection to HTTP2 when you are using HTTP1.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000135493">
+</head>
+<body>
+<header>
+<h1>K000135493: Aspen Mesh Ingress gateway upgrading request to HTTP2</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-10-18</dd>
+<dt>Updated</dt><dd>2023-10-18</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.14, 1.11</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000135493">https://my.f5.com/manage/s/article/K000135493</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>This article provides the possible solutions when the Aspen Mesh Ingress gateway upgrades the connection to HTTP2 when you are using HTTP1.</p>
+
+<p> </p>
+
+<h2><strong>Environment</strong></h2>
+
+<p><span style="font-size: 12px;">Aspen Mesh 1.11.x 1.14.x </span></p>
+
+<p> </p>
+
+<h2><strong>Cause</strong></h2>
+
+<p>When you don&#39;t specify the name of the protocol on the service port, it can use a protocol that you don&#39;t want.</p>
+
+<p>For example, this is the error seen when the Ingress Gateway upgrades the traffic to HTTP2 when it is not allowed on the application:</p>
+
+<pre class="ckeditor_codeblock">
+[2023-07-03T19:05:52.086Z] &quot;GET  /path/path HTTP/2&quot; 503 UC upstream_reset_before_response_started{connection_termination}</pre>
+
+<p> </p>
+
+<p>Also, on the Destination Rule, it can be specified to upgrade the connetion by setting the H2upgradepolicy to &quot;UPGRADE&quot;<br> </p>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>To avoid the connection to upgrade the HTTP traffic, it is recommended to specify the protocol on the Service Ports names, by default, they should be in the format  <span style="font-size: 12.8px;font-family: SFMono-Regular, Menlo, Monaco, Consolas, &quot;Liberation Mono&quot;, &quot;Courier New&quot;, monospace;">&lt;protocol&gt;[-&lt;suffix&gt;]. </span></p>
+
+<p>This is the sevice when the error &quot;503 UC upstream_reset_before_response_started&quot; was seen because the application can&#39;t handle http2 connections:<br> </p>
+
+<pre class="ckeditor_codeblock">
+kind: Service
+metadata:
+  name: myservice
+spec:
+  ports:
+  - port: 80
+    <strong>name: http2-80</strong></pre>
+<br>This is the example of the service, specifying the proper protocol and port(http):<br> 
+<pre class="ckeditor_codeblock">
+kind: Service
+metadata:
+  name: myservice
+spec:
+  ports:
+  - port: 80
+    <strong>name: http-80</strong></pre>
+<br>As you can see, under &quot;port &gt; name&quot;, it was specified the protocol and port using the following http name formats:<br> 
+<table><thead><tr><th colspan="1" rowspan="1">Protocol   </th><th colspan="1" rowspan="1">Sidecar Purpose</th><th colspan="1" rowspan="1">Gateway Purpose</th></tr></thead><tbody><tr><td colspan="1" rowspan="1"><code>http</code></td><td colspan="1" rowspan="1">Plaintext HTTP/1.1 traffic   </td><td colspan="1" rowspan="1">Plaintext HTTP (1.1 or 2) traffic  </td></tr><tr><td colspan="1" rowspan="1"><code>http2</code></td><td colspan="1" rowspan="1">Plaintext HTTP/2 traffic</td><td colspan="1" rowspan="1">Plaintext HTTP (1.1 or 2) traffic</td></tr></tbody></table>
+
+<p><br><br>Another recommended action to avoid connections http1 upgrading to http2, is to include the policy H2upgradepolicy to &quot;DO_NOT_UPGRADE&quot; on your destination rule yaml. For example:<br> </p>
+
+<pre class="ckeditor_codeblock">
+kind: DestinationRule
+metadata:
+  name: example
+spec:
+  host: example-host
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+<strong>    connectionPool:
+      http:
+        h2UpgradePolicy: DO_NOT_UPGRADE</strong></pre>
+
+<p> </p>
+
+<ul></ul>
+
+<p> </p>
+
+<h2><strong>Additional Information</strong></h2>
+ 
+
+<p>To be a part of the service mesh, ports on pods and services in a Kubernetes cluster must satisfy the following requirements:<br> </p>
+
+<ul><li><strong>Named ports</strong>: Service ports must be named. The port names must be of the form <span style="font-size: 12.8px;font-family: SFMono-Regular, Menlo, Monaco, Consolas, &quot;Liberation Mono&quot;, &quot;Courier New&quot;, monospace;">&lt;protocol&gt;[-&lt;suffix&gt;]</span> with http, http2, grpc, mongo, or redis as the <span style="font-size: 12.8px;font-family: SFMono-Regular, Menlo, Monaco, Consolas, &quot;Liberation Mono&quot;, &quot;Courier New&quot;, monospace;">&lt;protocol&gt;</span> in order to take advantage of Istio&#39;s routing features. For example, <span style="font-size: 12.8px;font-family: SFMono-Regular, Menlo, Monaco, Consolas, &quot;Liberation Mono&quot;, &quot;Courier New&quot;, monospace;">name: http2-foo</span> or <span style="font-size: 12.8px;font-family: SFMono-Regular, Menlo, Monaco, Consolas, &quot;Liberation Mono&quot;, &quot;Courier New&quot;, monospace;">name: http</span> are valid port names, but <span style="font-size: 12.8px;font-family: SFMono-Regular, Menlo, Monaco, Consolas, &quot;Liberation Mono&quot;, &quot;Courier New&quot;, monospace;">name: http2foo</span> is not. If the port name does not begin with a recognized prefix or if the port is unnamed, traffic on the port will be treated as plain TCP traffic (unless the port explicitly uses <span style="font-size: 12.8px;font-family: SFMono-Regular, Menlo, Monaco, Consolas, &quot;Liberation Mono&quot;, &quot;Courier New&quot;, monospace;">Protocol: UDP</span> to signify a UDP port).</li></ul>
+ 
+
+<ul><li><strong>Service association</strong>: If a pod belongs to multiple Kubernetes services, the services cannot use the same port number for different protocols, for instance HTTP and TCP.</li></ul>
+<br><br>For more detailed information about services requirements inside the istio mesh, please see the oficial istio and Aspen Mesh documentation listed under &quot;Related Content&quot;
+</article>
+</body>
+</html>

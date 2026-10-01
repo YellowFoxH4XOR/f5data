@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000139055: TSIG key value is case sensitive</title>
+<meta name="description" content="Support Solution: TSIG key value is case sensitive — When configuring BIG-IP system as secondary/slave DNS server, you may notice dynamic zone update requests are not initiated by BIG-IP despite receiving DNS Notify packet from the Primary/Master…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000139055">
+</head>
+<body>
+<header>
+<h1>K000139055: TSIG key value is case sensitive</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-03-27</dd>
+<dt>Updated</dt><dd>2024-03-27</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 17.1.X, 15.1.0, 15.1.1, 15.1.2, 15.1.3, 15.1.4, 15.1.5, 15.1.6, 15.1.7, 15.1.8, 15.1.9, 15.1.10, 16.1.0, 16.1.1, 16.1.2, 16.1.3, 16.1.4, 17.1.0, 17.1.1, 15.1.X, 16.1.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000139055">https://my.f5.com/manage/s/article/K000139055</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When configuring BIG-IP system as secondary/slave DNS server, you may notice dynamic zone update requests are not initiated by BIG-IP despite receiving DNS Notify packet from the Primary/Master nameserver and TSIG key is being present. On the other hand, if the zone is manually reloaded with &#39;rndc refresh&#39; command on BIG-IP CLI, the recent change in the Primary/Master nameserver gets updated in the BIG-IP zone subsequently.</p>
+<p>/var/log/daemon.log:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">err named[21032]: &lt;date&gt; &lt;time&gt; xfer-in: error: transfer of &#39;example.com/IN/external&#39; from &lt;ip_address of master_nameserver#53&gt;: failed while receiving responses: NOTAUTH</span></p>
+<h2>Environment</h2>
+<ul><li>BIG-IP DNS</li><li>Zone Transfer</li><li>TSIG key</li></ul>
+<h2>Cause</h2>
+<p>This issue could simply be due to the definition or formatting of the TSIG key that is case sensitive unlike DNS records. To confirm this, you can take a packet capture on BIG-IP then compare the value of TSIG key name in the Notify update packet versus BIG-IP response and verify they are identical in case.</p>
+<h2>Recommended Actions</h2>
+<p>Update the TSIG name in BIG-IP to exact value as defined in Primary/Master nameserver.</p>
+<p>To do so, you can use a text editor in BIG-IP Command Line and update relevant objects in /var/named/config/named.conf and /config/bigip.conf, then save changes and exit editor mode. Please see below example for your reference.</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">1_ /var/named/config/named.conf</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">key &quot;TEST&quot; {</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  algorithm hmac-sha256;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  secret &quot;Ldfzuw5n4Z7nMu/lpEU9Pe9etzm+YWouihZA2GXfHmg=&quot;;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">};</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  zone &quot;example.com.&quot; {</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">    type slave;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">    file &quot;db.external.example.com.&quot;;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">    masters {</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      &lt;ip_addr&gt; port 53 key TEST;        </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">    };</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  };</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">};</span></p>
+<p> </p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">2_ /config/bigip.conf</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">ltm dns nameserver /Common/&lt;name&gt; {</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  address &lt;ip_addr&gt;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  route-domain /Common/0</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  tsig-key /Common/TEST</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">ltm dns tsig-key /Common/TEST {</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  algorithm hmacsha256</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  secret ***scrubbed***</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></p>
+<h2>Additional Information</h2>
+<p>Example of a TSIG key value that is called &quot;TEST&quot; in Primary/Master nameserver but &quot;test&quot; in the BIG-IP configuration that leads to an error message &quot;Key not recognized&quot; as seen below. </p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Domain Name System (<strong>query</strong>)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  Queries</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">    example.com: type SOA, class IN</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  Answers</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">    example.com: type SOA, class IN, mname ns1.com</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  Additional records</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"><strong>    transfer: type TSIG, class ANY</strong></span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"><strong>      Name: TEST</strong>                   </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Type: TSIG (Transaction Signature) (250)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Class: ANY (0x00ff)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Time to live: 0 (0 seconds)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Data length: 61</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Algorithm Name: hmac-sha256</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Time Signed: Mar 19, 2024 08:38:11.000000000 PDT</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Fudge: 300</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      MAC Size: 32</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      MAC</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Original Id: 65133</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Error: No error (0)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Other Len: 0</span></p>
+<p> </p>
+<p> </p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Domain Name System (<strong>response</strong>)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  Transaction ID: 0xfe6d</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  Flags: 0xa409 Zone change notification response, Not authoritative</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  Questions: 1</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  Answer RRs: 0</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  Authority RRs: 0</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  Additional RRs: 2</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  Queries</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  Additional records</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">    transfer: type TSIG, class ANY</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Name: TEST</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Type: TSIG (Transaction Signature) (250)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Class: ANY (0x00ff)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Time to live: 0 (0 seconds) </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"><strong>Error: Key not recognized (17)</strong>            </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Other Len: 0</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"><strong>    TRANSFER: type TSIG, class ANY</strong></span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"><strong>      Name: test</strong>                  </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Type: TSIG (Transaction Signature) (250)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Class: ANY (0x00ff)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Time to live: 0 (0 seconds)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Data length: 61</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Algorithm Name: hmac-sha256</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Time Signed: Mar 19, 2024 15:38:11.000000000 GMT Standard Time</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Fudge: 300</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      MAC Size: 32</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      MAC</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Original Id: 65133</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Error: No error (0)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      Other Len: 0</span></p>
+</article>
+</body>
+</html>

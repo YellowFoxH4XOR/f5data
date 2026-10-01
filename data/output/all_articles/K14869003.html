@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K14869003: Create a SecureVault cryptogram for an AS3 declaration</title>
+<meta name="description" content="Knowledge: Create a SecureVault cryptogram for an AS3 declaration — You want to create a SecureVault cryptogram for a passphrase or password in an AS3 declaration.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K14869003">
+</head>
+<body>
+<header>
+<h1>K14869003: Create a SecureVault cryptogram for an AS3 declaration</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2020-11-25</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Automation and Orchestration</li><li>BIG-IP</li><li>F5 Application Services 3 Extension</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K14869003">https://my.f5.com/manage/s/article/K14869003</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>You should consider using this procedure under the following condition:</p>
+
+<ul><li>You want to create a SecureVault cryptogram for a passphrase or password in an AS3 declaration.</li></ul>
+<h3>Description</h3><p>To encrypt secrets such as a passphrase or password in a SecureVault cryptogram within an AS3 declaration, you must first deploy the declaration to a BIG-IP system. This can be a problem if you need to deploy the declaration to a BIG-IP system in a public cloud for example, and you want an extra layer of protection beyond HTTPS for secrets during transmission. To avoid this dilemma, you can deploy the declaration to a staging device in a secure, internal network first to obtain the SecureVault cryptogram and then use it to replace the plaintext passphrase or password with the encrypted one and replay the declaration to the production device. If you are not going to deploy to separate staging and production systems, this deployment process is still beneficial if you want to store declarations in a version control repository that has encrypted passphrases and passwords rather than plaintext ones. For more information refer to <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/declaration-purpose-function.html#secrets-in-as3-declarations" target="_self">Secrets in AS3 declarations</a>.</p>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisites to use this procedure:</p>
+
+<ul><li>You have read the <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/" target="_self">AS3 User Guide</a>.</li><li>You have <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/installation.html" target="_self">installed AS3</a> on your staging and production BIG-IP systems.</li><li>If you are going to deploy to separate staging and production systems, the staging BIG-IP system where you create the SecureVault cryptogram must have the same master key as the production BIG-IP where you deploy it.</li></ul>
+
+<p><span class="sectiontitle">Procedures</span></p>
+
+<ul><li><a href="#ensure" target="_self">Ensure that the staging and production systems have the same master key</a></li><li><a href="#encrypt" target="_self">Encrypt a passphrase or password in an AS3 declaration with a two-stage deployment process</a></li></ul>
+
+<p><span class="subsectiontitle"><a id="ensure" name="ensure"></a>Ensure that the staging and production systems have the same master key</span></p>
+
+<p>If you plan to deploy your declaration to a separate production BIG-IP system after encrypting a passphrase or password on a staging BIG-IP, the master keys of both systems must match.</p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure changes the master key on the BIG-IP system and re-encrypts all passwords and passphrases in the configuration. F5 recommends that you perform this procedure on a staging or test system and not on a production system.</span></p>
+
+<ol><li>Ensure that the staging and production systems have the same master key by entering the following command on each BIG-IP command line:
+	<p><span class="code">f5mku -K</span></p>
+
+	<p>If the systems have the same key, you can skip to the next procedure.</p>
+	</li><li>If applicable, on the staging BIG-IP, back up the current key by storing the output from the previous command in a safe location and change the master key to match the production system.
+	<p>Re-key the staging system by typing the following command:</p>
+
+	<p><span class="code">f5mku -r &lt;master key from production system&gt;</span></p>
+
+	<p>For more information, refer to <a href="https://my.f5.com/manage/s/article/K9420" target="_self">K9420: Installing UCS files containing encrypted passwords or passphrases (11.5.x and later)</a>.</p>
+	</li><li>Save the configuration so existing master key-encrypted passphrases and passwords are re-encrypted with the new master key. To do so, type the following command on the staging BIG-IP system:
+	<p><span class="code">tmsh save sys config</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="encrypt" name="encrypt"></a>Encrypt a passphrase or password in an AS3 declaration with a two-stage deployment process</span></p>
+
+<p>Passphrases and passwords in an AS3 declaration can be defined with a JWE object. The following procedure shows how to deploy a declaration to create a SecureVault cryptogram for use in a JWE object so the declaration can be re-deployed or stored with encrypted secrets.</p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Use the <strong>echo</strong> and <strong>base64</strong> utilities on a Linux host or a BIG-IP system to encode your passphrase or password in Base64. Use <strong>echo</strong> <strong>-n</strong> to leave out the trailing newline. Use the following syntax:
+
+	<p><span class="code">echo -n &quot;&lt;passphrase&gt;&quot; | base64</span></p>
+
+	<p>For example:</p>
+
+	<p><span class="example2">echo -n &quot;as3test&quot; | base64</span></p>
+	</li><li>(Optional) If you are installing a certificate and key, you can make these compatible with JSON format by using the <strong>jq</strong> utility on a Linux host or on a BIG-IP system. Use the following syntax:
+	<p><span class="code">jq -Rs . &lt; &lt;certificate or key file&gt;</span></p>
+
+	<p>For example:</p>
+
+	<p><span class="example2">jq -Rs . &lt; as3test.key</span></p>
+	</li><li>On your workstation use a code editor such as VSCode to create an AS3 declaration.</li><li>(Optional) If you are using VSCode, to validate the declaration, add a <strong>$schema</strong> property and refer to the specific schema for the AS3 version you are using. For more information refer to <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/validate.html" target="_self">Validating a declaration</a>.</li><li>Add classes to your declaration, and when needed for a passphrase or password, enter the JWE object with the ciphertext encoded in Base64 and remove the trailing equal sign (<strong>=</strong>). If applicable, add your JSON-formatted certificate and key.
+	<p>For example:</p>
+
+	<div>
+	<div><span class="example2">&quot;webcert1&quot;: {</span></div>
+
+	<div><span class="example2">    &quot;class&quot;: &quot;Certificate&quot;,</span></div>
+
+	<div><span class="example2">    &quot;remark&quot;: &quot;replace these with real certificates and keys&quot;,</span></div>
+
+	<div><span class="example2">    &quot;certificate&quot;: &quot;-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----&quot;,</span></div>
+
+	<div><span class="example2">    &quot;privateKey&quot;: &quot;-----BEGIN ENCRYPTED PRIVATE KEY-----\n...\n-----END ENCRYPTED PRIVATE KEY-----&quot;,</span></div>
+
+	<div><span class="example2">    &quot;passphrase&quot;: {</span></div>
+
+	<div><span class="example2">        &quot;ciphertext&quot;: &quot;YXMzdGVzdA&quot;</span></div>
+
+	<div><span class="example2">    }</span></div>
+
+	<div><span class="example2">}</span></div>
+	</div>
+
+	<p><span class="note"><strong>Note</strong>: The contents of the certificate and key in this example have been removed for succinctness.</span></p>
+	</li><li>Save the declaration and deploy it to your staging BIG-IP system. The SecureVault feature will encrypt the passphrase or password with the master key.</li><li>In the response to the POST, save the output for the JWE object which contains the SecureVault cryptogram. If you need to view the output again, issue a GET request for the tenant by using the following URL syntax:
+	<p><span class="code">https://&lt;BIG-IP mgmt address&gt;/mgmt/shared/appsvcs/declare/&lt;tenant&gt;</span></p>
+	</li><li>Create a copy of your declaration or edit the original and replace the unencrypted JWE object with the SecureVault cryptogram.
+	<p>For example:</p>
+
+	<div>
+	<div><span class="example2">&quot;webcert1&quot;: {</span></div>
+
+	<div><span class="example2">    &quot;class&quot;: &quot;Certificate&quot;,</span></div>
+
+	<div><span class="example2">    &quot;remark&quot;: &quot;replace these with real certificates and keys&quot;,</span></div>
+
+	<div><span class="example2">    &quot;certificate&quot;: &quot;-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n&quot;,</span></div>
+
+	<div><span class="example2">    &quot;privateKey&quot;: &quot;-----BEGIN ENCRYPTED PRIVATE KEY-----\n...\n-----END ENCRYPTED PRIVATE KEY-----\n&quot;,</span></div>
+
+	<div><span class="example2">    &quot;passphrase&quot;: {</span></div>
+
+	<div><span class="example2">        &quot;ciphertext&quot;: &quot;JE0keUkkUHFreklESDdKZmtkSGhXaWcxQnh3QT09&quot;,</span></div>
+
+	<div><span class="example2">        &quot;protected&quot;: &quot;eyJhbGciOiJkaXIiLCJlbmMiOiJmNXN2In0=&quot;,</span></div>
+
+	<div><span class="example2">        &quot;miniJWE&quot;: true</span></div>
+
+	<div><span class="example2">    }   </span></div>
+
+	<div><span class="example2">}</span></div>
+	</div>
+
+	<p><span class="note"><strong>Note</strong>: The <strong>protected</strong> value is <strong>{&quot;alg&quot;:&quot;dir&quot;,&quot;enc&quot;:&quot;f5sv&quot;}</strong> encoded in Base64. The contents of the certificate and key in this example have been removed for succinctness.</span></p>
+	</li><li>Deploy the new declaration with the encrypted values for the secrets to the production BIG-IP system or store the declaration in your version control repository.</li><li>If you used a staging system to create the SecureVault cryptogram, you can delete the deployment on this system if you want to.</li></ol>
+</article>
+</body>
+</html>

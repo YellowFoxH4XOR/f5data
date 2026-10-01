@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K80018777: Recommendations for consumption of Istio metrics in Aspen Mesh</title>
+<meta name="description" content="Support Solution: Recommendations for consumption of Istio metrics in Aspen Mesh — Istio and the istio-proxy components have exposed a variety of metrics that the user can take advantage of. In this article, we will explore how to scrape this metrics and what are the most useful.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K80018777">
+</head>
+<body>
+<header>
+<h1>K80018777: Recommendations for consumption of Istio metrics in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-01-25</dd>
+<dt>Updated</dt><dd>2023-02-07</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K80018777">https://my.f5.com/manage/s/article/K80018777</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h1><span class="sectiontitle">Description</span></h1>
+
+<p>Istio and the istio-proxy components have exposed a variety of metrics that the user can take advantage of. In this article, we will explore how to scrape this metrics and what are the most useful.<br> </p>
+
+<h1><span class="sectiontitle">Environment</span></h1>
+
+<ul><li>
+	<p>Kubernetes: 1.17x,1.18.x,1.19.x,1.20.x</p>
+	</li><li>
+	<p>Aspen Mesh:  1.6.x, 1.9.x, 1.11.x, <a href="https://my.aspenmesh.io/client/docs/1.14/releases/1.14.5-am1/release-notes-carrier-grade/#aspen-mesh-features-1" target="_self">Metrics Collector deprecated in 1.14.x</a><br>	 </p>
+	</li></ul>
+
+<h1><span class="sectiontitle">Cause</span></h1>
+
+<p>Metrics provide a way of monitoring and understanding behavior in aggregate. These metrics provide information on behaviors such as the overall volume of traffic, the error rates within the traffic, and the response times for requests.<br> </p>
+
+<h1><span class="sectiontitle">Recommended Actions</span></h1>
+
+<p>Below you can find different ways to scrape the metrics and what are the recommended ways to do it:</p>
+
+<ul><li>
+	<p><a href="#federation" target="_self">Use federation for Prometheus (recommended)</a></p>
+	</li><li>
+	<p><a href="#Grafana" target="_self">Consume metrics over Grafana dashboards</a></p>
+	</li><li>
+	<p><a href="#BYOM" target="_self">Bring your own metrics (BYOM) (less preferred)</a></p>
+	</li></ul>
+
+<p><span class="subsectiontitle"><a id="federation" name="federation"></a>Use federation for Prometheus</span></p>
+
+<p>Prometheus can be configured to achieve a Prometheus instance to consume scraped metrics selected from another Prometheus instance.</p>
+
+<p>This can have better benefits than consuming metrics directly from sidecars:</p>
+
+<p><span class="subsubsectiontitle">Pros:</span></p>
+
+<ul><li>
+	<p>Simple configuration with a scraping job.</p>
+	</li><li>
+	<p>Avoid managing complex job configurations.</p>
+	</li><li>
+	<p>Avoid missing time-series labels changes, automatically Aspen Mesh will update label metrics if they change over time, you don&#39;t need to perform any changes in your configuration.</p>
+	</li><li>
+	<p>Good choice if you consume metrics via Prometheus API.</p>
+	</li></ul>
+
+<p><span class="subsubsectiontitle">Cons:</span></p>
+
+<ul><li>
+	<p>If the Prometheus (aspen-mesh-metrics-collector) instance is not available, metrics would not be available also.</p>
+	</li></ul>
+
+<p><span class="subsubsectiontitle">How to configure the federation</span></p>
+
+<p>Using the simple job, you could consume metrics for specific job labels:</p>
+
+<pre class="ckeditor_codeblock">
+- job_name: federate
+  honor_labels: true
+  honor_timestamps: true
+  params:
+    match[]:
+    - &#39;{job=&quot;prometheus&quot;}&#39;
+    - &#39;{job=&quot;envoy-stats&quot;, namespace=~&quot;testing&quot;}&#39; #You can delete namespace to scrape all the metrics over your cluster
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  metrics_path: /federate
+  scheme: http
+  basic_auth:
+    username: aspenmesh
+    password: &lt;secret&gt;
+  static_configs:
+  - targets:
+    - aspen-mesh-metrics-collector.istio-system.svc.cluster.local:19090
+</pre>
+
+<p>You can still configure alerts based on Istio metrics with the federate job.</p>
+
+<p><span class="subsectiontitle"><a id="Grafana" name="Grafana"></a>Consume metrics over Grafana Dashboard</span></p>
+
+<p>You can integrate Grafana with our metrics-collector we have an insightful guide here: <a href="https://my.f5.com/manage/s/article/K11884926" target="_self">K11884926: Integrating Grafana with Aspen Mesh Metrics Collector for monitoring mesh metrics</a>.</p>
+
+<p><span class="subsubsectiontitle">Pros:</span></p>
+
+<ul><li>
+	<p>You don&#39;t have to maintain any configuration over another Prometheus instance.</p>
+	</li><li>
+	<p>Easy integration.</p>
+	</li><li>
+	<p>Good choice if you don&#39;t need to consume metrics over API but over digested and great visualization graphs.</p>
+	</li></ul>
+
+<p><span class="subsectiontitle"><a id="BYOM" name="BYOM"></a>BYOM</span></p>
+
+<p>You can continue scraping metrics from the sidecar directly. You will need to develop your own job configuration to retrieve those metrics.</p>
+
+<p>We cannot ensure that future metrics labels will not change in Istio and Prometheus projects; they are constantly changing with new releases.</p>
+
+<p><span class="subsubsectiontitle">Pros:</span></p>
+
+<ul><li>
+	<p>You have control of what metrics you want to see.</p>
+	</li></ul>
+
+<p><span class="subsubsectiontitle">Cons:</span></p>
+
+<ul><li>
+	<p>This method is not supported as we don&#39;t guarantee stability or changes over time in metrics labels.</p>
+	</li><li>
+	<p>You will need to accommodate and maintain scraping jobs.</p>
+	</li></ul>
+
+<p> </p>
+
+<p><br><span class="subsectiontitle"><strong>Additional Questions</strong><br>Which metrics should we monitor?</span></p>
+
+<p>The default metrics exposed by every istio-proxy sidecar should be used to monitor every POD.</p>
+
+<p>Default metrics allow monitoring:</p>
+
+<ul><li>
+	<p>Total connections handled by the POD</p>
+	</li><li>
+	<p>Response times for HTTP requests</p>
+	</li><li>
+	<p>Response/request sizes for HTTP requests</p>
+	</li><li>
+	<p>Number of TCP connections handled by the proxy</p>
+	</li><li>
+	<p>Istio-proxy sidecar status like memory, healthy, xDS requests</p>
+	</li></ul>
+
+<p><span class="subsectiontitle">General information with examples</span></p>
+
+<p>Default useful metrics to monitor HTTP services:</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1"><tbody><tr><td colspan="1" rowspan="1">
+			<p>Name</p>
+			</td><td colspan="1" rowspan="1">
+			<p>Description</p>
+			</td></tr><tr><td colspan="1" rowspan="1">
+			<p>istio_requests_total</p>
+			</td><td colspan="1" rowspan="1">
+			<p>Number of HTTP requests received by an Envoy proxy.</p>
+			</td></tr><tr><td colspan="1" rowspan="1">
+			<p>istio_request_duration_milliseconds_bucket</p>
+			</td><td colspan="1" rowspan="1">
+			<p>How long it takes an Envoy proxy to process an HTTP request.</p>
+			</td></tr><tr><td colspan="1" rowspan="1">
+			<p>istio_request_bytes_bucket</p>
+			</td><td colspan="1" rowspan="1">
+			<p>The size of the HTTP response bodies that an Envoy proxy has processed.</p>
+			</td></tr><tr><td colspan="1" rowspan="1">
+			<p>istio_response_bytes_bucket</p>
+			</td><td colspan="1" rowspan="1">
+			<p>The size of the HTTP request bodies that an Envoy proxy has processed.</p>
+			</td></tr></tbody></table>
+
+<p>Default useful metrics to monitor TCP services:</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1"><tbody><tr><td colspan="1" rowspan="1">
+			<p>Name</p>
+			</td><td colspan="1" rowspan="1">
+			<p>Description</p>
+			</td></tr><tr><td colspan="1" rowspan="1">
+			<p>istio_tcp_sent_bytes_total</p>
+			</td><td colspan="1" rowspan="1">
+			<p>This is a COUNTER which measures the size of total bytes sent during response in case of a TCP connection.</p>
+			</td></tr><tr><td colspan="1" rowspan="1">
+			<p>istio_tcp_received_bytes_total</p>
+			</td><td colspan="1" rowspan="1">
+			<p>This is a COUNTER which measures the size of total bytes received during request in case of a TCP connection.</p>
+			</td></tr><tr><td colspan="1" rowspan="1">
+			<p>istio_tcp_connections_opened_total</p>
+			</td><td colspan="1" rowspan="1">
+			<p>This is a COUNTER incremented for every opened connection.</p>
+			</td></tr><tr><td colspan="1" rowspan="1">
+			<p>istio_tcp_connections_closed_total</p>
+			</td><td colspan="1" rowspan="1">
+			<p>This is a COUNTER incremented for every closed connection.</p>
+			</td></tr></tbody></table>
+
+<p>Examples of metrics to monitor istio-proxy sidecar status:</p>
+
+<ul><li>
+	<p>envoy_server_memory_allocated</p>
+	</li><li>
+	<p>envoy_server_memory_physical_size</p>
+	</li><li>
+	<p>envoy_server_state</p>
+	</li><li>
+	<p>envoy_cluster_manager_active_clusters</p>
+	</li><li>
+	<p>envoy_cluster_upstream_rq* - this include all pending, active, cancel, completed, reset and retry</p>
+	</li></ul>
+
+<p>More information about querying metrics can be found on <a href="https://prometheus.io/docs/prometheus/latest/querying/basics/" target="_self">official Prometheus documentation</a>.</p>
+
+<h1><br>Additional Information</h1>
+
+<p><a href="https://support.f5.com/csp/article/K02324093" target="_blank">K02324093: Aspen Mesh Metrics Collector - Prometheus metrics collection</a><br><a href="https://my.aspenmesh.io/client/docs/1.14/packet-inspector-1/pi1-aggregator-metrics/" target="_blank">Packet Inspector 1 aggregator metrics</a><br><a href="https://my.aspenmesh.io/client/docs/1.14/packet-inspector-1/pi1-filter-metrics/" target="_blank">Packet Inspector 1 filter metrics</a><br><a href="https://my.aspenmesh.io/client/docs/1.14/packet-inspector-2/pi2-filter-metrics/" target="_blank">Packet Inspector 2 filter metrics</a><br><a href="https://my.aspenmesh.io/client/docs/1.14/dns-controller/dc-metrics/" target="_blank">DNS-controller metrics</a><br><a href="https://istio.io/latest/docs/concepts/observability/" target="_blank">https://istio.io/latest/docs/concepts/observability/</a></p>
+</article>
+</body>
+</html>

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K11123927: Tomcat is constantly restarting, with no access to GUI, even after a reboot</title>
+<meta name="description" content="Support Solution: Tomcat is constantly restarting, with no access to GUI, even after a reboot — The tomcat process is constantly restarting, even after a reboot.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K11123927">
+</head>
+<body>
+<header>
+<h1>K11123927: Tomcat is constantly restarting, with no access to GUI, even after a reboot</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-10-17</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.X.X, 15.X.X, 14.X.X, 13.X.X, 17.0.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 17.0.0, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.X.X, 13.1.0, 13.0.1, 13.0.0, 16.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K11123927">https://my.f5.com/manage/s/article/K11123927</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>The <strong>tomcat </strong>process is constantly restarting, even after a reboot.</p>
+
+<p>The following message is printed to the CLI and <strong>/var/log/daemon.log</strong>:</p>
+
+<p><span class="example2">emerg logger[pid]: Re-starting tomcat</span></p>
+
+<p>Additionally, reviewing <strong>/var/log/secure</strong> or <strong>journalctl -f </strong>shows repeated messages similar to the following:</p>
+
+<p><span class="example2">su[pid]: PAM unable to dlopen(/lib/security/pam_rootok.so): /lib/security/pam_rootok.so: wrong ELF class: ELFCLASS32<br>su[pid]: PAM adding faulty module: /lib/security/pam_rootok.so<br>su[pid]: PAM unable to dlopen(/lib/security/pam_wheel.so): /lib/security/pam_wheel.so: wrong ELF class: ELFCLASS32<br>su[pid]: PAM adding faulty module: /lib/security/pam_wheel.so<br>su[pid]: pam_tally2(su:auth): Tally overflowed for user tomcat<br>su[pid]: pam_unix(su:auth): auth could not identify password for [tomcat]<br>su[pid]: FAILED SU (to tomcat) root on none</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>tomcat</li><li>PAM</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>BIG-IP&#39;s bigstart script for tomcat requires use of <strong>su</strong>.</p>
+
+<p>The PAM configuration file for <strong>su </strong>has been user modified to specify the 32-bit path for the PAM modules in question, while the 64-bit module is required by <strong>su</strong>.</p>
+
+<p><span class="example2">cat /config/bigip/auth/pam.d/su<br>#%PAM-1.0<br>auth sufficient /lib/security/pam_rootok.so                             &lt;---!!<br>auth required /lib/security/pam_wheel.so group=wheel                    &lt;---!!</span><br>...</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>Modify the PAM configuration file, removing the absolute path, and leaving only the module name. This is the default configuration. PAM will take care of finding the correct module.</p>
+
+<p>Here is a default <strong>su </strong>PAM configuration file from 14.1.4.1</p>
+
+<p><span class="example2">#%PAM-1.0<br>auth            sufficient      pam_rootok.so<br># Uncomment the following line to implicitly trust users in the &quot;wheel&quot; group.<br>#auth           sufficient      pam_wheel.so trust use_uid<br># Uncomment the following line to require a user to be in the &quot;wheel&quot; group.<br>#auth           required        pam_wheel.so use_uid<br>auth            substack        system-auth<br>auth            include         postlogin<br>account         sufficient      pam_succeed_if.so uid = 0 use_uid quiet<br>account         include         system-auth<br>password        include         system-auth<br>session         include         system-auth<br>session         include         postlogin<br>session         optional        pam_xauth.so</span></p>
+
+<p><span class="note"><strong>Note</strong>: It&#39;s not recommended to modify PAM configuration files, unless suggested by F5 Support.</span></p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<ul><li>
+	<p>In most situations, the default PAM configuration file for a PAM-aware application is sufficient. Sometimes, however, it is necessary to edit a PAM configuration file. Because misconfiguration of PAM can compromise system security, it is important to understand the structure of these files before making any modifications.</p>
+	</li><li>
+	<p>The module name provides PAM with the name of the pluggable module containing the specified module interface. Since the advent of multilib systems, which store 64-bit PAM modules in the /lib64/security/ directory, the directory name is omitted because the application is linked to the appropriate version of libpam, which can locate the correct version of the module.</p>
+	</li></ul>
+</article>
+</body>
+</html>

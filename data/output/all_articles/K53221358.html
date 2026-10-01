@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K53221358: Configure the XFCC header in Aspen Mesh</title>
+<meta name="description" content="Support Solution: Configure the XFCC header in Aspen Mesh — X-Forwarded-Client-Cert (XFCC) is a proxy header that dynamically adds the certificate information of the client in a request that has flowed through on its way from the client to the server. This…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K53221358">
+</head>
+<body>
+<header>
+<h1>K53221358: Configure the XFCC header in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-06-23</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K53221358">https://my.f5.com/manage/s/article/K53221358</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+X-Forwarded-Client-Cert (XFCC) is a proxy header that dynamically adds the certificate information of the client in a request that has flowed through on its way from the client to the server. This can be useful for authentication of clients in requests that are routed through, adding a layer of security. The sidecars are responsible for adding the headers while the request hops through them and the gateway deployed in the mesh has the ability to choose to either forward, modify or not to send the header at all based on the mode it is deployed in. Refer to the <a href="https://my.aspenmesh.io/client/docs/1.9/operations/configure-xfcc-header/" target="_self">Configuring XFCC Headers</a> section of the <strong>Aspen Mesh Operation Guide</strong> for the various modes.
+
+<p><span class="note"><strong>Note</strong>: Login required to access this page.</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li><strong>Kubernetes</strong>: 1.17x,1.18.x,1.19.x,1.20.x </li><li><strong>Aspen Mesh</strong>: 1.6.x, 1.9.x </li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+None
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+Your XFCC configuration is applied once the connection is trusted. The default behavior for sidecar proxy is <strong>APPEND_FORWARD</strong> that is, adding the client certificate to the XFCC header before sending it to the next hop. There is no option to override or control this behavior. 
+
+<p>To change the default behavior of the XFCC header for the ingress gateway, you would need to add the following to your override file (overrides.yaml) and then upgrade <strong>istiod</strong> via helm.</p>
+
+<p><span class="code">meshConfig:<br>  defaultConfig:<br>    gatewayTopology:<br>      forwardClientCertDetails: &lt;VALUE&gt;</span></p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1"><tbody><tr><td colspan="1" rowspan="1"><span class="code">&lt;VALUE&gt;</span></td><td colspan="1" rowspan="1">Description</td></tr><tr><td colspan="1" rowspan="1">UNDEFINED</td><td colspan="1" rowspan="1">Field is not set.</td></tr><tr><td colspan="1" rowspan="1">SANITIZE</td><td colspan="1" rowspan="1">Do not send the XFCC header to the next hop. This is the default value for a gateway.</td></tr><tr><td colspan="1" rowspan="1">FORWARD_ONLY</td><td colspan="1" rowspan="1">When the client connection is mTLS (Mutual TLS), forward the XFCC header in the request.</td></tr><tr><td colspan="1" rowspan="1">APPEND_FORWARD</td><td colspan="1" rowspan="1">When the client connection is mTLS, append the client certificate information to the request’s XFCC header and forward it.</td></tr><tr><td colspan="1" rowspan="1">SANITIZE_SET</td><td colspan="1" rowspan="1">When the client connection is mTLS, reset the XFCC header with the client certificate information and send it to the next hop.</td></tr><tr><td colspan="1" rowspan="1">ALWAYS_FORWARD_ONLY</td><td colspan="1" rowspan="1">Always forward the XFCC header in the request, regardless of whether the client connection is mTLS.</td></tr></tbody></table>
+
+<p>After you have upgraded <strong>istiod</strong> via helm, you would need to restart the <strong>istio-ingressgateway</strong> in the <strong>istio-system</strong> namespace for it to load the new configuration. After the ingress gateways are restarted, you can check the configuration of the gateway using the <strong>istioctl</strong> command:</p>
+
+<p><span class="code">istioctl pc listeners &lt;ingress-gateway&gt;.istio-system -o json | grep forwardClientCertDetails</span></p>
+
+<p><span class="subsectiontitle">Use Curl to test your XFCC configuration</span></p>
+In the subsequent test, you run a <strong>curl</strong> command from your local machine to try to hit the <strong>httpbin</strong> pod which is inside the service mesh. This is an mTLS connection and you are required to add the certificate details in your request for the client for the connection to work, that is, it is a trusted connection. You add a custom XFCC header on the request itself and it goes through the ingress gateway which will then route it to the <strong>httpbin</strong> pod. The XFCC header value is a comma “,” separated string of XFCC elements. There are 2 hops that happens during the request.
+
+<ul><li><strong>First hop</strong>: Client to gateway</li><li><strong>Second hop</strong>: Gateway to httpbin pod</li></ul>
+Run the following <strong>curl</strong> request from your local machine, using the appropriate domain name:
+
+<p style="margin-left: 40px;"><span class="example2">curl -v -H &quot;x-forwarded-client-cert:Hash=blablabla;CN=example.com&quot; -H Host:httpbin.example.com --resolve &quot;httpbin.example.com:$SECURE_INGRESS_PORT:$INGRESS_HOST&quot; \<br>--cacert example.com.crt --cert client.example.com.crt --key client.example.com.key \<br>https://httpbin.example.com/get</span></p>
+INGRESS_HOST: External IP of the Ingress Gateway<br>SECURE_INGRESS_PORT: Port on which HTTPS connection is listening.
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>The following discusses the 3 modes of proxy operation:</p>
+<span class="note"><strong>Note</strong>: In some of the examples you may see the hash values are different for the same service account as this is due to the 24hr TTL of the certificates used.</span>
+
+<ul><li>SANITIZE_SET: When the client connection is mTLS, reset the XFCC header with the client certificate information and send it to the next hop.</li></ul>
+
+<p style="margin-left: 40px;">In this case you can see the XFCC header that was on the curl request has been stripped and the client certificate is only passed through for the first hop. After the comma &quot;,&quot; character, for the second hop, you can see the following:</p>
+
+<ul style="margin-left: 40px;"><li>the <strong>“By”</strong> key is filled with the SAN (Subject Alternative Name) of the proxy cert of the httpbin pod:<br>	<span class="code">spiffe://cluster.local/ns/default/sa/httpbin </span></li><li>the <strong>“URI”</strong> key filled with client cert which is the ingress gateway in this case<br>	<span class="code">piffe://cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account.</span></li></ul>
+
+<p style="margin-left: 40px;"><span class="example2">&quot;X-Forwarded-Client-Cert&quot;: &quot;Hash=519dbf0d617cd943359dcf71f4d26d35e95347b616e62dc9c5ce4f3a7492ec76;Cert=\&quot;-----BEGIN%20CERTIFICATE-----%0AMIIC3DCCAcQCAQEwDQYJKoZIhvcNAQEFBQAwLTEVMBMGA1UECgwMZXhhbXBsZSBJ%0AbmMuMRQwEgYDVQQDDAtleGFtcGxlLmNvbTAeFw0yMTA2MDcxNDUwMDBaFw0yMjA2%0AMDcxNDUwMDBaMDsxGzAZBgNVBAMMEmNsaWVudC5leGFtcGxlLmNvbTEcMBoGA1UE%0ACgwTY2xpZW50IG9yZ2FuaXphdGlvbjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC%0AAQoCggEBAMe%2FVGy3syX%2BkMpqe6MfStPuFlwwEzwqz3lAaMm9YqASOk9uv0Qc%2FZPm%0AwIMrV1dnnLtLo6nZaRfsMgz1XiYBp%2BR2O87dFw2WN5AjD98zUT3XqUzGHF63cZvH%0AmoVkqrHiwh35HCFiwh9KIS3CtIdYe1n1%2FSkJpj0tVszIY%2Bi288Hu5K5fVYyYzyk%2F%0ANYQKG7A1KEgZ39SkRCHIyK%2FWeGhNT1VCfn%2Bx3D62RUVDjK6Au9yu5pJsKAyB76eg%0AZkXdvBv92dIN2iPhe9DzJ99MfpkjG9JfZG43svc2I2BAIj1eLzh5ZUnpILIHP42S%0AQUd6IBX9X%2BvFH%2FsFVnoySKewcMRK%2BkcCAwEAATANBgkqhkiG9w0BAQUFAAOCAQEA%0AswYNs6M4UT8epcW3MOjA%2B5c8EWfMI7SjNuShpRUNaJAhzdvpfj3PFIW%2BROLNs0Tj%0AwGVwkkZW8daxBQw8yC9kEE%2Broj7eJmV9SE%2BozZwa6L4hf18pcNaJlKIyvQUS3mgB%0ApGYO9YvC%2Bsg%2B0gfbSWfbzL17jRS1UI%2BOiW%2BWS5o85SOpusSHDtrG4qcISm7jpgyb%0AudzCZQHOkknO4e%2BrWiGKLpGBE1LkS5Cl%2FJkU1qJWspa4JaFtQxNCdT2Tmo6XDRZ7%0AKfoZiH6c1lI7C07duz9iPkNATc2w%2BNP7bzQgp4BlC0zQ3MwEbcR5uVxvC3vTRsIa%0AznXIRj23jj3NmidA4DTASQ%3D%3D%0A-----END%20CERTIFICATE-----%0A\&quot;;Subject=\&quot;O=client organization,CN=client.example.com\&quot;;URI=<strong>,By=spiffe://cluster.local/ns/default/sa/httpbin;Hash=58531cf54811dc1fd60ee4aaea52866daecb353cb23d2fa237c580cbc217b4be;Subject=\&quot;\&quot;;URI=spiffe://cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account&quot;</strong></span></p>
+
+<ul><li>APPEND_FORWARD: When the client connection is mTLS, append the client certificate information to the request’s XFCC header and forward it.
+	<p>For this case, you have the XFCC header from the curl request being passed via the gateway along with the client certificate required for mTLS. And the rest is similar to <strong>SANITIZE_SET</strong> mode.</p>
+	<span class="example2">&quot;X-Forwarded-Client-Cert&quot;: &quot;Hash=XXXXXXXXXXX;CN=example.com,Hash=519dbf0d617cd943359dcf71f4d26d35e95347b616e62dc9c5ce4f3a7492ec76;Cert=\&quot;</span><br>	<span class="example2">-----BEGIN%20CERTIFICATE-----%0AMI</span><br>	<span class="example2">[...]</span><br>	<span class="example2">D%0A-----END%20CERTIFICATE-----%0A\&quot;;Subject=\&quot;O=client organization,CN=client.example.com\&quot;;URI=,<strong>By=spiffe://cluster.local/ns/default/sa/httpbin;Hash=6419549726ce60696b3c97b6a80546ff84f53ccd4c597654f0a2ebd0f2dd948a;Subject=\&quot;\&quot;;URI=spiffe://cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account&quot;</strong></span></li><li>
+	<p>FORWARD_ONLY: When the client connection is mTLS, forward the XFCC header in the request.</p>
+
+	<p>For this case, in the first hop, the XFCC header in the <strong>curl</strong> request is passed and the client certificate is not passed. And for the second hop, it is similar to <strong>SANITIZE_SET </strong>and <strong>APPEND_FORWARD</strong>.</p>
+	</li></ul>
+
+<p style="margin-left: 40px;"><span class="example2">&quot;X-Forwarded-Client-Cert&quot;: &quot;Hash=XXXXXXXXXXX;CN=example.com,<strong>By=spiffe://cluster.local/ns/default/sa/httpbin;Hash=8d24efce0a78581c71d32f3a4a43b8fc06dfe235dd21c14d8166bc66f6720bdb;Subject=\&quot;\&quot;;URI=spiffe://cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account&quot;</strong></span></p>
+</article>
+</body>
+</html>

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K75305333: Configuring cluster domain in Aspen Mesh</title>
+<meta name="description" content="Support Solution: Configuring cluster domain in Aspen Mesh — Most Kubernetes clusters out of the box will assign a cluster domain using the default: cluster.local">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K75305333">
+</head>
+<body>
+<header>
+<h1>K75305333: Configuring cluster domain in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-09-20</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K75305333">https://my.f5.com/manage/s/article/K75305333</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>Most Kubernetes clusters out of the box will assign a cluster domain using the default: <strong>cluster.local</strong></p>
+
+<p>The cluster domain is also heavily used in Aspen Mesh as it could define trust between workloads. That means if cluster domain is different from our installation, we would have issues in communication or denied all requests to workloads with a different trust domain.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li><strong>Kuberntes</strong>: 1.17x,1.18.x,1.19.x,1.20.x</li><li><strong>Aspen Mesh</strong>: 1.9.x </li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>If your Kubernetes installation uses a different domain than the default, use the following recommendations to upgrade/install Aspen Mesh with the same cluster domain.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ol><li><a href="#Update" target="_self">Update the clusterDomain and trustDomain on your override values file</a></li><li><a href="#Verify" target="_self">Verify components shows the new domain</a></li></ol>
+
+<p><span class="subsectiontitle"><a id="Update" name="Update"></a>Update the clusterDomain and trustDomain on your override values file</span></p>
+
+<ol><li>
+	<p>On your override values file add the following to the global field to override the default cluster domain.</p>
+
+	<p><span class="example2">global:<br>	  proxy:<br>	    # cluster domain. Default value is &quot;cluster.local&quot;.<br>	    clusterDomain: &quot;my.domain&quot;<br>	<br>	  # The trust domain corresponds to the trust root of a system<br>	  # Re-fer to https://github.com/spiffe/spiffe/blob/master/standards/SPIFFE-ID.md#21-trust-domain<br>	  # Indicate the domain used in SPIFFE identity URL<br>	  # The default depends on the environment.<br>	  #   kubernetes: cluster.local<br>	  #   else:  default dns domain<br>	  trustDomain: &quot;my.domain&quot;</span></p>
+	</li><li>
+	<p>Upgrade/Install Aspen Mesh.</p>
+
+	<p><span class="example2">helm upgrade -i istiod manifests/charts/istio-control/istio-discovery -n istio-system --values aspenmesh-values.yaml</span></p>
+	</li><li>
+	<p>If you have deployed an istio-ingress gateway you should use the same values and upgrade them as well.</p>
+
+	<p><span class="example2">helm upgrade -i istio-ingress manifest/charts/gateways/istio-ingress -n istio-system – values aspenmesh-values.yaml</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="Verify" name="Verify"></a>Verify components shows the new domain</span></p>
+
+<p>After upgrading the trust domain, all the proxies running must be restarted so it will receive the new configuration from istiod controlplane.</p>
+
+<p>Follow the next steps to ensure the proxy trust the new domain.</p>
+
+<ol><li>
+	<p>From the logs, at the startup the proxy will log the configuration received, output the logs, and search the flag –trust-domain.</p>
+
+	<p>For example:<br>	<span class="example2">kubectl logs details-v1-6f94cb9ff6-nxp4k -c istio-proxy<br>	2021-09-01T15:52:32.188680Z     info    FLAG: --concurrency=&quot;2&quot;<br>	2021-09-01T15:52:32.189015Z     info    FLAG: --disableInternalTelemetry=&quot;false&quot;<br>	2021-09-01T15:52:32.189029Z     info    FLAG: --domain=&quot;default.svc.my.domain&quot;<br>	<br>	[redacted]<br>	<br>	2021-09-01T15:52:32.190551Z     info    FLAG: --templateFile=&quot;&quot;<br>	2021-09-01T15:52:32.190556Z     info    FLAG: --tokenManagerPlugin=&quot;GoogleTokenExchange&quot;<br>	2021-09-01T15:52:32.190561Z     info    FLAG: --trust-domain=&quot;my.domain&quot;</span></p>
+	</li><li>
+	<p>You can also verify the new trust chain in the spiffe URI for the certificates on the proxy with the following command:</p>
+	<span class="example2">Iistioctl proxy-config secret details-v1-6f94cb9ff6-nxp4k -o json | jq &#39;[.dynamicActiveSecrets[] | select(.name == &quot;default&quot;)][0].secret.tlsCertificate.certificateChain.inlineBytes&#39; -r | base64 -d | openssl x509 -noout -text | grep UR</span>
+
+	<p><span class="example2">URI:spiffe://my.domain/ns/default/sa/bookinfo-all</span></p>
+	</li><li>
+	<p>If you are not able to see the new domain on the logs neither in the certificate, verify istiod pod has the new domain.</p>
+
+	<p>You should be able to see the same flag –trust-domain in logs:</p>
+
+	<p><span class="example2">kubectl logs istiod-c7cbd9469-x4mvb -n istio-system<br>	…<br>	2021-09-01T15:52:31.462501Z     info    FLAG: --trust-domain=&quot;my.domain&quot;</span></p>
+	</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

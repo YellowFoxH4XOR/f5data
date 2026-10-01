@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K04270666: POST request fails when HTTP/2 profile is applied to the LTM virtual server</title>
+<meta name="description" content="Support Solution: POST request fails when HTTP/2 profile is applied to the LTM virtual server — The POST requests hang because BIG-IP (TMM) doesn&#x27;t send HTTP/2 flow control messages. F5 Product Development has assigned ID1042509 to this issue.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K04270666">
+</head>
+<body>
+<header>
+<h1>K04270666: POST request fails when HTTP/2 profile is applied to the LTM virtual server</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-01-23</dd>
+<dt>Updated</dt><dd>2024-02-14</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.1.X, 16.1.0, 16.1.3, 16.1.2, 16.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K04270666">https://my.f5.com/manage/s/article/K04270666</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>When BIG-IP receives an HTTP/2 POST request, the request hangs and after some time HTTP2 protocol error appears on the client browser:<br>&quot;ERR_HTTP2_PROTOCOL_ERROR&quot;</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP LTM</li><li>HTTP/2 profile </li><li>OneConnect profile</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>The POST requests hang because BIG-IP (TMM) doesn&#39;t send HTTP/2 flow control messages. F5 Product Development has assigned <a href="https://cdn.f5.com/product/bugtracker/ID1042509.html" target="_self">ID1042509</a> to this issue.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span><br>For a workaround, use an HTTP router profile: assign the &#39;httprouter&#39; profile to the virtual server, or select the &#39;HTTP MRF Router&#39; option.</p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>In HTTP/2, there is a flow control for each request(stream). The sender sends DATA messages as long is doesn&#39;t exceed the receiver window and the receiver, in turn, updates the sender on the window size using WINDOW_UPDATE messages.<br>In our case, TMM doesn&#39;t update the sender which is the client, on the current window size. In turn, the client stops sending DATA frames and waits for confirmation that the WINDOW is free again. When it doesn&#39;t receive it, the client then stop sending data after timeout is reached and the client sends PING heartbeat messages and eventually ends the session.<br><br>Using Wireshark, this can be identified rather quickly </p>
+
+<p>From Wireshark HTTP.2 statistics : When HTTP MRF is enabled, We can see that flow control is working and WINDOW_UPDATE and DATA messages were sent correctly. The following data represents a successful upload:</p>
+
+<pre>
+================================================================================================================================
+HTTP2:
+Topic / Item     Count         Average       Min Val       Max Val       Rate (ms)     Percent       Burst Rate    Burst Start
+--------------------------------------------------------------------------------------------------------------------------------
+HTTP2            562                                                     0.0174        100%          0.0500        28.777
+ Type            562                                                     0.0174        100.00%       0.0500        28.777
+  WINDOW_UPDATE  220                                                     0.0068        39.15%        0.0200        28.828
+  SETTINGS       4                                                       0.0001        0.71%         0.0200        14.815
+  HEADERS        6                                                       0.0002        1.07%         0.0100        14.653
+  DATA           332                                                     0.0103        59.07%        0.0300        28.777
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+
+</pre>
+
+<p>The following example represents an upload that failed. Notice that the &#39;Count&#39; of DATA and WINDOW_UPDATE is much smaller.</p>
+
+<pre>
+================================================================================================================================
+HTTP2:
+Topic / Item     Count         Average       Min Val       Max Val       Rate (ms)     Percent       Burst Rate    Burst Start
+--------------------------------------------------------------------------------------------------------------------------------
+HTTP2            16                                                      0.0002        100%          0.0400        8.655
+ Type            16                                                      0.0002        100.00%       0.0400        8.655
+  WINDOW_UPDATE  1                                                       0.0000        6.25%         0.0100        8.655
+  SETTINGS       4                                                       0.0001        25.00%        0.0200        8.655
+  RST_STREAM     1                                                       0.0000        6.25%         0.0100        78.296
+  HEADERS        5                                                       0.0001        31.25%        0.0100        8.655
+  DATA           5                                                       0.0001        31.25%        0.0200        18.183
+
+--------------------------------------------------------------------------------------------------------------------------------
+</pre>
+</article>
+</body>
+</html>

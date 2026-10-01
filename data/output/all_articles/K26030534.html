@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K26030534: AFM not allowing traffic even though a matching rule has been configured</title>
+<meta name="description" content="Support Solution: AFM not allowing traffic even though a matching rule has been configured — Traffic which is expected to match a configured rule in a BIG-IP AFM policy is not getting hit.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K26030534">
+</head>
+<body>
+<header>
+<h1>K26030534: AFM not allowing traffic even though a matching rule has been configured</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-03-08</dd>
+<dt>Updated</dt><dd>2026-07-17</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP AFM: 15.1.X, 15.1.9, 15.1.10, 16.0.0, 16.0.1, 16.0.X, 16.1.0, 16.1.1, 16.1.2, 16.1.3, 16.1.4, 16.1.X, 17.0.0, 17.0.X, 17.1.0, 17.1.1, 17.1.X, 17.X.X, 16.X.X, 15.X.X, 15.0.X, 15.1.0, 15.0.1, 15.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K26030534">https://my.f5.com/manage/s/article/K26030534</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<ul><li>Traffic which is expected to match a configured rule in a BIG-IP AFM policy is not getting hit.</li><li>Testing with BIG-IP AFM network tester shows the rule is in place. This can be verified from the CLI using a command similar to the one below:</li></ul>
+
+<p style="margin-left: 40px;"><span class="code">tmsh show net packet-tester security protocol tcp syn src-addr 10.1.1.1 src-port 21233 dst-addr 172.16.1.1 dst-port 53 src-vlan External</span></p>
+
+<ul><li>
+	<p>When sending traffic that should hit this rule, it is seen the hit count does not increase. The 0 in the output below shows the hit-count for this rule.</p>
+	</li></ul>
+
+<div style="margin-left: 40px;"><span class="code">tmsh show security firewall rule-stat raw | grep ZoneRule</span><br><span class="example2">global  global-firewall-rules  ZoneRule  -  ZoneRule    enforced    <strong>0</strong>   N/A  accept-decisively</span></div>
+
+<p><br><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP AFM is provisioned.</li><li>AFM zones are configured</li><li>An AFM network firewall rule is configured with destination zones</li><li>The egress route for the destination IP addresses for this rule use gateway pools.</li></ul>
+
+<p><br><span class="sectiontitle">Cause</span></p>
+
+<div>In BIG-IP AFM, zones made up of one or more VLANS can be configured. See <a href="https://techdocs.f5.com/en-us/bigip-15-1-0/big-ip-network-firewall-policies-and-implementations/afm-address-port-zone-lists-dita/about-afm-zones.html" target="_self">Manual Chapter : About AFM Zones</a> for more details. However, there is an issue when using destination zones which can result in that rule not getting hit as expected for incoming traffic. This happens when a network route is configured for a destination network or host that uses a gateway pool. To illustrate, the network route below for 172.16.0.0/16 is routed out via the LTM pool <em>gateway_pool</em></div>
+
+<div style="margin-left: 40px;"><br><span class="example2">net route gwPool {<br>    network 172.16.0.0/16<br>    pool /Common/gateway_pool<br>}<br>ltm pool gateway_pool {<br>    members {<br>        10.2.1.10:any {<br>            address 10.2.1.10<br>            session monitor-enabled<br>            state up<br>        }<br>    }<br>    monitor gateway_icmp<br>}</span></div>
+
+<p>There is an AFM rule for this destination network that uses a destination zone.</p>
+
+<p><span class="example2">        ZoneRule {<br>            action accept-decisively<br>            ip-protocol any<br>            log yes<br>            rule-number 1<br>            destination {<br>                addresses {<br>                   172.16.0.0/16 { }<br>                }<br>                zones {<br>                    Internal { }<br>                }<br>            }<br>            source {<br>                addresses {<br>                    0.0.0.0/0 { }<br>                }<br>            }</span></p>
+
+<div>Using a gateway pool as the egress route for the destination address results in the destination Zone not being read correctly within the traffic flow. This results in the expected rule not getting hit. This unexpected behavior is being tracked under Bug ID 997169.</div>
+
+<p><br><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>Workarounds can be either of the 2 options below.</p>
+
+<ol><li>Use a gateway IP instead of a gateway pool in the egress network route.</li><li>Do not use a destination zone in the AFM network firewall rule</li></ol>
+
+<p style="margin-left: 40px;"> </p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p style="margin-left: 40px;">None</p>
+</article>
+</body>
+</html>

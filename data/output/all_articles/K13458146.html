@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K13458146: Unable to Clone or Export ASM Policy</title>
+<meta name="description" content="Support Solution: Unable to Clone or Export ASM Policy — Can&#x27;t call method &quot;build_xml&quot; on an undefined value at /usr/local/share/perl5/F5/NegativeSignatures/Set.pm line 519.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K13458146">
+</head>
+<body>
+<header>
+<h1>K13458146: Unable to Clone or Export ASM Policy</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-05-25</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 16.X.X, 16.0.X, 16.1.3, 16.1.2, 16.1.1, 16.1.X, 16.0.1, 16.0.0, 16.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K13458146">https://my.f5.com/manage/s/article/K13458146</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>Unable to Clone or Export ASM Policy.</p>
+
+<p>Error message while exporting:</p>
+
+<p><span class="example2">Can&#39;t call method &quot;build_xml&quot; on an undefined value at /usr/local/share/perl5/F5/NegativeSignatures/Set.pm line 519.</span></p>
+
+<p>Error message while cloning:</p>
+
+<p><span class="example2">Failed to insert to PLC.PL_POLICY_NEGSIG_SETS (DBD::mysql::db do failed: Cannot add or update a child row: a foreign key constraint fails (`PLC`.`PL_POLICY_NEGSIG_SETS`, CONSTRAINT `PL_POLICY_NEGSIG_SETS_ibfk_2` FOREIGN KEY (`set_id`) REFERENCES `NEGSIG_SETS` (`set_id`) ON DELETE CASCADE) at /usr/local/share/perl5/F5/BatchInsert.pm line 230.</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Upgraded from 15.0.1.1 to 16.0.1.1</li><li>ASM MySQL database in healthy condition</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Signature set in <strong>PLC.NEGSIG_SETS</strong> that is attached to policy is missing.</p>
+
+<p>This has made the tables <strong>PLC.PL_POLICY_NEGSIG_SETS</strong> and <strong>PLC.NEGSIG_SETS</strong> inconsistent.</p>
+
+<p><span class="note"><strong>Note</strong>: The root cause of the inconsistency at the time of the article&#39;s publication is unknown.</span></p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>The following provides the procedure to determine the signature set that is missing which caused the inconsistency and to delete it.</p>
+
+<ol><li>Run the following command to list the policies and their associated signature set:
+	<p><span class="code">mysql -uasm -p`perl -MF5::Cfg -e &#39;print F5::Cfg::get_mysql_password()&#39;` PLC -e &quot;select *  from PLC.PL_POLICY_NEGSIG_SETS&quot;;</span></p>
+	</li><li>Note the signatures sets allocated for the affected policy.</li><li>Run the following command to list all the signature sets on the BIG-IP:
+	<p><span class="code">mysql -uasm -p`perl -MF5::Cfg -e &#39;print F5::Cfg::get_mysql_password()&#39;` DCC -e &quot;select * from PLC.NEGSIG_SETS&quot;;</span></p>
+
+	<p>a- compare the output with the signature sets from step (1)</p>
+
+	<p>b- identify the signature set that is missing from the signature sets table <strong>PLC.NEGSIG_SETS</strong>.</p>
+
+	<p>For the purpose of the article, the missing signature set ID is &quot;<strong>299999976</strong>&quot; as an example.</p>
+	</li><li>Run the following command to extract the <strong>rest_uuid</strong> of the affected policy from the <strong>PL_POLICIES</strong> table:
+	<p><span class="code">mysql -uasm -p`perl -MF5::Cfg -e &#39;print F5::Cfg::get_mysql_password()&#39;` PLC -e &quot;select * from PL_POLICIES&quot;;</span></p>
+
+	<p>You can identify the affected policy from the <strong>name</strong> field of the command output; you may want to note the ID of the affected policy from the <strong>id</strong> field for the next step.</p>
+	</li><li>Run the following command to extract the <strong>rest_uuid</strong> of the affected policy from the <strong>PLC.PL_POLICY_NEGSIG_SETS </strong>table:
+	<p><span class="code">mysql -uasm -p`perl -MF5::Cfg -e &#39;print F5::Cfg::get_mysql_password()&#39;` PLC -e &quot;select *  from PLC.PL_POLICY_NEGSIG_SETS&quot;;</span></p>
+
+	<p>You can identify the affected policy from the <strong>policy_id</strong> field by using the ID of the affected policy noted in the previous step.</p>
+	</li><li>To delete the missing signature set, replace the <strong>&lt;rest_uuid1&gt;</strong> and <strong>&lt;rest_uuid2&gt;</strong> in the following command with the results from the previous steps:
+	<p><span class="code">restcurl -s -u admin:admin -X DELETE https://localhost/mgmt/tm/asm/policies/&lt;rest_uuid1&gt;/signature-sets/&lt;rest_uuid2&gt;</span></p>
+
+	<p>Note that the <strong>&lt;rest_uuid1&gt;</strong> and <strong>&lt;rest_uuid2&gt; </strong>should be replaced by the results from step (4) and step (5) respectively. For the purpose of the article, the following command has been provided as an example:</p>
+
+	<p><span class="code">restcurl -s -u admin:admin -X DELETE https://localhost/mgmt/tm/asm/policies/9-NWeDLHPYCEY0Oi7Tceqg/signature-sets/a91sC4eNjYOoweIoex-V6g</span></p>
+	</li><li>Run the following command to confirm the signature set has been deleted from <strong>PLC.PL_POLICY_NEGSIG_SETS</strong> table:
+	<p><span class="code">mysql -uasm -p`perl -MF5::Cfg -e &#39;print F5::Cfg::get_mysql_password()&#39;` PLC -e &quot;select *  from PLC.PL_POLICY_NEGSIG_SETS&quot;;</span></p>
+	</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p><strong>PLC.NEGSIG_SETS</strong> stores signature sets attributes (id, name, learn/alarm/block flags, whether it is user defined, etc.) of all signature sets.</p>
+
+<p><strong>PLC.PL_POLICY_NEGSIG_SETS</strong> stores information which signature sets are assigned to each policy and which flags learn/alarm/block are enabled for each signature set (on policy level).</p>
+
+<p>It&#39;s not allowed that there is a signature set assigned to policy in the <strong>PLC.PL_POLICY_NEGSIG_SETS</strong> table which does not exist in the <strong>PLC.NEGSIG_SETS</strong> table.</p>
+</article>
+</body>
+</html>

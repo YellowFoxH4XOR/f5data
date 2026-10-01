@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K55110060: Disable retries for Virtual Service on Aspen Mesh</title>
+<meta name="description" content="Support Solution: Disable retries for Virtual Service on Aspen Mesh — Given any application inside the service mesh, receiving a HTTP 503 response code, the sidecar behavior is to retry up to 2 times (default value). How can I disable the retries to 0?">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K55110060">
+</head>
+<body>
+<header>
+<h1>K55110060: Disable retries for Virtual Service on Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-06-17</dd>
+<dt>Updated</dt><dd>2023-07-18</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.11, 1.14</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K55110060">https://my.f5.com/manage/s/article/K55110060</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><span class="sectiontitle">Description</span></h2>
+Given any application inside the service mesh, receiving a<strong> </strong><strong>HTTP 503 response code</strong>, the sidecar behavior is to retry up to 2 times (default value). How can I disable the retries to 0?
+
+<h2><span class="sectiontitle">Environment</span></h2>
+
+<ul><li>Redhat Openshift: 4.6x, 4.7.x</li><li>Kubernetes: 1.17x,1.18.x,1.19.x,1.20.x</li><li>Aspen Mesh: 1.6.x, 1.9.x</li></ul>
+
+<h2><br><span class="sectiontitle">Cause</span></h2>
+This is due to the default behavior of the <strong>max-retries</strong> HTTP filter in Envoy.
+
+<h2><span class="sectiontitle">Recommended Actions</span></h2>
+Disable retries applying a Virtual Service setting the number of attempts to 0. 
+
+<p>Disable retries procedure:</p>
+
+<ul><li>Create the following manifest to apply against your service host, replace the name and the hosts according to your needs in your environment.
+	<pre class="ckeditor_codeblock">
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: example-route
+spec:
+  hosts:
+  - example.prod.svc.cluster.local
+  http:
+  - route:
+    - destination:
+        host: example.prod.svc.cluster.local
+    retries:
+      attempts: 0
+</pre>
+	</li><li>Apply the configuration using one of the following commands depending on your environment:</li></ul>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+oc apply –f your-manifest.yaml
+kubectl apply –f  your-manifest.yaml</pre>
+
+<ul><li>
+	<p>Verify the resource is created using one of the following commands</p>
+
+	<pre class="ckeditor_codeblock">
+oc get virtualservice -n &lt;your-namespace&gt; &lt;object-name&gt;
+kubectl get virtualservice -n &lt;your-namespace&gt; &lt;object-name&gt;
+</pre>
+	</li><li>Verify the retries in your sidecar configuration are disabled with the following <strong>istioctl </strong>command syntax:</li></ul>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+istioctl proxy-config routes &lt;pod-name&gt; -n &lt;namespace&gt; -o json
+
+The following example output is when Retries is on.
+#Retries on:
+&quot;route&quot;: {
+    &quot;cluster&quot;: &quot;outbound|8000||example.prod.svc.cluster.local&quot;,
+    &quot;timeout&quot;: &quot;0s&quot;,
+    &quot;retryPolicy&quot;: {
+        &quot;retryOn&quot;: &quot;connect-failure,refused-stream,unavailable,cancelled,retriable-status-codes&quot;,
+        &quot;numRetries&quot;: 2,
+        &quot;retryHostPredicate&quot;: [
+            {
+                &quot;name&quot;: &quot;envoy.retry_host_predicates.previous_hosts&quot;
+            }
+        ],
+        &quot;hostSelectionRetryMaxAttempts&quot;: &quot;5&quot;,
+        &quot;retriableStatusCodes&quot;: [
+            503
+        ]
+    },
+    &quot;maxStreamDuration&quot;: {
+        &quot;maxStreamDuration&quot;: &quot;0s&quot;
+    }
+},
+&quot;decorator&quot;: {
+    &quot;operation&quot;: &quot;example.prod.svc.cluster.local:8000/*&quot;
+}</pre>
+
+<div style="margin-left: 40px;">The following example output is when Retries is off.</div>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+#Retries off:
+&quot;route&quot;: {
+    &quot;cluster&quot;: &quot;outbound|8000||example.prod.svc.cluster.local&quot;,
+    &quot;timeout&quot;: &quot;0s&quot;,
+    &quot;maxStreamDuration&quot;: {
+        &quot;maxStreamDuration&quot;: &quot;0s&quot;
+    }
+},
+&quot;metadata&quot;: {
+    &quot;filterMetadata&quot;: {
+        &quot;istio&quot;: {
+            &quot;config&quot;: &quot;/apis/networking.istio.io/v1alpha3/namespaces/default/virtual-service/ example-route &quot;
+        }
+    }
+},
+&quot;decorator&quot;: {
+    &quot;operation&quot;: &quot;example.prod.svc.cluster.local:8000/*&quot;
+}</pre>
+
+<h2><br>Additional Information</h2>
+
+<ul><li>A VirtualService defines a set of traffic routing rules to apply when a host is addressed. Each routing rule defines matching criteria for traffic of a specific protocol. If the traffic is matched, then it is sent to a named destination service (or subset/version of it) defined in the registry.</li></ul><br>	<br>	 
+</article>
+</body>
+</html>

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K13910: The BIG-IP APM does not properly rewrite the Microsoft JavaScript @cc_on command</title>
+<meta name="description" content="Known Issue: The BIG-IP APM does not properly rewrite the Microsoft JavaScript @cc_on command — The BIG-IP APM content rewrite engine does not properly rewrite the JavaScript @cc_on command.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K13910">
+</head>
+<body>
+<header>
+<h1>K13910: The BIG-IP APM does not properly rewrite the Microsoft JavaScript @cc_on command</h1>
+<dl>
+<dt>Type</dt><dd>Known Issue</dd>
+<dt>Published</dt><dd>2012-10-01</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>BIG-IP</li><li>BIG-IP Edge Gateway: 11.0.0, 11.1.0, 10.2.4, 10.2.2, 10.2.1, 10.2.0, 10.2.3</li><li>BIG-IP APM: 11.0.0, 10.2.4, 10.2.3, 10.2.2, 10.2.1, 10.2.0, 11.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K13910">https://my.f5.com/manage/s/article/K13910</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Known Issue</h3><p><span class="sectiontitle">Description</span></p>
+
+<p>The BIG-IP APM content rewrite engine does not properly rewrite the JavaScript <strong>@cc_on</strong> command.</p>
+
+<p>This issue occurs when the following condition is met:</p>
+
+<ul><li>You use the BIG-IP APM web portal to access a web page containing the <strong>@cc_on</strong> command.</li></ul>
+
+<p><span class="sectiontitle">Impact</span></p>
+
+<ul><li>Portions of the web page may not display.</li></ul>
+
+<p><span class="sectiontitle">Symptoms</span></p>
+
+<p>As a result of this issue, you may encounter the following symptoms:</p>
+
+<ul><li>The <strong>@cc_on</strong> command will not execute.</li><li>The page source will be rewritten to appear similar to the following example:<br>	<br>	<span class="example2">eval(F5_Invoke_eval(null,&#39;\n&#39;+/*@cc_on ... )</span></li></ul>
+
+<p>F5 Product Development has assigned ID 383313 to this issue, and has confirmed that this issue exists in the products listed in the <strong>Applies To</strong> box. For information about releases or hotfixes that resolve this issue, refer to the following table:</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1" style="width: 100%;"><tbody><tr><td colspan="1" rowspan="1">Type of Fix</td><td colspan="1" rowspan="1">Fixes Introduced In</td><td colspan="1" rowspan="1">Related Articles</td></tr><tr><td colspan="1" rowspan="1">Release</td><td colspan="1" rowspan="1">11.2.0</td><td colspan="1" rowspan="1"><a href="https://my.f5.com/manage/s/article/K2200" style="outline: medium none;" target="_blank">K2200: Most recent versions of F5 software</a></td></tr><tr><td colspan="1" rowspan="1">Hotfix</td><td colspan="1" rowspan="1">11.1.0 HF4</td><td colspan="1" rowspan="1"><a href="https://my.f5.com/manage/s/article/K9502" style="outline: medium none;" target="_blank">K9502: BIG-IP hotfix matrix</a></td></tr></tbody></table>
+
+<p><span class="sectiontitle">Workaround</span></p>
+
+<p>To work around this issue, you can prevent the BIG-IP APM system from rewriting the <strong>@cc_on</strong> command. To do so, perform one of the following two procedures:</p>
+
+<ul><li><a href="#irule">Creating an iRule to prevent the BIG-IP APM from rewriting the @cc_on command</a></li><li><a href="#tag">Using the &lt;apm_do_not_touch&gt; tag to instruct the content rewrite engine to ignore the @cc_on command</a></li></ul>
+
+<p><a name="irule"></a><span class="subsectiontitle">Creating an iRule to prevent the BIG-IP APM from rewriting the @cc_on command</span></p>
+
+<p><span class="note"><strong>Note</strong>: This iRule will not work if the <strong>cc_on</strong> command is included in a <strong>.js</strong> file. </span><br><br><span class="impact"><strong>Impact of workaround:</strong> </span><span class="impact">iRules may increase processing overhead and require more system resources per connection. </span></p>
+
+<ol><li>Log in to the BIG-IP Configuration utility.</li><li>Click <strong>Local Traffic.</strong></li><li>Click <strong>iRules</strong>.</li><li>Click <strong>Create</strong>.</li><li>Enter a name into the <strong>Name</strong> text box.<br>	<br>	For example:<br>	<br>	<span class="example2">fix-cc_on</span></li><li>Copy the following iRule into the <strong>Definition</strong> text box:
+	<p class="example2">when REWRITE_REQUEST_DONE {<br>	switch -glob &quot;[HTTP::host][HTTP::path]&quot; {<br>	&quot;*&quot; {<br>	REWRITE::post_process 1<br>	set match 1<br>	}<br>	<br>	default {<br>	set match 0<br>	}<br>	}<br>	<br>	if { [info exists match] &amp;&amp; $match } {<br>	if { [HTTP::version] eq &quot;1.1&quot; } {<br>	if { [HTTP::header is_keepalive] } {<br>	HTTP::header replace &quot;Connection&quot; &quot;Keep-Alive&quot;<br>	}<br>	HTTP::version &quot;1.0&quot;<br>	}<br>	}<br>	}<br>	<br>	when HTTP_RESPONSE {<br>	if { [info exists match] &amp;&amp; $match } { HTTP::collect 1048576 }<br>	}<br>	<br>	when HTTP_RESPONSE_DATA {<br>	if { [info exists match] &amp;&amp; $match } {<br>	regsub -all {/\*@cc_on} [HTTP::payload] &quot;==f5-cc_on= =f5-cc_on==&quot; npayload<br>	regsub -all {@\*/} $npayload &quot;==f5-cc_end= =f5-cc_end==&quot; npayload<br>	HTTP::payload replace 0 [HTTP::payload length] $npayload<br>	}<br>	HTTP::release<br>	}<br>	<br>	when REWRITE_RESPONSE_DONE {<br>	if { [info exists match] &amp;&amp; $match } {<br>	regsub -all {=f5-cc_on==} [REWRITE::payload] &quot;&quot; npayload<br>	regsub -all {==f5-cc_on=} $npayload &quot;/*@cc_on&quot; npayload<br>	regsub -all {=f5-cc_end==} $npayload &quot;&quot; npayload<br>	regsub -all {==f5-cc_end=} $npayload &quot;@*/&quot; npayload<br>	set nlength [REWRITE::payload length]<br>	REWRITE::payload replace 0 $nlength {}<br>	<br>	while {1} {<br>	set nsegment [string range $npayload [expr $nlength - 63999] $nlength]<br>	REWRITE::payload replace 0 0 $nsegment<br>	set nlength [expr $nlength - 64000]<br>	<br>	if { $nlength &lt; 0 } {<br>	break<br>	}<br>	}<br>	}<br>	<br>	set match 0<br>	<span class="example2">}</span></p>
+	</li><li>Click <strong>Finished</strong>.</li><li>Click <strong>Virtual Servers</strong>.</li><li>Click the name of the virtual server to which you want the iRule to attach.</li><li>Click the <strong>Resources</strong> tab.</li><li>Click <strong>Manage</strong> in the iRules section.</li><li>Select the iRule created above from the the<strong> Available</strong> list.</li><li>Click <strong>&lt;&lt;</strong>.</li><li>Click <strong>Finished</strong>.</li></ol>
+
+<p><a name="tag"></a><span class="subsectiontitle">Using the &lt;apm_do_not_touch&gt; tag to instruct the content rewrite engine to ignore the @cc_on command</span></p>
+
+<p><span class="impact"><strong>Impact of workaround:</strong></span> <span class="impact">Any statements inside the tags will not be processed by the content rewrite engine and portions of the web page may not reload correctly.</span></p>
+
+<ol><li>Open the HTML source that you want to modify.</li><li>Insert the <strong>&lt;apm_do_not_touch&gt;</strong> tag prior to the <strong>@cc_on</strong> statement.</li><li>Insert the <strong>&lt;/apm_do_not_touch&gt;</strong> tag after the <strong>@*/</strong> statement.</li><li>Save the HTML source.</li></ol>
+
+<p><span class="sectiontitle">Supplemental Information</span></p>
+
+<ul><li><a href="https://my.f5.com/manage/s/article/K4918" style="outline: medium none;" target="_blank">K4918: Overview of the F5 critical issue hotfix policy</a></li><li><a href="https://my.f5.com/manage/s/article/K167" target="_blank">K167: Downloading software and firmware from F5</a></li><li><a href="https://my.f5.com/manage/s/article/K1312" style="outline: medium none;" target="_blank">K13123: Managing BIG-IP product hotfixes (11.x - 12.x)</a></li><li><a href="https://my.f5.com/manage/s/article/K13907" target="_blank">K13907: Using the &lt;apm_do_not_touch&gt; HTML tags to prevent the BIG-IP APM from rewriting HTML content</a></li></ul>
+</article>
+</body>
+</html>

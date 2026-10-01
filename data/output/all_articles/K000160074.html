@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160074: NFS permission errors for Observer stats collection on BIG-IP Next on Kubernetes</title>
+<meta name="description" content="Support Solution: NFS permission errors for Observer stats collection on BIG-IP Next on Kubernetes — The F5 Observer on BIG-IP Next for Kubernetes supports the use of NFS (Network File System) as a StorageClass for its Persistent Volume Claims (PVCs) to facilitate long-term stats collection. While…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160074">
+</head>
+<body>
+<header>
+<h1>K000160074: NFS permission errors for Observer stats collection on BIG-IP Next on Kubernetes</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-27</dd>
+<dt>Updated</dt><dd>2026-02-27</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP Next</li><li>BIG-IP Next for Kubernetes: 2.X.X, 2.2.X, 2.2.0, 2.1.X, 2.1.1, 2.1.0, 2.0.X, 2.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160074">https://my.f5.com/manage/s/article/K000160074</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>The F5 Observer on BIG-IP Next for Kubernetes supports the use of NFS (Network File System) as a StorageClass for its Persistent Volume Claims (PVCs) to facilitate long-term stats collection. While NFS provides a flexible storage solution, it requires specific permission and export configurations to work seamlessly with the Observer&#39;s containerized architecture.</p>
+<p>If the NFS server or the Kubernetes StorageClass is not aligned with the pod&#39;s security context, the <strong>f5-observer-receiver</strong> may fail to initialize, typically resulting in a <strong>CrashLoopBackOff</strong> due to filesystem <strong>Permission Denied</strong> errors.</p>
+<p>This article outlines some specific issues when using NFS-backed storage and provides four plausible solutions—ranging from manual ownership adjustments to Helm-based configuration changes—to restore full functionality to the stats collection pipeline.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP Next for Kubrnetes</li><li>NFS as StorageClass for PVCs</li></ul>
+<h2>Cause</h2>
+<p>The <strong>f5-observer-receiver</strong> pod fails to start and enters <strong>CrashLoopBackOff</strong>. The logs contain the following error:</p>
+<p><span class="code">metricsdb: failed to open pebble db: open /var/metrics/v1alpha2/LOCK: permission denied</span></p>
+<p>This occurs when the Receiver pod (running as UID/GID 7053) cannot write to its NFS-backed persistent volume due to NFS server-side permission restrictions.</p>
+<h2>Recommended Actions</h2>
+<p>Use one of the following solutions to resolve the issue as appropriate for your environment:</p>
+<ul><li><a href="#s1" target="_self">Manually set ownership on NFS directory (root_squash)</a></li><li><a href="#s2" target="_self">Match the pod security context to NFS anonuid/anongid (all_squash)</a></li><li><a href="#s3" target="_self">Use emptyDir instead of persistent storage (helm only)</a></li><li><a href="#s4" target="_self">Create a new NFS storage class with UID/GID 7053</a></li></ul>
+<h3><a id="s1" target="_blank"></a>Manually set ownership on NFS directory (root_squash)<br><span class="note"><strong></strong></span></h3>
+<p>On the NFS server, create the required directory and set the ownership to 7053. For example:<br><span class="note"><strong>Note</strong>: This solution is not scalable. Recommended only when deploying via F5 Lifecycle Operator (FLO), where the Receiver pod count remains fixed.</span></p>
+<ol><li>Change directory:<br><span class="example2">cd $NFS_ROOT/f5-utils-stats-pvc-f5-observer-receiver-0-pvc-*/f5-utils</span></li><li>Create a new directory:<br><span class="example2">mkdir -p v1alpha2</span></li><li>Set the permissions with the <strong>cchown</strong> command:<br><span class="example2">cchown -R 7053:7053 v1alpha2</span></li><li>Repeat for each Receiver&#39;s PVC directory if multiple Receivers are deployed.</li></ol>
+<h3><a id="s2" target="_blank"></a>Match the pod security context to NFS anonuid/anongid (all_squash)</h3>
+<p>When the NFS server is configured with <strong>all_squash,anonuid=,anongid=</strong>, all client requests are mapped to the specified UID/GID regardless of the pod&#39;s actual user. To resolve this, update the Receiver&#39;s <strong>stateful-set security</strong> context and <strong>fsGroup</strong> to match the NFS squash UID/GID.</p>
+<h3><a id="s3" target="_blank"></a>Use emptyDir instead of persistent storage (helm only):</h3>
+<p>Disable persistence in the Observer Helm values:<br><span class="code">persistence:<br>   enabled: false</span><br>The above code replaces the PVC with an emptyDir ephemeral volume.<br><span class="note"><strong>Note</strong>: If the Observer has already been installed via Helm, uninstall and reinstall with the updated values.</span><br><strong>Impact</strong>:</p>
+<ul><li>Live TMM metrics are unaffected. Metrics are extracted from TMMs every 1-minute cycle regardless of persistence.</li><li>Dead-TMM metrics metrics from TMMs that were previously running but have since terminated may be lost if the Receiver pod restarts.</li></ul>
+<p><strong>Mitigating factor</strong>:<br>Receivers synchronize dead-TMM metrics among themselves. If one Receiver restarts, other Receivers will re-sync the dead-TMM metrics to it upon recovery. Actual data loss only occurs if all Receivers go down simultaneously.</p>
+<h3><a id="s4" target="_blank"></a>Create a new NFS storage class with UID/GID 7053</h3>
+<p>This solution requires changes on both the NFS server and Kubernetes cluster.</p>
+<ol><li>
+<p>Create a new NFS storage class that exports with <strong>all_squash,anonuid=7053,anongid=7053</strong>.<br>This ensures all file operations are mapped to UID/GID 7053, matching the Receiver pod&#39;s security context.</p>
+</li><li>
+<p>Configure a new export on the NFS server with the correct squash settings, then create a StorageClass pointing to it. <br>The existing <strong>stats-pvc </strong>PVCs and <strong>StatefulSet</strong> must be deleted and recreated to use the new StorageClass, as PVC storage class configuration is immutable.</p>
+</li></ol>
+<p> </p>
+</article>
+</body>
+</html>

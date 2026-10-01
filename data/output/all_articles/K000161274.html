@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161274: Incompatibility of transparent/translucent vlan-groups and shared VLANs in F5OS</title>
+<meta name="description" content="Support Solution: Incompatibility of transparent/translucent vlan-groups and shared VLANs in F5OS — On a VELOS chassis running F5OS-C or appliance running F5OS-A, BIG-IP tenant configured with translucent or transparent vlan-group may experience intermittent packet loss, pool member monitor…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161274">
+</head>
+<body>
+<header>
+<h1>K000161274: Incompatibility of transparent/translucent vlan-groups and shared VLANs in F5OS</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-05-27</dd>
+<dt>Updated</dt><dd>2026-05-27</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161274">https://my.f5.com/manage/s/article/K000161274</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<div class="page-wrapper">
+<div class="article-header"> </div>
+<div class="article-body">
+<div class="kcs-section">
+<h2><span style="font-size: 18px;">Description</span></h2>
+<p>On a VELOS chassis running F5OS-C or appliance running F5OS-A, BIG-IP tenant configured with <strong>translucent or transparent vlan-group</strong> may experience intermittent packet loss, pool member monitor flapping, or unicast traffic being incorrectly replicated to other tenants, after one or more of the VLANs belonging to that vlan-group is also assigned to an additional tenant — making the VLAN <strong>shared</strong>.</p>
+<p>Symptoms include:</p>
+<ul><li>Intermittent ICMP packet loss to self-IPs on VLANs that are part of a vlan-group, packets being dropped on ingress.</li><li>Pool member monitors (ICMP, TCP) flapping down and up after a VLAN is shared between tenants</li><li>Unicast traffic (for example, ICMP replies, TCP flows) being received by tenants that should not be receiving it</li><li>Symptoms may persist after removing the VLAN from the additional tenants until the L2 state ages out or the partition is reconfigured.</li></ul>
+</div>
+<div class="kcs-section">
+<h2>Environment</h2>
+<p>Platform: VELOS chassis, rSeries appliances</p>
+<p>Affected versions: F5OS-C 1.6.x, 1.8.x, F5OS-A 1.5.x, 1.8.x, TMOS v15.1.x and further.</p>
+<p> </p>
+</div>
+<div class="kcs-section">
+<h2>Cause</h2>
+<p>Combining a VLAN-group with a shared VLAN creates an architectural incompatibility in how the F5OS layer handles L2 forwarding listeners as per current design.</p>
+<p>When a VLAN is assigned to more than one tenant, the F5OS creates a special rebroadcaster listener that is needed to forward broadcasts as well as DLFs (Destination Lookup Failure packets) to the tenants that share the VLAN. The rebroadcaster listener can be seen in the &quot;show vlan-listeners&quot; output on partition, as per example below:</p>
+<p><code>show vlan-listeners<br>                                                                                                 <br>INTERFACE    VLAN  ENTRY TYPE      OWNER     NDI ID SVC VTC  SEP DMS  DID  CMDS  MIRRORING  SERVICE IDS<br>....<br>TRUNK1       1111  RBCAST-LISTENER rbcast    4095    5  56   15  3     -    -    disabled   [ svc_id1 svc_id2 ]<br>....</code></p>
+<p>For vlan-groups in translucent mode, BIG-IP TMM bridges traffic between two VLANs while flipping the locally-administered (LA) bit of the source MAC address. For example:</p>
+<p>Original source MAC address (entering VLAN A): <code>00:50:00:00:00:01</code>  (LA bit = 0)</p>
+<p>Bit-flipped bridged source MAC address (exiting VLAN B): <code>02:50:00:00:00:01</code>  (LA bit = 1)</p>
+<p>This &quot;bit-flipped&quot; MAC is considered a new source MAC address that FPGA needs to learn.  FPGA creates a dynamic listener and not a static per-tenant listener for this bit-flipped MAC address. However, this entry is learned without a tenant service ID, as currently only static entries (such as tenant MAC address or masquerade MAC) are learned with tenant service ID. Since there is no service ID for this bit-flipped MAC address listener, it is associated with rebroadcaster listener.</p>
+<p>Incoming unicast traffic that matches these bit-flipped MAC addresses as destination MAC will be using rebroadcaster listener and as a result traffic will be sent to all the tenants that share VLAN, including unicast traffic. The rebroadcaster listener is not designed for line-rate unicast and under certain load can cause packet drops.</p>
+<p>The following nse_l2 fpga table (fpga forwarding table) output illustrates the problematic FDB entry:</p>
+<pre><span class="code-comment"># Defective: bit-flipped MAC learned without service ID, DID=F → routes to rebroadcaster:</span>
+<span class="code-key">mac                nti  l2_tag  entry_type  ifh.did  ifh.did_en  ifh.svc  ifh.svc_en</span>
+02:50:00:00:00:01  4095  3610   dynamic      F          1          0          0
+<span class="code-comment">#                                                                  ↑ svc=0 → rebroadcaster path</span>
+
+<span class="code-comment"># Correct: tenant MAC with proper service ID:</span>
+00:50:00:00:00:01      4095  3623   L2-LISTENER  D          1      9          1
+<span class="code-comment">#                                                                  ↑ svc=9 → correct tenant</span></pre>
+<div class="warning-box">For transparent VLAN-groups, although there is no bit-flipping for MAC address, the MAC addresses of the endpoints are preserved after passing through BIG-IP tenant. As a result of that F5OS FPGA will need to learn them dynamically leading to the same issue. Thus same incompatibility described for translucent vlan-groups applies to transparent vlan-groups as well.</div>
+<div class="warning-box"> </div>
+<div class="warning-box">This issue is tracked under b<strong>ug ID2230257.</strong></div>
+</div>
+<div class="kcs-section">
+<h2>Recommended Actions</h2>
+<h3>1. Do not share VLANs used in VLAN-groups (preferred)</h3>
+<p>The most reliable and fast workaround is to ensure that <strong>VLANs that are members of a VLAN-group are assigned to only one tenant</strong>. Remove the shared VLAN assignment from any additional tenants, so the reboradcaster is not used.</p>
+<p>Verify the current listener state in partition/appliance CLI by running &quot;show vlan-listeners&quot;. If there is an RBCAST-LISTENER, the VLAN is shared.</p>
+<h3>2. Switch to opaque VLAN-group mode</h3>
+<p>In opaque mode, BIG-IP uses its own static tenant MAC address instead of a bit-flipped external MAC. The static MAC is pre-registered in the FDB and is not subject to dynamic learning issues.</p>
+<pre><span class="code-comment"># On the BIG-IP tenant CLI — change VLAN-group mode to opaque:</span>
+<span class="code-cmd">tmsh modify net vlan-group &lt;vlan-group-name&gt; mode opaque</span>
+<span class="code-cmd">tmsh save sys config</span></pre>
+<div class="note-box"><strong>Note:</strong> Switching to opaque mode changes the bridging behavior and must be validated based on specific deployment.</div>
+<div class="note-box"> </div>
+<h3>3. Migrate to virtual-wire (vWire) solution</h3>
+<p>Virtual-wire is hardware-based equivalent of VLAN-group for L2 inline deployments. The vWire solution needs to be evaluated on a per-deployment basis.</p>
+<hr></hr></div>
+<div class="kcs-section">
+<h2>Additional Information</h2>
+<p>VLAN-groups overview: <a href="https://techdocs.f5.com/en-us/bigip-14-1-0/big-ip-tmos-routing-administration-14-1-0/vlans-vlan-groups-and-vxlan.html" target="_blank">https://techdocs.f5.com/en-us/bigip-14-1-0/big-ip-tmos-routing-administration-14-1-0/vlans-vlan-groups-and-vxlan.html</a><a href="https://my.f5.com/manage/s/article/K000138578" target="_blank"></a></p>
+</div>
+</div>
+<div class="article-footer">
+<p style="margin-top: 6px;"> </p>
+</div>
+</div>
+</article>
+</body>
+</html>

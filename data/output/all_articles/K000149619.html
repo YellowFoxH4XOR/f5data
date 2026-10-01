@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000149619: Priority Group Activation (PGA) set to low with persistence</title>
+<meta name="description" content="Support Solution: Priority Group Activation (PGA) set to low with persistence — In this configuration device is not working as expected, because one pool member is receiving traffic even though its Priority Group is lower than that of another pool member with Persistence set too.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000149619">
+</head>
+<body>
+<header>
+<h1>K000149619: Priority Group Activation (PGA) set to low with persistence</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-06-27</dd>
+<dt>Updated</dt><dd>2025-06-27</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.0.0, 15.0.X, 15.0.1, 17.X.X, 16.X.X, 15.X.X, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000149619">https://my.f5.com/manage/s/article/K000149619</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>In this configuration device is not working as expected, because one pool member is receiving traffic even though its Priority Group is lower than that of another pool member with Persistence set too.</p>
+<p> </p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM All</li><li>Pool member</li><li>Persistence</li><li>Priority Group Activation (PGA)</li></ul>
+<h2>Cause</h2>
+<p>When a Virtual Server use a Priority Group Activation (PGA), Persistence can result in traffic continuing to go to a pool member in a lower priority group, even after pool member in a higher priority group become available again. </p>
+<h2>Recommended Actions</h2>
+<p>To make specific pool member as primary:</p>
+<ol><li>You have to disable persistence</li></ol>
+<h2>Additional Information</h2>
+<p>Here is example of what the misconfiguration would look like. Ideally the 192.0.2.2 pool member should take the traffic as it has the higher priority value, set on 2. If this pool member fails, or is marked offline, the 192.0.2.1 (priority value, set on 0) pool member would begin to take the traffic, until the 192.0.2.2 comes back online. Unfortunately, is improper setup up describe above.</p>
+<p>When a client connects to the my_virtual virtual server, the BIG-IP LTM system directs the connection to the 192.0.2.1 pool member and records this in it&#39;s persistence table. If the client reconnects before the persistence entry expires, the system bypasses load balancing and sends the connection directly to the priority 0 member 192.0.2.1, even if higher priority member with higher priority 192.0.2.2 is back online.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>#Virtual Server
+ 
+ltm virtual /Common/my_virtual {                                       
+    destination /Common/192.0.2.252:http
+    ip-protocol tcp
+    last-modified-time 2025-01-15:05:55:55
+    mask 255.255.255.255
+    persist {
+        /Common/source_addr_60min {    &lt;====== Persistence enabled
+            default yes
+        }
+    }
+    pool /Common/my_pool               
+    profiles {
+        /Common/tcp { }
+    }
+   &lt;...&gt;
+   &lt;...&gt;
+}
+
+#Pools
+
+ ltm pool /Common/my_pool {                      
+  members {
+    /Common/membertest-02:http {
+      address 192.0.2.01               &lt;====== PGA set on 0
+    }
+    /Common/membertest-03:http {                  
+      address 192.0.2.2
+      monitor /Common/tcp
+      priority-group 1                 &lt;====== PGA enabled and set on 1
+    }
+  }
+  min-active-members 1
+  monitor /Common/tcp
+}
+
+#Persistence Profiles
+
+ltm persistence source-addr /Common/source_addr_60min {
+   &lt;...&gt;
+   &lt;...&gt;
+   timeout 3600                                 &lt;====== Persistence set to 60min
+}</code></pre>
+<p>When a virtual server references a priority group pool, persistence may cause traffic to persist to a pool in a lower priority group even after a higher priority group is reactivated. Once the persistence record expires, connections will be directed to higher priority pool member.</p>
+</article>
+</body>
+</html>

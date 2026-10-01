@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160329: IPV6 in AWS neigh show always FAILED</title>
+<meta name="description" content="Support Solution: IPV6 in AWS neigh show always FAILED — BIG-IP systems may fail to route outbound IPv6 traffic, resulting in &quot;Network is unreachable&quot; errors and neighbor table entries showing &quot;FAILED&quot; status, even when IPv6 addresses, self-IPs, and routes…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160329">
+</head>
+<body>
+<header>
+<h1>K000160329: IPV6 in AWS neigh show always FAILED</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-03-12</dd>
+<dt>Updated</dt><dd>2026-03-12</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160329">https://my.f5.com/manage/s/article/K000160329</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>BIG-IP systems may fail to route outbound IPv6 traffic, resulting in &quot;Network is unreachable&quot; errors and neighbor table entries showing &quot;FAILED&quot; status, even when IPv6 addresses, self-IPs, and routes are properly configured. This occurs when the system database variable <span style="background-color: #f1f1f1;">ipv6.enabled</span> is set to <span style="background-color: #f1f1f1;">false</span>, preventing the BIG-IP from processing and routing IPv6 packets. Additionally, incorrect IPv6 default route configuration (e.g., using <span style="background-color: #f1f1f1;">::/128</span> instead of <span style="background-color: #f1f1f1;">::/0</span>) can prevent proper routing of IPv6 traffic.</p>
+<p>Symptoms include:</p>
+<ul><li>Outbound IPv6 connections (e.g., <span style="background-color: #f1f1f1;">curl -6</span>, <span style="background-color: #f1f1f1;">ping6</span>) fail with &quot;Network is unreachable&quot; or &quot;No route to host&quot; errors.</li><li>The neighbor table (<span style="background-color: #f1f1f1;">ip -f inet6 neigh show</span>) shows the IPv6 gateway in &quot;FAILED&quot; state.</li><li>The BIG-IP does not send IPv6 traffic, or traffic is sent but fails to establish connections.</li><li>Inbound IPv6 traffic may be received (visible via <span style="background-color: #f1f1f1;">tcpdump</span>), but return traffic is not sent.</li></ul>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM (all modules)</li><li>Any version where IPv6 is supported</li><li>Particularly relevant for BIG-IP VE deployments in AWS, Azure, Hyper-V, and other cloud/virtualized environments where IPv6 is required</li></ul>
+<h2>Cause</h2>
+<p>The system database variable <span style="background-color: #f1f1f1;">ipv6.enabled</span> is set to <span style="background-color: #f1f1f1;">false</span>. This setting disables IPv6 processing and routing at the system level, preventing the BIG-IP from sending or handling IPv6 traffic, regardless of configured IPv6 addresses, self-IPs, routes, or VLANs.</p>
+<p>Additionally, incorrect configuration of the IPv6 default route (e.g., using <span style="background-color: #f1f1f1;">::/128</span> instead of <span style="background-color: #f1f1f1;">::/0</span> as the network prefix) will prevent the BIG-IP from routing traffic to IPv6 destinations not covered by more specific routes.</p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li><strong>Verify the <span style="background-color: #f1f1f1;">ipv6.enabled</span> database variable setting:</strong>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh list /sys db ipv6.enabled</span></p>
+<p>If the value is <span style="background-color: #f1f1f1;">false</span>, IPv6 processing is disabled.</p>
+</li><li><strong>Enable IPv6 processing:</strong>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh modify sys db ipv6.enabled value true</span></p>
+</li><li><strong>Verify and correct the IPv6 default route:</strong>
+<ul><li>Check the current routing configuration:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh list /net route</span></p>
+</li><li>Ensure the IPv6 default route uses the correct network prefix (<span style="background-color: #f1f1f1;">::/0</span> or <span style="background-color: #f1f1f1;">default-inet6</span>) and the appropriate gateway address (typically the first usable IPv6 address in your subnet).</li><li>If the route is incorrect, delete and recreate it:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh delete /net route &lt;route_name&gt;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh create /net route &lt;route_name&gt; network default-inet6 gw &lt;IPv6_gateway_address&gt;</span></p>
+</li><li>Ensure a corresponding IPv6 self-IP exists on the same VLAN as the gateway.</li></ul>
+</li><li><strong>Save the configuration:</strong>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh save /sys config</span></p>
+</li><li><strong>Verify IPv6 connectivity:</strong>
+<ul><li>Test outbound IPv6 connectivity:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">ping6 -c 4 &lt;destination&gt;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">curl -6 -kv &lt;destination_url&gt;</span></p>
+</li><li>Check the neighbor table:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">ip -f inet6 neigh show</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh show /net ndp all</span></p>
+</li><li>Verify the gateway is reachable and neighbor entries are in a valid state (not FAILED).</li></ul>
+</li><li><strong>For cloud deployments (AWS, Azure):</strong>
+<ul><li>Ensure Security Groups and Network ACLs allow ICMPv6 (protocol 58) for proper neighbor discovery.</li><li>Confirm the VPC route table includes a <span style="background-color: #f1f1f1;">::/0</span> route to the Internet Gateway (if applicable).</li><li>Verify the subnet has an IPv6 CIDR assigned and the ENI has IPv6 addresses.</li></ul>
+</li></ol>
+<h2>Additional Information</h2>
+<ul><li>The <span style="background-color: #f1f1f1;">ipv6.enabled</span> database variable controls whether the BIG-IP system processes IPv6 traffic at the system level. When set to <span style="background-color: #f1f1f1;">false</span>, the system will not send or receive IPv6 traffic, even if IPv6 addresses and routes are configured. This setting is independent of having IPv6 addresses or self-IPs configured.</li><li>The IPv6 default route must use the network prefix <span style="background-color: #f1f1f1;">::/0</span> (or the alias <span style="background-color: #f1f1f1;">default-inet6</span>). Using <span style="background-color: #f1f1f1;">::/128</span> represents a single specific IPv6 address and does not function as a default route.</li><li>The BIG-IP system does not support initiating router solicitations for IPv6 and cannot auto-configure its default gateway using Neighbor Discovery Protocol (NDP). Manual configuration of the IPv6 default route is required.</li><li>If the neighbor entry for the IPv6 gateway remains in a FAILED state after enabling <span style="background-color: #f1f1f1;">ipv6.enabled</span> and configuring the route, investigate network connectivity issues, such as firewalls blocking ICMPv6 or incorrect gateway addresses.</li></ul>
+</article>
+</body>
+</html>

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K53344744: APM RSA auth may fail if next tokencode entered after 30 sec</title>
+<meta name="description" content="Support Solution: APM RSA auth may fail if next tokencode entered after 30 sec — RSA auth might fail if the next token code received through email is entered after 30 sec.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K53344744">
+</head>
+<body>
+<header>
+<h1>K53344744: APM RSA auth may fail if next tokencode entered after 30 sec</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-01-13</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K53344744">https://my.f5.com/manage/s/article/K53344744</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>RSA auth might fail if the next token code received through email is entered after 30 sec.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<p>APM configured for RSA authentication<br>RSA OnDemand Auth is used - Next Token code sent through email</p>
+
+<p><span class="sectiontitle">Cause</span><br><br>This is because the udp source port changes when the next token code is entered after 30 sec (due to udp timeout of 30sec) and the RSA authentication manager uses the source port as part of the session validation from the initial PIN/tokencode to the next token code. If the port changes, RSA auth fails.<br> <br><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>Use a layered Virtual Server with a UDP profile with a timeout of 180 seconds as a workaround.<br> </p>
+
+<pre>
+<span class="code">ltm virtual vs_layered_rsa {
+    destination 192.168.2.10:5500</span><span class="example2">          &lt;========== rsa server address and port 5500</span><span class="code">
+    ip-protocol udp
+    mask 255.255.255.255
+    profiles {
+        udp_rsa { }</span><span class="example2">                        &lt;========== udp profile</span><span class="code">
+    }
+    serverssl-use-sni disabled
+    source 0.0.0.0/0
+    translate-address disabled
+    translate-port enabled
+    vs-index 13
+}
+
+ltm profile udp udp_rsa {
+    allow-no-payload disabled
+    app-service none
+    buffer-max-bytes 655350
+    buffer-max-packets 0
+    datagram-load-balancing disabled
+    defaults-from udp
+    idle-timeout 180</span><span class="example2">                       &lt;========== extended timeout</span><span class="code">
+    ip-df-mode pmtu
+    ip-tos-to-client 0
+    ip-ttl-mode proxy
+    link-qos-to-client 0
+    proxy-mss disabled
+    send-buffer-size 655350
+}</span>
+</pre>
+
+<p><br><br><strong>Additional Information</strong><br><br> <br>Enter tokencode within 30 sec: RSA auth successful<br> <br>Packet captures - source port does not change<br> <br><span class="example">18031    16:17:45.922510              192.168.1.5   192.168.2.10       UDP       705         OUT s1/tmm3 : 4887 → 5500 Len=552<br>18033    16:17:45.934941              192.168.2.10  192.168.1.5        UDP       661         IN  s1/tmm3 : 5500 → 4887 Len=508<br>18034    16:17:45.935437              192.168.1.5   192.168.2.10       UDP       705         OUT s1/tmm3 : 4887 → 5500 Len=552<br>19801    16:17:47.935818              192.168.2.10  192.168.1.5        UDP       661         IN  s1/tmm3 : 5500 → 4887 Len=508<br>31515    16:18:01.651035              192.168.2.10  192.168.1.5        UDP       661         IN  s1/tmm3 : 5500 → 4887 Len=508</span><br><br>APM logs:</p>
+
+<pre>
+<span class="example">Oct  9 11:23:17 APM-BIGIP info apmd[13270]: 01490118:6: /Common/ap_test:Common:ffa87ea3: SECURID agent: (logon attempt:0) securid challenge received, message: Wait for the tokencode to change, then enter the new tokencode:
+[…]
+
+Oct  9 11:23:38 APM-BIGIP debug apmd[13270]: 01490266:7: (null):Common:00000000: ApmD.cpp: &#39;process_apd_request()&#39;: 1710: start processing of the access policy. Request received: Session_ID = &quot;ffa87ea3&quot;,Profile_ID = &quot;/Common/ap
+_test&quot; Traffic-group Id = &quot;1&quot;, Request_From = &quot;&quot;, Clientless_Mode = &quot;&quot;,No_Inspection_Host = &quot;&quot;, CMP_Process_Unit = &quot;0, mc = 0x2ba842c73650&quot;
+Oct  9 11:23:38 APM-BIGIP debug apmd[13270]: 01490011:7: /Common/ap_test:Common:ffa87ea3: Logon agent: ENTER Function executeInstance
+[...]
+Oct  9 11:23:38 APM-BIGIP debug apmd[13270]: 01490011:7: /Common/ap_test:Common:ffa87ea3: SECURID agent: ENTER Function executeInstance
+Oct  9 11:23:40 APM-BIGIP info apmd[13270]: 01490117:6: /Common/ap_test:Common:ffa87ea3: SECURID agent: (logon attempt:1) authenticate with &#39;chitran&#39; successfully</span></pre>
+
+<p><br> <br>Enter token code after 30 sec:<br> <br>Packet captures - source port changes: RSA auth fails<br> <br><span class="example">14608    16:02:22.858668              192.168.1.5   192.168.2.10       UDP       277         OUT s1/tmm3 : 3751 → 5500 Len=124<br>14610    16:02:22.859702              192.168.2.10  192.168.1.5        UDP       277         IN  s1/tmm3 : 5500 → 3751 Len=124<br>14612    16:02:22.860283              192.168.1.5   192.168.2.10       UDP       705         OUT s1/tmm3 : 3751 → 5500 Len=552<br>14625    16:02:22.871273              192.168.2.10  192.168.1.5        UDP       661         IN  s1/tmm3 : 5500 → 3751 Len=508<br>14626    16:02:22.871717              192.168.1.5   192.168.2.10       UDP       705         OUT s1/tmm3 : 3751 → 5500 Len=552<br>15553    16:02:24.873044              192.168.2.10  192.168.1.5        UDP       661         IN  s1/tmm3 : 5500 → 3751 Len=508<br> <br>51731    16:03:15.966423              192.168.1.5   192.168.2.10       UDP       705         OUT s1/tmm3 : 3798 → 5500 Len=552<br>54346    16:03:20.969382              192.168.1.5   192.168.2.10       UDP       705         OUT s1/tmm3 : 3798 → 5500 Len=552<br>57430    16:03:25.969446              192.168.1.5   192.168.2.10       UDP       705         OUT s1/tmm3 : 3798 → 5500 Len=552<br>59652    16:03:30.969701              192.168.1.5   192.168.2.10       UDP       705         OUT s1/tmm3 : 3798 → 5500 Len=552<br>61837    16:03:35.969998              192.168.1.5   192.168.2.10       UDP       705         OUT s1/tmm3 : 3798 → 5500 Len=552</span></p>
+
+<pre>
+<span class="example">Oct 12 08:02:24 APM-BIGIP info apmd[13506]: 01490118:6: /Common/ap-test:Common:be4d7e72: SECURID agent: (logon attempt:0) securid challenge received, message: Wait for the tokencode to change, then enter the new tokencode:
+
+[…]
+Oct 12 08:03:15 APM-BIGIP debug apmd[13506]: 01490266:7: (null):Common:00000000: ApmD.cpp: &#39;process_apd_request()&#39;: 1711: Request Received : 168
+[...]
+Oct 12 08:03:15 APM-BIGIP debug apmd[13506]: 01490011:7: /Common/ap-test:Common:be4d7e72: Logon agent: ENTER Function executeInstance
+[...]
+Oct 12 08:03:15 APM-BIGIP debug apmd[13506]: 01490011:7: /Common/ap-test:Common:be4d7e72: SECURID agent: ENTER Function executeInstance
+[...]
+Oct 12 08:03:40 APM-BIGIP err apmd[13506]: 01490122:3: /Common/ap-test:Common:be4d7e72: SECURID module: authentication with &#39;abc&#39; failed: authentication failed, code: -1, state: SECURID_AUTH_STATE_ACCESS_DENIED</span></pre>
+
+<p><br><br> </p>
+</article>
+</body>
+</html>

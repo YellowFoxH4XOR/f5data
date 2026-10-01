@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000152628: Using Ansible to update the Configuration utility&#x27;s self-signed SSL certificate</title>
+<meta name="description" content="Support Solution: Using Ansible to update the Configuration utility&#x27;s self-signed SSL certificate — /usr/bin/openssl command failed. Please ensure your key is not encrypted.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000152628">
+</head>
+<body>
+<header>
+<h1>K000152628: Using Ansible to update the Configuration utility&#x27;s self-signed SSL certificate</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-07-18</dd>
+<dt>Updated</dt><dd>2025-07-18</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.0.0, 16.0.X, 16.0.1, 17.X.X, 16.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000152628">https://my.f5.com/manage/s/article/K000152628</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Automating device certificate renewal on BIG-IP LTM using an Ansible playbook fails when the private key is password-protected. The following error appears during import or API operations:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">unable to load Private Key</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">140332609402544:error:digital envelope routines:EVP_DecryptFinal_ex:bad decrypt:evp_enc.c:664:</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">140332609402544:error:0906A065:PEM routines:PEM_do_header:bad decrypt:pem_lib.c:476:</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">/usr/bin/openssl command failed. Please ensure your key is not encrypted.</span></p>
+<p>HTTP 400 errors may also be returned by the API when attempting to import a password-protected private key.</p>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP LTM</li><li>Platform: F5 BIG-IP, Ansible</li><li>Automation method: Ansible playbook (reference article K48569705)</li><li>Certificate management system (e.g., Venafi) providing CA-signed certificates with password-protected private keys</li></ul>
+<h2>Cause</h2>
+<p>The F5 Ansible modules does not support importing CA-signed SSL certificate. This is a supplementary document for K48569705, providing an example(of workaround) when the CA key is password enabled.</p>
+<h2>Recommended Actions</h2>
+<div>
+<div>1. Remove Password from Private Key Before Import</div>
+<div>- Decrypt the private key before importing it into BIG-IP via Ansible:</div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">openssl rsa -in encrypted.key -out decrypted.key</span></div>
+<div>- Use `decrypted.key` in your Ansible playbook for certificate/key import tasks.</div>
+<div>
+<div> </div>
+<div>2. Automate Password Handling When Signing CSRs</div>
+<div>- If you must sign a CSR with a password-protected CA key within your automation, use OpenSSL’s `-passin` option:</div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">- name: Sign CSR on localhost</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">  command: &gt;</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">    openssl x509 -req -in &quot;{{ &#39;files/&#39; + inventory_hostname + &#39;_server.csr&#39; }}&quot;</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">    -CA &lt;CA_CERT_PATH&gt;</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">    -CAkey &lt;CA_KEY_PATH&gt;</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">    -CAcreateserial</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">    -out &quot;{{ &#39;files/&#39; + inventory_hostname + &#39;_server.crt&#39; }}&quot;</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">    -days 365</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">    -passin <a href="file://servitor" target="_blank">file://servitor</a>_CA_password.txt</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">  delegate_to: localhost</span></div>
+<div>- Ensure any plaintext password files are securely deleted after use.</div>
+<div> </div>
+<div>3. <span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;">Security Best Practices</span>
+<div>
+<div>- Protect all sensitive files, including decrypted keys and temporary password files.</div>
+<div>- Consider using secure storage solutions such as Ansible Vault for managing secrets.</div>
+<div> </div>
+<div>4. <span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;">Module Limitations</span>
+<div>
+<div>- Current F5 official Ansible modules for device certificate management only support unencrypted keys for import operations.</div>
+<div>- There is no built-in parameter to pass a decryption password for encrypted private keys during import.</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

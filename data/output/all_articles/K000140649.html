@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000140649: Back up and restore the F5OS-A configuration on an rSeries system using the API</title>
+<meta name="description" content="Knowledge: Back up and restore the F5OS-A configuration on an rSeries system using the API — You want to back up / restore the F5OS-A configuration on your rSeries system using the API.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000140649">
+</head>
+<body>
+<header>
+<h1>K000140649: Back up and restore the F5OS-A configuration on an rSeries system using the API</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2024-08-15</dd>
+<dt>Updated</dt><dd>2026-04-28</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS</li><li>F5OS-A: 1.8.4, 1.5.4, 1.5.3, 1.5.X, 1.7.0, 1.8.X, 1.8.3, 1.5.2, 1.7.X, 1.5.1, 1.8.0, 1.5.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000140649">https://my.f5.com/manage/s/article/K000140649</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3>
+<p>You should consider using these procedures under the following condition:</p>
+<ul><li>You want to back up / restore the F5OS-A configuration on your rSeries system using the API.</li></ul>
+<h3>Description</h3>
+<p>To completely backup the rSeries system you must perform the following tasks:</p>
+<ul><li>Back up the F5OS-A configuration</li><li>Back up each tenant TMOS configuration</li></ul>
+<p>This article describes how to back up and restore the F5OS-A configuration using the F5OS API. For information about backing up and restoring each tenant TMOS configuration, refer to the following article: <span class="note"><a href="https://my.f5.com/manage/s/article/K13132" target="_self">K13132: Backing up and restoring BIG-IP configuration files with a UCS archive</a>.</span></p>
+<p>The <strong>confd</strong> process manages the F5OS-A configuration on an rSeries system. The system stores the configuration in its configuration database. When you back up the configuration, the backup file contains F5OS-A configuration elements such as the following:</p>
+<ul><li>Tenant management configuration
+<ul><li>Tenant images</li></ul>
+</li><li>Network settings
+<ul><li>Port groups, Interfaces, VLANs</li></ul>
+</li><li>System settings
+<ul><li>DNS, Log settings, NTP</li></ul>
+</li><li>Diagnostic settings
+<ul><li>iHealth configuration</li></ul>
+</li><li>User management settings
+<ul><li>Authentication settings, Users</li></ul>
+</li></ul>
+<p><span class="note"><strong>Note</strong>: Beginning in F5OS-A versions that contain the fix for <a href="https://cdn.f5.com/product/bugtracker/ID1080041.html" target="_blank">ID 1080041</a>, when the database config-backup is performed, the license file is not included in the backup file. You must manually backup the appliance license information (Registration key and any add-on keys).</span></p>
+<p>The backup file is saved in an XML ASCII format and does not require a file extension. The backup file is located in the <strong>/var/F5/system/configs</strong> directory on the file system, which is also known as the <strong>configs/</strong> file path when you are logged in as the administrator user.</p>
+<p><span class="sectiontitle">Prerequisites</span></p>
+<p>You must meet the following prerequisite to use this procedure:</p>
+<ul><li>You have administrative access to the management interface (REST API) of the rSeries system.</li><li>Your local workstation IP address can access <strong>port 8888</strong> on the rSeries system. For information on configuring these features, refer to <a href="https://my.f5.com/manage/s/article/K000134482" target="_blank">K000134482: Configure the Allow List on the F5 rSeries system</a>.</li><li>Your local workstation should have the <strong>curl</strong>,<strong> awk </strong>and <strong>grep</strong>, utilities installed.</li></ul>
+<p><span class="sectiontitle">Procedures</span></p>
+<ul><li><a href="#Master key" target="_self">Set the primary key</a></li><li><a href="#proc1" target="_self">Back up the F5OS-A configuration data using the API</a></li><li><a href="#proc2" target="_self">Restore the F5OS-A configuration data using the API</a></li><li><a href="#proc3" target="_self">Download the backup file using the API</a></li><li><a href="#proc4" target="_self">Import the backup file using the API</a></li><li><a href="#proc5" target="_self">Manage the F5OS-A configuration file using the API</a></li></ul>
+<p><a id="Master key" name="Master key"></a><span class="subsectiontitle">Set the primary key</span></p>
+<p><span class="warning"><strong>Important</strong>: Before saving the configuration file, you must complete this procedure if you plan to restore the config file on a different rSeries appliance. If you have already completed this task, you can skip this procedure.<br></span></p>
+<p>The F5 rSeries system uses a primary key to perform encryption and decryption of highly sensitive passwords/passphrases in the configuration database. The primary key is randomly generated by F5OS during initial installation and should be set to a known value before performing a configuration backup. In the case of a configuration migration such as moving configuration to a replacement device due to RMA, it is important to set the primary key to a known value so that the same key can be used to decrypt the passwords/passphrases in the configuration restored on the replacement device.</p>
+<ol><li>Log in to your local workstation with the <strong>curl</strong>, <strong>awk</strong> and <strong>grep</strong> utilities installed.</li><li>Set the primary key by entering the following command syntax:
+<p><span class="code">curl -k -u &lt;username&gt;:&lt;password&gt; -X POST -H &#39;Content-Type: application/yang-data+json&#39; -d&#39;{&quot;passphrase&quot;:&quot;&lt;passphrase&gt;&quot;,&quot;confirm-passphrase&quot;:&quot;&lt;passphrase&gt;&quot;, &quot;salt&quot;:&quot;&lt;salt&gt;&quot;, &quot;confirm-salt&quot;:&quot;&lt;salt&gt;&quot;}&#39; https<strong>:</strong>//&lt;mgmt IP&gt;<strong>:</strong>8888/restconf/data/openconfig-system:system/openconfig-system<strong>:</strong>aaa/f5-primary-key:primary-key/set</span></p>
+<p>Where</p>
+<ul><li>&lt;username&gt;:&lt;password&gt; is the username and password of the user with admin role on the rSeries system.</li><li>&lt;passphrase&gt; is the passphrase for the primary key.</li><li>&lt;salt&gt; is the string used to create a unique hash for the passphrase.</li><li>&lt;mgmt IP&gt; is the floating management IP address of the rSeries system.</li></ul>
+<p>For example,</p>
+<p><span class="example2">curl -k -u admin:admin -X POST -H &#39;Content-Type: application/yang-data+json&#39; -d&#39;{&quot;passphrase&quot;:&quot;StrongPassphrase123&quot;,&quot;confirm-passphrase&quot;:&quot;StrongPassphrase123&quot;, &quot;salt&quot;:&quot;StrongHash&quot;, &quot;confirm-salt&quot;:&quot;StrongHash&quot;}&#39; https<strong>:</strong>//172<strong>.</strong>16<strong>.</strong>87<strong>.</strong>32:8888/restconf/data/openconfig-system:system/openconfig-system:aaa/f5-primary-key:primary-key/set</span></p>
+</li><li>Confirm the primary key was set by entering the following command syntax:
+<p><span class="code">curl -k -H &quot;Content-Type: application/yang-data+json&quot; -u &lt;username:password&gt; -s -X GET https<strong>:</strong>//&lt;mgmt IP&gt;<strong>:</strong>8888/restconf/data/openconfig-system<strong>:</strong>system/openconfig-system:aaa/f5-primary-key:primary-key/state/status</span></p>
+<p>Where</p>
+<ul><li>&lt;username&gt;:&lt;password&gt; is the username and password of the user with admin role on the rSeries system.</li><li>&lt;mgmt IP&gt; is the floating management IP address of the rSeries system.</li></ul>
+<p>For example,</p>
+<p><span class="example2">curl -k -H &quot;Content-Type: application/yang-data+json&quot; -u admin:admin -s -X GET https<strong>:</strong>//172<strong>.</strong>16<strong>.</strong>87<strong>.</strong>32<strong>:</strong>8888/restconf/data/openconfig-system:system/openconfig-system:aaa/f5-primary-key:primary-key/state/status</span></p>
+<p>The output should appear similar to the following example:</p>
+<p><span class="example2"> { &quot;f5-primary-key:status&quot;: &quot;COMPLETE Initiated: Tue Aug 13 17:33:24 2024&quot; }</span></p>
+</li><li>Record the salt and passphrase strings in a secure manner because they are required to restore the configuration on a replacement system.</li></ol>
+<p>For more information, refer to <a href="https://techdocs.f5.com/en-us/f5os-a-1-2-0/f5-rseries-systems-administration-configuration/title-additional-system-tasks.html#additional-system-tasks" target="_self">Manual Chapter : Additional System Tasks</a> in the <em><strong>F5 rSeries Systems: Administration and Configuration</strong></em> manual.</p>
+<p><span class="subsectiontitle"><a id="proc1" name="proc1"></a>Back up the F5OS-A configuration data using the API</span></p>
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+<ol><li>Log in to your local workstation with the <strong>curl</strong>,<strong> awk </strong>and <strong>grep</strong> utilities installed.</li><li>Back up the F5OS-A configuration by entering the following command syntax:
+<p><span class="code">curl -k -L -H &quot;Content-Type: application/yang-data+json&quot; -u &lt;username:password&gt; -X POST &quot;https<strong>:</strong>//&lt;mgmt IP&gt;<strong>:</strong>8888/restconf/data/openconfig-system:system/f5-database:database/f5-database:config-backup&quot; -d &#39;{ &quot;f5-database:name&quot;:&quot;&lt;backup filename&gt;&quot; }&#39;</span></p>
+<p>Where</p>
+<ul><li>&lt;username&gt;:&lt;password&gt; is the username and password of the user with admin role on the rSeries system.</li><li>&lt;mgmt IP&gt; is the floating management IP address of the rSeries system.</li><li>&lt;backup filename&gt; is the name of the F5OS-A configuration backup file you want to create.</li></ul>
+<p>For example,</p>
+<p><span class="example2">curl -k -L -H &quot;Content-Type: application/yang-data+json&quot; -u admin:admin -X POST &quot;https<strong>:</strong>//172<strong>.</strong>16<strong>.</strong>87<strong>.</strong>32<strong>:</strong>8888/restconf/data/openconfig-system:system/f5-database:database/f5-database:config-backup&quot; -d &#39;{ &quot;f5-database:name&quot;:&quot;F5OS-BACKUP-APPLIANCE1-08072024&quot; }&#39;</span></p>
+</li><li>Confirm that the F5OS-A back up file was created by entering the following command syntax:
+<p><span class="code">curl -k -L -H &quot;Content-Type: application/yang-data+json&quot; -u &lt;username:password&gt; -X POST &quot;https<strong>:</strong>//&lt;mgmt IP&gt;<strong>:</strong>8888/restconf/data/f5-utils-file-transfer:file/list&quot; -d &#39;{ &quot;f5-utils-file-transfer:path&quot;:&quot;configs/&quot; }&#39;</span></p>
+<p>Where</p>
+<ul><li>&lt;username&gt;:&lt;password&gt; is the username and password of the user with admin role on the rSeries system.</li><li>&lt;mgmt IP&gt; is the floating management IP address of the rSeries system.</li></ul>
+<p>For example,</p>
+<p><span class="example2">curl -k -L -H &quot;Content-Type: application/yang-data+json&quot; -u admin:admin -X POST &quot;https<strong>:</strong>//172<strong>.</strong>16<strong>.</strong>87<strong>.</strong>32<strong>:</strong>8888/restconf/data/f5-utils-file-transfer:file/list&quot; -d &#39;{ &quot;f5-utils-file-transfer:path&quot;:&quot;configs/&quot; }&#39;</span></p>
+<p>The output should appear similar to the following example:</p>
+<p><span class="example2">{<br>  &quot;f5-utils-file-transfer:output&quot;: {<br>    &quot;entries&quot;: [<br>      {<br>        &quot;name&quot;: &quot;F5OS-BACKUP-APPLIANCE1-08072024&quot;,<br>        &quot;date&quot;: &quot;Thu Aug 07 22:06:07 UTC 2024&quot;,<br>        &quot;size&quot;: &quot;46KB&quot;<br>      }<br>    ]<br>  }<br>}</span></p>
+</li></ol>
+<p><span class="subsectiontitle"><a id="proc2" name="proc2"></a>Restore the F5OS-A configuration data using the API</span></p>
+<p>If the configuration backup file is located at a remote location, you should import the backup file prior to restoring the configuration. To restore the configuration data from a backup file, perform the following procedure:</p>
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing this procedure overrides the existing F5OS-A configuration on your rSeries system with the configuration data in the backup file.</span></p>
+<ol><li>Log in to your local workstation with the <strong>curl</strong>,<strong> awk </strong>and <strong>grep</strong> utilities installed.</li><li>Restore the F5OS-A configuration by entering the following command syntax:
+<p><span class="code">curl -k -L -H &quot;Content-Type: application/yang-data+json&quot; -u &lt;username:password&gt; -X POST https<strong>:</strong>//&lt;mgmt IP&gt;<strong>:</strong>8888/restconf/data/openconfig-system:system/f5-database:database/f5-database:config-restore -d &#39;{ &quot;f5-database:name&quot;: &quot;&lt;backup filename&gt;&quot; }&#39;</span></p>
+<p>Where</p>
+<ul><li>&lt;username&gt;:&lt;password&gt; is the username and password of the user with admin role on the rSeries system.</li><li>&lt;mgmt IP&gt; is the floating management IP address of the rSeries system.</li><li>&lt;backup filename&gt; is the name of the F5OS-A configuration backup file.</li></ul>
+<p>For example,</p>
+<p><span class="example2">curl -k -L -H &quot;Content-Type: application/yang-data+json&quot; -u admin:admin -X POST https<strong>:</strong>//172<strong>.</strong>16<strong>.</strong>87<strong>.</strong>32<strong>:</strong>8888/restconf/data/openconfig-system:system/f5-database:database/f5-database:config-restore -d &#39;{ &quot;f5-database:name&quot;: &quot;F5OS-BACKUP-APPLIANCE1-08142024&quot; }&#39;</span></p>
+<p>The output should appear similar to the following example:</p>
+<p><span class="example2">&quot;result&quot;: &quot;Database config-restore successful.&quot;</span></p>
+<span class="example2"></span>
+<p>F5 recommends that you perform a reset-to-default operation to clear the existing configuration before attempting to restore to a previous configuration. For more information about performing a reset-to-default operation, refer to <a href="https://my.f5.com/manage/s/article/K20024872" target="_self">K20024872: Restoring the rSeries configuration to factory default settings</a>. If you have completed the reset-to-default operation on your rSeries system, enter <strong>yes</strong> to proceed with the configuration restoration to the system.</p>
+</li><li>The appliance may automatically reboot.</li></ol>
+<p><span class="subsectiontitle"><a id="proc3" name="proc3"></a>Download the backup file using the API</span></p>
+<p>You can download the backup file from your rSeries system to your local system. To do so, perform the following procedure:</p>
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+<ol><li>Log in to your local workstation with the <strong>curl</strong>,<strong> awk </strong>and <strong>grep</strong> utilities installed.</li><li>Obtain the authorization token from the rSeries system by using the following command syntax:
+<p><span class="code">curl -fsSkI -u &lt;username:password&gt; -X GET &quot;https<strong>:</strong>//&lt;mgmt IP&gt;<strong>:</strong>8888/restconf&quot; | grep -i &#39;x-auth-token&#39; | awk -F: &#39;{print $2}&#39; | tr -d &#39; \r&#39;</span></p>
+<p>Where</p>
+<ul><li>&lt;username&gt;:&lt;password&gt; is the username and password of the user with admin role on the rSeries system.</li><li>&lt;mgmt IP&gt; is the floating management IP address of the rSeries system.</li></ul>
+<p>For example,</p>
+<p><span class="example2">curl -fsSkI -u admin:admin -X GET &quot;https<strong>:</strong>//172<strong>.</strong>16<strong>.</strong>87<strong>.</strong>32<strong>:</strong>8888/restconf&quot; | grep -i &#39;x-auth-token&#39; | awk -F: &#39;{print $2}&#39; | tr -d &#39; \r&#39;</span></p>
+<p>The output should appear similar to the following example:</p>
+<p><span class="example2">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJTZXNzaW9uIElEIjoiYWRtaW4xNzIzNzQ2MDQyIiwiYXV0aGluZm8iOiJhZG1pbiAxMDAwIDkwMDAgXC92YXJcL0Y1XC9zeXN0ZW0iLCJidWZmZXJ0aW1lbGltaXQiOiIzMDAiLCJleHAiOjE3MjM3NDY5NDIsImlhdCI6MTcyMzc0NjA0MiwicmVuZXdsaW1pdCI6IjUiLCJ1c2VyaW5mbyI6ImFkbWluIDE3Mi4xOC4wLjgzIn0.itTH4OiURpBjhYr_d0dzB5qWJ6szWu8DRfh7rjlAStk</span></p>
+</li><li>
+<p>Download the F5OS-A configuration file by entering the following command syntax:</p>
+<p><span class="code">curl -k --location --request POST &quot;https://&lt;mgmt IP&gt;:8888/restconf/data/f5-utils-file-transfer:file/f5-file-download:download-file/f5-file-download:start-download&quot; -H &quot;Content-Type: multipart/form-data&quot; -H &quot;Content-Type: application/yang-data+json&quot; -H &quot;X-Auth-Token: &lt;auth token&gt;&quot; -F &quot;file-name=&lt;filename&gt;&quot; -F file-path=&quot;configs/&quot; &gt; &lt;/path/filename&gt;</span></p>
+<p>Where</p>
+<ul><li>&lt;username&gt;:&lt;password&gt; is the username and password of the user with admin role on the rSeries system.</li><li>&lt;mgmt IP&gt; is the floating management IP address of the rSeries system.</li><li>&lt;auth token&gt; is the authorization token you obtained from step 2.</li><li>&lt;filename&gt; is the name of the F5OS-A backup file.</li><li>&lt;/path/filename&gt; is the local path and filename of the F5OS-A backup file that you are downloading to the local system.</li></ul>
+<p>For example,</p>
+<p><span class="example2">curl -k --location --request POST &quot;https<strong>:</strong>//172<strong>.</strong>16<strong>.</strong>87<strong>.</strong>32<strong>:</strong>8888/restconf/data/f5-utils-file-transfer:file/f5-file-download:download-file/f5-file-download:start-download&quot; -H &quot;Content-Type: multipart/form-data&quot; -H &quot;Content-Type: application/yang-data+json&quot; -H &quot;X-Auth-Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJTZXNzaW9uIElEIjoiYWRtaW4xNzIzNzQ2MDQyIiwiYXV0aGluZm8iOiJhZG1pbiAxMDAwIDkwMDAgXC92YXJcL0Y1XC9zeXN0ZW0iLCJidWZmZXJ0aW1lbGltaXQiOiIzMDAiLCJleHAiOjE3MjM3NDY5NDIsImlhdCI6MTcyMzc0NjA0MiwicmVuZXdsaW1pdCI6IjUiLCJ1c2VyaW5mbyI6ImFkbWluIDE3Mi4xOC4wLjgzIn0.itTH4OiURpBjhYr_d0dzB5qWJ6szWu8DRfh7rjlAStk&quot; -F &quot;file-name=F5OS-BACKUP-APPLIANCE1-08142024&quot; -F file-path=&quot;configs/&quot; &gt; /Downloads/F5OSbackup/F5OS-BACKUP-APPLIANCE1-08142024</span></p>
+</li><li>Check your local system and verify that the F5OS-A file was downloaded as expected.</li></ol>
+<p><span class="subsectiontitle"><a id="proc4" name="proc4"></a>Import the backup file using the API</span></p>
+<p>You can import a backup file from your local device to your rSeries system using the API. To do so, perform the following procedure:</p>
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+<ol><li>Log in to your local workstation with the <strong>curl</strong>,<strong> awk </strong>and <strong>grep</strong> utilities installed.</li><li>Obtain the authorization token from the rSeries system by using the following command syntax:
+<p><span class="code">curl -fsSkI -u &lt;username:password&gt; -X GET &quot;https<strong>:</strong>//&lt;mgmt IP&gt;:8888/restconf&quot; | grep -i &#39;x-auth-token&#39; | awk -F: &#39;{print $2}&#39; | tr -d &#39; \r&#39;</span></p>
+<p>Where</p>
+<ul><li>&lt;username&gt;:&lt;password&gt; is the username and password of the user with admin role on the rSeries system.</li><li>&lt;mgmt IP&gt; is the floating management IP address of the rSeries system.</li></ul>
+<p>For example,</p>
+<p><span class="example2">curl -fsSkI -u admin:admin -X GET &quot;https<strong>:</strong>//172<strong>.</strong>16<strong>.</strong>87<strong>.</strong>32<strong>:</strong>8888/restconf&quot; | grep -i &#39;x-auth-token&#39; | awk -F: &#39;{print $2}&#39; | tr -d &#39; \r&#39;</span></p>
+<p>The output should appear similar to the following example:</p>
+<p><span class="example2">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJTZXNzaW9uIElEIjoiYWRtaW4xNzIzNzQ2MDQyIiwiYXV0aGluZm8iOiJhZG1pbiAxMDAwIDkwMDAgXC92YXJcL0Y1XC9zeXN0ZW0iLCJidWZmZXJ0aW1lbGltaXQiOiIzMDAiLCJleHAiOjE3MjM3NDY5NDIsImlhdCI6MTcyMzc0NjA0MiwicmVuZXdsaW1pdCI6IjUiLCJ1c2VyaW5mbyI6ImFkbWluIDE3Mi4xOC4wLjgzIn0.itTH4OiURpBjhYr_d0dzB5qWJ6szWu8DRfh7rjlAStk</span></p>
+</li><li>Initiate the import and obtain the required upload-id by entering the following command syntax:
+<p><span class="code">curl -k -L -H &quot;Content-Type: application/yang-data+json&quot; -H &quot;X-Auth-Token: &lt;auth token&gt;&quot; -X POST &quot;https<strong>:</strong>//&lt;mgmt IP&gt;<strong>:</strong>8888/restconf/data/f5-utils-file-transfer:file/f5-file-upload-meta-data:upload/f5-file-upload-meta-data:start-upload&quot; -d &#39;{ &quot;f5-file-upload-meta-data:file-path&quot;: &quot;configs/&quot;, &quot;f5-file-upload-meta-data:name&quot;: &quot;&lt;file name&gt;&quot;, &quot;f5-file-upload-meta-data:size&quot;: &lt;file size&gt; }&#39;</span></p>
+<p>Where</p>
+<ul><li>&lt;auth token&gt; is the authorization token you obtained in the previous step.</li><li>&lt;mgmt IP&gt; is the floating management IP address of the rSeries system.</li><li>&lt;file name&gt; is the F5OS-A back up file that you want to import to the rSeries system.</li><li>&lt;file size&gt; is the size of the F5OS-A back up file.</li></ul>
+<p>For example,</p>
+<p><span class="example2">curl -k -L -H &quot;Content-Type: application/yang-data+json&quot; -H &quot;X-Auth-Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJTZXNzaW9uIElEIjoiYWRtaW4xNzIzNzQ2MDQyIiwiYXV0aGluZm8iOiJhZG1pbiAxMDAwIDkwMDAgXC92YXJcL0Y1XC9zeXN0ZW0iLCJidWZmZXJ0aW1lbGltaXQiOiIzMDAiLCJleHAiOjE3MjM3NDY5NDIsImlhdCI6MTcyMzc0NjA0MiwicmVuZXdsaW1pdCI6IjUiLCJ1c2VyaW5mbyI6ImFkbWluIDE3Mi4xOC4wLjgzIn0.itTH4OiURpBjhYr_d0dzB5qWJ6szWu8DRfh7rjlAStk&quot; -X POST &quot;https<strong>:</strong>//172<strong>.</strong>16<strong>.</strong>87<strong>.</strong>32<strong>:</strong>8888/restconf/data/f5-utils-file-transfer:file/f5-file-upload-meta-data:upload/f5-file-upload-meta-data:start-upload&quot; -d &#39;{ &quot;f5-file-upload-meta-data:file-path&quot;: &quot;configs/&quot;, &quot;f5-file-upload-meta-data:name&quot;: &quot;F5OS-BACKUP-APPLIANCE1-08142024&quot;, &quot;f5-file-upload-meta-data:size&quot;: 46188 }&#39;</span></p>
+<p>The output includes the upload-id and should appear similar to the following example:</p>
+<p><span class="example2">{<br>  &quot;f5-file-upload-meta-data:output&quot;: {<br>    &quot;upload-id&quot;: &quot;juZuq2FG&quot;<br>  }<br>}</span></p>
+</li><li>
+<p>Import the F5OS-A configuration file by entering the following command syntax:</p>
+<p><span class="code">curl -k -H &quot;Content-Type: application/yang-data+json&quot; -H &quot;X-Auth-Token: &lt;auth token&gt;&quot; -H &quot;File-Upload-Id: &lt;upload ID&gt;&quot; -X POST &quot;https<strong>:</strong>//&lt;mgmt IP&gt;<strong>:</strong>8888/restconf/data/openconfig-system:system/f5-image-upload:image/upload-image&quot; --form &quot;=@&lt;backup filename&gt;&quot;</span></p>
+<p>Where</p>
+<ul><li>&lt;auth token&gt; is the authorization token you obtained from step 2.</li><li>&lt;mgmt IP&gt; is the floating management IP address of the rSeries system.</li><li>&lt;upload ID&gt; is the upload id that you obtained in the previous step.</li><li>&lt;backup filename&gt; is the F5OS-A backup file that you are importing to the rSeries system.</li></ul>
+<p>For example,</p>
+<p><span class="example2">curl -k -H &quot;Content-Type: application/yang-data+json&quot; -H &quot;X-Auth-Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJTZXNzaW9uIElEIjoiYWRtaW4xNzIzNzQ2MDQyIiwiYXV0aGluZm8iOiJhZG1pbiAxMDAwIDkwMDAgXC92YXJcL0Y1XC9zeXN0ZW0iLCJidWZmZXJ0aW1lbGltaXQiOiIzMDAiLCJleHAiOjE3MjM3NDY5NDIsImlhdCI6MTcyMzc0NjA0MiwicmVuZXdsaW1pdCI6IjUiLCJ1c2VyaW5mbyI6ImFkbWluIDE3Mi4xOC4wLjgzIn0.itTH4OiURpBjhYr_d0dzB5qWJ6szWu8DRfh7rjlAStk&quot; -H &quot;File-Upload-Id: juZuq2FG&quot; -X POST &quot;https<strong>:</strong>//172<strong>.</strong>16<strong>.</strong>87<strong>.</strong>32<strong>:</strong>8888/restconf/data/openconfig-system:system/f5-image-upload:image/upload-image&quot; --form &quot;=@F5OS-BACKUP-APPLIANCE1-08142024&quot;</span></p>
+<p>The output should appear similar to the following example:</p>
+<p><span class="example2">{ &quot;result-tag&quot;: &quot;uploaded-successfully&quot; }</span></p>
+</li></ol>
+<p><span class="subsectiontitle"><a id="proc5" name="proc5"></a>Manage the F5OS-A configuration file using the API</span></p>
+<p>If you need to manage the F5OS-A configuration files backed up over a period of time, you can perform the following procedure to list them and delete them as needed:</p>
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+<ol><li>Log in to your local workstation with the <strong>curl</strong>,<strong> awk </strong>and <strong>grep</strong> utilities installed.</li><li>List the F5OS-A configuration files in the <strong>configs/</strong> path by entering the following command syntax:
+<p><span class="code">curl -k -L -H &quot;Content-Type: application/yang-data+json&quot; -u &lt;username:password&gt; -X POST &quot;https<strong>:</strong>//&lt;mgmt IP&gt;<strong>:</strong>8888/restconf/data/f5-utils-file-transfer:file/list&quot; -d &#39;{ &quot;f5-utils-file-transfer:path&quot;:&quot;configs/&quot; }&#39;</span></p>
+<p>Where</p>
+<ul><li>&lt;username&gt;:&lt;password&gt; is the username and password of the user with admin role on the rSeries system.</li><li>&lt;mgmt IP&gt; is the floating management IP address of the rSeries system.</li></ul>
+<p>For example,</p>
+<p><span class="example2">curl -k -L -H &quot;Content-Type: application/yang-data+json&quot; -u admin:admin -X POST &quot;https<strong>:</strong>//172<strong>.</strong>16<strong>.</strong>87<strong>.</strong>32<strong>:</strong>8888/restconf/data/f5-utils-file-transfer:file/list&quot; -d &#39;{ &quot;f5-utils-file-transfer:path&quot;:&quot;configs/&quot; }&#39;</span></p>
+<p>The output should appear similar to the following example:</p>
+<p><span class="example2">{<br>  &quot;f5-utils-file-transfer:output&quot;: {<br>    &quot;entries&quot;: [<br>      {<br>        &quot;name&quot;: &quot;F5OS-BACKUP-APPLIANCE1-08072024&quot;,<br>        &quot;date&quot;: &quot;Thu Aug 07 22:06:07 UTC 2024&quot;,<br>        &quot;size&quot;: &quot;46KB&quot;<br>      },<br>      {<br>        &quot;name&quot;: &quot;F5OS-BACKUP-APPLIANCE1-07062025&quot;,<br>        &quot;date&quot;: &quot;Thu Jul 06 20:07:05 UTC 2025&quot;,<br>        &quot;size&quot;: &quot;50KB&quot;<br>      },<br>      {<br>        &quot;name&quot;: &quot;F5OS-BACKUP-APPLIANCE1-02252026&quot;,<br>        &quot;date&quot;: &quot;Thu Feb 25 08:46:18 UTC 2025&quot;,<br>        &quot;size&quot;: &quot;55KB&quot;<br>      }<br>    ]<br>  }<br>}</span></p>
+</li><li>To remove one of the F5OS-A configuration files in the <strong>configs/</strong> path, enter the following command syntax:
+<p><span class="code">curl -k -L -H &quot;Content-Type: application/yang-data+json&quot; -u &lt;username:password&gt; -X POST &quot;https<strong>:</strong>//&lt;mgmt IP&gt;<strong>:</strong>8888/restconf/data/f5-utils-file-transfer:file/delete&quot; -d &#39;{ &quot;f5-utils-file-transfer:file-name&quot;:&quot;configs/&lt;file name&gt;&quot; }&#39;</span></p>
+<p>Where</p>
+<ul><li>&lt;username&gt;:&lt;password&gt; is the username and password of the user with admin role on the rSeries system.</li><li>&lt;mgmt IP&gt; is the floating management IP address of the rSeries system.</li><li>&lt;file name&gt; is the name of the F5OS-A configuration file you want to remove</li></ul>
+<p>For example,</p>
+<p><span class="example2">curl -k -L -H &quot;Content-Type: application/yang-data+json&quot; -u admin:admin -X POST &quot;https<strong>:</strong>//172<strong>.</strong>16<strong>.</strong>87<strong>.</strong>32<strong>:</strong>8888/restconf/data/f5-utils-file-transfer:file/delete&quot; -d &#39;{ &quot;f5-utils-file-transfer:file-name&quot;:&quot;configs/F5OS-BACKUP-APPLIANCE1-02252026&quot; }&#39;</span></p>
+<p>The output should appear similar to the following example:</p>
+<p><span class="example2">{<br>  &quot;f5-utils-file-transfer:output&quot;: {<br>    &quot;result&quot;: &quot;Deleting the file&quot;<br>  }<br>}</span></p>
+</li><li>Perform step 2 again to verify that the F5OS-A configuration file has been removed from the system.</li></ol>
+</article>
+</body>
+</html>

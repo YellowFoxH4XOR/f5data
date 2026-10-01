@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160809: F5 Distributed Cloud - How does listener logic determine which Load Balancer object picks up client traffic?</title>
+<meta name="description" content="Support Solution: F5 Distributed Cloud - How does listener logic determine which Load Balancer object picks up client traffic? — When deploying Load Balancer objects in F5 Distributed Cloud, it may not be immediately clear how incoming client traffic is matched to a specific Load Balancer configuration. Understanding how the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160809">
+</head>
+<body>
+<header>
+<h1>K000160809: F5 Distributed Cloud - How does listener logic determine which Load Balancer object picks up client traffic?</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-04-15</dd>
+<dt>Updated</dt><dd>2026-04-15</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Distributed Cloud Services</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160809">https://my.f5.com/manage/s/article/K000160809</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When deploying Load Balancer objects in F5 Distributed Cloud, it may not be immediately clear how incoming client traffic is matched to a specific Load Balancer configuration. Understanding how the platform listens for and picks up traffic is essential for correctly designing application delivery and security services across Regional Edges (RE) and Customer Edges (CE).</p>
+<p> </p>
+<ul><li>How does F5 Distributed Cloud determine which Load Balancer object picks up client-side traffic?</li><li>What is an Advertise Policy and how does it relate to listener logic?</li><li>How are HTTP and TCP Load Balancers differentiated when multiple Load Balancer objects share the same IP and Port?</li><li>What is the role of SNI and host headers in Load Balancer selection?</li><li>What is a Default Load Balancer and when is it used?</li><li>How can additional IP addresses be used to differentiate Load Balancer objects on a Regional Edge?</li></ul>
+<h2>Environment</h2>
+<ul><li>F5 Distributed Cloud (SaaS)</li><li>Regional Edge (RE) data plane</li><li>Customer Edge (CE) data plane</li><li>HTTP and/or HTTPS Load Balancer objects</li><li>TCP (Layer 4) Load Balancer objects</li><li>Advertise Policy configured on Load Balancer objects</li><li>Default Tenant IP, Additional Tenant IP, or BYO-IP in use for VIP Advertisement</li><li>Virtual Sites (optional, used to scope Regional Edge advertisement)</li></ul>
+<h2>Cause</h2>
+<p>None</p>
+<h2>Answer/Recommended Actions</h2>
+<p>F5 Distributed Cloud uses an <strong>Advertise Policy</strong> as its listener logic mechanism. An Advertise Policy is the combination of an <strong>IP Address</strong> and <strong>Port</strong>, along with optional L7 matching criteria (domain, SNI, or host header), to determine which Load Balancer (LB) object picks up incoming client traffic.</p>
+<p><strong>Advertise Policy Matching Logic</strong></p>
+<p>Similar to BIG-IP Virtual Servers, F5 Distributed Cloud selects the most specific match from the list of Load Balancer objects sharing the same Advertise Policy (IP + Port). The matching criteria differ by Load Balancer type:</p>
+<ul><li><strong>HTTP Load Balancer (L7):</strong>
+<ul><li>Matches on IP + Port, plus a <strong>domain</strong> (specific or wildcard).</li><li>For <strong>HTTPS</strong>, the domain is matched using the <strong>Server Name Indication (SNI)</strong> value of the TLS handshake.</li><li>For <strong>HTTP</strong>, the domain is matched using the <strong>host header</strong> of the request.</li><li>A specific domain (e.g., <code>app.domain.com</code>) takes precedence over a wildcard domain (e.g., <code>*.domain.com</code>).</li><li>A <strong>Default Load Balancer</strong> can be configured on an HTTPS LB to catch any traffic that does not match a more specific domain. Only <strong>one</strong> LB object per Advertise Policy (IP + Port) can be designated as the Default Load Balancer.</li><li><strong>Note:</strong> A Default Load Balancer is <strong>not supported</strong> on HTTP port 80 listeners at the time of this publication. A feature request is in progress to address this limitation.</li></ul>
+</li><li><strong>TCP Load Balancer (L4):</strong>
+<ul><li>Matches primarily on IP + Port.</li><li>If the service supports SNI, a domain can also be configured for SNI-based matching.</li><li>A TCP LB without an SNI domain behaves as the default for any traffic matching the IP and Port.</li><li>There is no explicit Default Load Balancer concept for TCP LBs.</li></ul>
+</li></ul>
+<p><strong>IP Address Options for Regional Edge Advertisement</strong></p>
+<p>On a Customer Edge (CE), customers can configure custom IP addresses directly under the VIP advertisement. On a Regional Edge (RE), F5 manages the infrastructure, so IP addressing is handled through the following tenant IP types:</p>
+<ul><li><strong>Default Tenant IP:</strong> Provided automatically when a customer signs up. Attached to a global Virtual Site and advertised out of all Regional Edges. To use this IP, select &quot;Advertise to Internet&quot; under VIP Advertisement when configuring the Load Balancer.</li><li><strong>Additional Tenant IP (/32):</strong> Additional IP addresses provided by F5 from their IP pool, available for purchase. Each additional IP address incurs a cost. These can be added to an LB object under VIP Advertisement as &quot;Internet (Specified VIP)&quot;.</li><li><strong>BYO-IP (Bring Your Own IP):</strong> Customers can bring their own IP space (minimum /24) to the F5 platform. Charges apply per /24 block. The IP space is advertised out of F5&#39;s global network. These IPs can also be used under VIP Advertisement as &quot;Internet (Specified VIP)&quot;.</li></ul>
+<p>For both Additional Tenant IPs and BYO-IPs, Virtual Sites can be attached to the Specified VIP to limit which Regional Edge locations are used for traffic advertisement.</p>
+<p><strong>Common Listener Logic Use Cases</strong></p>
+<ol><li><strong>Basic Listener Logic:</strong> A client requests <code>app-b.domain.com</code> over HTTPS. DNS resolves to the tenant IP. The RE matches on IP + Port 443, then finds the most specific domain match (<code>app-b.domain.com</code>) and proxies traffic to the associated origin pool.</li><li><strong>HTTP-to-HTTPS Redirect:</strong>
+<ul><li>Option 1: Enable the built-in HTTP-to-HTTPS redirect checkbox on the HTTPS Load Balancer. This automatically creates a companion HTTP port 80 LB object with a redirect route.</li><li>Option 2: Manually create an HTTP Load Balancer with a wildcard domain and configure a route to always redirect HTTP to HTTPS. This is useful to avoid doubling LB object counts and to handle redirects across multiple domains with a single LB.</li></ul>
+</li><li><strong>Unused Domains &amp; Direct Response Routes:</strong> For abandoned, vanity, or legacy domains, instead of issuing a 3xx redirect (which can generate unintended automated traffic), configure a <strong>Direct Response Route</strong> on the LB. This returns a custom response message directly from F5 Distributed Cloud, requiring a human action to navigate further rather than an automatic browser redirect.</li></ol>
+<p><strong>Platform Caveats</strong></p>
+<ul><li>A <strong>Default Load Balancer</strong> is not supported on HTTP (port 80) Load Balancers. A feature request is in progress for this capability. It is also not recommended to use unencrypted HTTP in production environments; however, HTTP port 80 listeners can be useful for redirect services.</li><li>A <strong>Customer Edge (CE)</strong> does not support Advertise Policies that use certain platform-reserved ports. These ports are specific to the CE platform and cannot be used for Load Balancer Advertise Policies.</li></ul>
+<h2>Additional Information</h2>
+<p>F5 Distributed Cloud operates two distinct data plane types relevant to listener logic:</p>
+<ul><li><strong>Regional Edge (RE):</strong> A SaaS-managed data plane hosted in F5 regional locations. Customers consume services without managing hardware, software, or scale. IP addressing on the RE is owned and managed by F5, which is why tenant IP types (Default, Additional, BYO-IP) exist to give customers flexibility in how their services are advertised.</li><li><strong>Customer Edge (CE):</strong> A software data plane owned and managed by the customer, deployable on-premises (hypervisor or baremetal), in a public cloud/hyperscaler, or within Kubernetes (k8s) clusters. Since the customer owns the infrastructure, IP addressing is straightforward and configurable directly.</li></ul>
+<p>The concept of listener logic in F5 Distributed Cloud is analogous to <strong>Virtual Servers in BIG-IP</strong>, where the most specific combination of source, destination, and port matching the request determines which object processes the traffic flow. In F5 Distributed Cloud, this specificity is extended to include domain matching via SNI or host headers for L7 Load Balancers.</p>
+<p>When using a <strong>wildcard certificate</strong> (e.g., <code>*.domain.com</code>) with a Default Load Balancer, any traffic arriving at the associated IP + Port that does not match a more specific domain-based LB object will be handled by the Default LB. L7 routes can then be used within the Default LB to take appropriate action on that traffic.</p>
+<p>When planning IP address strategy for Regional Edge advertisement, consider the following:</p>
+<ul><li>For most HTTP/HTTPS deployments, a single IP (Default Tenant IP) is sufficient since domain-based matching differentiates LB objects.</li><li>Additional IPs may be needed when multiple Default Load Balancers are required, or for operational segmentation (e.g., separating production and non-production traffic).</li><li>BYO-IP is charged per /24 block. A contiguous /22 brought to the platform is billed as 4x /24 blocks.</li></ul>
+</article>
+</body>
+</html>

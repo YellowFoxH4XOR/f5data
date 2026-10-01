@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000149815: &quot;DNScache: comm_point_tmm_recv_from failed: errno 103&quot; message is recorded even though there is no DNS communication error found.</title>
+<meta name="description" content="Support Solution: &quot;DNScache: comm_point_tmm_recv_from failed: errno 103&quot; message is recorded even though there is no DNS communication error found. — BIG-IP randomly generates &quot;DNScache: comm_point_tmm_recv_from failed: errno 103&quot; error.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000149815">
+</head>
+<body>
+<header>
+<h1>K000149815: &quot;DNScache: comm_point_tmm_recv_from failed: errno 103&quot; message is recorded even though there is no DNS communication error found.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-02-17</dd>
+<dt>Updated</dt><dd>2025-04-09</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.0.0, 16.0.X, 16.0.1, 16.X.X, 17.X.X, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000149815">https://my.f5.com/manage/s/article/K000149815</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>BIG-IP randomly generates &quot;DNScache: comm_point_tmm_recv_from failed: errno 103&quot; error.</p>
+<p> </p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Feb 17 13:06:40 bigip.local err tmm5[18361]: DNScache: comm_point_tmm_recv_from failed: errno 103</span><br><br></p>
+<p><a href="https://my.f5.com/manage/s/article/K26157411" target="_blank">K26157411</a> explains that &#39;errno 103&#39; means <em>&quot;BIG-IP can not receive response, a connection expired, a connection aborted, or socket/data was unable to be read.&quot;</em>. However, when capturing DNS packet between BIG-IP and name server, there was no problem found.</p>
+<p> </p>
+<h2>Environment</h2>
+<p>All of the following condition need to be met.</p>
+<ul><li>BIND (named) is not running on local BIG-IP and so not listening on 127.0.0.1:53.</li><li>Virtual server uses an iRule which calls &quot;RESOLV::lookup&quot; command.</li><li>No name server address is specified in &quot;RESOLV::lookup&quot; command inside iRule.</li></ul>
+<p> </p>
+<h2>Cause</h2>
+<p>If no name server address is specified in &quot;RESOLV::lookup&quot; command (i.e., missing &quot;@&lt;IP&gt;&quot; option), TMM sends internal DNS traffic towards local BIND (named) 127.0.0.1:53. And if local BIND (named) is not running and 127.0.0.1:53 is closed, then ICMP port unreachable message is internally received by TMM. This ICMP port unreachable packet triggers &quot;DNScache: comm_point_tmm_recv_from failed: errno 103&quot; error.</p>
+<p> </p>
+<h2>Recommended Actions</h2>
+<p>First, consider using &quot;RESOLVER::name_lookup&quot; command instead of using &quot;RESOLV::lookup&quot; command. &quot;RESOLV::lookup&quot; command is deprecated. When &quot;RESOLVER::name_lookup&quot; command is used, even if there is no forwarder specified in dns-resolver, &quot;DNScache: comm_point_tmm_recv_from failed: errno 103&quot; error is not recorded.</p>
+<p> </p>
+<p>Next, check if internal DNS traffic is really sent to 127.0.0.1:53 and ICMP unreachable packet is really received by TMM. To see internal DNS/ICMP traffic between TMM and local BIND (named), you can run tcpdump with &quot;-i 0.0:h&quot; modifier, as follows. The internal DNS traffic will not be captured unless we specify &quot;:h&quot; modifier.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>### tcpdump ###
+[root@bigip:Active:Standalone] config # tcpdump -Snni 0.0:h -s0 port 53 or icmp
+tcpdump: verbose output suppressed, use -v or -vv for full protocol decode
+listening on 0.0:h, link-type EN10MB (Ethernet), capture size 65535 bytes
+13:06:32.401677 IP 127.1.1.6.39728 &gt; 127.0.0.1.53: 48666+ [1au] A? DeVCentRAL.F5.cOm. (46) out slot1/tmm5 lis= port= trunk=
+13:06:32.403083 IP 127.0.0.1 &gt; 127.1.1.6: ICMP 127.0.0.1 udp port 53 unreachable, length 82 in slot1/tmm5 lis= port= trunk=
+13:06:32.776101 IP 127.1.1.6.62671 &gt; 127.0.0.1.53: 19635+ [1au] A? dEvcENTraL.F5.cOM. (46) out slot1/tmm5 lis= port= trunk=
+13:06:32.776333 IP 127.0.0.1 &gt; 127.1.1.6: ICMP 127.0.0.1 udp port 53 unreachable, length 82 in slot1/tmm5 lis= port= trunk=
+13:06:33.152281 IP 127.1.1.6.56290 &gt; 127.0.0.1.53: 56583+ [1au] A? DeVCenTRAl.f5.cOm. (46) out slot1/tmm5 lis= port= trunk=
+13:06:33.152593 IP 127.0.0.1 &gt; 127.1.1.6: ICMP 127.0.0.1 udp port 53 unreachable, length 82 in slot1/tmm5 lis= port= trunk=
+13:06:33.904251 IP 127.1.1.6.43227 &gt; 127.0.0.1.53: 64977+ [1au] A? dEvCenTrAL.F5.COM. (46) out slot1/tmm5 lis= port= trunk=
+13:06:33.904508 IP 127.0.0.1 &gt; 127.1.1.6: ICMP 127.0.0.1 udp port 53 unreachable, length 82 in slot1/tmm5 lis= port= trunk=
+
+### ltm log ###
+Feb 17 13:06:32 bigip.local err tmm5[18361]: DNScache: comm_point_tmm_recv_from failed: errno 103
+Feb 17 13:06:32 bigip.local err tmm5[18361]: DNScache: comm_point_tmm_recv_from failed: errno 103
+Feb 17 13:06:33 bigip.local err tmm5[18361]: DNScache: comm_point_tmm_recv_from failed: errno 103
+Feb 17 13:06:33 bigip.local err tmm5[18361]: DNScache: comm_point_tmm_recv_from failed: errno 103</code></pre>
+<p> </p>
+<p>Additionally, you may also want to research why BIND (named) is not running if you think BIND (named) should be locally running.</p>
+<p> </p>
+<p>An example of BIND startup failure case is described in <a href="https://my.f5.com/manage/s/article/K000149370" target="_blank">K000149370</a>. Assume BIND options &#39;dnssec-lookaside&#39; or &#39;dnssec-enable&#39; were configured on named.conf before BIG-IP software upgrade. After BIG-IP software upgrade to 17.1.2+, BIND package was also upgraded to 9.18.28 from 9.16.33, and those BIND options are now invalid and those options prevent named from starting up on post-upgrade BIG-IP software version.</p>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None.</p>
+</article>
+</body>
+</html>

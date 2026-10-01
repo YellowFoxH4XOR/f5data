@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000138409: [F5OS-C] Error message: Detected DRBD split-brain  - attempting recovery</title>
+<meta name="description" content="Support Solution: [F5OS-C] Error message: Detected DRBD split-brain  - attempting recovery — Velos System Controller&#x27;s /var/log/openshift.log logs following message every 40 seconds">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000138409">
+</head>
+<body>
+<header>
+<h1>K000138409: [F5OS-C] Error message: Detected DRBD split-brain  - attempting recovery</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-01-30</dd>
+<dt>Updated</dt><dd>2024-01-31</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000138409">https://my.f5.com/manage/s/article/K000138409</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>Velos System Controller&#39;s<strong> /var/log/openshift.log</strong> logs following message every 40 seconds</p>
+
+<p class="ql-indent-1" style="margin-left: 40px;"><span style="font-family: Courier New,Courier,monospace;">Detected DRBD split-brain - attempting recovery</span></p>
+
+<p>Also, the similar to following log can be in <strong>/var/log/message</strong> log, repeatedly:</p>
+
+<p style="margin-left: 40px;"><span style="font-family: Courier New,Courier,monospace;">kernel: block drbd0: uuid_compare()=-1000 by rule 100<br>kernel: block drbd0: Unrelated data, aborting!<br>kernel: drbd etcdbackup: conn( WFReportParams -&gt; Disconnecting ) <br>kernel: drbd etcdbackup: error receiving ReportState, e: -5 l: 0!<br>kernel: drbd etcdbackup: ack_receiver terminated<br>kernel: drbd etcdbackup: Terminating drbd_a_etcdback<br>kernel: drbd etcdbackup: Connection closed<br>kernel: drbd etcdbackup: conn( Disconnecting -&gt; StandAlone ) </span><br> </p>
+
+<h2><strong>Environment</strong></h2>
+
+<ul><li>F5OS-C</li><li>Velos</li><li>System Controller</li></ul>
+ 
+
+<h2><strong>Cause</strong></h2>
+
+<ul><li>Bug ID 1496893<br>	 </li></ul>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>1. Log in to CLI of floating IP as root.<br>2. On the <strong>Active</strong> system controller, pause orchestration manager by running:</p>
+
+<p style="margin-left: 40px;"><strong><span style="background-color: #dddddd;">touch /tmp/omd/pause</span></strong></p>
+
+<p style="margin-left: 40px;">And then wait ~60 seconds, or until you see &quot;<span style="font-family: Courier New,Courier,monospace;">Pausing all processing due to /tmp/omd/pause existing</span>&quot; in <strong>/var/log/openshift.log</strong></p>
+
+<p>3. SSH to <strong>Standby</strong> system controller (ssh controller-x), run the following (one line):</p>
+
+<p style="margin-left: 40px;"><strong><span style="background-color: #dddddd;">drbdadm down etcdbackup &amp;&amp; drbdadm wipe-md etcdbackup &amp;&amp; drbdadm create-md etcdbackup &amp;&amp; drbdadm up etcdbackup &amp;&amp; drbdadm disconnect etcdbackup &amp;&amp; drbdadm connect etcdbackup</span></strong></p>
+
+<p style="margin-left: 40px;">This will prompt twice for confirmation. Enter &#39;<strong>yes</strong>&#39; each time and press [Enter].</p>
+
+<p style="margin-left: 40px;"><span style="font-family: Courier New,Courier,monospace;">Do you really want to wipe out the DRBD meta data?<br>[need to type &#39;yes&#39; to confirm] <strong>yes</strong></span><br> </p>
+
+<p style="margin-left: 40px;"><span style="font-family: Courier New,Courier,monospace;">Wiping meta data...<br>DRBD meta data block successfully wiped out.<br>md_offset 5368705024<br>al_offset 5368672256<br>bm_offset 5368508416</span></p>
+
+<p style="margin-left: 40px;"><br><span style="font-family: Courier New,Courier,monospace;">Found ext3 filesystem<br>5242684 kB data area apparently used<br>5242684 kB left usable by current configuration</span><br> </p>
+
+<p style="margin-left: 40px;"><span style="font-family: Courier New,Courier,monospace;">Even though it looks like this would place the new meta data into<br>unused space, you still need to confirm, as this is only a guess.<br><br>Do you want to proceed?<br>[need to type &#39;yes&#39; to confirm] <strong>yes</strong></span><br> </p>
+
+<p style="margin-left: 40px;"><span style="font-family: Courier New,Courier,monospace;">initializing activity log<br>initializing bitmap (160 KB) to all zero<br>Writing meta data...<br>New drbd meta data block successfully created.<br>success</span></p>
+
+<p style="margin-left: 40px;"><span style="color: #2ecc71;"><strong>NOTE</strong>: if it fails, then follow the procedure in <strong>Additional Information</strong>.</span></p>
+
+<p><br>4. On the <strong>Active</strong> system controller, run the following:</p>
+
+<p style="margin-left: 40px;"><strong><span style="background-color: #dddddd;">drbdadm connect etcdbackup</span></strong><br><span style="color: #2ecc71;"><strong>NOTE</strong>: Ignore the error output if it produces this error:<br><span style="font-family: Courier New,Courier,monospace;">etcdbackup: Failure: (102) Local address(port) already in use.</span></span></p>
+
+<p><br>5. On one controller or the other, monitor the status running the following:</p>
+
+<p style="margin-left: 40px;"><strong><span style="background-color: #dddddd;">cat /proc/drbd</span></strong><br>and ensure that it shows that a sync is occurring/progressing.<br>It should finish resyncing in less than a minute (but as long as it&#39;s actually making progress, keep waiting)</p>
+
+<p style="margin-left: 40px;"><span style="font-family: Courier New,Courier,monospace;">version: 8.4.11-1 (api:1/proto:86-101)<br>GIT-hash: 68144a768621r9v124ed391a7928ac20204cc03c build by @runner-kk-rwsw3-project-17614-concurrent-02ff55, YYYY-MM-DD HH:MM:SS<br> 0: cs:<strong>SyncSource</strong> ro:<strong>Primary/Secondary</strong> ds:<strong>UpToDate/Inconsistent</strong> C r-----<br>    ns:3825908 nr:0 dw:208645280 dr:3833053 al:6 bm:0 lo:0 pe:10 ua:7 ap:0 ep:1 wo:f oos:1430180<br>        <strong>[=============&gt;......]</strong> sync&#39;ed: <strong>72.8%</strong> (1396/5116)M<br>        finish: 0:00:07 speed: 190,624 (190,624) K/sec</span><br><br>Once it is completed, it should looks like</p>
+
+<p style="margin-left: 40px;"><span style="font-family: Courier New,Courier,monospace;">version: 8.4.11-1 (api:1/proto:86-101)<br>GIT-hash: 68144a768621r9v124ed391a7928ac20204cc03c build by @runner-kk-rwsw3-project-17614-concurrent-02ff55, YYYY-MM-DD HH:MM:SS<br> 0: cs:<strong>Connected</strong> ro<strong>:Primary/Secondary</strong> ds:<strong>UpToDate/UpToDate</strong> C r-----<br>    ns:5248248 nr:0 dw:208647656 dr:5247629 al:6 bm:0 lo:0 pe:0 ua:0 ap:0 ep:1 wo:f oos:0</span></p>
+
+<p style="margin-left: 40px;"><span style="color: #2ecc71;"> <strong>NOTE</strong>: If this run on Standby unit, ro is <span style="font-family: Courier New,Courier,monospace;"><strong>Secondary/Primary</strong></span></span><br> </p>
+
+<p>6. On the<strong> Active </strong>system controller, run the following</p>
+
+<p style="margin-left: 40px;"><strong><span style="background-color: #dddddd;">rm /tmp/omd/pause</span></strong></p>
+
+<p> </p>
+
+<h2><strong>Additional Information</strong></h2>
+
+<p>If you see failure in step 3 above. you may see similar to below message:</p>
+
+<p style="margin-left: 40px;"><span style="font-family: Courier New,Courier,monospace;">Device &#39;<strong>X</strong>&#39; is configured!<br>Command &#39;drbdmeta X v08 /dev/mapper/xxx internal wipe-md&#39; terminated with exit code 20</span></p>
+
+<p>In this case, you will need to bring down the device profile by running the following command, replacing &#39;<strong>X</strong>&#39; with whichever number appears in the above error:</p>
+
+<p style="margin-left: 40px;"><strong><span style="background-color: #dddddd;">drbdadm down minor-&lt;X&gt;</span></strong></p>
+
+<p>After running above, then run</p>
+
+<p style="margin-left: 40px;"><strong><span style="background-color: #dddddd;">drbdadm create-md etcdbackup &amp;&amp; drbdadm up etcdbackup &amp;&amp; drbdadm disconnect etcdbackup</span></strong></p>
+
+<p>And back to step 4.</p>
+</article>
+</body>
+</html>

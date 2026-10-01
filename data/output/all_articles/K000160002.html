@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160002: Kerberos authentication not working</title>
+<meta name="description" content="Support Solution: Kerberos authentication not working — AD module: authentication with &#x27;&lt;username&gt;&#x27; failed: Preauthentication failed, principal name: &lt;username&gt;@DOMAIN. Invalid user credentials. (KRB5KDC_ERR_PREAUTH_FAILED)">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160002">
+</head>
+<body>
+<header>
+<h1>K000160002: Kerberos authentication not working</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-13</dd>
+<dt>Updated</dt><dd>2026-02-13</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160002">https://my.f5.com/manage/s/article/K000160002</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Kerberos authentication on BIG-IP APM may fail for end users after a service account password change in Active Directory. Users are unable to authenticate, and the following error messages appear in the <span style="background-color: #f1f1f1;">/var/log/apm`</span> log file:</p>
+<ul><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">AD module: authentication with &#39;&lt;username&gt;&#39; failed: Preauthentication failed, principal name: &lt;username&gt;@DOMAIN. Invalid user credentials. (KRB5KDC_ERR_PREAUTH_FAILED)</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">AD module: krb5_get_init_creds_password(): Preauthentication failed, principal name: &lt;username&gt;@DOMAIN. Invalid user credentials. (KRB5KDC_ERR_PREAUTH_FAILED)</span></li></ul>
+<p>This issue typically occurs when the Kerberos keytab file on the BIG-IP APM system is not updated after the Active Directory service account password has been changed.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP APM with Kerberos end-user logon authentication configured</li><li>Windows Active Directory as the Key Distribution Center (KDC)</li><li>Service account password recently changed in Active Directory</li><li>Keytab file not regenerated or updated after password change</li></ul>
+<h2>Cause</h2>
+<p>When a service account password is changed in Active Directory, the key version number (KVNO) is incremented and the encryption keys stored in the KDC are updated. The keytab file on the BIG-IP APM system contains the previous encryption keys and KVNO. This mismatch between the keytab file on BIG-IP and the current service account credentials in Active Directory causes authentication failures with &quot;Preauthentication failed&quot; errors.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>To resolve this issue, regenerate and upload a new keytab file to the BIG-IP APM system:</p>
+<ol><li><strong>Regenerate the keytab file on the Windows Domain Controller</strong> using the <span style="background-color: #f1f1f1;">ktpass</span> command with the current service account password:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">ktpass -princ HTTP/&lt;hostname&gt;@REALM -mapuser &lt;service_account&gt; -crypto AES256-SHA1 -ptype KRB5_NT_PRINCIPAL -pass &lt;current_password&gt; -out &lt;filename&gt;.keytab</span></p>
+</li><li><strong>Verify the keytab file contents</strong> using:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">ktpass /in &lt;filename&gt;.keytab</span></p>
+</li><li><strong>Upload the new keytab file to BIG-IP APM</strong>:
+<ul><li>Navigate to <strong>Access &gt; Authentication &gt; Kerberos</strong> (or <strong>Access Policy &gt; AAA Servers &gt; Kerberos</strong> for versions prior to 13.x)</li><li>Click on the Kerberos server object name</li><li>For <strong>Keytab File</strong>, click <strong>Upload New File</strong></li><li>Browse to and select the newly generated keytab file</li><li>Click <strong>Update</strong></li></ul>
+</li><li><strong>Verify the KVNO matches</strong> between Active Directory and the BIG-IP:
+<ul><li>On Active Directory, retrieve the KVNO using PowerShell:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">import-module ActiveDirectory</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">get-aduser &lt;service_account&gt; -property msDS-KeyVersionNumber | Fl</span></p>
+</li><li>On BIG-IP UI, navigate to <strong>Access &gt; Authentication &gt; Kerberos</strong> and verify the KVNO displayed under <strong>Keytab File Details</strong></li></ul>
+</li><li><strong>Test authentication</strong> to confirm users can successfully authenticate.</li></ol>
+<h2>Additional Information</h2>
+<ul><li>The key version number (KVNO) increases whenever a new keytab is generated or when the service account password is changed in Active Directory.</li><li>It is critical to regenerate and upload the keytab file immediately after any service account password change to prevent authentication failures.</li><li>The &quot;Preauthentication failed&quot; error message can indicate multiple issues including invalid credentials, expired keytab, time synchronization problems, or encryption type mismatches. However, when this error occurs immediately after a password change, an outdated keytab is the most likely cause.</li><li>For enhanced troubleshooting, enable debug logging using: <span style="background-color: #f1f1f1;">tmsh modify sys db log.rba.level value debug</span></li></ul>
+</article>
+</body>
+</html>

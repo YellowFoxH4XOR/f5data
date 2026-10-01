@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000150453: Limiting the Number of Maximum Connections to a Virtual Server, as per &quot;Source-IP&quot;</title>
+<meta name="description" content="Support Solution: Limiting the Number of Maximum Connections to a Virtual Server, as per &quot;Source-IP&quot; — You are looking for a way to limit the Maximum number of connections to a Virtual Server over time, as per Source IP Address of each Client.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000150453">
+</head>
+<body>
+<header>
+<h1>K000150453: Limiting the Number of Maximum Connections to a Virtual Server, as per &quot;Source-IP&quot;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-03-19</dd>
+<dt>Updated</dt><dd>2025-03-19</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.0.0, 15.X.X, 16.X.X, 17.X.X, 17.5.X, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000150453">https://my.f5.com/manage/s/article/K000150453</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>You are looking for a way to limit the Maximum number of connections to a Virtual Server over time, as per Source IP Address of each Client.</p>
+<h2>Environment</h2>
+<ul><li>Virtual Server which terminates the connections on F5</li><li>Using an iRule Script to count and limit the Maximum number of connections from specific Source-IP over time</li><li>LTM</li></ul>
+<h2>Cause</h2>
+<p>In some scenarios, you may want to limit the number of Maximum Established connections from any specific Source-IP over time to manage both the F5 and Server resources, and prevent from many Established Connections per Client&#39;s IP.</p>
+<p>Please note that there is another useful Article &quot;<a href="https://my.f5.com/manage/s/article/K45530602" target="_self">K45530602</a>&quot; which can be helpful for limiting the number of concurrent connections to a Virtual Server as per-second basis under the &quot;<strong>Connection Rate Limit</strong>&quot; settings of a Virtual Server. But that could not be helpful if you want to count and limit the total number of connections from any Source-IP, over time.</p>
+<h2>Recommended Actions</h2>
+<p>There are two sample iRule scripts for this purpose, and you can use either of the below scripts.</p>
+<p>In below iRule samples, the total Maximum number of Established Connections from any Source-IP was considered as &quot;10&quot;, but you can simply modify the script based on your demand.</p>
+<p> </p>
+<p><strong>iRule Sample (1):</strong></p>
+<pre class="language-c" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># Limit each client IP address to 10 concurrent connections
+when CLIENT_ACCEPTED {
+   # Check if the subtable has over 10 entries
+   if { [table keys -subtable connlimit:[IP::client_addr] -count] &gt;= 10 } {
+      reject
+   } else {
+      # Add the client IP:port to the client IP-specific subtable
+      table set -subtable connlimit:[IP::client_addr] [TCP::client_port] &quot;&quot; indef
+   }
+}
+
+when CLIENT_CLOSED {
+   # When the client connection is closed, remove the table entry
+   table delete -subtable connlimit:[IP::client_addr] [TCP::client_port]
+}</code></pre>
+<p> </p>
+<p><strong>iRule Sample (2):</strong></p>
+<pre class="language-c" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when CLIENT_ACCEPTED {
+    # Define the maximum allowed concurrent connections per IP
+    set max_connections 10
+    
+    # Count the number of current connections from this source IP
+    set current_connections [table lookup [IP::client_addr]]
+    
+    # Check if the current connections exceed the defined limit
+    if { $current_connections &gt;= $max_connections } {
+        # Exceeding the limit, reject the connection
+        reject
+    } else {
+        # Increment the connection count
+        table set -subtable connections [IP::client_addr] [expr {$current_connections + 1}] indef
+    }
+}
+
+when CLIENT_CLOSED {
+    # Decrement the connection count when the connection closes
+    set current_connections [table lookup [IP::client_addr]]
+    if { $current_connections &gt; 0 } {
+        table set -subtable connections [IP::client_addr] [expr {$current_connections - 1}] indef
+    }
+}</code></pre>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

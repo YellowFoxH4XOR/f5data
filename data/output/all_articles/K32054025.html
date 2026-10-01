@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K32054025: HTTP Host header rewrite with Aspen Mesh</title>
+<meta name="description" content="Support Solution: HTTP Host header rewrite with Aspen Mesh — HTTP requests are routed by sidecar proxies based on the Host or Authority headers sent by the Client applications. Istio sidecar proxy by default forwards requests to clusters and endpoints without…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K32054025">
+</head>
+<body>
+<header>
+<h1>K32054025: HTTP Host header rewrite with Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-07-19</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K32054025">https://my.f5.com/manage/s/article/K32054025</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>HTTP requests are routed by sidecar proxies based on the Host or Authority headers sent by the Client applications. Istio sidecar proxy by default forwards requests to clusters and endpoints without modifying the Host header. Endpoints and backend servers can be discovered and identified in the configuration using DNS domains. The DNS domain might not be corresponding to the domain name sent in the Host or Authority headers.</p>
+
+<p>Here is an example of the ServiceEntry where Endpoints are configured with different DNS domain names than the Listener:</p>
+
+<p><span class="example2">apiVersion: networking.istio.io/v1beta1<br>kind: ServiceEntry<br>metadata:<br>  name: external-se<br>  namespace: ns4<br>spec:<br>  endpoints:<br>  - address: nginx1.pawelp.local.com<br>    ports:<br>      http2: 6644<br>    weight: 70<br>  - address: nginx2.pawelp.local.com<br>    ports:<br>      http2: 6655<br>    weight: 30<br>  exportTo:<br>  - .<br>  hosts:<br>  - nginx1.pawelp.local.com<br>  location: MESH_INTERNAL<br>  ports:<br>  - name: http2<br>    number: 6644<br>    protocol: HTTP2<br>  resolution: DNS</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Aspen Mesh: 1.6.x - 1.11.x</li><li>Kubernetes: 1.17x - 1.22.x</li><li>Red Hat OpenShift: 4.6.x - 4.8.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Application services may validate received Host headers and in case the header is not equal to the expected value than the requests may be rejected. In that scenario Envoy proxy sidecar should overwrite the Host header while forwarding requests to the Endpoints identified with the domain name different than the domain name specified in the ServiceEntry hosts field.</p>
+
+<p>Envoy provides <strong>auto_host_rewrite</strong> option to configure that behavior. </p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p><strong>auto_host_rewrite</strong> setting is currently not available in any Istio API. To apply the host rewrite setting to the proxy EnvoyFilter has to be used.</p>
+
+<p>Here is an example EnvoyFilter which can be used to apply auto host rewrite configuration:</p>
+
+<p><span class="example2">apiVersion: networking.istio.io/v1alpha3<br>kind: EnvoyFilter<br>metadata:<br>  name: host-rewrite<br>spec:<br>  configPatches:<br>  - applyTo: HTTP_ROUTE<br>    match:<br>      routeConfiguration:<br>        vhost:<br>          name: nginx1.pawelp.local.com:6644<br>          route:<br>            action: ANY<br>    patch:<br>      operation: MERGE<br>      value:<br>        route:<br>          auto_host_rewrite: true<br>  workloadSelector:<br>    labels:<br>      app: &lt;application label&gt;</span></p>
+
+<p><strong>Vhost</strong> field has to correspond the host header and TCP port specified in the ServiceEntry and Envoy HTTP route where the configuration is applied. <strong>workloadSelector</strong> field is used to provision the configuration only to the PODs with the specified label. In our example the used vhost <strong>nginx1.pawelp.local.com:6644</strong>:</p>
+
+<p><span class="example2">&gt; istioctl pc listener sleep-557747455f-kzq5c.ns4 --port 6644<br>ADDRESS PORT MATCH DESTINATION<br>0.0.0.0 6644 ALL   Route: 6644<br>&gt; istioctl pc route sleep-557747455f-kzq5c.ns4 --name 6644<br>NAME     DOMAINS                     MATCH     VIRTUAL SERVICE<br>6644     *                           /*<br>6644     nginx1.pawelp.local.com     /*</span></p>
+
+<p>The configuration should be applied to the route:</p>
+
+<p><span class="example2">&gt; istioctl pc route sleep-557747455f-kzq5c.ns4 --name 6644 -o yaml<br>- name: &quot;6644&quot;<br>  validateClusters: false<br>  virtualHosts:<br>  - domains:<br>...<br>  - domains:<br>    - nginx1.pawelp.local.com<br>    - nginx1.pawelp.local.com:6644<br>    includeRequestAttemptCount: true<br>    name: nginx1.pawelp.local.com:6644<br>    routes:<br>    - decorator:<br>        operation: nginx1.pawelp.local.com:6644/*<br>      match:<br>        prefix: /<br>      name: default<br>      route:<br>        autoHostRewrite: true</span></p>
+
+<p><span class="note"><strong>Note</strong>: This option is applicable only when the destination cluster for a route is of type strict_dns or logical_dns. Setting this to true with other cluster types has no effect.</span></p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

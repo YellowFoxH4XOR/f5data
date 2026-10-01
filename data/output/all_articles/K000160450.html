@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160450: Troubleshooting F5 Distributed Cloud Load Balancer to Kubernetes NodePort Service: Origin Pool Endpoint Discovery and Port Selection</title>
+<meta name="description" content="Support Solution: Troubleshooting F5 Distributed Cloud Load Balancer to Kubernetes NodePort Service: Origin Pool Endpoint Discovery and Port Selection — F5 Distributed Cloud Load Balancer configured with a Kubernetes NodePort service as an origin pool via service discovery fails with ClientError or UpstreamError. No origin pool endpoints are…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160450">
+</head>
+<body>
+<header>
+<h1>K000160450: Troubleshooting F5 Distributed Cloud Load Balancer to Kubernetes NodePort Service: Origin Pool Endpoint Discovery and Port Selection</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-03-24</dd>
+<dt>Updated</dt><dd>2026-06-12</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Distributed Cloud Services</li><li>F5 Distributed Cloud WAF</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160450">https://my.f5.com/manage/s/article/K000160450</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>F5 Distributed Cloud Load Balancer configured with a Kubernetes NodePort service as an origin pool via service discovery fails with <span style="font-family: &#39;courier new&#39;, courier, monospace;">ClientError</span> or <span style="font-family: &#39;courier new&#39;, courier, monospace;">UpstreamError</span>. No origin pool endpoints are displayed in the LB performance tab, or endpoints intermittently disappear.</p>
+<h2>Environment</h2>
+<ul><li>Product: F5 Distributed Cloud WAF / Multi-Cloud App Connect</li><li>Feature: TCP Load Balancer, Kubernetes Service Discovery</li><li>Backend: Kubernetes NodePort service (example manifest below)</li><li>Example service manifest:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">apiVersion: v1</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">kind: Service</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">metadata:</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> name: service</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> labels:</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> app: service-app</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">spec:</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> type: NodePort</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> selector:</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> app: service-app</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> ports:</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> - name: web</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> port: 443</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> targetPort: 2222</span></p>
+</li><li>Origin pool configured with discovered service name (e.g., <span style="font-family: &#39;courier new&#39;, courier, monospace;">service.service-discovery-name</span>)</li><li>NodePort and Pod listen ports involved (e.g., NodePort 30998, Pod port 2222, Service port 443)</li><li>Environment may include VMware Kubernetes Service (VKS) or other K8s clusters</li><li>Distributed Cloud Customer Edge (CE) nodes as source/destination</li><li>Possible CE instability (pod crashes, tunnel flaps, memory alarms) noted in some cases</li></ul>
+<h2>Cause</h2>
+<p>Misunderstanding of which port to specify in the origin pool definition for a Kubernetes NodePort service.<br>- The port required is the <strong>Pod Listen Port</strong> (the <span style="font-family: &#39;courier new&#39;, courier, monospace;">port</span> field in the K8s service manifest), not the NodePort or container port.<br>- Service discovery for Kubernetes does not support automatic port selection; the port must be specified manually.<br>- If the port is not correctly specified, origin endpoints may not be discovered, resulting in <span style="font-family: &#39;courier new&#39;, courier, monospace;">ClientError</span>.<br>- If the backend is unreachable (e.g., firewall, pod not ready), <span style="font-family: &#39;courier new&#39;, courier, monospace;">UpstreamError</span> will be seen after endpoints are discovered.</p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li><strong>Verify Service Discovery Configuration</strong>
+<ul><li>Ensure the correct service name is used (as suggested by the service discovery autocomplete).</li><li>Do not append cluster-id unless required by your environment.</li></ul>
+</li><li><strong>Specify the Correct Port in Origin Pool</strong>
+<ul><li>For Kubernetes NodePort services, specify the <strong>Pod Listen Port</strong> (the <span style="font-family: &#39;courier new&#39;, courier, monospace;">port</span> field in the service manifest, e.g., 443).</li><li>Do <strong>not</strong> use the NodePort value (e.g., 30998) or the container port (e.g., 2222).</li></ul>
+</li><li><strong>Validate Backend Health and Connectivity</strong>
+<ul><li>Confirm that the backend pod is running, ready, and accepting connections on the specified port.</li><li>Ensure there are no firewall or network blocks between the CE and the NodePort service.</li></ul>
+</li><li><strong>Troubleshooting Steps</strong>
+<ul><li>Use <span style="background-color: #f1f1f1;">kubectl describe service &lt;service-name&gt; -n &lt;namespace&gt;</span> to confirm service and port details.</li><li>Use <span style="background-color: #f1f1f1;">kubectl get endpoints &lt;service-name&gt; -n &lt;namespace&gt;</span> to verify endpoint population.</li><li>Use <span style="background-color: #f1f1f1;">kubectl logs &lt;pod-name&gt; -n &lt;namespace&gt;</span> to check for application-level errors.</li><li>If endpoints are not discovered, review service discovery configuration and port selection.</li><li>If <span style="font-family: &#39;courier new&#39;, courier, monospace;">UpstreamError</span> occurs, check network path and pod readiness.</li></ul>
+</li><li><strong>Documentation and UI Notes</strong>
+<ul><li>The &quot;Automatic&quot; port selection option is only available for Consul and Classic BIG-IP service discovery, not for Kubernetes.</li><li>If multiple ports are exposed by the service, auto-selection is not supported to avoid ambiguity.</li></ul>
+</li></ol>
+<h2>Additional Information</h2>
+<ul><li>When using NodePort services, the Node IPs are discovered automatically, but the port must match the Pod Listen Port as defined in the service manifest.</li><li>If the origin pool is misconfigured, endpoints will not be discovered and traffic will fail with <span style="font-family: &#39;courier new&#39;, courier, monospace;">ClientError</span>.</li><li>If endpoints are discovered but backend is unreachable, traffic will fail with <span style="font-family: &#39;courier new&#39;, courier, monospace;">UpstreamError</span>.</li><li>This behavior is expected and by design for F5 Distributed Cloud.</li></ul>
+</article>
+</body>
+</html>

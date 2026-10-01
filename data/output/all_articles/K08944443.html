@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K08944443: Recommendations for spinning up Jobs in Aspen Mesh</title>
+<meta name="description" content="Support Solution: Recommendations for spinning up Jobs in Aspen Mesh — In the Kubernetes world, Jobs are a resource type which perform specific tasks, wait for its completion, and return an exit code. In Aspen Mesh, we have a sidecar that does routing and networking…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K08944443">
+</head>
+<body>
+<header>
+<h1>K08944443: Recommendations for spinning up Jobs in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-12-14</dd>
+<dt>Updated</dt><dd>2023-02-07</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K08944443">https://my.f5.com/manage/s/article/K08944443</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h1>Description</h1>
+
+<p>In the Kubernetes world, Jobs are a resource type which perform specific tasks, wait for its completion, and return an exit code. In Aspen Mesh, we have a sidecar that does routing and networking being separate from the application pod.<br> </p>
+
+<h1>Environment</h1>
+
+<p>Aspen Mesh: 1.14.5<br> </p>
+
+<h1>Cause</h1>
+
+<p>A Job is not considered complete until all its containers have stopped running, while a sidecar in Aspen Mesh runs indefinitely.<br> </p>
+
+<h1>Recommended Actions</h1>
+
+<p>There is a /quitquitquit endpoint in envoy-proxy which when called from the application pod on the envoy admin port 15000, terminates the sidecar. In this example we are running a Perl job which should terminate after successful return of the command it is supposed to run.</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nginx-job
+spec:
+  template:
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
+        command:
+        - /bin/sh
+        - -c
+        - |
+          until curl -fsI http://localhost:15021/healthz/ready; do echo \&quot;Waiting for Sidecar...\&quot;; sleep 3; done;
+          echo \&quot;Sidecar available. Running the command...\&quot;;
+          perl -Mbignum=bpi -wle &#39;print bpi(2000)&#39;; #my command
+          x=$(echo $?);
+          echo \&quot;Killing sidecar...\&quot;;
+          curl -fsI -X POST http://localhost:15000/quitquitquit ;
+          exit $x
+      restartPolicy: Never
+  backoffLimit: 4</pre>
+
+<p><br>We query the sidecar at <em>http://localhost:15021/healthz/ready</em> to determine if it&#39;s running before the job executes. After the job is done, we will terminate the sidecar by running a POST to the endpoint /quitquitquit and exit the code.<br><br>Checking the logs from the successful job completion:</p>
+
+<pre class="ckeditor_codeblock">
+&gt; kubectl logs nginx-job-6c978
+
+&quot;Waiting for Sidecar...&quot;
+HTTP/1.1 200 OK
+date: Fri, 27 Jan 2023 16:48:32 GMT
+x-envoy-upstream-service-time: 0
+server: envoy
+transfer-encoding: chunked
+
+&quot;Sidecar available. Running the command...&quot;
+Can&#39;t locate bignum.pm in @INC (you may need to install the bignum module) (@INC contains: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.32.1 /usr/local/share/perl/5.32.1 /usr/lib/x86_64-linux-gnu/perl5/5.32 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.32 /usr/share/perl/5.32 /usr/local/lib/site_perl).
+BEGIN failed--compilation aborted.
+&quot;Killing sidecar...&quot;
+HTTP/1.1 200 OK
+content-type: text/plain; charset=UTF-8
+cache-control: no-cache, max-age=0
+x-content-type-options: nosniff
+date: Fri, 27 Jan 2023 16:48:32 GMT
+server: envoy
+transfer-encoding: chunked
+</pre>
+
+<p>You can add various logic to your Job application defining how it kills the sidecar after the Job code completes. In the logic above, we are in a loop until the sidecar starts before running the job and we only run the /quit endpoint once.</p>
+
+<h1><br>Additional Information</h1>
+
+<p>https://kubernetes.io/docs/concepts/workloads/controllers/job/<br>https://www.envoyproxy.io/docs/envoy/latest/operations/admin</p>
+</article>
+</body>
+</html>

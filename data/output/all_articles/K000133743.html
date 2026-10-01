@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000133743: Nginx does not return response to the client during nginx reload</title>
+<meta name="description" content="Support Solution: Nginx does not return response to the client during nginx reload — You configured and deployed Nginx to process HTTP/2 request with keepalive_timeout enabled">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000133743">
+</head>
+<body>
+<header>
+<h1>K000133743: Nginx does not return response to the client during nginx reload</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-04-29</dd>
+<dt>Updated</dt><dd>2023-04-29</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Plus: R27</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000133743">https://my.f5.com/manage/s/article/K000133743</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<ul><li>You configured and deployed Nginx to process HTTP/2 request with keepalive_timeout enabled
+	<ul><li>Keepalive_timeout allows Nginx to reuse existing and established connection to service new client request</li></ul>
+	</li><li>With the above, for one reason or another if one instruct Nginx to reload configuration using command Nginx -s reload,
+	<ul><li>Nginx would first sends the client/application a protocol compliant GOAWAY frame to initiate graceful shutdown</li><li>However, if the a client initiate another request at the same time as the Nginx issuing HTTP/2 GOAWAY frame, it could result in a mid-air collusion</li><li>the resulting collusion could generate application error similar to the one shown below</li></ul>
+	</li></ul>
+
+<pre class="ckeditor_codeblock">
+2156: 2023-04-07 13:18:44.678086 Do request (rid: d1c030af59c71bbd05cce2304bce2d37) ... 
+         Get &quot;https<strong>:</strong>//example<strong>.</strong>com/&quot;: http2: Transport: cannot retry 
+              err [http2: Transport received Server&#39;s graceful shutdown GOAWAY] after Request.Body was written; define Request.GetBody to avoid this error
+
+         panic: client<strong>.</strong>Do(req) failed.
+</pre>
+
+<h2><strong>Environment</strong></h2>
+
+<ul><li>Nginx Plus</li><li>HTTP/2</li><li>Keepalive_timeout Directive</li></ul>
+
+<h2><strong>Cause</strong></h2>
+
+<ul><li>Client initiating new request after Nginx issued HTTP/2 GOAWAY frame</li></ul>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<ul><li>None on the Nginx as it is Protocol <a href="https://www.rfc-editor.org/rfc/rfc7540#section-6.8" target="_blank">RFC7540 </a> compliant</li><li>The client mustn&#39;t send any additional request.</li></ul>
+
+<h2><strong>Additional Information</strong></h2>
+
+<ul><li>Based on the above error message
+	<ul><li>the client initiate a new request and it states &quot;after Request.Body was written&quot;,</li><li>Nginx the proxy, at the same time, sends a graceful shutdown GOAWAY frame
+		<ul><li>http2: Transport received Server&#39;s graceful shutdown GOAWAY</li></ul>
+		</li><li>here we have a midair collusion, which causes the request to end with &quot; panic: client<strong>.</strong>Do(req) failed.&quot; message</li></ul>
+	</li><li>Now let us review what the RFC states
+	<ul><li>as you can see from <a href="https://www.rfc-editor.org/rfc/rfc7540#section-6.8" target="_blank">RFC7540</a> ,
+		<ul><li>The GOAWAY frame (type=0x7) is used to initiate shutdown</li><li>and more importantly, the RFC also identifies the possible presence of an inherent race condition between an endpoint starting new streams and the remote{Nginx} sending a GOAWAY frame</li><li>The GOAWAY frame with its stream identifier, indicates the last request that Nginx can process</li><li>if a GOAWAY frame is NOT sufficient for the client to stop the initiation of new request, this in turn results in unsuccessful request being initiated by the client.</li></ul>
+		</li></ul>
+	</li></ul>
+
+<p>In conclusion and with the above explanation, the observed outcome is in compliance to the mentioned RFC and Nginx is working within the bound of the protocol. Please consult RFC7540 for detailed reading and its application.</p>
+</article>
+</body>
+</html>

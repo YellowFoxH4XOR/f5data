@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000151058: BIG-IP doesn&#x27;t forward subsequent HTTP request after the First-FIN packet sent.</title>
+<meta name="description" content="Support Solution: BIG-IP doesn&#x27;t forward subsequent HTTP request after the First-FIN packet sent. — When using BIG-IP LTM as a reverse proxy (Standard VS with HTTP profile) for HTTP/HTTPS traffic, HTTP requests from the client may not be forwarded to the backend server if the server-side TCP…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000151058">
+</head>
+<body>
+<header>
+<h1>K000151058: BIG-IP doesn&#x27;t forward subsequent HTTP request after the First-FIN packet sent.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-04-28</dd>
+<dt>Updated</dt><dd>2025-04-28</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 11.0.0, 11.1.0, 11.0.X, 17.X.X, 16.X.X, 15.X.X, 14.X.X, 13.X.X, 12.X.X, 11.X.X, 17.5.X, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0, 13.1.X, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.X, 13.0.1, 13.0.0, 12.1.X, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.X, 12.0.0, 11.6.X, 11.6.5, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.X, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 11.5.1, 11.5.0, 11.4.X, 11.4.1, 11.4.0, 11.3.X, 11.3.0, 11.2.X, 11.2.1, 11.2.0, 11.1.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000151058">https://my.f5.com/manage/s/article/K000151058</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When using BIG-IP LTM as a reverse proxy (Standard VS with HTTP profile) for HTTP/HTTPS traffic, HTTP requests from the client may not be forwarded to the backend server if the server-side TCP connection has already been half-closed (i.e., the backend server has sent a FIN, ACK). In this situation, if a client sends a new HTTP request on a connection that has received a FIN from the server, BIG-IP will not forward this request to the backend server.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>HTTP profile</li><li>RFC2616</li></ul>
+<h2>Cause</h2>
+<p><strong>This behavior is expected. </strong>When a backend server sends a [FIN, ACK] on its TCP connection, it indicates that it will not transmit further HTTP request on that connection. Although TCP allows for additional data to be sent by the peer until both sides have closed the connection, HTTP/1.1 (RFC 2616) expects clients and servers to monitor for closure events and avoid sending further requests after receiving a FIN. As a full proxy, BIG-IP does not forward new HTTP requests to servers that have already signaled intent to close via FIN because no response can be expected from such connections.</p>
+<h2>Recommended Actions</h2>
+<p>This is a client issue, here are some useful experiences for your reference:</p>
+<ol><li>Ensure client applications properly detect half-closed connections and do not send new HTTP requests after receiving a FIN from the backend.</li><li>Increase the HTTP keep-alive timeout on backend servers if persistent connections are required or if clients may remain idle between requests.</li><li>If multiple client requests per connection are needed, consider attaching a OneConnect profile to your BIG-IP virtual server. OneConnect enables multiplexing of client requests over available pool member connections; however, once a pool member sends FIN, that specific connection cannot be reused.</li><li>Review application logic and client configuration for compliance with TCP/HTTP standards regarding handling of closed or closing connections.</li></ol>
+<p>Key information from: <a href="https://www.rfc-editor.org/rfc/rfc2616#section-8.1.4" target="_blank">RFC 2616: Hypertext Transfer Protocol -- HTTP/1.1</a> </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>   When a client or server wishes to time-out it SHOULD issue a graceful
+   close on the transport connection. Clients and servers SHOULD both
+   constantly watch for the other side of the transport close, and
+   respond to it as appropriate. If a client or server does not detect
+   the other side&#39;s close promptly it could cause unnecessary resource
+   drain on the network.
+
+   A client, server, or proxy MAY close the transport connection at any
+   time. For example, a client might have started to send a new request
+   at the same time that the server has decided to close the &quot;idle&quot;
+   connection. From the server&#39;s point of view, the connection is being
+   closed while it was idle, but from the client&#39;s point of view, a
+   request is in progress.
+
+   This means that clients, servers, and proxies MUST be able to recover
+   from asynchronous close events. Client software SHOULD reopen the
+   transport connection and retransmit the aborted sequence of requests
+   without user interaction so long as the request sequence is
+   idempotent (see section 9.1.2). Non-idempotent methods or sequences
+   MUST NOT be automatically retried, although user agents MAY offer a
+   human operator the choice of retrying the request(s). Confirmation by
+   user-agent software with semantic understanding of the application
+   MAY substitute for user confirmation. The automatic retry SHOULD NOT
+   be repeated if the second sequence of requests fails.</code></pre>
+<h2>Additional Information</h2>
+<p>The above behavior over HTTP needs to be distinguished with TCP behavior. As we all learnt that the server could keep accepting the following data after it sent the First-FIN packet. Here is a detailed explanation contrasting the behavior between TCP and HTTP protocols in the context of this article:</p>
+<p><strong>TCP Protocol Behavior:</strong></p>
+<ul><li><strong>Half-Closed Connections:</strong><br>In TCP, when one side (e.g., the server) sends a FIN to the other side (e.g., the client), it is signaling that it will not send any more data, but it is still able to receive data from the peer. This is known as a &quot;half-closed&quot; connection. The client can continue to send data to the server until it also sends a FIN, at which point the connection is fully closed.</li><li><strong>Data Transmission:</strong><br>The TCP protocol itself does not restrict the client from sending more data after receiving a FIN from the server. The server&#39;s TCP stack will accept the data and acknowledge it at the transport layer, even though the application layer (such as an HTTP server) may not process it.</li></ul>
+<p><strong>HTTP Protocol Behavior:</strong></p>
+<ul><li><strong>Connection Semantics:</strong><br>HTTP (specifically HTTP/1.1 as described in RFC 2616) is an application-layer protocol that typically runs over TCP. HTTP defines its own semantics for connection management, including the use of persistent connections (keep-alive) and the proper handling of connection closure.</li><li><strong>Server-Initiated FIN:</strong><br>When an HTTP server sends a FIN (usually after a keep-alive timeout or after sending a response with a &quot;Connection: close&quot; header), it is indicating that it will not process any further HTTP requests on that connection. Any subsequent HTTP request sent by the client after receiving the server&#39;s FIN will not be processed by the server application, even though the underlying TCP stack may accept the data.</li><li><strong>BIG-IP Behavior:</strong><br>As a full proxy, BIG-IP is aware of the HTTP protocol semantics. When the backend server has sent a FIN, BIG-IP knows that the server will not process any more HTTP requests on that connection. Therefore, if the client sends a new HTTP request after the server&#39;s FIN, BIG-IP will not forward this request to the backend server, as it would be futile—the server application will not respond.</li></ul>
+<p><strong>Key Point:</strong></p>
+<ul><li>In TCP, the protocol allows continued data flow from client to server after the server&#39;s FIN, until the client also sends a FIN.</li><li>In HTTP, the application protocol expects that no further requests will be sent after a FIN from the server. Any such requests are not processed, and proxies like BIG-IP will not forward them.</li></ul>
+</article>
+</body>
+</html>

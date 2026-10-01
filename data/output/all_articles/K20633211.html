@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K20633211: Aspen Mesh Dashboard authentication with OKTA provider</title>
+<meta name="description" content="Support Solution: Aspen Mesh Dashboard authentication with OKTA provider — To configure JWT token authentication, you need to specify the JSON Web Keys, jwks URL where the Dashboard can retrieve keys to validate JWT Tokens sent by the client and redirectUrl where the client…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K20633211">
+</head>
+<body>
+<header>
+<h1>K20633211: Aspen Mesh Dashboard authentication with OKTA provider</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-07-28</dd>
+<dt>Updated</dt><dd>2023-07-19</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.11</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K20633211">https://my.f5.com/manage/s/article/K20633211</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<span class="sectiontitle">Description</span>
+<p>Aspen Mesh Dashboard contains sensitive data about the mesh like the architecture’s traffic metrics, services’ names, the state of the mesh and more. It is important not to expose the Dashboard to a wide audience or public internet without enforcing authentication. The Aspen Mesh Helm Chart allows you to secure the Dashboard with JWT tokens. This is documented in the <a href="https://clouddocs.f5.com/products/aspen-service-mesh/1.11/getting-started/customizing-aspen-mesh.html" target="_blank">Customizing your mesh</a> section of the <strong>Aspen Mesh</strong> guide:</p>
+To configure JWT token authentication, you need to specify the JSON Web Keys, <strong>jwks</strong> URL where the Dashboard can retrieve keys to validate JWT Tokens sent by the client and <strong>redirectUrl</strong> where the client will be redirected in case the JWT token is missing or is not valid. Another solution to authenticate Aspen Mesh Dashboard is with OAuth2. Securing the Dashboard with oauth2 flow requires some additional steps to be performed as Aspen Mesh does not support oauth2 flow by default. You need to install the oauth2-proxy instance in front of the Aspen Mesh Dashboard to secure access with OAuth2.
+
+<p>All requests to the Dashboard passing through the proxy are checked for the proxy&#39;s session cookie. If the cookie is missing or not valid the user is asked to log in and redirected to the authentication provider. The user is asked for the username and password by the authentication provider. After returning from the authentication provider, the oauth tokens are stored in the configured session store and a cookie is set. The Client is next forwarded to the application upstream server (Aspen Mesh Dashboard).</p>
+In this article, we will discuss how to integrate the Aspen Mesh Dashboard with OKTA authentication provider using oauth2-proxy. For more information and the procedure in this article, refer to the official <a href="https://oauth2-proxy.github.io/oauth2-proxy/docs/configuration/oauth_provider/#okta" target="_self">oauth2-proxy</a> documentation.
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Kubernetes: 1.18.x,1.19.x,1.20.x  </li><li>Aspen Mesh: 1.6.x, 1.9.x  </li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+N/A
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+To configure and integrate oauth2-proxy with the OKTA provider, perform the following procedures:
+
+<ul><li><a href="#auth_server" target="_self">Configure and create the Authorization Server and Application Client on okta.com</a></li><li><a href="#oauth2_app" target="_self">Create an oauth2 Application with the Okta account</a></li><li><a href="#deploy" target="_self">Configure oauth2-proxy credentials</a></li><li><a href="#final" target="_self">Final deployment</a></li></ul>
+
+<p><a id="auth_server" name="auth_server"></a><span class="subsectiontitle">Configure and create the Authorization Server and Application Client on okta.com</span></p>
+Create and configure a oauth2 Authorization Server:
+
+<ol><li>Login to the OKTA system using your administrative account. Development accounts may have URL <a href="https://dev-xxxxxxx-admin.okta.com/" target="_blank">https://dev-xxxxxxx-admin.okta.com/</a></li><li>Navigate to <strong>Security</strong> then select <strong>API</strong></li><li>Every account should have a default Authorization Server created. This default server allows access to all users and can be referenced using a URL such as: <strong>https://dev-xxxxxxx.okta.com/oauth2/default</strong>. You can also create your own Authorization Server and Access Policy.</li><li>To add a custom API Authorization server, click <strong>Add Authorization Server</strong></li><li>Fill out the <strong>Name</strong> with something to describe the application you are protecting. For example, <strong>Aspen Mesh Dashboard</strong></li><li>For <strong>Audience</strong>, pick the URL of the application you wish to protect. For example, <strong>https://dashboard.yourdomain.com</strong> (this DNS name should be routed to the IP you use to reach oauth2-proxy POD or kubernetes Service)</li><li>Fill out a Description</li><li>Add Access Policies to configure access to the Dashboard. To allow access to all users you can create <strong>allow all</strong> policy by selecting the <strong>Assign to: all clients</strong> check box.</li><li>Leave all options with default values or consult the <a href="https://developer.okta.com/docs/guides/customize-authz-server/overview/" target="_self">OKTA </a>documentation for more details.</li></ol>
+
+<p>In the next steps you will use default API Server.</p>
+<a id="oauth2_app" name="oauth2_app"></a><span class="subsectiontitle">Create an oauth2 Application with OKTA the account</span>
+
+<ol><li>Navigate to <strong>Applications</strong> then select <strong>Add Application</strong></li><li>Select <strong>Web Application</strong> for the <strong>Application type</strong> setting.</li><li>Select <strong>OpenID – OpenID Connect</strong> and click <strong>Create</strong></li><li>Enter an <strong>Application Name</strong> such as <strong>Aspen Mesh Dashboard</strong></li><li>Set the <strong>Sign-in redirect URIs</strong> to https://dashboard.yourdomain.com (this DNS name should be routed to the IP you use to reach oauth2-proxy POD or Kubernetes Service)</li><li>Under <strong>General</strong> set the Allowed grant types to <strong>Authorization Code</strong> and <strong>Refresh Token.</strong></li><li>Leave the rest as default, taking note of the <strong>Client ID</strong> and <strong>Client Secret.</strong></li><li>Under <strong>Assignments</strong> select the users or groups you wish to access your application. To allow access to all users choose <strong>Allow everyone in your organization to access</strong></li></ol>
+The oauth2-proxy POD you use is a proxy to your Aspen Mesh Dashboard (application to secure). The application you are going to secure in your deployment is this oauth2-proxy POD. Every URL and DNS name for the application you secure should point to the IP you use to reach the oauth2-proxy POD. If you use a Kubernetes cluster running in a public cloud (e.g. AWS) this can be the DNS name to your Kubernetes LoadBalancer service exposing the oauth2-proxy deployment which may be similar to https://xx7e7e794f6c9c8xxxxxyyy-xxxxxx.us-west-2.elb.amazonaws.com/oauth2/callback.<br> 
+<p><a id="conf_deployment" name="conf_deployment"></a><span class="subsectiontitle">Configure oauth2-proxy credentials</span></p>
+In this section you configure credentials for the oauth2 proxy.<br><span class="note"><strong>Note</strong>: If someone gets access to your shell’s scrollback buffer or history after you perform this procedure, they may be able to discover these secrets. You should close your shell once these steps are complete. Use the command <strong>set +o</strong> history to disable your shell history for this session (you need to run this each time you open a new shell for handling the secrets):</span>
+
+<ol><li>Make a Cookie Secret. This is used to encrypt the cookies that are stored in your users’ browsers. It can be any long base64 value as long as it is confidential and used only for this application. Here is one way to generate one:
+	<p><span class="example2">export COOKIE_SECRET=`echo -n “&lt;PASSWORD-IN-PLAINTEXT&gt; | base64`</span></p>
+	</li><li>Create a secret containing the Application details created in the previous steps, and a Cookie Secret. Replace this with the Client ID and Client Secret from the Application.
+	<p><span class="example2">kubectl create secret generic -n istio-system aspen-mesh-oauth2-proxy-secrets --from-literal=CLIENT_ID=&lt;CLIENT_ID&gt; --from-literal=CLIENT_SECRET=&lt;CLIENT_SECRET&gt; --from-literal=COOKIE_SECRET=$COOKIE_SECRET</span></p>
+	</li><li>Create a secret containing the TLS certificate and key. Put the certificate chain and key in files called <strong>fullchain.pem</strong> and <strong>privkey.pem</strong> or replace those in the command below with a path to the files. Your platform may also have platform-specific techniques for securely creating Kubernetes TLS secrets - if so, create a TLS secret named <strong>aspen-mesh-oauth2-proxy-cert</strong> in the <strong>istio-system</strong> namespace.
+	<p><span class="example2">kubectl create secret tls -n istio-system aspen-mesh-oauth2-proxy-cert --key privkey.pem --cert fullchain.pem</span></p>
+	</li></ol>
+At this point, you are finished handling credentials. You may want to remove local copies of the certificates and keys and close your terminal session and open a new one so that any credentials that appeared on screen while working through this section are not visible.
+
+<p><span class="subsectiontitle"><a id="final" name="final"></a>Final deployment</span></p>
+In the final deployment you are going to use oauth2-proxy secured with TLS and certificates created in the previous step. The oauth2-proxy application will redirect all requests to the oauth2-proxy POD without valid session cookie to this OKTA authorization server. In the following manifests, we also configure the LoadBalancer type Kubernetes Service to expose the oauth2-proxy deployment. The URL assigned to this LB Service has to be used in the previous steps to configure the <strong>Audience</strong>, <strong>Application URL</strong> and <strong>Sign-in redirect URIs</strong> in the OKTA administrative account. You can find the load balancer domain name or IP address in the <strong>EXTERNAL-IP</strong> as follows:
+
+<p><span class="example2"># kubectl get svc -n istio-system aspen-mesh-oauth2-proxy<br>NAME                      TYPE           CLUSTER-IP       EXTERNAL-IP<br>aspen-mesh-oauth2-proxy   LoadBalancer   10.20.113.3    <strong>a123w----------------------5a3e-150000001.us-west-2.elb.amazonaws.com</strong></span></p>
+In the above example, the <strong>Sign-in redirect URIs</strong> should look like:
+
+<p><span class="example2">https://<strong>a123w----------------------5a3e-150000001.us-west-2.elb.amazonaws.com</strong>/<strong>oauth2/callback</strong></span></p>
+In the following oauth2-proxy deployment, you used the default Okta API server with the URL: <strong>https://dev-xxxxx.okta.com/oauth2/default</strong>.
+
+<p><span class="example2">apiVersion: apps/v1<br>kind: Deployment<br>metadata:<br>  name: aspen-mesh-oauth2-proxy<br>  namespace: istio-system<br>  labels:<br>    app: aspen-mesh-oauth2-proxy<br>spec:<br>  replicas: 1<br>  selector:<br>    matchLabels:<br>      app: aspen-mesh-oauth2-proxy<br>  template:<br>    metadata:<br>      labels:<br>        app: aspen-mesh-oauth2-proxy<br>      annotations:<br>        sidecar.istio.io/inject: &quot;false&quot;<br>    spec:<br>      containers:<br>        - name: oauth2-proxy<br>          image: quay.io/pusher/oauth2_proxy:v4.0.0<br>          imagePullPolicy: IfNotPresent<br>          args:<br>            - &#39;--provider=oidc&#39;<br>            - &#39;--oidc-issuer-url=https://dev-xxxxx.okta.com/oauth2/default<br>            - &#39;--upstream=http://aspen-mesh-controlplane.istio-system:19001&#39;<br>            - &#39;--tls-cert-file=/etc/oauth2-https-certs/tls.crt&#39;<br>            - &#39;--tls-key-file=/etc/oauth2-https-certs/tls.key&#39;<br>            - &#39;--cookie-secret=$(COOKIE_SECRET)&#39;<br>            - &#39;--client-secret=$(CLIENT_SECRET)&#39;<br>            - &#39;--client-id=$(CLIENT_ID)&#39;<br>            - &#39;--email-domain=*&#39;<br>            - &#39;--skip-provider-button=true&#39;<br>            - &#39;--https-address=0.0.0.0:8443&#39;<br>          ports:<br>            - containerPort: 4180<br>              name: http<br>            - containerPort: 8443<br>              name: https<br>          env:<br>            - name: COOKIE_SECRET<br>              valueFrom:<br>                secretKeyRef:<br>                  name: aspen-mesh-oauth2-proxy-secrets<br>                  key: COOKIE_SECRET<br>            - name: CLIENT_SECRET<br>              valueFrom:<br>                secretKeyRef:<br>                  name: aspen-mesh-oauth2-proxy-secrets<br>                  key: CLIENT_SECRET<br>            - name: CLIENT_ID<br>              valueFrom:<br>                secretKeyRef:<br>                  name: aspen-mesh-oauth2-proxy-secrets<br>                  key: CLIENT_ID<br>          volumeMounts:<br>          - name: https-certs<br>            mountPath: /etc/oauth2-https-certs<br>            readOnly: true<br>      volumes:<br>        - name: https-certs<br>          secret:<br>            secretName: aspen-mesh-oauth2-proxy-cert<br>---<br>apiVersion: v1<br>kind: Service<br>metadata:<br>  name: aspen-mesh-oauth2-proxy<br>  namespace: istio-system<br>  labels:<br>    app: aspen-mesh-oauth2-proxy<br>spec:<br>  type: LoadBalancer<br>  selector:<br>    app: aspen-mesh-oauth2-proxy<br>  ports:<br>    - name: https<br>      port: 443<br>      protocol: TCP<br>      targetPort: 8443</span></p>
+The oauth2-proxy by default adds the <strong>Secure </strong>option to all session HTTP Cookies. The browser will not add Secure Cookies to the connection not secured by TLS (plain HTTP). To remove the <strong>Secret</strong> field, while setting cookies in the browser, you need to add the <strong>&#39;--cookie-secure=false&#39;</strong> flag to your oauth2-proxy deployment. More options available for oauth2proxy can be found in the <a href="https://oauth2-proxy.github.io/oauth2-proxy/docs/configuration/overview" target="_self">OAuth</a> documentation. If you want to use HTTP for your Cookie oauth2-proxy you have to modify the oauth2-proxy configuration on your deployment to the following:
+
+<p><span class="example2">…<br>    spec:<br>      containers:<br>        - name: oauth2-proxy<br>          image: quay.io/pusher/oauth2_proxy:v4.0.0<br>          imagePullPolicy: IfNotPresent<br>          args:       <br>            - &#39;--provider=oidc&#39;<br>            - &#39;--oidc-issuer-url=https://dev-xxxxx.okta.com/oauth2/default<br>            - &#39;--upstream=http://aspen-mesh-controlplane.istio-system:19001&#39;<br>            - &#39;--cookie-secret=$(COOKIE_SECRET)&#39;<br>            - &#39;--client-secret=$(CLIENT_SECRET)&#39;<br>            - &#39;--client-id=$(CLIENT_ID)&#39;<br>            - &#39;--email-domain=*&#39;<br>            - &#39;--skip-provider-button=true&#39;<br>            - &#39;--http-address=0.0.0.0:4180&#39;<br>            - &#39;--cookie-secure=false&#39;<br>…</span></p>
+<span class="sectiontitle">Additional Information</span>
+
+<p>None</p>
+</article>
+</body>
+</html>

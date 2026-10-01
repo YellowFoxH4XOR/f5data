@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160374: Understanding dnscached DNS server selection in BIG-IP APM and its impact on Citrix vdi deployment</title>
+<meta name="description" content="Support Solution: Understanding dnscached DNS server selection in BIG-IP APM and its impact on Citrix vdi deployment — When BIG-IP APM is configured to access Citrix environment in Citrix integration mode (Citrix web interface is used), users may intermittently fail to launch Citrix applications or desktops with an…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160374">
+</head>
+<body>
+<header>
+<h1>K000160374: Understanding dnscached DNS server selection in BIG-IP APM and its impact on Citrix vdi deployment</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-03-17</dd>
+<dt>Updated</dt><dd>2026-03-17</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 21.X.X, 17.X.X, 16.X.X, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160374">https://my.f5.com/manage/s/article/K000160374</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When BIG-IP APM is configured to access Citrix environment in Citrix integration mode (Citrix web interface is used), users may intermittently fail to launch Citrix applications or desktops with an <strong>&quot;Unable to start&quot;</strong> error.</p>
+<p>The failure occurs because the BIG-IP APM vdi plugin resolves the Citrix VDA backend FQDN to 127<strong>.</strong>0<strong>.</strong>0<strong>.</strong>1 (localhost) instead of the correct VDA IP address, causing the CGP (Common Gateway Protocol) connection on port 2598 to be attempted against the loopback address, which immediately returns a TCP RST.</p>
+<p>Relevant log messages observed in /var/log/apm with vdi log level in debug:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">RD: [C] &lt;client_ip&gt;<strong>.</strong>&lt;port&gt; i &lt;vip&gt;<strong>.</strong>443: SessVar[Address]: &#39;vda-hostname<strong>.</strong>example<strong>.</strong>com:1494;vda-hostname<strong>.</strong>example<strong>.</strong>com:2598;&#39;</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">RD: [C] &lt;client_ip&gt;<strong>.</strong>&lt;port&gt; i &lt;vip&gt;<strong>.</strong>443: Setup connection for CITRIX_CGP to 127<strong>.</strong>0<strong>.</strong>0<strong>.</strong>1:2598</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">RD: [S] 127<strong>.</strong>0<strong>.</strong>0<strong>.</strong>1<strong>.</strong>2598 i &lt;tmm_ip&gt;<strong>.</strong>&lt;port&gt;: server-side connection was reset, reason: TCP RST from remote system</span></p>
+<p>Packet capture confirms the BIG-IP initiates a TCP SYN to <span style="font-family: &#39;courier new&#39;, courier, monospace;">127.0.0.1:2598</span>, which is immediately rejected with a TCP RST:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">OUT s1/tmmX : &lt;tmm_ip&gt;:&lt;port&gt; → 127.0.0.1:2598 [SYN]</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">IN  s1/tmmX : 127.0.0.1:2598 → &lt;tmm_ip&gt;:&lt;port&gt; [RST, ACK]</span></p>
+<h2>Environment</h2>
+<ul><li>Citrix deployed in integration mode on BIG-IP APM</li><li>Citrix VDA backend servers are published using FQDNs (not IP addresses)</li><li>BIG-IP DNS Lookup Server List configured with multiple DNS servers, including at least one public/external DNS server that cannot resolve internal FQDNs</li><li>DNS Search Domain List configured with &quot;localhost&quot; (BIG-IP default)</li></ul>
+<h2>Cause</h2>
+<p>The BIG-IP APM vdi plugin (and virtually all APM processes) uses an internal process called dnscached (a local BIND instance) for DNS resolution.</p>
+<p>This is true regardless of whether the BIG-IP DNS Cache feature is enabled or not.</p>
+<p>The dnscached process is responsible for selecting which DNS server from the BIG-IP DNS lookup server List to query. It uses the SRTT (Smoothed Round Trip Time) algorithm (the default BIND upstream nameserver selection algorithm) to prefer the server that has historically responded fastest.</p>
+<p>This means the configured order of DNS servers in the BIG-IP DNS lookup server list is not strictly honored by dnscached.</p>
+<p>Any server in the list may be selected at any given time based on its cached SRTT value.</p>
+<p>The failure chain is as follows:</p>
+<ol><li>dnscached selects a public/external DNS server (due to its SRTT, it responded faster than others).</li><li>The public DNS server cannot resolve the internal Citrix VDA FQDN (e.g., vda-hostname<strong>.</strong>example<strong>.</strong>com) and returns NXDOMAIN.</li><li>The BIG-IP system DNS resolver module has a final retry mechanism that appends the configured DNS Search Domain to the failed query and retries. On BIG-IP, the default DNS Search Domain is localhost (stored in <span style="font-family: &#39;courier new&#39;, courier, monospace;">sys db DNS.DomainName</span>).</li><li>The retry query becomes: <span style="font-family: &#39;courier new&#39;, courier, monospace;">vda-hostname<strong>.</strong>example<strong>.</strong>com<strong>.</strong>localhost</span></li><li>Per RFC 6761, any DNS query ending in <strong>.</strong>localhost is resolved to the loopback address 127<strong>.</strong>0<strong>.</strong>0<strong>.</strong>1 by most DNS servers and resolvers. The response is:
+<ul><li>A record<strong>:</strong> <span style="font-family: &#39;courier new&#39;, courier, monospace;">127<strong>.</strong>0<strong>.</strong>0<strong>.</strong>1</span></li><li>Rcode<strong>:</strong> <span style="font-family: &#39;courier new&#39;, courier, monospace;">NOERROR</span> (successful response — not NXDOMAIN)</li></ul>
+</li><li>The vdi plugin receives <span style="font-family: &#39;courier new&#39;, courier, monospace;">127<strong>.</strong>0<strong>.</strong>0<strong>.</strong>1</span> as the resolved address for the VDA and attempts to establish the CGP connection to <span style="font-family: &#39;courier new&#39;, courier, monospace;">127<strong>.</strong>0<strong>.</strong>0<strong>.</strong>1:2598</span>.</li><li>The connection is immediately rejected with a TCP RST, and the Citrix application launch fails.</li></ol>
+<h2>Recommended Actions</h2>
+<p><span style="text-decoration: underline;">Primary fix (required)</span><strong>:</strong></p>
+<p>Remove all DNS servers from the BIG-IP DNS Lookup Server List that cannot resolve internal FQDNs. This includes public/external DNS servers (e.g., internet-facing resolvers) that are not authoritative for internal domain names. Only DNS servers capable of resolving all required internal FQDNs should remain in the list.</p>
+<p>To verify which DNS servers can resolve the required FQDNs, run the following commands from the BIG-IP bash shell (replace the server IPs and FQDN as appropriate):</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">dig @&lt;dns_server_1&gt; &lt;vda-fqdn&gt;</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">dig @&lt;dns_server_2&gt; &lt;vda-fqdn&gt;</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">dig @&lt;dns_server_3&gt; &lt;vda-fqdn&gt;</span></p>
+<p>Any server returning <span style="font-family: &#39;courier new&#39;, courier, monospace;">NXDOMAIN</span>, <span style="font-family: &#39;courier new&#39;, courier, monospace;">SERVFAIL</span>, or no answer section should be removed from the BIG-IP DNS configuration:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh modify sys dns name-servers replace-all-with { &lt;working_dns_1&gt; &lt;working_dns_2&gt; }</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh save sys config</span></p>
+<p><span style="text-decoration: underline;">Secondary consideration (optional, not sufficient alone)</span>:</p>
+<p>You could remove the <span style="font-family: &#39;courier new&#39;, courier, monospace;">localhost</span> entry from the DNS Search Domain List.</p>
+<p>However, this alone does not resolve the issue: if public DNS servers remain in the list and return NXDOMAIN, the vdi plugin will still fail to resolve the VDA FQDN — just without the <span style="font-family: &#39;courier new&#39;, courier, monospace;">127<strong>.</strong>0<strong>.</strong>0<strong>.</strong>1</span> fallback. The end-user experience would still be a launch failure.</p>
+<ol></ol>
+<h2>Additional Information</h2>
+<ul><li>dnscached is always active when APM is provisioned, regardless of whether the BIG-IP DNS Cache feature (<span style="font-family: &#39;courier new&#39;, courier, monospace;">sys db dns.cache</span>) is enabled. It runs as a local BIND instance and handles DNS resolution for all APM processes including the vdi plugin.</li><li>There is no configuration option to force<strong> </strong>dnscached<strong> </strong>to query DNS servers in strict list order. The SRTT algorithm is inherent to BIND&#39;s upstream nameserver selection behavior. The only way to ensure correct resolution is to ensure all configured DNS servers can answer all required queries.</li><li>Bug ID 422201 (Delayed name resolution might stall VDI traffic processing)<strong>:</strong> Unreachable DNS servers in the list cause vdi processing to block while waiting for DNS timeouts. Removing unreachable servers improves overall Citrix launch performance for all users.</li></ul>
+</article>
+</body>
+</html>

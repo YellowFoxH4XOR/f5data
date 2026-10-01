@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K2693: Configuring BIG-IP for compatibility with devices that use shared MAC addresses for redundancy</title>
+<meta name="description" content="Knowledge: Configuring BIG-IP for compatibility with devices that use shared MAC addresses for redundancy — BIG-IP has a feature called auto_lasthop that allows BIG-IP to send return packets through the same path on which they were received, based on the packet&#x27;s Ethernet MAC address.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K2693">
+</head>
+<body>
+<header>
+<h1>K2693: Configuring BIG-IP for compatibility with devices that use shared MAC addresses for redundancy</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2006-02-17</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>BIG-IP 4.X: 4.6.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K2693">https://my.f5.com/manage/s/article/K2693</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>BIG-IP has a feature called <b>auto_lasthop</b> that allows BIG-IP to send return packets through the same path on which they were received, based on the packet&#39;s Ethernet MAC address.</p>
+<p>For example, if BIG-IP received a connection from the Ethernet MAC address: <b>00:cc:00:ff:ff:ee</b>, BIG-IP would send the response packets to <b>00:cc:00:ff:ff:ee</b>.</p>
+<p>In the case of some clustering technologies, such as Stonebeat, two firewalls would each have unique unicast MAC addresses, but would share a single multicast MAC address. When a device sends an ARP for the shared IP address of the firewall cluster, the firewalls respond with the shared multicast MAC address, which populates the ARP cache on the device that made the ARP request.</p>
+<p>In the case of BIG-IP, the process is no different. Once a BIG-IP learns the MAC address of the shared IP address on the firewall cluster, BIG-IP routes packets to this shared MAC address; however, when the firewalls send response packets to the device that originated the connection, the firewalls use the local unicast MAC address (not the shared multicast MAC address) and this forces BIG-IP to re-learn the MAC address to which it sends packets in its internal lasthop connection table.</p>
+<p>For example, for the following configuration:</p>
+<pre class="example2">
+client:   10.10.33.50  00:00:11:12:12:12
+firewall: 10.10.33.100 00:00:22:21:21:21 (unique unicast)
+firewall: 10.10.33.1   bb:bb:22:21:21:21 (shared multicast)</pre>
+<p>If the client was configured with a default route of <b>10.10.33.1</b>, and the client attempted to make a connection to <b>www.f5.com</b>, the process would look like this:</p>
+<pre class="example2">
+00:00:11:12:12:12 -&gt; ff:ff:ff:ff:ff:ff who-has 10.10.33.1 tell 10.10.33.50
+bb:bb:22:21:21:21 -&gt; 00:00:11:12:12:12 tell 10.10.33.1 is-at bb:bb:22:21:21:21
+00:00:11:12:12:12 -&gt; bb:bb:22:21:21:21 www.f5.com Connection request
+***00:00:22:21:21:21 -&gt; 00:00:11:12:12:12 www.f5.com Connection response***</pre>
+<p>Notice that the client sends the connection request to the shared multicast MAC address of the firewall cluster (<b>bb:bb:22:21:21:21</b>), but got a response from the local unique unicast MAC address of the firewall (<b>00:00:22:21:21:21</b>).</p>
+<p>If the client in this case was a BIG-IP, it would learn that it should send packets to <b>00:00:22:21:21:21</b> instead of the MAC address that exists in the ARP table (<b>bb:bb:22:21:21:21</b>).</p>
+<p>In most network configurations the <b>auto_lasthop</b> feature simplifies the deployment of BIG-IP, but in this case it is not desirable that BIG-IP sends return traffic to the MAC address from which it received the traffic. Instead, in this case it is desirable that all traffic is sent to the shared multicast MAC address, regardless of where the traffic originated. To achieve this, you must disable the <b>auto_lasthop</b> global variable.</p>
+<p><b>auto_lasthop</b> uses layer 2 (the MAC address layer) to fill in any missing pieces in its routing table (layer 3, which is the IP address layer); therefore, when <b>auto_lasthop</b> is enabled (default) BIG-IP will return packets to the requesting client, even if the routing on BIG-IP is not fully configured. <b>auto_lasthop</b> can cause issues with other vendors who implement layer 2 for load balancing or failover.</p>
+<h3>Disabling auto_lasthop</h3>
+<p>You can disable <b>auto_lasthop</b> through the Configuration utility or the command line interface.</p>
+<p class="warning"><b>Important:</b> Before you disable <b>auto_lasthop</b>, it is critical that you configure all required routes on BIG-IP and, if necessary, that you create last hop pools for situations where BIG-IP is load balancing gateway devices. Refer to the <a href="https://support.f5.com/content/kb/en-us/archived_products/big-ip.html" target="_blank">BIG-IP Administrator Guide</a> for instructions about how to configure last hop pools.</p>
+<h4>Configuration utility</h4>
+<p>To disable <b>auto_lasthop</b> through the Configuration utility, perform the following steps:</p>
+<ol><li>From the navigation pane, click <b>System</b>.</li><li>Click the <b>Advanced Properties</b> tab at the top of the screen.</li><li>Uncheck the box next to <b>auto_lasthop</b>.</li><li>Click the <b>Apply</b> button.</li></ol>
+<h4>Command line interface</h4>
+<p>To disable <b>auto_lasthop</b> through the command line interface, perform the following steps:</p>
+<ol><li>Type the following command:<p class="code">b global auto_lasthop disable</p>
+</li><li>Save the change, by typing the following command:<p class="code">b save</p>
+</li></ol>
+</article>
+</body>
+</html>

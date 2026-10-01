@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K04382180: Failure - Error starting VM caused by missing /config/ssl/ssl.csr</title>
+<meta name="description" content="Support Solution: Failure - Error starting VM caused by missing /config/ssl/ssl.csr — The BIG-IP device has a license that includes the FIPS 140-2 option (FIPS full-box license)">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K04382180">
+</head>
+<body>
+<header>
+<h1>K04382180: Failure - Error starting VM caused by missing /config/ssl/ssl.csr</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-11-11</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K04382180">https://my.f5.com/manage/s/article/K04382180</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>After rebooting the VCMP host, some guests failed to run by showing below error message:<br><span class="example2">&quot;Failure - Error starting VM. Timed out after 900 seconds.&quot;</span><br><br>Following the instruction of <a href="https://my.f5.com/manage/s/article/K68404255" target="_blank">K68404255</a> to collect the console log of the guest and see below error messages:</p>
+
+<p><span class="example2">serial-console.log<br>=======================================================<br>missing     /config/ssl/ssl.csr<br>1 critical file(s) missing<br>=======================================================<br>0 critical file(s) modified<br>=======================================================</span></p>
+
+<p><span class="example2">Integrity Check Result: [ FAIL ]<br>Contact F5 Networks Technical Support.<br>Unmounting file systems<br>umount: /var/log: device is busy.<br>        (In some cases useful info about processes that use<br>         the device is found by lsof(8) or fuser(1))<br>umount: /var: device is busy.<br>        (In some cases useful info about processes that use<br>         the device is found by lsof(8) or fuser(1))<br>umount: /usr: device is busy.<br>        (In some cases useful info about processes that use<br>         the device is found by lsof(8) or fuser(1))<br>System halting.<br>[   21.603607] System halted.</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>The BIG-IP device has a license that includes the FIPS 140-2 option (FIPS full-box license)</li><li>The device is provisioned with vCMP dedicated and has VCMP guests running on it</li><li>The device is rebooted</li></ul>
+
+<p><span class="sectiontitle">Cause </span><br><br>Due to <a href="https://cdn.f5.com/product/bugtracker/ID939085.html" target="_self">Bug ID 939085</a>: /config/ssl/ssl.csr directory disappears after creating certificate archive, some vCMP guests are missing /config/ssl/ssl.csr directory. When the system missing /config/ssl/ssl.csr, it is causing Integrity Check to fail after the reboot. Then System halted while booting due to a FIPS integrity check failure <a href="https://my.f5.com/manage/s/article/K25205233" target="_self">K25205233</a>. <br><br><br><span class="sectiontitle">Recommended Actions</span><br><br><strong>First part: Following below steps to bring the guest up and running</strong></p>
+
+<ol><li>Open two ssh sessions, one to start the guest, and one to vconsole into the guest.<br>	You have about 2 seconds from issuing<br>	<strong style="font-family: courier new,courier,mono;font-size: 9pt;font-weight: bold;"><span class="code">(tmos)# modify vcmp guest &lt;guestname&gt; state deployed</span></strong><br>	to running<br>	<strong style="font-family: courier new,courier,mono;font-size: 9pt;font-weight: bold;"><span class="code"># vconsole &lt;guestname&gt;</span></strong><br>	and pressing an arrow key to interrupt the grub autoboot.<br>	<span class="note">Note: Before the countdown expires, use the Up Arrow and Down Arrow keys to stop the countdown</span><br>	 </li><li>
+	<p>Select the appropriate boot image, Press the key &#39;e&#39; to start the edit options.</p>
+	<span class="example2"> +-------------------------------------------------------------------------+<br>	| BIG-IP 12.1.2 Build 0.0.249 - drive vda.1              &lt;---              |<br>	| TMOS maintenance                                                         |<br>	|                                                                          |<br>	+--------------------------------------------------------------------------+</span><br>	 </li><li>A new GRUB menu displays, Select the line starting with &quot;kernel&quot; by using Arrow key then Press &quot;e&quot; to edit<br>	<span class="example2"> +-------------------------------------------------------------------------+<br>	 | root (hd0,0)                                                            |<br>	 | kernel /boot/1/vmlinuz ro root=UUID=f24788d5-197a-41cf-af1d-53df7b190&gt;  |<br>	 | initrd /boot/1/initrd                                                   |<br>	 |                                                                         |<br>	 +-------------------------------------------------------------------------+</span></li><li>
+	<p>Add the &quot;NO_FIPS_INTEGRITY=1&quot; option to the end of the line starting with &quot;kernel&quot;</p>
+	<span class="code">&lt;1d-53df7b1901c8  console=ttyS0 panic=1 platform=Z101 quiet</span><br>	-----<br>	Add the option:<br>	-----<br>	<span class="code">&lt; console=ttyS0 panic=1 platform=Z101 quiet NO_FIPS_INTEGRITY=1</span><br>	-----
+	<p>&quot;Enter&quot; to accept the change, and then &quot;b&quot; to boot with the defined options.</p>
+	</li></ol>
+
+<p><strong>Second part: After guest is UP and running, you can access the guest and perform the workaround to fix</strong> <a href="https://cdn.f5.com/product/bugtracker/ID939085.html" target="_self">BUG ID 939085</a>:</p>
+Recreate /config/ssl/ssl.csr directory and set correct file permissions FOR EACH GUEST which was not running before:
+
+<p>  <span class="code"># mkdir /config/ssl/ssl.csr<br> # chmod 755 /config/ssl/ssl.csr/<br> # chcon -R --reference=/config/ssl/ssl.crt/ /config/ssl/ssl.csr</span></p>
+Also check if /config/f5_public/fipserr is 0 size, if not, then need to zero out the fipserr integrity check file by using below command:
+
+<p><span class="code"># cat /dev/null &gt; /config/f5_public/fipserr</span><br> </p>
+
+<p><span class="sectiontitle">Additional Information</span><br>None</p>
+</article>
+</body>
+</html>

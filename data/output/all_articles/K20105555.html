@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K20105555: F5 SSL Orchestrator may fail to stop an attacker from exfiltrating data on a compromised client system (SNIcat)</title>
+<meta name="description" content="Security Advisory: F5 SSL Orchestrator may fail to stop an attacker from exfiltrating data on a compromised client system (SNIcat) — An attacker may be able to exfiltrate data from a target system sitting behind F5 SSL Orchestrator by inserting data into the TLS SNI field. This approach assumes that the attacker has already…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K20105555">
+</head>
+<body>
+<header>
+<h1>K20105555: F5 SSL Orchestrator may fail to stop an attacker from exfiltrating data on a compromised client system (SNIcat)</h1>
+<dl>
+<dt>Type</dt><dd>Security Advisory</dd>
+<dt>Published</dt><dd>2020-08-12</dd>
+<dt>Updated</dt><dd>2023-01-03</dd>
+<dt>Applies to</dt><dd><ul><li>F5 App Protect</li><li>F5 SSL Orchestrator: 16.0.1, 16.0.0, 15.1.1, 15.1.0, 15.0.0, 14.1.4, 14.1.2, 14.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K20105555">https://my.f5.com/manage/s/article/K20105555</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Security Advisory Description</span></p>
+
+<p>An attacker may be able to exfiltrate data from a target system sitting behind F5 SSL Orchestrator by inserting data into the TLS SNI field. This approach assumes that the attacker has already compromised, and is in full control of, the target system to be able to create outbound connections to arbitrary destinations with specifically crafted TLS handshake details. Note that the data insertion into the TLS SNI field is performed on the compromised system itself and is done outside of the F5 SSL Orchestrator&#39;s traffic management.</p>
+
+<p>This issue occurs when all of the following conditions are met:</p>
+
+<ul><li>You deployed an Outbound topology configuration on the F5 SSL Orchestrator.</li><li>The target system behind the F5 SSL Orchestrator is compromised by the attacker.</li></ul>
+
+<p><span class="sectiontitle">Impact</span></p>
+
+<p>The attacker can extract sensitive data from the target system that is sitting behind the F5 SSL Orchestrator. Note that this issue is not a vulnerability or defect in the F5 SSL Orchestrator; however, you can use the F5 SSL Orchestrator to mitigate this issue as described in the <strong>Workaround</strong> section.</p>
+
+<p><span class="sectiontitle">Symptoms</span></p>
+
+<p>As a result of this issue, you may encounter the following symptom:</p>
+
+<ul><li>The compromised target system connects to the attacker&#39;s system using specifically crafted TLS handshake details.</li></ul>
+
+<p><span class="sectiontitle">Security Advisory Status</span></p>
+
+<p>F5 Product Development has assigned ID 892937 and 892941 to this issue. F5 has confirmed that this issue exists in the products listed in the<strong> Applies to (see versions)</strong> box, located in the upper-right corner of this article. For information about releases, point releases, or hotfixes that resolve this issue, refer to the following table.</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1" style="width: 100%;"><tbody><tr><td colspan="1" rowspan="1">Type of fix</td><td colspan="1" rowspan="1">Fixes introduced in</td><td colspan="1" rowspan="1">Related articles</td></tr><tr><td colspan="1" rowspan="1">Release</td><td colspan="1" rowspan="1">15.1.2<br>			14.1.4*</td><td colspan="1" rowspan="1"><a href="https://my.f5.com/manage/s/article/K2200" target="_blank">K2200: Most recent versions of F5 software</a></td></tr><tr><td colspan="1" rowspan="1">Point release/hotfix</td><td colspan="1" rowspan="1">16.0.1.1*</td><td colspan="1" rowspan="1"><a href="https://my.f5.com/manage/s/article/K9502" target="_blank">K9502: BIG-IP hotfix and point release matrix</a></td></tr></tbody></table>
+
+<p><span class="warning">*An issue with the Traffic Management Microkernel (TMM) process has been discovered in versions 16.0.1.1 and 14.1.4. For more information, refer to <a href="" target="_self">K37451543: TMM vulnerability CVE-2021-23007</a>. </span></p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p><span class="sectiontitle">Workaround</span></p>
+
+<p>If the affected F5 SSL Orchestrator is licensed for Secure Web Gateway (SWG) or URL Filtering, the first iRule (following) compares the presented TLS SNI information against known malicious patterns within the URL Filtering database, as well as a custom URL category. You need to add entries to the custom URL category with new exploit domains which have been detected by your other passive tools. For more information about this iRule, refer to <a href="#irule1">iRule to compare TLS SNI information against known malicious patterns within the URL Filtering database and custom URL category</a>.</p>
+
+<p>If the affected SSL Orchestrator does not have SWG or URL Filtering licensed, you can only use the iRule to compare the presented TLS SNI information against your custom URL category. You need to ensure your custom URL category is populated with exploit domains that your passive tools have detected. For more information about this iRule, refer to <a href="#irule2">iRule to compare TLS SNI information against your custom URL category only</a>. Alternatively, you may consider a different iRule that allows the SSL Orchestrator to send the TLS SNI information to a Security Information and Event Management (SIEM) device/log aggregator using high-speed logging (HSL) for offline analysis. For more information about this iRule, refer to <a href="#irule3">iRule to send TLS SNI information to a SIEM device by way of HSL</a>. If you prefer not to use this iRule, you can alternatively configure your SSL Orchestrator to send all traffic to a clone pool comprised of a TAP device in your environment that can potentially flag SNIcat SNI signatures. For more information about this alternative, refer to <a href="#proc3" target="_self">Configuring SSL Orchestrator to send traffic to a TAP device</a>.</p>
+
+<p><a name="irule1"></a><strong>iRule to compare TLS SNI information against known malicious patterns within the URL Filtering database and custom URL category</strong></p>
+
+<p>To use this iRule, ensure that your SSL Orchestrator is licensed and provisioned with SWG or the URL Filtering feature. Ensure that you have created a custom URL category by performing <a href="#proc1" target="_self">Creating a custom URL category and adding entries</a>. Then copy the following iRule, replace the custom URL category <strong>MyDetectedExploitURLCat</strong> in the iRule with the name of the custom URL category you created, and  perform <a href="#proc2" target="_self">Implementing the iRule</a>.</p>
+
+<p><span class="code">when CLIENT_ACCEPTED {<br>    set cat &quot;&quot;<br>    set lookup_url &quot;&quot;<br>}<br>when CATEGORY_MATCHED {<br>    set cat [CATEGORY::result category]<br>}<br>when CLIENTSSL_CLIENTHELLO priority 50 {<br>    if { $cat eq &quot;&quot; } {<br>       set lookup_url [ACCESS::perflow get perflow.category_lookup.result.url]<br><br>        if { ${lookup_url} eq &quot;&quot; } {<br>            # extract SNI from TLS ClientHello<br>            if {[SSL::extensions exists -type 0]} {<br>                binary scan [SSL::extensions -type 0] @9a* SNI<br>                if {[regexp {(?i)[^a-z0-9.-]} $SNI]} {<br>                    log local0. &quot;client offered bogus SNI&quot;<br>                    reject<br>                } else {<br>                    set ctx(SNI) [string tolower $SNI]<br>                    set lookup_url &quot;https://$ctx(SNI)/&quot;<br>                }<br>            }<br>        }<br><br>        if { ${lookup_url} ne &quot;&quot; } {<br>            set cat [CATEGORY::lookup ${lookup_url} request_default_and_custom]<br>        }<br>    }<br><br>    if { $cat ne &quot;&quot; } {<br>        switch $cat {<br>            /Common/Advanced_Malware_Command_and_Control -<br>            /Common/Advanced_Malware_Payloads {<br>                reject<br>            }<br>            /Common/MyDetectedExploitURLCat {<br>                reject<br>            }<br>            default {<br>            }<br>        }<br>    }<br>} ; #CLIENTSSL_CLIENTHELLO</span></p>
+
+<p><a name="irule2"></a><strong>iRule to compare TLS SNI information against your custom URL category only</strong></p>
+
+<p>To use this iRule, create a custom URL category by performing <a href="#proc1" target="_self">Creating a custom URL category and adding entries</a>, then copy the following iRule, replace the custom URL category <strong>MyDetectedExploitURLCat</strong> in the iRule with the name of the custom URL category you have created, and perform <a href="#proc2" target="_self">Implementing the iRule</a>.</p>
+
+<p><span class="code">when CLIENT_ACCEPTED {<br>    set cat &quot;&quot;<br>    set lookup_url &quot;&quot;<br>}<br>when CATEGORY_MATCHED {<br>    set cat [CATEGORY::result category]<br>}<br>when CLIENTSSL_CLIENTHELLO priority 50 {<br>    if { $cat eq &quot;&quot; } {<br>       set lookup_url [ACCESS::perflow get perflow.category_lookup.result.url]<br><br>        if { ${lookup_url} eq &quot;&quot; } {<br>            # extract SNI from TLS ClientHello<br>            if {[SSL::extensions exists -type 0]} {<br>                binary scan [SSL::extensions -type 0] @9a* SNI<br>                if {[regexp {(?i)[^a-z0-9.-]} $SNI]} {<br>                    log local0. &quot;client offered bogus SNI&quot;<br>                    reject<br>                } else {<br>                    set ctx(SNI) [string tolower $SNI]<br>                    set lookup_url &quot;https://$ctx(SNI)/&quot;<br>                }<br>            }<br>        }<br><br>        if { ${lookup_url} ne &quot;&quot; } {<br>            set cat [CATEGORY::lookup ${lookup_url} request_default_and_custom]<br>        }<br>    }<br><br>    if { $cat ne &quot;&quot; } {<br>        switch $cat {<br>            /Common/MyDetectedExploitURLCat {<br>                reject<br>            }<br>            default {<br>            }<br>        }<br>    }<br>} ; #CLIENTSSL_CLIENTHELLO</span></p>
+
+<p><a name="irule3"></a><strong>iRule to send TLS SNI information to a SIEM device by way of HSL</strong></p>
+
+<p>To use this iRule, ensure that you have configured a pool with the appropriate SIEM device or log aggregator. Copy the following iRule, replace the pool <strong>syslog_pool</strong> in the iRule with the name of your SIEM device pool, and perform <a href="#proc2" target="_self">Implementing the iRule</a>.</p>
+
+<p><span class="code">when RULE_INIT {<br>    set static::debug 0<br>}<br>when CLIENTSSL_CLIENTHELLO priority 25 {<br>    if {[SSL::extensions exists -type 0]} {<br>        set hslpool syslog_pool<br>        set hsl [HSL::open -proto UDP -pool $hslpool]<br>        binary scan [SSL::extensions -type 0] @9a* SNI<br>        if {$static::debug eq 1} {log local0. &quot;[IP::client_addr]:[TCP::client_port]-&gt;[IP::local_addr]:[TCP::local_port]; SNI:$SNI&quot;}<br>        # Modify the formatting between quotes to suit whatever SIEM/log aggregation system you are sending to<br>        # Note syslog expects an RFC3164 compliant facility &amp; severity indicator, e.g. local7.info = &lt;190&gt;<br>        HSL::send $hsl &quot;&lt;190&gt; [IP::client_addr]:[TCP::client_port]-&gt;[IP::local_addr]:[TCP::local_port]; SNI:$SNI&quot;<br>    }<br>}</span></p>
+
+<p><a name="proc1"></a><strong>Create a custom URL category and add entries</strong></p>
+
+<p>To create a custom URL category and adding entries, perform the following procedure:</p>
+
+<p><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</p>
+
+<ol><li>Log in to the SSL Orchestrator Configuration utility.</li><li>Go to <strong>SSL Orchestrator</strong> &gt; <strong>Policies</strong> &gt; <strong>URL Categories</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong>, enter a name for your custom URL category. For example,<strong> MyDetectedExploitURLCat</strong>.</li><li>For <strong>URL</strong>, enter a URL you want to block and select <strong>Add</strong>.</li><li>Repeat the previous step for adding more URLs that you want to block.</li><li>Select <strong>Finished</strong>.</li></ol>
+
+<p><a name="proc2"></a><strong>Implement the iRule</strong></p>
+
+<p>After you select the iRule most appropriate for your application environment, implement the iRule by performing the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of workaround: </strong>The example iRule may not apply to all environments. F5 recommends you create an iRule that works best for your application environment. Additionally, adding an iRule increases the resources that the associated virtual server uses. Depending on the type and volume of the connections, this may introduce noticeable latency. F5 recommends testing any such changes in an appropriate environment.</span></p>
+
+<ol><li>Log in to the SSL Orchestrator Configuration utility.</li><li>Go to <strong>Local Traffic</strong> &gt; <strong>iRules</strong> &gt; <strong>iRule List</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong>, enter a name for the iRule. For example, <strong>K20105555-workaround</strong>.</li><li>For <strong>Definition</strong>, paste the iRule you selected.</li><li>Select <strong>Finished</strong>.</li><li>Go to <strong>SSL Orchestrator</strong> &gt; <strong>Configuration</strong>.</li><li>Select <strong>Interception Rules</strong>.</li><li>Select the name of the relevant transparent forward proxy interception rule. For SSL Orchestrator 16.0.0-8.x and later, you need to select the pencil icon to display the <strong>Interception Rule</strong> settings page.</li><li>Under <strong>Resources</strong>, for <strong>iRules</strong>, in the <strong>Available</strong> list, select the iRule you configured earlier and move it to the <strong>Selected </strong>list.</li><li>For SSL Orchestrator 16.0.0-8.x and later, select <strong>Save &amp; Next</strong>, then select <strong>Deploy</strong>. For SSL Orchestrator versions prior to 16.0.0-8.x, select <strong>Deploy</strong>.</li></ol>
+
+<p><a name="proc3"></a><strong>Configure SSL Orchestrator to send traffic to a TAP device</strong></p>
+
+<p>If you have a TAP device that can potentially flag SNIcat SNI signatures, you can configure your SSL Orchestrator to send all traffic to this TAP device by performing the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: The workaround requires that you remove protection for the affected SSL Orchestrator deployment configuration by disabling <strong>Strict Update</strong>; this allows you to manually change your deployment configuration but does not prevent any potential misconfiguration that can result in an unusable application. If re-enable <strong>Strict Update </strong>for the affected deployment configuration after performing this workaround, the change you made to the virtual server in this workaround are removed.</span></p>
+
+<ol><li>Log in to the SSL Orchestrator Configuration utility.</li><li>Go to <strong>Network</strong> &gt; <strong>VLANs</strong> &gt; <strong>VLAN List</strong>.</li><li>Select <strong>Create</strong>.</li><li>Enter a name for the TAP device’s VLAN in the <strong>Name</strong> setting, for example,<strong> tap-vlan</strong>.</li><li>Select the appropriate interface and tagging, and for <strong>Interfaces</strong>, select <strong>Add</strong>.</li><li>Select <strong>Finished</strong>.</li><li>Go to <strong>Network</strong> &gt; <strong>Self IPs</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong>, enter a name for the self IP address. For example, <strong>tap-self</strong>.</li><li>For <strong>IP Address</strong> and <strong>Netmask</strong>, enter the self IP address and its netmask, respectively, for example,<strong> 198.18.0.100</strong><strong> </strong>and <strong>255.255.255.0</strong>.</li><li>For <strong>VLAN / Tunnel</strong>, select the appropriate VLAN.</li><li>Select <strong>Finished</strong>.</li><li>Configure a static ARP for the TAP device by performing the following steps:
+	<ol><li>Go to <strong>Network</strong> &gt; <strong>ARP</strong> &gt; <strong>Static List</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong>, enter a name for the TAP device’s ARP. For example, <strong>tap-arp</strong>.</li><li>For <strong>IP Address</strong>, enter the IP address of the TAP device. For example,<strong> 198.18.0.50</strong>.</li><li>For <strong>MAC Address</strong>, enter the TAP device’s MAC address. If the TAP device does not have a MAC address, ensure that the TAP device is directly connected to the SSL Orchestrator and enter a unique, arbitrary MAC address. For example, <strong>12:12:12:12:12:12</strong>.
+		<p><span class="note"><strong>Note:</strong> When the BIG-IP system clones traffic to the TAP device, the source MAC is the SSL Orchestrator interface and the destination MAC is the MAC address specified in this setting.</span></p>
+		</li><li>Select <strong>Finished</strong>.</li></ol>
+	</li><li>Go to <strong>Local Traffic</strong> &gt; <strong>Pools</strong> &gt; <strong>Pool List</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong>, enter a name for the TAP device’s pool. For example, <strong>tap-pool</strong>.</li><li>For <strong>Address</strong> and <strong>Service Port</strong>, enter the IP address and listening port of the TAP device, respectively. For example, <strong>198.18.0.50</strong> and <strong>0</strong>.</li><li>Select <strong>Add</strong>.</li><li>Select <strong>Finished</strong>.</li><li>Go to <strong>SSL Orchestrator</strong> &gt; <strong>Configuration</strong>.</li><li>Under <strong>Topologies</strong>, to remove protection for the configuration, select the lock icon for the affected deployment configuration.</li><li>Select <strong>OK</strong> to confirm that you want to remove protection for the configuration.</li><li>Go to <strong>Local Traffic</strong> &gt; <strong>Virtual Servers</strong> &gt; <strong>Virtual Server List</strong>.</li><li>Select the name of the appropriate virtual server.</li><li>For <strong>Configuration</strong>, select <strong>Advanced</strong>.</li><li>For <strong>Clone Pool (Client)</strong>, select the name of the TAP device pool which you created in previous steps.</li><li>Select <strong>Update</strong>.</li></ol>
+
+<p><span class="sectiontitle">Acknowledgements</span></p>
+
+<p>F5 would like to acknowledge Morten Marstrander and Matteo Malvica of mnemonic for bringing this issue to our attention and for following the highest standards of coordinated disclosure.</p>
+</article>
+</body>
+</html>

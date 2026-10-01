@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K22182337: DNS resolving from local DNS server instead of configured BIG-IP DNS nameserver pool</title>
+<meta name="description" content="Support Solution: DNS resolving from local DNS server instead of configured BIG-IP DNS nameserver pool — When querying PTR or NS records, that belong to the shared address space documented in RFC6598, the response is returned from local BIG-IP GTM DNS server instead of the BIG-IP DNS pool that is…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K22182337">
+</head>
+<body>
+<header>
+<h1>K22182337: DNS resolving from local DNS server instead of configured BIG-IP DNS nameserver pool</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-10-28</dd>
+<dt>Updated</dt><dd>2026-07-30</dd>
+<dt>Applies to</dt><dd><ul><li>Virtual Editions</li><li>BIG-IP Platforms</li><li>VIPRION Platforms</li><li>BIG-IP</li><li>BIG-IP DNS: 15.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 16.X.X, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.4, 14.1.3, 13.1.4, 15.1.5</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K22182337">https://my.f5.com/manage/s/article/K22182337</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br><br>When querying PTR or NS records, that belong to the shared address space documented in RFC6598, the response is returned from local BIG-IP GTM DNS server instead of the BIG-IP DNS pool that is specified in the configuration.<br><br>Example of such DNS query :</p>
+<pre>    QUESTIONS:
+        10.77.69.100.in-addr.arpa, type = PTR, class = IN
+    AUTHORITY RECORDS:
+        69.100.in-addr.arpa
+        ttl = 10800 (3 hours)
+        primary name server = localhost  /// &lt;--- symptom !!!!
+</pre>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>DNS listener with associated pool and DNS profile</li><li>transparent cache</li></ul>
+<p><span class="sectiontitle">Cause</span></p>
+<div>According to RFC (<a href="https://datatracker.ietf.org/doc/html/rfc6598" target="_blank" rel="noopener noreferrer">rfc6598</a>), it appears the shared address space should be filtered, and this behavior is RFC compliant. DNS cache first verifies requested IP address, notes that it&#39;s not RFC compliant, and refuses to resolve the query.<br><br>F5 introduced the above behavior from the following versions and later:<br><br>v11.6.5.3<br>v12.1.6<br>v13.1.3.5<br>v14.1.2.7<br>v15.x<br> </div>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<div>If your pool members are configured to resolve IP addresses from the shared address space, you may configure an iRule that will allow the potential client to bypass DNS cache for specific address range.<br> </div>
+<ol><li>Create an <strong>internal data-group</strong> that will include all the required IP address ranges.</li></ol>
+<div>Example taken from the bigip.conf configuration file :</div>
+<div><br>ltm data-group internal /Common/shared_address {<br>    records {<br>       .64.100.in-addr.arpa { }<br>       .65.100.in-addr.arpa { }<br>       .66.100.in-addr.arpa { }<br>       .67.100.in-addr.arpa { }<br>       .68.100.in-addr.arpa { }<br>       .69.100.in-addr.arpa { }<br>    }<br>    type string<br>}<br> </div>
+<div>       2.  Create an iRule :</div>
+<p> </p>
+<ul><li>For <strong>PTR</strong> queries :</li></ul>
+<p><span class="example">when DNS_REQUEST {<br>   if { ([DNS::question type] == &quot;PTR&quot;) &amp;&amp; ([class match [string tolower [DNS::question name]] contains shared_address]) } {<br>DNS::disable cache<br>pool <strong>DNS_pool</strong><br>}</span></p>
+<p><br>Where <strong>DNS_pool</strong> is name of your nameserver pool.</p>
+<ul><li>
+<p>For <strong>NS</strong> queries :</p>
+</li></ul>
+<p><span class="example">when DNS_REQUEST {<br>   if { ([DNS::question type] == &quot;NS&quot;) &amp;&amp; ([class match [string tolower [DNS::question name]] contains shared_address]) } {<br>DNS::disable cache<br>pool <strong>DNS_pool</strong><br>}</span></p>
+<p>Where <strong>DNS_pool</strong> is name of your nameserver pool.</p>
+<p> </p>
+<p>       3.  Assign newly created iRules to the DNS listener.<br> </p>
+<p><span class="sectiontitle">Additional Information</span></p>
+<p><a href="https://datatracker.ietf.org/doc/html/rfc6598" target="_blank" rel="noopener noreferrer">https://datatracker.ietf.org/doc/html/rfc6598</a></p>
+<p>When running a single DNS infrastructure, Service Providers MUST NOT include Shared Address Space in zone files. When running a split DNS infrastructure, Service Providers MUST NOT include Shared Address Space in external-facing zone files. </p>
+<p>Reverse DNS queries for Shared Address Space addresses MUST NOT be forwarded to the global DNS infrastructure. DNS Providers SHOULD filter requests for Shared Address Space reverse DNS queries on recursive nameservers.</p>
+<p> </p>
+<p> </p>
+</article>
+</body>
+</html>

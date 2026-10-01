@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K65743455: Istio proxy SPIFFE validation for inbound connection</title>
+<meta name="description" content="Support Solution: Istio proxy SPIFFE validation for inbound connection — Istio is using SPIFFE standards to identify applications within the Mesh. Each application (POD) is provided with an identity encoded in SPIFFE format, and this identity is used when connecting to…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K65743455">
+</head>
+<body>
+<header>
+<h1>K65743455: Istio proxy SPIFFE validation for inbound connection</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-09-08</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K65743455">https://my.f5.com/manage/s/article/K65743455</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>Istio is using SPIFFE standards to identify applications within the Mesh. Each application (POD) is provided with an identity encoded in SPIFFE format, and this identity is used when connecting to other services and applications running in the Mesh. The identity is part of the TLS certificate assigned to every istio-proxy (on both Client-side and Server-side) by the mesh CA (e.g., Citadel being a part of Istiod). The proxy on a receiving POD is validating the identity included in the client&#39;s TLS certificate. The client must present a TLS certificate to the server when mTLS (mutual-TLS) is enabled in the Mesh. When the Client application cannot present the certificate (trusted by the Mesh) with the SPIFFE identity, the TLS Handshake will be dropped by the server application (a part of the Mesh). SPIFFE validation is enabled by default on Istio and Aspen Mesh and cannot be disabled without modifying the istio-proxy Envoy proxy configuration.</p>
+
+<p>The identity in Istio is formatted according to <a href="https://spiffe.io/docs/latest/spiffe-about/spiffe-concepts/#spiffe-id" target="_self">SPIFFE standard</a>:</p>
+
+<p><span class="example2">spiffe://&lt;trust-domain&gt;/ns/&lt;namespace&gt;/sa/&lt;service-account&gt;</span></p>
+
+<p>The identity uniquely identifies a specific service within trust domain.</p>
+
+<p>In this article we are going to show examples about how to workload create certificates trusted by Istio mesh and how Envoy istio-proxy is validating the certificates on a service POD.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li><strong>Kubernetes</strong>: 1.17x,1.18.x,1.19.x,1.20.x </li><li><strong>Aspen Mesh</strong>: 1.9.x </li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+None
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>Istio provides an easy way to securely manage and provision identities and X.509 TLS certificates to mesh workloads. The <strong>Istiod</strong> component is a heart of certificate management in Istio. In a typical installation, Istiod is a CA Authority inside the mesh and it offers a gRPC API service to receive and sign TLS Certificate Signing Requests sent from Clients (PODs). <br>When a mesh workload (POD) starts <strong>istio-agent</strong> component running in<strong> istio-proxy</strong> container creates CSR request for the workload and sends it to Istiod via gRPC Api. Istiod signs the CSR request and sends back the signet certificate to <strong>istio-agent</strong>. Envoy proxy (running in the same <strong>istio-proxy</strong> container as <strong>istio-agent</strong>) then requests the certificate from <strong>istio-agent</strong> via SDS API.<br>More details about identity and certificate management can be found on official <a href="https://istio.io/latest/docs/concepts/security/#pki" target="_self">Istio documentation</a>.</p>
+
+<p>Istiod is a Certificate Authority (CA) for key and certificate management in Istio and Aspen Mesh on a typical installation. The default behavior in Aspen Mesh is to generate self-signed root CA certificate which in-turn is used by Istiod to sign CSR requests for workload certificates within the cluster. We can also provision our own external certificate (e.g. signed by trusted public CA) to Istiod which is a recommended way due to security reasons.<br>The procedure for provisioning external CA certificate to Istiod is documented by <a href="https://my.aspenmesh.io/client/docs/1.9/operations/security/provisioning_existing_certificate_authority_certificates_in_aspen_mesh/" target="_self">Aspen Mesh</a> and <a href="https://istio.io/latest/docs/tasks/security/cert-management/plugin-ca-cert/" target="_self">Istio</a>.</p>
+
+<p>For the purpose of this article, we will provision Istiod with our own CA certificate chain created according to our <a href="https://aspenmesh.io/installing-multicluster-aspen-mesh-on-kops-cluster/" target="_self">multi-cluster documentation</a>:</p>
+
+<p>Aspen Mesh install tarball contains a script to create a TLS certificate chain which can be used by Istiod to sign workload certificates.</p>
+
+<p>To create the CA certificate chain:</p>
+
+<ol><li>
+	<p>Extract Aspen Mesh install tarball and enter to the directory:</p>
+
+	<p><span class="code">cd aspenmesh-1.9.5-am1</span></p>
+	</li><li>
+	<p>Enter to tools/certs directory:</p>
+
+	<p><span class="code">cd tools/certs</span></p>
+	</li><li>
+	<p>Run the make command to create a root-ca folder, which will consist of four files: <strong>root-ca.conf</strong>, <strong>root-cert.csr</strong>, <strong>root-cert.pem</strong>, and <strong>root-key.pem</strong>:</p>
+
+	<p><span class="code">make -f Makefile.selfsigned.mk root-ca</span></p>
+	</li><li>
+	<p>Run the make command to create Intermediate CA certificate signed by root-ca certificate created in the previous step:</p>
+
+	<p><span class="code">make -f Makefile.selfsigned.mk cluster1-cacerts</span></p>
+	</li></ol>
+
+<p>After this procedure we should have Root CA and Intermediate CA certificates inside <strong>cluster1</strong> directory:</p>
+
+<p><span class="example2">ls cluster1</span><br><span class="example2">ca-cert.pem ca-key.pem cert-chain.pem root-cert.pem</span></p>
+
+<p>To provision this CA certificate chain to Istiod we need to create a secret inside <strong>istio-system</strong> namespace:</p>
+
+<p><span class="example2">kubectl create secret generic cacerts -n istio-system --from-file=ca-cert.pem --from-file=ca-key.pem --from-file=root-cert.pem --from-file=cert-chain.pem</span></p>
+
+<p>If your Istiod was already running before creating the secret we need to restart all Istiod PODs to pull new certificates to Citadel.</p>
+
+<p>Having Istiod provisioned with custom CA certificates we can look at workload certificates.<br>As we already said, every workload (POD) in the mesh is provisioned with TLS certificate with SPIFFE identity. The SPIFFE ID is encoded into x.509 “Subject Alternative Name” certificate extension. The format for SPIFFE is as follow:</p>
+
+<p><span class="example2">spiffe://&lt;trust-domain&gt;/ns/&lt;namespace&gt;/sa/&lt;service-account&gt;</span></p>
+
+<p>To extract SPIFFE ID from the workload certificate we will provision httpbin application to Aspenmesh and a client application with openssl tool installed which will not be a part of the mesh. The application will be deployed in the same namespace as httpbin app.<br>To apply httpbin application you can use the configuration included into Aspenmesh tarball file. </p>
+
+<p><span class="example2">kubectl apply -f samples/httpbin/httpbin.yaml -n ns1</span></p>
+
+<p>We will use <strong>netshoot</strong> container as a client. Netshoot is a container with a lot of useful tools installed by default. The container is documented <a href="https://github.com/nicolaka/netshoot" target="_self">here</a>.<br>Below config needs to be applied to same namespace where we deployed httpbin (ns1 namespace in our case)</p>
+
+<p><span class="example2">apiVersion: apps/v1<br>kind: Deployment<br>metadata:<br>  labels:<br>    app: nettools<br>  name: nettools-deploy<br>spec:<br>  replicas: 1<br>  selector:<br>    matchLabels:<br>      app: nettools<br>  template:<br>    metadata:<br>      creationTimestamp: null<br>      labels:<br>        app: nettools<br>        sidecar.istio.io/inject: &quot;false&quot;<br>    spec:<br>      containers:<br>      - command:<br>        - sleep<br>        - 20d<br>        image: nicolaka/netshoot<br>        name: netshoot</span></p>
+
+<p>Netshot POD does not have istio-proxy container injected which means that the application is not part of the mesh and does not have TLS certificate provisioned by Istiod.<br>Let’s open a shell into netshot POD and verify connectivity to httpbin.</p>
+
+<p>As we can see below, we can resolve httpbin DNS name which means that the application should be available from netshoot (assuming httpbin POD is healthy and our mesh configuration does not block any traffic from netshoot). </p>
+
+<p><span class="example2">bash-5.1# nslookup httpbin<br>Server:     100.64.0.10<br>Address:    100.64.0.10#53<br><br>Name:   httpbin.ns1.svc.cluster.local<br>Address: 100.71.239.13<br><br>bash-5.1#</span></p>
+
+<p>In our example mTLS is enabled in the mesh globally.</p>
+
+<p>If we try to connect to httpbin application from the netshoot application (with no istio-proxy sidecar) the connection will be dropped. The error “certificate required” tells that httpbin POD is requested a TLS Certificate from the client but we did not provide any certificate to curl command.</p>
+
+<p><span class="example2">bash-5.1# curl https://httpbin:8000/get -k<br>curl: (56) OpenSSL SSL_read: error:1409445C:SSL routines:ssl3_read_bytes:tlsv13 alert certificate required, errno 0</span></p>
+
+<p>Because we have keys and CA certificates provisioned to Istiod we can try to generate a new Client certificate we will use in Netshoot application to connect to httpbin. The Client certificate used by curl will be signed by the same certificate chain so httpbin and istio-proxy should accept this certificate.</p>
+
+<p>Let’s create a new certificate for the curl and netshoot application signed by the same CA certificate we provisioned to Istiod.</p>
+
+<p><span class="example2">openssl req -out curl.csr -newkey rsa:2048 -nodes -keyout curl.key -subj &quot;/CN=curl.example.com/O=test&quot; <br>openssl x509 -req -in curl.csr  -CA cluster1/ca-cert.pem  -CAkey cluster1/ca-key.pem  -CAcreateserial -out curl-nospiffe.crt -days 365 -sha256</span></p>
+
+<p>We should see the following set of files and directories:</p>
+
+<p><span class="example2">ls -ltrh</span><br><span class="example2">common.mk<br>Makefile.selfsigned.mk<br>README.md<br>Makefile.k8s.mk<br>certs<br>root-key.pem<br>root-ca.conf<br>root-cert.csr<br>root-cert.pem<br>root-cert.srl<br>curl.key<br>curl.csr<br>cluster1<br>curl-nospiffe.crt</span></p>
+
+<p><strong>curl-nospiffe.crt</strong> file is a certificate we will use with curl.</p>
+
+<p><span class="example2">bash-5.1# curl --cacert ca.cert  --cert curl-nospiffe.crt --key curl.key https://httpbin:8000/get -k<br>curl: (56) OpenSSL SSL_read: error:14094416:SSL routines:ssl3_read_bytes:sslv3 alert certificate unknown, errno 0</span></p>
+
+<p>Next try to create a same certificate with 1 additional SAN extension.<br><span class="note"><strong>Note</strong>: <strong>-addext</strong> option is available on openssl version 1.1.1 and later.</span></p>
+
+<p><span class="example2">openssl req -new -out curl-spiffe.csr -newkey rsa:2048 -nodes -keyout curl-spiffe.key -subj &quot;/CN=curl.example.com/O=test&quot; -addext &quot;subjectAltName = URI:spiffe://cluster.local/test&quot;</span></p>
+
+<p>We need to create openssl configuration to add SAN extension to the certificate:</p>
+
+<p><span class="example2">bash-5.1# cat san.cfg<br>[ v3_ca ]<br>subjectAltName = URI:spiffe://cluster.local/testing-cert</span></p>
+
+<p>Having the above config file and CSR we can sign the certificate using the same ca-cert.pem CA certificate we provisioned to Istiod.</p>
+
+<p><span class="example2">openssl x509 -req -in curl-spiffe.csr -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -out curl-spiffe.crt -days 365 -sha256 -extensions v3_ca -extfile san.cfg</span></p>
+
+<p>Let’s now check whether we have SPIFFE ID encoded into SAN extension:</p>
+
+<p><span class="example2">bash-5.1# openssl x509 -text -in curl-spiffe.crt <br>Certificate:<br>    Data:<br>        Version: 3 (0x2)<br>        Signature Algorithm: sha256WithRSAEncryption<br>        Issuer: O = Istio, CN = Intermediate CA, L = cluster1<br>...<br>        X509v3 extensions:<br>            X509v3 Subject Alternative Name:<br>                URI:spiffe://cluster.local/testing-cert</span></p>
+
+<p>Using above certificate, we will try to connect again to httbin service:</p>
+
+<p><span class="example2">bash-5.1# curl --cacert ca-cert.pem --cert curl-spiffe.cert --key curl-spiffe.key https://httpbin:8000/get -k<br>{<br>  &quot;args&quot;: {},<br>  &quot;headers&quot;: {<br>    &quot;Accept&quot;: &quot;*/*&quot;,<br>    &quot;Content-Length&quot;: &quot;0&quot;,<br>    &quot;Host&quot;: &quot;httpbin:8000&quot;,<br>    &quot;User-Agent&quot;: &quot;curl/7.78.0&quot;,<br>    &quot;X-B3-Sampled&quot;: &quot;0&quot;,<br>    &quot;X-B3-Spanid&quot;: &quot;6fa28486ad38648d&quot;,<br>    &quot;X-B3-Traceid&quot;: &quot;67fae9f474c283656fa28486ad38648d&quot;,<br>    &quot;X-Forwarded-Client-Cert&quot;: &quot;By=spiffe://cluster.local/ns/ns1/sa/httpbin;Hash=42d0fb099c66472f5b60d1959f999c4d1b43fb183fe81edfd310a3f557474722;Subject=\&quot;O=test,CN=curl.example.com\&quot;;URI=spiffe://cluster.local/testing-cert&quot;<br>  },<br>  &quot;origin&quot;: &quot;127.0.0.1&quot;,<br>  &quot;url&quot;: &quot;https://httpbin:8000/get&quot;<br>}</span></p>
+
+<p>This time we were successfully received the answer from httpbin service. TLS certificate with <strong>URI:spiffe://cluster.local/testing-cert</strong> SAN extension was accepted by Envoy proxy and the connection was proxied to httpbin service.</p>
+
+<p>Now let’s look at the Envoy configuration from httpbin service POD responsible for validating TLS certificates received from clients.</p>
+
+<p>All inbound traffic is redirected in the POD by ipdatbles rules to the Envoy proxy virtualInbound Listener on port 15006 and then connections are routed to the Listener configured with original TCP port (before redirection). Httpbin application is listening on port 80 inside the POD and our service Listener is configured with the same port.</p>
+
+<p>Connection validation is configured on 15006 Listener:</p>
+
+<p><span class="example2">istioctl pc listener httpbin-74fb669cc6-brllc.ns1 --port 15006<br>ADDRESS PORT  MATCH                       DESTINATION<br>0.0.0.0 15006 Addr: *:15006               Non-HTTP/Non-TCP<br>0.0.0.0 15006 Trans: tls; Addr: ::0/0     InboundPassthroughClusterIpv6<br>0.0.0.0 15006 Trans: tls; Addr: 0.0.0.0/0 InboundPassthroughClusterIpv4<br>0.0.0.0 15006 Trans: tls; Addr: *:80      Cluster: inbound|80||</span></p>
+
+<p>Below we see snipped configuration of 15006 Listener extracted from Envoy using istioctl tool:</p>
+
+<p><span class="example2">istioctl pc listener httpbin-74fb669cc6-brllc.ns1 --port 15006 -o json<br>[<br>    {<br>        &quot;name&quot;: &quot;virtualInbound&quot;,<br>        &quot;address&quot;: {<br>            &quot;socketAddress&quot;: {<br>                &quot;address&quot;: &quot;0.0.0.0&quot;,<br>                &quot;portValue&quot;: 15006<br>            }<br>        },<br>        &quot;filterChains&quot;: [<br>...<br>               &quot;filterChainMatch&quot;: {<br>                    &quot;destinationPort&quot;: 80,<br>                    &quot;transportProtocol&quot;: &quot;tls&quot;<br>                },<br>...<br>                &quot;transportSocket&quot;: {<br>                    &quot;name&quot;: &quot;envoy.transport_sockets.tls&quot;,<br>                    &quot;typedConfig&quot;: {<br>                        &quot;@type&quot;: &quot;type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext&quot;,<br>                        &quot;commonTlsContext&quot;: {<br>                            &quot;tlsParams&quot;: {<br>                                &quot;tlsMinimumProtocolVersion&quot;: &quot;TLSv1_2&quot;,<br>                                &quot;cipherSuites&quot;: [<br>                                    &quot;ECDHE-ECDSA-AES256-GCM-SHA384&quot;,<br>                                    &quot;ECDHE-RSA-AES256-GCM-SHA384&quot;,<br>                                    &quot;ECDHE-ECDSA-AES128-GCM-SHA256&quot;,<br>                                    &quot;ECDHE-RSA-AES128-GCM-SHA256&quot;,<br>                                    &quot;AES256-GCM-SHA384&quot;,<br>                                    &quot;AES128-GCM-SHA256&quot;<br>                                ]<br>                            },<br>...<br>                            &quot;combinedValidationContext&quot;: {<br>                                &quot;defaultValidationContext&quot;: {<br>                                    &quot;matchSubjectAltNames&quot;: [<br>                                        {<br>                                            &quot;prefix&quot;: &quot;spiffe://cluster.local/&quot;<br>                                        }<br>                                    ]<br>                                },<br>                                &quot;validationContextSdsSecretConfig&quot;: {<br>                                    &quot;name&quot;: &quot;ROOTCA&quot;,<br>                                    &quot;sdsConfig&quot;: {<br>                                        &quot;apiConfigSource&quot;: {<br>                                            &quot;apiType&quot;: &quot;GRPC&quot;,<br>                                            &quot;transportApiVersion&quot;: &quot;V3&quot;,<br>                                            &quot;grpcServices&quot;: [<br>                                                {<br>                                                    &quot;envoyGrpc&quot;: {<br>                                                        &quot;clusterName&quot;: &quot;sds-grpc&quot;<br>                                                    }<br>                                                }<br>                                            ],<br>                                            &quot;setNodeOnFirstMessageOnly&quot;: true<br>                                        },<br>                                        &quot;initialFetchTimeout&quot;: &quot;0s&quot;,<br>                                        &quot;resourceApiVersion&quot;: &quot;V3&quot;<br>                                    }<br>                                }<br>                            },</span></p>
+As we can see above, Envoy istio-proxy is using CombinedValidationContext API from tls.v3 network folter to configure SAN validation. Details about the API can be found on official Envoy documentation <a href="https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/transport_sockets/tls/v3/tls.proto.html?highlight=downstreamtlscontext#extensions-transport-sockets-tls-v3-commontlscontext-combinedcertificatevalidationcontext" target="_self">here</a>.
+
+<p>Envoy istio-proxy for inbout connections will accept all certificates with SAN extension starting with <strong>spiffe://cluster.local/</strong>. <br>SPIFFE identifies in Istio have the following format: </p>
+
+<p><span class="example2">spiffe://&lt;trust-domain&gt;/ns/&lt;namespace&gt;/sa/&lt;service-account&gt;</span></p>
+
+<p>For inbound connections istio-proxy is validating only trust-domain. </p>
+
+<p>Default trust domain on Istio is <strong>cluster-local</strong>.<br>We can customize trust-domain during installation by specifying the domain name in global values.yaml file in the meshConfig sections:</p>
+
+<p><span class="example2">meshConfig<br>    TrustDomain: &lt;trust-odmain&gt;</span></p>
+
+<p>The trust domain name is added to every POD for  istio-proxy container as an environmental variable:</p>
+
+<p><span class="example2">  - name: TRUST_DOMAIN<br>      value: cluster.local</span></p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

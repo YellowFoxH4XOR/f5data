@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000133163: istio-proxy logs show &quot;400 DPE http1.codec_error&quot; when using a tool to test TCP connectivity</title>
+<meta name="description" content="Support Solution: istio-proxy logs show &quot;400 DPE http1.codec_error&quot; when using a tool to test TCP connectivity — Disabling automatic protocol selection or protocol sniffing might cause Istio Sidecar proxy to reject the connection in case the packet payload cannot be decoded according to the protocol configured…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000133163">
+</head>
+<body>
+<header>
+<h1>K000133163: istio-proxy logs show &quot;400 DPE http1.codec_error&quot; when using a tool to test TCP connectivity</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-03-27</dd>
+<dt>Updated</dt><dd>2023-03-27</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.14, 1.11, 1.9</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000133163">https://my.f5.com/manage/s/article/K000133163</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>Disabling automatic protocol selection or protocol sniffing might cause Istio Sidecar proxy to reject the connection in case the packet payload cannot be decoded according to the protocol configured on Envoy.<br>The Sidecar will log 400 Error code (<em>400 DPE http1.codec_error</em>) in access logs in such case, Example:</p>
+
+<pre class="ckeditor_codeblock">
+# istio-proxy client logs
+[2023-02-07T13:07:16.741Z] &quot;- - HTTP/1.1&quot; 400 DPE http1.codec_error - &quot;-&quot; 0 11 0 - &quot;-&quot; &quot;-&quot; &quot;-&quot; &quot;-&quot; &quot;-&quot; - - 11.21.69.105:9000 11.11.2.4:57032 - -</pre>
+
+<p><br>This can be reproduced by setting HTTP protocol on the Service port name and by sending TCP connection using telnet.</p>
+
+<pre class="ckeditor_codeblock">
+# Service snipped
+apiVersion: v1
+kind: Service
+...
+  ports:
+  - name: <strong>http</strong>-svc1
+    port: 9000
+    protocol: TCP
+    targetPort: 9000</pre>
+
+<pre class="ckeditor_codeblock">
+bash-5.2# telnet tcp-echo 9000</pre>
+
+<p><br>The proxy Listener times out after some time and logs &quot;<em>400 DPE http1.codec_error</em>&quot; to istio-proxy logs.<br> </p>
+
+<h2><br><strong>Environment</strong></h2>
+
+<ul><li>Aspen Mesh 1.6.x, 1.9.x, 1.11.x</li><li>Red Hat OpenShift 4.6.x - 4.7.x</li><li>Kubernetes 1.17.x - 1.20.x</li></ul>
+
+<h2><br><br><strong>Cause</strong></h2>
+
+<p>Packet payload cannot be decoded according to the protocol configured.</p>
+
+<p> </p>
+
+<h2><br><strong>Recommended Actions</strong></h2>
+
+<p>Enable automatic protocol selection by adding the following configuration to the global override values.yaml file and upgrading the istiod Helm chart.:</p>
+
+<pre class="ckeditor_codeblock">
+pilot:
+  enableProtocolSniffingForOutbound: true
+  enableProtocolSniffingForInbound: true
+</pre>
+
+<p><br>To upgrade istiod chart please run:</p>
+
+<pre class="ckeditor_codeblock">
+helm upgrade istiod manifests/charts/istio-control/istio-discovery -n istio-system --values &lt;values-file&gt;
+</pre>
+
+<p><br>When protocol sniffing is enabled we should see additional &quot;default&quot; filterChainMatch in every Listener configuration:<br><br><strong>Protocol sniffing enabled</strong></p>
+
+<pre class="ckeditor_codeblock">
+❯ istioctl pc listener -f config_dump_sleep.json --port 443
+ADDRESS        PORT MATCH DESTINATION
+0.0.0.0        443  Trans: raw_buffer; App: http/1.1,h2c Route: 443
+0.0.0.0        443  ALL                                  PassthroughCluster</pre>
+
+<p><br><strong>Protocol sniffing disabled</strong></p>
+
+<pre class="ckeditor_codeblock">
+❯ istioctl pc listener -f config_dump_sleep.json --port 443
+ADDRESS        PORT MATCH DESTINATION
+0.0.0.0        443  ALL   Route: 443</pre>
+
+<p><br>In case automatic protocol detection is enabled and the protocol cannot be decoded (filter parsing times out) then Envoy will accept that connection with the default filterChainMatch.</p>
+
+<h2><br><br><strong>Additional Information</strong></h2>
+
+<p>Istio sidecars can proxy many different TCP based protocols, including HTTP, HTTPs, gRPC and raw TCP. The full list of all protocols is documented on <a href="https://istio.io/latest/docs/ops/configuration/traffic-management/protocol-selection/" target="_blank">Istio documentation</a>.<br>Protocol type can be specified explicitly by specifying the protocol name in Service port name (name: &lt;protocol&gt;-[-&lt;any-suffix&gt;]) or by using <a href="https://kubernetes.io/docs/concepts/services-networking/service/#application-protocol" target="_blank">appProtocol</a> field (Kubernetes 1.20+).<br><br>In case the protocol is not specified, Istio can automatically detect HTTP or TLS protocols; if the protocol cannot be automatically determined then it will be treated as raw TCP.<br><br>In Aspen Mesh, due to security reasons, we decided to disable automatic protocol selection or protocol sniffing by default.<br>Protocol sniffing lessens the configuration burden to get started with Istio, but creates uncertainty about behaviors. Because this uncertainty can&#39;t be controlled by the client, it can be surprising or potentially hazardous.<br><br>In production we recommend to tell the proxy everything we know about the service and have the proxy reject everything that doesn’t look as expected.<br>All service ports should be declared with a name that specifies the protocol (things like “http-app” or “tcp-custom”).<br><br>Protocol detection should be enabled during mesh evaluation, tests or in very specific use cases.</p>
+
+<p>The protocol sniffing is implemented by TLS and HTTP Inspector Envoy Listener filters.<br>For more information please look at this <a href="https://www.envoyproxy.io/docs/envoy/latest/configuration/listeners/listener_filters/tls_inspector" target="_blank">link</a> and this <a href="https://www.envoyproxy.io/docs/envoy/latest/configuration/listeners/listener_filters/http_inspector" target="_blank">link</a></p>
+
+<pre class="ckeditor_codeblock">
+# istioctl pc listener -f config_dump2.json --port 8000
+...
+    {
+        &quot;name&quot;: &quot;0.0.0.0_8000&quot;,
+        &quot;address&quot;: {
+            &quot;socketAddress&quot;: {
+                &quot;address&quot;: &quot;0.0.0.0&quot;,
+                &quot;portValue&quot;: 8000
+            }
+        },
+        &quot;filterChains&quot;: [
+            {
+                &quot;filterChainMatch&quot;: {
+                    &quot;transportProtocol&quot;: &quot;raw_buffer&quot;,
+                    &quot;applicationProtocols&quot;: [
+                        &quot;http/1.1&quot;,
+                        &quot;h2c&quot;
+                    ]
+                },
+...
+        &quot;listenerFilters&quot;: [
+            {
+                &quot;name&quot;: &quot;envoy.filters.listener.tls_inspector&quot;,
+                &quot;typedConfig&quot;: {
+                    &quot;@type&quot;: &quot;type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector&quot;
+                }
+            },
+            {
+                &quot;name&quot;: &quot;envoy.filters.listener.http_inspector&quot;,
+                &quot;typedConfig&quot;: {
+                    &quot;@type&quot;: &quot;type.googleapis.com/envoy.extensions.filters.listener.http_inspector.v3.HttpInspector&quot;
+                }
+            }
+        ],</pre>
+</article>
+</body>
+</html>

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161828: Security Dashboard Configuration on NIM (Nginx Instance Manager)</title>
+<meta name="description" content="Support Solution: Security Dashboard Configuration on NIM (Nginx Instance Manager) — NGINX Instance Manager (NIM) Security Dashboard and Security Monitoring features are visible, but no security metrics or WAF (App Protect) events are displayed. WAF Analytics APIs…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161828">
+</head>
+<body>
+<header>
+<h1>K000161828: Security Dashboard Configuration on NIM (Nginx Instance Manager)</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-22</dd>
+<dt>Updated</dt><dd>2026-06-22</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Management Suite Security Monitoring: 1.6.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161828">https://my.f5.com/manage/s/article/K000161828</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>NGINX Instance Manager (NIM) Security Dashboard and Security Monitoring features are visible, but no security metrics or WAF (App Protect) events are displayed. WAF Analytics APIs (<span style="background-color: #f1f1f1;">/analytics/security/*</span>) return no data or HTTP 500 errors. ClickHouse database tables for security events remain empty despite NGINX App Protect generating traffic.</p>
+<p><strong>Relevant log messages:</strong></p>
+<ul><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">feature &#39;SECURITY-POLICIES&#39; enforced by securityPolicyEnforcer</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">feature SECURITY-POLICIES requires valid license</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">feature ANALYTICS requires valid license</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">feature SECURITY-MONITORING requires valid license for user &lt;user-id&gt;</span></li></ul>
+<p><strong>ClickHouse tables confirmed empty:</strong></p>
+<ul><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">nms.v4_security_events</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">nms.v4_security_events_signatures_data</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">nms.v4_security_events_violation_data</span></li></ul>
+<h2>Environment</h2>
+<ul><li><strong>Product:</strong> NGINX Management Suite – Security Monitoring module, version 1.6.0</li><li><strong>Components:</strong> NGINX Instance Manager (NIM), NGINX Plus with App Protect WAF, nginx-agent, ClickHouse database</li><li><strong>License features:</strong> <span style="font-family: &#39;courier new&#39;, courier, monospace;">NGINX_NAP</span>, <span style="font-family: &#39;courier new&#39;, courier, monospace;">NGINX_NAP_DOS</span>, <span style="font-family: &#39;courier new&#39;, courier, monospace;">IM_INSTANCES</span>, <span style="font-family: &#39;courier new&#39;, courier, monospace;">NGINX_INSTANCES</span></li><li><strong>Security Dashboard and Security Monitoring</strong> enabled in NIM</li><li><strong>Syslog</strong> configured for WAF log collection</li><li><strong>nginx-agent</strong> deployed on NGINX Plus instances and connected to NIM control plane</li></ul>
+<h2>Cause</h2>
+<p>Misconfiguration of the nginx-agent and NGINX App Protect syslog settings, resulting in WAF security logs not being delivered to the nginx-agent&#39;s local listener and therefore not ingested into NIM or ClickHouse. Specifically:</p>
+<ul><li>The <span style="font-family: &#39;courier new&#39;, courier, monospace;">syslog_ip</span> in <span style="font-family: &#39;courier new&#39;, courier, monospace;">nginx-agent.conf</span> was pointing to an external rsyslogd server instead of the local NGINX Plus host IP where nginx-agent listens.</li><li>The <span style="font-family: &#39;courier new&#39;, courier, monospace;">nap-monitoring</span> extension was missing or incorrectly named (using underscore <span style="font-family: &#39;courier new&#39;, courier, monospace;">nap_monitoring</span> instead of hyphen <span style="font-family: &#39;courier new&#39;, courier, monospace;">nap-monitoring</span>) in <span style="font-family: &#39;courier new&#39;, courier, monospace;">agent-dynamic.conf</span>.</li><li>The <span style="font-family: &#39;courier new&#39;, courier, monospace;">app_protect_security_log</span> directive in <span style="font-family: &#39;courier new&#39;, courier, monospace;">nginx.conf</span> was writing logs to a local file instead of forwarding them to the nginx-agent syslog listener.</li><li>An incorrect or missing log profile (<span style="font-family: &#39;courier new&#39;, courier, monospace;">log_sm.json</span>) was used for security monitoring.</li></ul>
+<h2>Answer/Recommended Actions</h2>
+<p>Follow these steps to correctly configure NGINX App Protect security log forwarding to NIM via nginx-agent:</p>
+<p><strong>Step 1: Update <span style="font-family: &#39;courier new&#39;, courier, monospace;">/etc/nginx-agent/agent-dynamic.conf</span> to include <span style="font-family: &#39;courier new&#39;, courier, monospace;">nap-monitoring</span> under extensions</strong></p>
+<p><code>version: v2.44.0<br>tags:<br>  - &lt;your-tags&gt;<br>extensions:<br>  - nginx-app-protect<br>  - nap-monitoring        # Use hyphen, NOT underscore<br>queue_size: 100</code></p>
+<p><strong>Step 2: Update <span style="font-family: &#39;courier new&#39;, courier, monospace;">/etc/nginx-agent/nginx-agent.conf</span> – configure <span style="font-family: &#39;courier new&#39;, courier, monospace;">nap_monitoring</span> section</strong></p>
+<p><code>extensions:<br>  - nginx-app-protect<br>  - nap-monitoring<br>  - advanced-metrics<br><br>nap_monitoring:<br>  collector_buffer_size: 50000<br>  processor_buffer_size: 50000<br>  syslog_ip: &quot;&lt;IP address of the local NGINX Plus host&gt;&quot;   # Must be the local host IP, NOT an external syslog server<br>  syslog_port: 514</code></p>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: For NAP v4 on bare metal: <span style="font-family: &#39;courier new&#39;, courier, monospace;">127.0.0.1</span> is acceptable.<br>For NAP v5 (containerized): <span style="font-family: &#39;courier new&#39;, courier, monospace;">127.0.0.1</span> cannot be used — use the <span style="font-family: &#39;courier new&#39;, courier, monospace;">docker0</span> interface address (typically <span style="font-family: &#39;courier new&#39;, courier, monospace;">172.17.0.1</span>) or the host&#39;s IP address.</em></span></p>
+<p><strong>Step 3: Verify the NIM control plane hostname is resolvable</strong></p>
+<p><code>server:<br>  host: &lt;NIM hostname or IP&gt;<br>  grpcPort: 443</code></p>
+<p><strong>Step 4: Create the security monitoring log profile on the NGINX Plus instance</strong></p>
+<p>Create <span style="font-family: &#39;courier new&#39;, courier, monospace;">/etc/app_protect/conf/log_sm.json</span> as described in the official documentation:<br><a href="https://docs.nginx.com/nginx-instance-manager/nginx-app-protect/security-monitoring/set-up-app-protect-instances#create-instances-for-security-monitoring-only" target="_blank">Set up F5 WAF for NGINX instances for Security Monitoring</a></p>
+<p><strong>Step 5: Update <span style="font-family: &#39;courier new&#39;, courier, monospace;">nginx.conf</span> – point <span style="font-family: &#39;courier new&#39;, courier, monospace;">app_protect_security_log</span> to the nginx-agent syslog listener</strong></p>
+<p><code># Primary: send to nginx-agent syslog listener → forwarded to NIM<br>app_protect_security_log &quot;/etc/app_protect/conf/log_sm.json&quot; syslog:server=127.0.0.1:514;<br><br># Optional backup: keep a local file copy for manual inspection<br>app_protect_security_log &quot;/etc/app_protect/conf/log_illegal.json&quot; /var/log/app_protect/security.log;</code></p>
+<p><strong>Step 6: Restart the nginx-agent service</strong></p>
+<p><span style="background-color: #f1f1f1;">sudo systemctl restart nginx-agent</span></p>
+<p><strong>Step 7: Verify NIM is listening on the syslog port</strong></p>
+<p><span style="background-color: #f1f1f1;">sudo netstat -tulpn | grep 514</span></p>
+<p><strong>Step 8: Validate data ingestion</strong></p>
+<ul></ul>
+<ul><li>Generate test traffic through the WAF-protected application.</li><li>Check the NIM Security Dashboard for incoming events. Note that a slight delay between event generation and dashboard visibility is expected behavior.</li></ul>
+<h2>Additional Information</h2>
+<ul><li>The nginx-agent acts as a <strong>middleman</strong>: it receives WAF syslog events locally on the NGINX Plus host and forwards them to NIM. Security logs must <strong>not</strong> be sent directly to an external rsyslogd server if the intent is to populate the NIM Security Dashboard.</li><li>The <span style="font-family: &#39;courier new&#39;, courier, monospace;">nap-monitoring</span> extension name must use a <strong>hyphen</strong> (<span style="font-family: &#39;courier new&#39;, courier, monospace;">-</span>), not an underscore (<span style="font-family: &#39;courier new&#39;, courier, monospace;">_</span>), in <span style="font-family: &#39;courier new&#39;, courier, monospace;">agent-dynamic.conf</span>. Using the wrong separator will prevent the extension from loading correctly.</li><li>A slight delay between WAF event generation and visibility in the NIM Security Dashboard is <strong>expected behavior</strong>.</li></ul>
+</article>
+</body>
+</html>

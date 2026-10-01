@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000136145: Splitting large packet captures to smaller sizes and extracting packet information</title>
+<meta name="description" content="Support Solution: Splitting large packet captures to smaller sizes and extracting packet information — Splitting large size packet captures to smaller sizes may be necessary for further analysis such as in extracting packet information. Packet captures taken during network or application attacks on…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000136145">
+</head>
+<body>
+<header>
+<h1>K000136145: Splitting large packet captures to smaller sizes and extracting packet information</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-09-11</dd>
+<dt>Updated</dt><dd>2023-09-11</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 15.1.8</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000136145">https://my.f5.com/manage/s/article/K000136145</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Description</strong></h2>
+
+<p>Splitting large size packet captures to smaller sizes may be necessary for further analysis such as in extracting packet information. Packet captures taken during network or application attacks on applications served thru BIG-IP Virtual Servers contain packet details such as source IP addresses of the attack and from it, geolocation information. A BIG-IP with IP Intelligence license can also check the extracted IP addresses reputation.</p>
+
+<h2> </h2>
+
+<h2><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Environment</strong></h2>
+
+<p>Large size packet captures taken thru packet capture utility, example, tcpdump</p>
+
+<p>editcap utility for extracting and limiting number of packets to output packet capture files </p>
+
+<p>tshark utility for extracting packet information</p>
+
+<p>administrator role access to a BIG-IP device</p>
+
+<p>IP Intelligence license on BIG-IP</p>
+
+<p>iprep_lookup command on BIG-IP to check IP address IP reputation</p>
+
+<p>geo_lookup command on BIG-IP to check IP address geolocation information</p>
+
+<h2> </h2>
+
+<h2><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Cause</strong></h2>
+
+<p>Packet captures taken during network or application attacks on applications served thru BIG-IP Virtual Servers may be too large and would be better if its smaller size packet capture for manageability for network traffic analysis.</p>
+
+<p> </p>
+
+<h2><span style="font-family: Arial, sans-serif;font-size: 10.5pt;"> </span><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Recommended Actions</strong></h2>
+
+<h2>Use <em>editcap </em>utility to split large size packet capture file</h2>
+
+<p>On a BIG-IP system or secure systems with the editcap utility, split large size packet capture files</p>
+
+<p>With a large packet capture file in the /var/tmp directory, create temporary file location and change directory to it</p>
+
+<pre class="ckeditor_codeblock">
+mkdir scatch
+cd scratch</pre>
+
+<p>Use editcap utility to extract packets by specifying a number with the &quot;-c&quot; option and provide a pcap output file name. The output file name will include a file number to note the start and end of the extracted packet file sequence</p>
+
+<pre class="ckeditor_codeblock">
+$ editcap ddos.pcap -c 30000 split30k.pcap
+
+#ddos.pcap is the large size packet capture file
+#&quot;-c &lt;packets per file&gt;&quot; editcap option -  split the packet output to different files based on uniform packet counts with a maximum of &lt;packets per file&gt; each.
+#&quot;-c 30000&quot; instructs editcap to split and extract packet capture output files with 30000 packets each.
+#In this example, packet capture file ddos.pcap is 8.8 GB file, after splitting it to output packet capture files with 30000 packets each, it created 306 output files
+
+$ ls -lah ddos.pcap
+8.8G Sep 8 03:17 ddos3.pcap
+
+$ ls scratch/ | head
+split30k_00000_20230908000155.pcap
+split30k_00001_20230908000156.pcap
+split30k_00002_20230908000156.pcap
+...
+$ ls scratch/ | tail
+...
+split30k_00303_20230908000305.pcap
+split30k_00304_20230908000305.pcap
+split30k_00305_20230908000306.pcap
+
+$ ls scratch/ | wc -l
+306</pre>
+
+<p> </p>
+
+<h2>Extracting packet information using <em>tshark</em></h2>
+
+<pre>
+<span style="color: #2980b9;">Note: These procedures do not need to be executed on the BIG-IP system</span></pre>
+
+<p>Extract source IP addresses that initiated a connection from the smaller packet capture files. Use tshark to filter packets with SYN flag but no ACK flag - the first SYN packet</p>
+
+<p>As there are many packet capture files to check, use a script file to iterate/loop over the pcap files and run tshark to extract the source IP addresses and redirect output to a file .</p>
+
+<p>As an example, use script format from <a href="https://www.cyberciti.biz/faq/bash-loop-over-file/" target="_blank">https://www.cyberciti.biz/faq/bash-loop-over-file/</a> and use tshark command &quot; tshark -nr &quot;$f&quot; -Y &quot;tcp.flags.syn == 1 and tcp.flags.ack == 0&quot; -T fields -e ip.src &gt;&gt; /path/ddos_pcap_src_ips.txt&quot; to extract the source IP addresses that initiated the initial packet with only the SYN flag set and redirect the output to text file.</p>
+
+<p>Note variable &quot;$f&quot; is each pcap file from list of files from the directory defined in the &quot;FILES&quot; script variable</p>
+
+<pre class="ckeditor_codeblock">
+cat file[.]sh
+#!/bin/bash
+# NOTE : Quote it else use array to avoid problems #
+FILES=&quot;/pcapfiles/path/*&quot;
+for f in $FILES
+do
+echo &quot;Processing $f file...&quot;
+# take action on each file. $f store current file name
+tshark -nr &quot;$f&quot; -Y &quot;tcp.flags.syn == 1 and tcp.flags.ack == 0&quot; -T fields -e ip.src &gt;&gt; /path/ddos_pcap_src_ips.txt
+done
+</pre>
+
+<p>Modify the file[.]sh script to be an executable and run the script file</p>
+
+<pre class="ckeditor_codeblock">
+$ chmod +x file[.]sh
+$ ./file[.]sh
+Processing /var/tmp/scratch/split30k_00020_20230908000159.pcap file...
+Processing /var/tmp/scratch/split30k_00021_20230908000200.pcap file...
+Processing /var/tmp/scratch/split30k_00022_20230908000200.pcap file...
+....</pre>
+
+<p> </p>
+
+<h2>Sorting and removing duplicate IP addresses </h2>
+
+<p>Non unique extracted source IP addresses from the split packet capture files</p>
+
+<pre class="ckeditor_codeblock">
+cat ddos_pcap_src_ips.txt | wc -l
+69983
+</pre>
+
+<p>Sorted source IP addresses with &#39;sort&#39; command and removed duplicates with &#39;uniq&#39; command</p>
+
+<pre class="ckeditor_codeblock">
+cat ddos_pcap_src_ips.txt | sort | uniq &gt; ddos_pcap_uniq_src_ips.txt
+
+</pre>
+
+<p>Unique source IP addresses from the sample 306 split packet capture files</p>
+
+<pre class="ckeditor_codeblock">
+cat ddos_pcap_uniq_src_ips.txt | wc -l
+6372</pre>
+
+<h2>Checking IP addresses with <em>iprep_lookup</em> and <em>geo_lookup</em> commands in the BIG-IP</h2>
+
+<pre>
+<span style="color: #2980b9;">Note: These procedures needs to be executed in a BIG-IP system</span></pre>
+
+<p>Using a manually created script file (iprep[.]sh) to check source IP address reputation thru iprep_lookup command on a IP Intelligence licensed BIG-IP device, 39 of the 6372 unique source IPs have bad reputation from the split packet capture files.</p>
+
+<pre class="ckeditor_codeblock">
+./iprep[.]sh &lt; ddos_pcap_uniq_src_ips.txt 2&gt;&amp;1 | grep &quot;threats list&quot; - | wc -l
+39
+
+</pre>
+
+<p>Using the sample iprep[.]sh script file, 531 of the 69983 non unique source ip addresses have bad reputation from the split packet capture files to show how many times IP addresses with bad reputation sent a packet.</p>
+
+<pre class="ckeditor_codeblock">
+ ./iprep[.]sh &lt; ddos_pcap_src_ips.txt 2&gt;&amp;1 | grep &quot;threats list&quot; - | wc -l
+531
+</pre>
+
+<p>Use a manually created script file (geo[.]sh) to check source IP address geolocation information. The list of geolocations for each of the source IP addresses can be then sorted and de-duplicated to get the number of times a source Geolocation sent a packet, in this case to initiate a connection.</p>
+
+<pre class="ckeditor_codeblock">
+./geo[.]sh &lt; ddos_pcap_uniq_src_ips.txt 2&gt;&amp;1 | grep country_code | awk -F &quot;=&quot; &#39;{print $2}&#39; | sort | uniq -c | sort -rnk 1 | head -20
+.....
+</pre>
+ 
+
+<h2><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Additional Information</strong></h2>
+
+<p>Here is the &quot;iprep[.]sh&quot; script used to check the extracted IP address information IP reputation. This requires an IP Intelligence license on a BIG-IP as it uses iprep_lookup command.</p>
+
+<pre class="ckeditor_codeblock">
+[admin@BIG-IP]tmp # cat iprep[.]sh
+#!/bin/bash
+while read -r line;
+do
+ iprep_lookup &quot;$line&quot;
+done
+wait
+</pre>
+
+<p>If IP Intelligence is not licensed and iprep_lookup is used, error is returned</p>
+
+<pre class="ckeditor_codeblock">
+# iprep_lookup 15.15.2.2
+opening database in /var/IpRep/F5IpRep.dat, /var/IpRep/F5IpV6Rep.dat
+ERROR: Failed to access IP reputation memory-map
+ERROR initializing IP reputation database.</pre>
+
+<p>Here is the &quot;geo[.]sh&quot; script used to check source IP address geolocation information. It uses the geoip_lookup command. The geoip_lookup command does not require additional license on the BIG-IP.</p>
+
+<pre class="ckeditor_codeblock">
+[admin@BIG-IP]# cat geo[.]sh
+#!/bin/bash
+while read -r line;
+do
+ geoip_lookup &quot;$line&quot;
+done
+Wait</pre>
+
+<p> </p>
+ 
+
+<p> </p>
+
+<p> </p>
+
+<p> </p>
+</article>
+</body>
+</html>

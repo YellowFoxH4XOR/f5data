@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000136894: After upgrade to 15.1.9 - 15.1.10.x, 16.x, 17.x, Client reset connections for SYN_ACK.</title>
+<meta name="description" content="Support Solution: After upgrade to 15.1.9 - 15.1.10.x, 16.x, 17.x, Client reset connections for SYN_ACK. — After upgrade to v15.1.9.x, v16.x, v17.x, service disconnected for fastL4 virtual servers.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000136894">
+</head>
+<body>
+<header>
+<h1>K000136894: After upgrade to 15.1.9 - 15.1.10.x, 16.x, 17.x, Client reset connections for SYN_ACK.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-09-19</dd>
+<dt>Updated</dt><dd>2024-10-16</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP AFM: 17.X.X, 15.0.0, 15.0.1, 15.0.X, 15.1.0, 15.1.1, 15.1.2, 15.1.3, 15.1.4, 15.1.5, 15.1.6, 15.1.7, 15.1.8, 15.1.9, 15.1.10, 15.1.X, 16.0.0, 16.0.1, 16.0.X, 16.1.0, 16.1.1, 16.1.2, 16.1.3, 16.1.4, 16.1.X, 17.0.0, 17.0.X, 17.1.0, 17.1.1, 17.1.X, 15.X.X, 16.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000136894">https://my.f5.com/manage/s/article/K000136894</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<p>After upgrade to v15.1.9.x, v16.x, v17.x, service disconnected for fastL4 virtual servers.<br>Client reset to SYN-ACK from FastL4 virtual server.<br>When PVA in the FastL4 profile is disabled, issue does not occur.</p>
+<p> </p>
+<h2><strong>Environment</strong></h2>
+<ul><li>BIG-IP</li><li>v15.1.9.x, v16.x, v17.x</li><li>FastL4 with PVA enabled.</li><li>Client reset to SYN-ACK</li><li>AFM</li></ul>
+<p> </p>
+<h2><strong>Cause</strong></h2>
+<ul><li><a href="https://cdn.f5.com/product/bugtracker/ID1325681.html" target="_blank">Bug ID 1325681</a></li></ul>
+<p> </p>
+<h2><strong>Recommended Actions</strong></h2>
+<p>Collect a packet capture on intermediate device between client and BIG-IP in order to verify issue timestamp value.</p>
+<p>Identify packets where the client did not ack a packet and inspect the timestamp in the tcp stream.</p>
+<p>The client will drop the packet if the timestamp value is invalid as per RFC1323</p>
+<p>In this example the problem is found in the tcp handshake, however the issue can also been found in application packets:</p>
+<p> </p>
+<p>Check client&#39;s SYN packet&#39;s Timestamp value in the<strong> TCP Option</strong></p>
+<p style="margin-left: 40px;"><span style="font-family: Courier New,Courier,monospace;">Options: (20 bytes), Maximum segment size, SACK permitted, Timestamps, No-Operation (NOP), Window scale<br>TCP Option - Maximum segment size: 1460 bytes<br>TCP Option - SACK permitted<br>TCP Option - Timestamps<br>Kind: Time Stamp Option (8)<br>Length: 10<br><strong>Timestamp value: 3793951481</strong>: TSval 3793951481, TSecr 0 <br>Timestamp echo reply: 0</span></p>
+<p>Check SYN_ACK from BIG-IP timestamp echo reply is match with the Timestamp value in the SYN.</p>
+<p style="margin-left: 40px;"><span style="font-family: Courier New,Courier,monospace;">Options: (16 bytes), Maximum segment size, SACK permitted, Timestamps<br>TCP Option - Maximum segment size: 1460 bytes<br>TCP Option - SACK permitted<br>TCP Option - Timestamps<br>Kind: Time Stamp Option (8)<br>Length: 10<br>Timestamp value: 2793663953: TSval 2793663953, TSecr 588970345<br><strong>Timestamp echo reply: 588970345</strong> <em><strong>&lt;&lt;------this should match with SYN&#39;s Timestamp value</strong></em></span></p>
+<p> </p>
+<p>Confirm if tscookie is enabled at any context: </p>
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">security dos device-config dos-device-config {
+    tscookie-vlans {
+        <strong>&lt;VLAN&gt;</strong> &lt;&lt;&lt;---------[!]
+    }
+}</pre>
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">security dos device-config /Common/dos-device-config {
+   dos-device-vector {<br><span>     tcp-ack-ts {</span>
+       ...
+       <strong>tscookie enabled</strong> &lt;&lt;&lt;---------[!]
+       ...<br><br><em>* Note that tscookie configuration applies even if tcp-ack-ts DoS vector is disabled. </em></pre>
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">ltm profile fastl4 /Common/fastL4_profile {
+   ...
+   <strong>pva-acceleration full</strong> &lt;&lt;&lt;---------[!]
+   <strong>tcp-timestamp-mode preserve</strong> &lt;&lt;&lt;---------[!]
+   ...</pre>
+<p>If those are matching with your symptom and the config, follow the workaround in the <a href="https://cdn.f5.com/product/bugtracker/ID1325681.html" target="_blank">Bug ID 1325681</a>.<br> </p>
+<p>Review and update the threshold values as per the following article to ensure they are correct after a recent upgrade:</p>
+<p><a href="https://my.f5.com/manage/s/article/K000139860" target="_blank">K000139860: The tcp-ack-ts vector with lower thresholds is triggered after upgrading to v17.1</a></p>
+<h2><strong>Additional Information</strong></h2>
+<p>If a recent upgrade to 17.1.x triggered this issue, follow the steps below to disable tscookie which was enabled by default in attack vector TCP ACK (TS):</p>
+<ul><li>To disable Timestamp Cookie via GUI (Configuration Utility), navigate to Security  ››  DoS Protection : Device Protection, find vector TCP ACK (TS) and uncheck &quot;Timestamp Cookie&quot; setting. </li><li>To disable Timestamp Cookie via CLI (tmsh), you can run following command:</li></ul>
+<p><span dir="ltr"><span><code>tmsh modify security dos device-config dos-device-config dos-device-vector { tcp-ack-ts { tscookie disabled }}</code></span><br></span></p>
+<p><span><code>tmsh save sys config</code></span></p>
+</article>
+</body>
+</html>

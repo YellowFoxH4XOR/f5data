@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161819: Connections are not reducing even after force offline and deleting connections in L2 nPath deployment</title>
+<meta name="description" content="Support Solution: Connections are not reducing even after force offline and deleting connections in L2 nPath deployment — Connections remain visible in the connection table after forcing a DNS pool member offline and deleting connections on a BIG-IP LTM DNS virtual server (VIP) in an L2 nPath (Direct Server Return/DSR)…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161819">
+</head>
+<body>
+<header>
+<h1>K000161819: Connections are not reducing even after force offline and deleting connections in L2 nPath deployment</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-16</dd>
+<dt>Updated</dt><dd>2026-08-16</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.0.0, 17.1.0, 17.0.X, 17.X.X, 21.X.X, 21.1.X, 21.1.0, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161819">https://my.f5.com/manage/s/article/K000161819</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Connections remain visible in the connection table after forcing a DNS pool member offline and deleting connections on a BIG-IP LTM DNS virtual server (VIP) in an L2 nPath (Direct Server Return/DSR) deployment. This leads to confusion about whether real client traffic is still reaching the backend server during maintenance, even after running connection deletion commands.</p>
+<p>Common symptoms:</p>
+<ul><li>Connections remain after <span style="background-color: #f1f1f1;">tmsh delete sys connection</span> commands</li><li><span style="background-color: #f1f1f1;">tmsh show sys connection ss-server-addr &lt;backend_IP&gt;</span> continues to show entries</li><li>GUI and CLI show inconsistent connection counts</li><li>tcpdump filtering by backend IP does not show expected traffic</li></ul>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM 17.5.1</li><li>L2 nPath (DSR) deployment</li><li>Virtual server with <span style="background-color: #f1f1f1;">translate-address disabled</span> and <span style="background-color: #f1f1f1;">translate-port disabled</span></li><li>Backend servers configured with loopback address</li><li>FastL4 profile with PVA acceleration enabled</li><li>UDP/DNS traffic (port 53)</li><li>DNS health monitors assigned to pool members</li><li>Source address persistence configured</li></ul>
+<h2>Cause</h2>
+<p>In L2 nPath (DSR) deployments, BIG-IP forwards traffic to backend servers by rewriting only the Layer 2 (MAC) address, leaving the IP header unchanged. As a result:</p>
+<ul><li>Real client-to-backend connections are <strong>not</strong> tracked on the server-side connection table, because the destination IP remains the VIP address.</li><li>Connections visible via <span style="background-color: #f1f1f1;">tmsh show sys connection ss-server-addr &lt;backend_IP&gt;</span> after force offline are <strong>health monitor traffic</strong> and <strong>control-plane/system DNS traffic</strong> (connection type: <code>self</code>), not real client data-plane connections.</li></ul>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>To verify real client connections in an L2 nPath deployment:</strong></p>
+<ol><li>Use the client-side connection table command:<br><span style="background-color: #f1f1f1;">tmsh show sys connection cs-server-addr &lt;VIP_IP&gt;</span><br>Real client connections will show connection type <code>any</code> with the backend server&#39;s MAC address as the Server Nexthop.</li><li>To confirm no new traffic is sent to the offline pool member, use MAC address-based tcpdump filtering (required because PVA acceleration prevents IP-based filtering):<br><span style="background-color: #f1f1f1;">tcpdump -venni 0.0:nnnp ether host &quot;&lt;backend_MAC_address&gt;&quot; and not host &lt;self_IP&gt; -c 100</span><br><ul><li>Obtain the backend server&#39;s MAC address from: <span style="background-color: #f1f1f1;">tmsh show net arp</span></li><li>If packets appear with the destination MAC of the offline backend and direction <code>OUT</code>, traffic is still being forwarded to that server.</li></ul>
+</li><li>To delete persistence records for the offline pool member:<br><span style="background-color: #f1f1f1;">tmsh delete ltm persistence all-records mode source-address node-addr &lt;backend_IP&gt;</span></li><li>To delete client-side connections (note: this affects all connections to the VIP, not just those going to the offline member):<br><span style="background-color: #f1f1f1;">tmsh delete sys connection cs-server-addr &lt;VIP_IP&gt;</span></li></ol>
+<h2>Additional Information</h2>
+<ul><li>In L2 nPath (DSR) deployments, BIG-IP only modifies the Layer 2 MAC address when forwarding traffic to the backend. The destination IP remains the VIP address. Backend servers accept the traffic because the VIP IP is configured as a loopback address.</li><li>Because the IP header is not modified, the BIG-IP connection table does not record a separate server-side entry with the backend&#39;s IP address for real client traffic. Only health monitor connections (which originate from the BIG-IP self-IP) appear in the server-side connection table.</li><li>The <span style="background-color: #f1f1f1;">show sys connection ss-server-addr &lt;backend_IP&gt;</span> command will only show health monitor traffic (type: <code>self</code>) in this deployment model — this is expected behavior.</li></ul>
+</article>
+</body>
+</html>

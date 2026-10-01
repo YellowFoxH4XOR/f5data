@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000159680: SSL-related errors during PublishSubscribe operations in our application</title>
+<meta name="description" content="Support Solution: SSL-related errors during PublishSubscribe operations in our application — Error Message: javax.net.ssl.SSLException: Tag mismatch or javax.crypto.AEADBadTagException: Tag mismatch">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000159680">
+</head>
+<body>
+<header>
+<h1>K000159680: SSL-related errors during PublishSubscribe operations in our application</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-01-22</dd>
+<dt>Updated</dt><dd>2026-01-22</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.0.0, 17.1.0, 17.0.X, 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000159680">https://my.f5.com/manage/s/article/K000159680</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Java applications experience intermittent SSL handshake failures when connecting through BIG-IP APM with the following symptoms:</p>
+<ul><li><strong>Error Message</strong>: <span style="font-family: &#39;courier new&#39;, courier, monospace;">javax.net.ssl.SSLException: Tag mismatch</span> or <span style="font-family: &#39;courier new&#39;, courier, monospace;">javax.crypto.AEADBadTagException: Tag mismatch</span></li><li><strong>SSL Alert</strong>: Fatal Handshake Failure (Alert 40) during TLSv1.3 handshakes</li><li><strong>Behavior</strong>: Connections fail intermittently during PublishSubscribe operations</li><li><strong>Root Cause Indicator</strong>: Packet captures show the server sending a &quot;DOWNGRD&quot; sentinel (444f574e47524401) in the Server Hello Random field</li></ul>
+<p>This issue occurs when BIG-IP cipher groups are configured with <strong>ordering strength</strong>, causing the system to offer FFDHE4096 as the Diffie-Hellman group, which triggers a known compatibility issue with Java/OpenJDK clients.</p>
+<h2>Environment</h2>
+<ul><li><strong>Product</strong>: BIG-IP APM</li><li><strong>Version</strong>: 17.1.2 (affects v17.x)</li><li><strong>Platform</strong>: F5-BIG-VE-BT-200MV18, BIG-IP</li><li><strong>Configuration</strong>:
+<ul><li>Cipher group with <strong>ordering strength</strong> setting</li><li>TLSv1.3 handshakes</li><li>Cipher suite: TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 (0xc030)</li></ul>
+</li><li><strong>Client</strong>: Java/OpenJDK applications</li></ul>
+<h2>Cause</h2>
+<p>When <strong>ordering strength</strong> is configured on a BIG-IP cipher group:</p>
+<ul><li>BIG-IP evaluates all allowed ciphers and Diffie-Hellman groups</li><li>It ranks them by cryptographic strength (key size, algorithm strength, etc.)</li><li>It offers the strongest option (FFDHE4096) to the client</li><li>Java clients accept FFDHE4096 but fail during the key exchange due to a known compatibility issue</li><li>The client sends a Fatal Handshake Failure alert and terminates the connection</li><li>This manifests as the <span style="font-family: &#39;courier new&#39;, courier, monospace;">javax.crypto.AEADBadTagException: Tag mismatch</span> error</li></ul>
+<p>The backend server responds with a &quot;DOWNGRD&quot; sentinel in the Server Hello, indicating a potential downgrade attack. Java clients perform a security check, detect the sentinel, and terminate the connection as a security precaution.</p>
+<h2>Recommended Actions</h2>
+<p><strong>Option 1: Modify Existing Cipher Group (Recommended)</strong></p>
+<ol><li style="margin-bottom: 12px;">List your current cipher group for full details:<br><span style="background-color: #f1f1f1;"> tmsh list /ltm cipher group &lt;cipher-group-name&gt; all-properties </span></li><li style="margin-bottom: 12px;">Modify the cipher group to use <strong>ordering default</strong>:<br><span style="background-color: #f1f1f1;"> tmsh modify ltm cipher group &lt;cipher-group-name&gt; ordering default </span></li><li style="margin-bottom: 12px;">Save the configuration:<br><span style="background-color: #f1f1f1;"> tmsh save sys config </span></li></ol>
+<p><strong>Option 2: Create a New Cipher Group for Testing</strong></p>
+<ol><li style="margin-bottom: 12px;">List your current cipher group:<br><span style="background-color: #f1f1f1;"> tmsh list /ltm cipher group &lt;cipher-group-name&gt; all-properties </span></li><li style="margin-bottom: 12px;">Create a new cipher group with <strong>ordering default</strong>:<br><span style="background-color: #f1f1f1;"> tmsh create ltm cipher group /Common/ { allow replace-all-with { /Common/f5-secure } exclude replace-all-with { /Common/RSA /Common/SSLv3 /Common/TLSv1 /Common/TLSv1_1 } ordering default description &quot;Custom Hardened Suite&quot; } </span></li><li style="margin-bottom: 12px;">List the new cipher group to verify:<br><span style="background-color: #f1f1f1;"> tmsh list /ltm cipher group &lt;new-name&gt; all-properties </span></li><li style="margin-bottom: 12px;">Save the configuration:<br><span style="background-color: #f1f1f1;"> tmsh save sys config </span></li><li style="margin-bottom: 12px;">Apply the new cipher group to your SSL profiles for testing</li></ol>
+<p><strong>Why This Works:</strong></p>
+<p>With <strong>ordering default</strong>, BIG-IP uses F5&#39;s recommended ordering that prioritizes compatibility alongside security. BIG-IP will typically offer X25519 (elliptic curve) or FFDHE2048 instead of FFDHE4096. These groups are fully compatible with Java/OpenJDK clients, allowing the handshake to complete successfully.</p>
+<h2>Additional Information</h2>
+<p><strong>Packet Capture Analysis:</strong></p>
+<p>When troubleshooting this issue, filter packet captures using:</p>
+<p><span style="background-color: #f1f1f1;">tls.alert_message.level == 2</span></p>
+<p>Look for TLSv1.3 Record Layer Alert messages with:</p>
+<ul><li><strong>Level</strong>: Fatal (2)</li><li><strong>Description</strong>: Handshake Failure (40)</li></ul>
+<p>The Server Hello Random field will contain the &quot;DOWNGRD&quot; sentinel (444f574e47524401) when the issue is present.</p>
+<p><strong>Security Considerations:</strong></p>
+<p>The <strong>ordering default</strong> setting maintains strong security while ensuring compatibility. F5&#39;s default ordering is designed to balance cryptographic strength with real-world client compatibility, making it suitable for production environments with diverse client types.</p>
+</article>
+</body>
+</html>

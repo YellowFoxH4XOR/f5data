@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K20011331: Uninstalling vCMP</title>
+<meta name="description" content="Knowledge: Uninstalling vCMP — This article describes how to remove vCMP from a BIG-IP system and load a UCS archive onto the system.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K20011331">
+</head>
+<body>
+<header>
+<h1>K20011331: Uninstalling vCMP</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2019-07-26</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 12.1.3</li><li>BIG-IP AAM: 12.1.3</li><li>BIG-IP AFM: 12.1.3</li><li>BIG-IP Analytics: 12.1.3</li><li>BIG-IP APM: 12.1.3</li><li>BIG-IP ASM: 12.1.3</li><li>BIG-IP PEM: 12.1.3</li><li>BIG-IP Link Controller: 12.1.3</li><li>BIG-IP LTM: 12.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K20011331">https://my.f5.com/manage/s/article/K20011331</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Issue</h3><p><span class="sectiontitle">Description</span></p>
+
+<p>This article describes how to remove vCMP from a BIG-IP system and load a UCS archive onto the system.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>vCMP host with a single vCMP guest configured</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>None</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ul><li><a href="#backup">Creating a backup</a></li><li><a href="#cleaninstall">Performing a clean Install of software volume</a></li><li><a href="#backup">Backing out</a></li><li><a href="#shutdownblades">Shutting down other blades</a></li><li><a href="#loaducs">Loading UCS onto clean install</a></li><li><a href="#poweronblades">Powering on other blades</a></li></ul>
+
+<p><span class="subsectiontitle"><a id="backup" name="backup"></a>Creating a backup</span></p>
+
+<p><span class="note"><strong>Note</strong>: See <a href="https://my.f5.com/manage/s/article/K4423" target="_blank">K4423: Overview of UCS archives</a> for more information on managing UCS archives.</span></p>
+
+<ol><li>Log in to the TMOS shell (<strong>tmsh</strong>) of the vCMP guest.</li><li>Reset the master key by typing the following command:
+	<p><span class="code">modify /sys crypto master-key prompt-for-password</span></p>
+	</li><li>At the password prompt, enter the master key password or passphrase.</li><li>Save the BIG-IP configuration by typing the following command:
+	<p><span class="code">save /sys config</span></p>
+	</li><li>Create a new UCS by using the following command syntax:
+	<p><span class="code">save /sys ucs &lt;ucs_archive_name&gt;</span></p>
+	</li><li>Download the UCS off of the BIG-IP system.</li></ol>
+
+<p><span class="subsectiontitle"><a id="cleaninstall" name="cleaninstall"></a>Performing a clean install of software volume</span></p>
+
+<p><span class="warning"><strong>Important</strong>: Perform the following procedure on all installed blades.</span></p>
+
+<ol><li>Create a new logical volume by typing the following command:
+	<p><span class="code">lvcreate -L 3g -n install vg-db-sda</span></p>
+	</li><li>Format the new volume to EXT3 by typing the following command:
+	<p><span class="code">mkfs.ext3 /dev/vg-db-sda/mnt/install</span></p>
+	</li><li>Create a new directory by typing the following command:
+	<p><span class="code">mkdir /mnt/install</span></p>
+	</li><li>Mount the new volume by typing the following command:
+	<p><span class="code">mount -t ext3 /dev/vg-db-sda/mnt/install /mnt/install</span></p>
+	</li><li>Copy the software image you want to use to <strong>/mnt/install/&lt;image_name&gt;</strong>.
+	<p>For example, to copy <strong>BIGIP-12.1.3.2-0.0.4.iso</strong> from <strong>/shared/images/BIGIP-12.1.3.2-0.0.4.iso</strong> to<strong> /mnt/install/BIGIP-12.1.3.2-0.0.4.iso</strong>:</p>
+
+	<p><span class="example2">cp /shared/images/BIGIP-12.1.3.2-0.0.4.iso /mnt/install</span></p>
+	</li><li>Use <strong>image2disk</strong> to overwrite all software volumes and perform a clean install of the image. For example:
+	<p><span class="example2">image2disk --nvlicenseok --nosaveconfig --setdefault --reboot --format=volumes /mnt/install/BIGIP-12.1.3.2-0.0.4.iso</span></p>
+	</li><li>Repeat steps 1 through 5 on all installed blades.</li></ol>
+
+<p><span class="subsectiontitle"><a id="backout" name="backout"></a>Backing out a clean install</span></p>
+
+<p><span class="note"><strong>Note</strong>: If step 5 from <strong>Performing a clean install of software volume </strong>is successful, then you may not back out using this procedure.</span></p>
+
+<ol><li>Unmount the temporary volume:
+	<p><span class="code">umount /mnt/install</span></p>
+	</li><li>Remove the /mnt/install directory:
+	<p><span class="code">rm -rf /mnt/install</span></p>
+	</li><li>Remove the logical volume:
+	<p><span class="code">lvremove /dev/vg-db-sda/mnt/install</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="shutdownblades" name="shutdownblades"></a>Shutting down other blades</span></p>
+
+<p><span class="note"><strong>Note</strong>: On a VIPRION system, make sure to shut down all other blades before loading the UCS archive.</span></p>
+
+<ol><li>Shut down blade 2 by typing the following command:<br>	<br>	<span class="code">bladectl -s 2 -p 0</span></li></ol>
+
+<p><span class="subsectiontitle"><a id="loaducs" name="loaducs"></a>Loading UCS onto clean install</span></p>
+
+<ol><li>Log in to <strong>tmsh</strong> of the vCMP guest.</li><li>Reset the master key by typing the following command:
+	<p><span class="code">modify /sys crypto master-key prompt-for-password</span></p>
+	</li><li>At the password prompt, enter the master key password or passphrase from step 2 in <strong>Creating a backup</strong>.</li><li>Upload the UCS archive to <strong>/var/local/ucs.</strong></li><li>Load the UCS by using the following command syntax:
+	<p><span class="code">load /sys ucs &lt;ucs_archive_name&gt; no-license platform-migrate</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="poweronblades" name="poweronblades"></a>Powering on other blades</span></p>
+
+<ol><li>Power on all other blades:
+	<p><span class="code">bladectl -s 2 -p 1</span></p>
+	</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>While the procedures described in this article are not the only way to remove vCMP provisioning from a BIG-IP system, they do not require you to physically insert a USB thumb drive into the system.</p>
+</article>
+</body>
+</html>

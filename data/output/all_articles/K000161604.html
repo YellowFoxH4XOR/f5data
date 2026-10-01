@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161604: Configuration BIG-IP device to send audit log using TLS over TCP protocol</title>
+<meta name="description" content="Support Solution: Configuration BIG-IP device to send audit log using TLS over TCP protocol — This article describes how to configure BIG-IP LTM to securely forward authentication logs (such as user login/logout events) to a remote syslog server (e.g., Graylog) using TLS encryption over TCP.…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161604">
+</head>
+<body>
+<header>
+<h1>K000161604: Configuration BIG-IP device to send audit log using TLS over TCP protocol</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-16</dd>
+<dt>Updated</dt><dd>2026-08-16</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161604">https://my.f5.com/manage/s/article/K000161604</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>This article describes how to configure BIG-IP LTM to securely forward authentication logs (such as user login/logout events) to a remote syslog server (e.g., Graylog) using TLS encryption over TCP. This is accomplished by leveraging syslog-ng for log selection and forwarding, and a BIG-IP virtual server with a serverside-ssl profile to provide TLS encryption.</p>
+<p>By default, BIG-IP LTM uses two separate logging mechanisms:</p>
+<ul><li><strong>HSL (High-Speed Logging):</strong> Handles logs from BIG-IP daemons (e.g., mcpd, tmm) but does <strong>not</strong> support authentication logs.</li><li><strong>syslog-ng:</strong> Handles Linux native daemon logs (e.g., sshd, httpd, pam) including authentication events.</li></ul>
+<p>HSL cannot forward authentication logs. To send these logs securely over TLS, syslog-ng must be configured to forward them to a local virtual server, which then encrypts and forwards the logs to the remote syslog server.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM (all supported versions)</li><li>Remote syslog server (e.g., Graylog) capable of receiving TLS-encrypted syslog</li><li>syslog-ng enabled on BIG-IP</li></ul>
+<h2>Cause</h2>
+<p>By default, authentication logs are not forwarded securely via HSL. syslog-ng must be used to select and forward these logs, and a virtual server is required to provide TLS encryption.</p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li><strong>Create a Pool for the Remote Syslog Server</strong>
+<p><code>ltm pool pool_remote_secure_syslog {<br>    members {<br>        syslog_server:syslog-tls {<br>            address &lt;REMOTE_SYSLOG_SERVER_IP&gt;<br>        }<br>    }<br>    monitor tcp_half_open<br>}</code></p>
+</li><li><strong>Create a Virtual Server for TLS Encryption</strong>
+<p>This virtual server receives plain TCP syslog from syslog-ng and encrypts it using a serverside-ssl profile.</p>
+<p><code>ltm virtual vs_secure_syslog_target {<br>    destination &lt;VS_IP_ADDRESS&gt;:&lt;PORT&gt;<br>    ip-protocol tcp<br>    mask &lt;MASK&gt;<br>    pool pool_remote_secure_syslog<br>    profiles {<br>        serverssl-insecure-compatible { context serverside }<br>        tcp { }<br>    }<br>    serverssl-use-sni disabled<br>    source &lt;SOURCE_IP&gt;/0<br>    source-address-translation { type automap }<br>    translate-address enabled<br>    translate-port enabled<br>    vlans { internal }<br>    vlans-enabled<br>}</code></p>
+<span style="color: #15891f;"><em><strong>Note</strong>: Replace &lt;VS_IP_ADDRESS&gt;, &lt;PORT&gt;, &lt;MASK&gt;, &lt;SOURCE_IP&gt;, and &lt;REMOTE_SYSLOG_SERVER_IP&gt; with your actual values. Specify the correct ingress VLAN (e.g., internal) to ensure syslog-ng can reach the virtual server.</em></span></li><li><strong>Configure syslog-ng to Forward Authentication Logs</strong>
+<ol><li>Access tmsh:<br><span style="background-color: #f1f1f1;">tmsh</span></li><li>Edit the syslog configuration:<br><span style="background-color: #f1f1f1;">edit sys syslog all-properties</span></li><li>In the editor, add the following to the <strong>include</strong> field (use <span style="background-color: #f1f1f1;">:set paste</span> and press <span style="background-color: #f1f1f1;">i</span> to enter insert mode):<br><p><code>include &quot;<br>destination d_remote_auth {<br>    tcp(\&quot;&lt;VS_IP_ADDRESS&gt;\&quot; port(&lt;PORT&gt;));<br>};<br>filter f_auth_events {<br>    facility(auth, authpriv)<br>    or (facility(local6) and match(\&quot;pam_audit|auth_pam|mod_auth_pam|AUDIT\&quot;))<br>    or (facility(local0) and match(\&quot;AUDIT\&quot;));<br>};<br>log {<br>    source(s_syslog_pipe);<br>    filter(f_auth_events);<br>    destination(d_remote_auth);<br>};<br>&quot;</code></p>
+<span style="color: #15891f;"><em><strong>Note</strong>: Replace &lt;VS_IP_ADDRESS&gt; and &lt;PORT&gt; with the virtual server’s IP and port.</em></span></li><li>Save and exit:<br><span style="background-color: #f1f1f1;">:wq!</span><br>Then press <span style="background-color: #f1f1f1;">y</span> to confirm.</li><li>Save the configuration:<br><span style="background-color: #f1f1f1;">tmsh save sys config</span></li></ol>
+</li><li><strong>(Optional) Use a Custom Certificate in the Server SSL Profile</strong>
+<ul><li>Import your certificate and key to BIG-IP.</li><li>Create a custom server-ssl profile and assign the certificate and key.</li><li>Apply this profile to the virtual server instead of <span style="background-color: #f1f1f1;">serverssl-insecure-compatible</span>.</li></ul>
+</li></ol>
+<h2>Additional Information</h2>
+<ul><li>syslog-ng includes the hostname in log messages by default.</li><li>HSL configuration can remain for BIG-IP daemon logs if needed.</li><li>syslog-ng uses the management plane to forward logs to the local virtual server, which then uses the data plane to encrypt and forward logs to the backend server.</li><li>Authentication logs are typically found in <span style="background-color: #f1f1f1;">/var/log/secure</span> on BIG-IP.</li></ul>
+</article>
+</body>
+</html>

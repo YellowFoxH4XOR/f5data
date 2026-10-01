@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161386: Issue with Origin Server Port 80 Not Working with Virtual IP</title>
+<meta name="description" content="Support Solution: Issue with Origin Server Port 80 Not Working with Virtual IP — In a new BIG-IP LTM deployment, web traffic to a virtual server listening on port 8012 (proxying to origin servers on port 80) returned a &quot;Website not found – domain name not bound to website&quot; error…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161386">
+</head>
+<body>
+<header>
+<h1>K000161386: Issue with Origin Server Port 80 Not Working with Virtual IP</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-05-22</dd>
+<dt>Updated</dt><dd>2026-05-26</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161386">https://my.f5.com/manage/s/article/K000161386</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>In a new BIG-IP LTM deployment, web traffic to a virtual server listening on port 8012 (proxying to origin servers on port 80) returned a <strong><em>&quot;Website not found – domain name not bound to website&quot;</em></strong> error from the backend Nginx/aaPanel web servers. The issue was caused by an HTTP Host header mismatch between what the client sent and what the Nginx virtual host expected. A port 443 virtual server on the same device was functioning normally.</p>
+<p style="padding-left: 40px;"><strong><em>&quot;Website not found</em></strong></p>
+<p style="padding-left: 40px;"><strong><em>Sorry, Please confirm that this domain name has been bound to your website.</em></strong><br><strong><em>&quot;</em></strong></p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM, version 17.5.1, platform F5-BIG-BR-R5600</li><li>Active/Standby HA pair; issue observed only on the Active device</li><li>Virtual server configured with HTTP and TCP profiles, SNAT automap, translate-port enabled, listening on port 8012, forwarding to pool members on port 80</li><li>Two pool members (nginx/aaPanel web servers) in an active-active pool</li><li>An iRule using HTTP_REQUEST_SEND with clientside context was attached to the virtual server to rewrite the HTTP Host header</li></ul>
+<h2>Cause</h2>
+<p>The root cause was a misconfigured iRule that used the <strong>HTTP_REQUEST_SEND</strong> event with a<strong> clientside { } </strong>context block to rewrite the HTTP Host header. The clientside context within HTTP_REQUEST_SEND applies to the client-facing side of the connection, not the server-side request being forwarded to the pool member. As a result, the Host header sent to the Nginx/aaPanel pool members retained the original client value:8012(the VIP address and client-facing port) rather than a hostname or IP matching the Nginxserver_name` directive.</p>
+<p>(Host: 10.xx.xx.xx:8012), which did not match the server_name configured in the Nginx virtual host, causing the <strong><em>&quot;Website not found&quot;</em></strong> error. The correct approach is to use the HTTP_REQUEST event without a clientside context to rewrite the Host header on the server-bound request.</p>
+<p> </p>
+<pre>ltm rule /Common/<strong>HTTP_REQUEST_SEND</strong> {<br><strong>when</strong><em><strong> HTTP_REQUEST_SEND</strong></em> {<br>  <em>   <strong> clientside </strong>{</em><br>           # Force the host header to match what aaPanel expects<br>          HTTP::header replace Host &quot;10.xxx.xx.xx&quot;<br>  }<br>   }<br>}</pre>
+<h2>Answer/Recommended Actions</h2>
+<p>Replace the existing iRule with one using the HTTP_REQUEST event (not HTTP_REQUEST_SEND) and without a clientside { } context block to correctly rewrite the Host header on the server-side request:</p>
+<pre><br>when HTTP_REQUEST {<br><br>HTTP::header replace Host &quot;the-exact-server_name-from-nginx&quot;<br><br>}</pre>
+<p>On each Nginx/aaPanel pool member, verify the exact <strong>server_name</strong> value configured in the virtual host:</p>
+<p> </p>
+<p><code>grep -r <strong>&quot;server_name&quot;</strong> /www/server/panel/vhost/nginx/</code></p>
+<p> </p>
+<p>Ensure the Host value used in the iRule exactly matches the <strong>server_name</strong> directive in the Nginx vhost configuration (use a domain name, not an IP address, if Nginx is configured with a domain).</p>
+<p>For an active-active pool, ensure both pool members have the same server_name configured in their nginx vhosts, or use a per-member Host rewrite with LB::server addr in the HTTP_REQUEST event if different hostnames are required.</p>
+<p>Confirm pool members are listening on port 80, as BIG-IP handles port translation from 8012 to 80 via translate-port enabled.</p>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None.</p>
+</article>
+</body>
+</html>

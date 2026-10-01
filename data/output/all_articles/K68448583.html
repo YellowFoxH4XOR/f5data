@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K68448583: PTR lookups in iRules return empty string values</title>
+<meta name="description" content="Support Solution: PTR lookups in iRules return empty string values — In the previous example, the iRule queries the nameserver with an IP address of 10.14.1.12 , and returns the designated domain name for the client IP address.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K68448583">
+</head>
+<body>
+<header>
+<h1>K68448583: PTR lookups in iRules return empty string values</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-08-16</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP Platforms</li><li>BIG-IP</li><li>BIG-IP LTM: 16.1.1, 16.1.2, 16.1.3, 17.0.0, 15.0.0, 15.0.1, 15.1.0, 15.1.1, 15.1.2, 15.1.3, 15.1.4, 15.1.5, 15.1.6, 15.1.7, 15.1.8, 16.0.0, 16.0.1, 16.1.0, 15.0.X, 15.1.X, 16.0.X, 16.1.X, 17.0.X, 15.X.X, 16.X.X, 17.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K68448583">https://my.f5.com/manage/s/article/K68448583</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p><strong>RESOLV::lookup</strong> returns an empty string when used in an iRule like in the following example:<br><br><span class="example2">RESOLV::lookup @10.14.1.12 -ptr [IP::client_addr]</span><br><br>In the previous example, the iRule queries the nameserver with an IP address of <strong>10.14.1.12</strong> , and returns the designated domain name for the client IP address.</p>
+
+<p><span class="sectiontitle">Environment</span><br><br>Forward DNS lookups in these zones:</p>
+
+<ul><li>localhost</li><li>onion</li><li>test</li><li>invalid</li></ul>
+
+<p>Reverse DNS lookups for: </p>
+
+<ul><li>127.0.0.0/8</li><li>::1</li><li>10.0.0.0/8</li><li>172.16.0.0/12</li><li>192.168.0.0/16</li><li>0.0.0.0/8</li><li>169.254.0.0/16</li><li>192.0.2.0/24</li><li>198.51.100.0/24</li><li>203.0.113.0/24</li><li>255.255.255.255/32</li><li>100.64.0.0/10</li><li>fd00::/8</li><li>fe80::/10</li><li>2001:db8::/32</li><li>::/64</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>When <strong>&quot;RESOLV::lookup&quot;</strong> is invoked, it fails to disable the &quot;answer-default-zones&quot; option, so unbound never transmits a PTR lookup request.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ol><li>Configure a local &#39;net dns&#39; resolver, replacing the IP address to resolve with the IP address of your DNS resolver:</li></ol>
+      <span class="code">      # tmsh create net dns-resolver resolver-for-irules answer-default-zones no forward-zones add { . { nameservers add { 10.14.1.12:53 } } }</span>
+
+<p><span class="code">   </span> 2. Use an iRule procedure similar to this to perform PTR lookups for IPv4 addresses:<br><br><span class="code">proc resolv_ptr_v4 { addr_v4 } {<br>    # Convert $addr_v4 into its constituent bytes<br>    set ret [scan $addr_v4 {%d.%d.%d.%d} a b c d] <br>  ?? ????? if { $ret != 4 } {<br>        return<br>    }<br>    # Perform a PTR lookup on the IP address $addr_v4, and return the first answer<br>    set ret [RESOLVER::name_lookup &quot;/Common/resolver-for-irules&quot; &quot;$d.$c.$b.$a.in-addr.arpa&quot; PTR]<br>    set ret [lindex [DNSMSG::section $ret answer] 0]<br>    if { $ret eq &quot;&quot; } {<br>        # log local0.warn &quot;DNS PTR lookup for $addr_v4 failed.&quot;<br>        return<br>    }<br>    # Last element in &#39;1.1.1.10.in-addr.arpa. 600 IN PTR otters.example.com&#39; return [lindex $ret end] }<br>    return [lindex $ret end]<br>}</span><br><br>In an iRule, instead of:<br><br><span class="code">RESOLV::lookup @10.14.1.12 -ptr [IP::client_addr] </span><br><br>Use:<br><span class="code">call resolv_ptr_v4 [IP::client_addr]</span><br> </p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

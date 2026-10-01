@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K46241213: Connection Timeout in Chrome for NTLM Auth</title>
+<meta name="description" content="Support Solution: Connection Timeout in Chrome for NTLM Auth — NTLM authentication with APM can fail when connecting with Chrome starting with version 85.x. When connecting for the first time to your VS with an APM policy, you get a &quot;Connection Timeout&quot; in the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K46241213">
+</head>
+<body>
+<header>
+<h1>K46241213: Connection Timeout in Chrome for NTLM Auth</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-11-25</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 15.0.0, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.X.X, 16.X.X, 17.X.X, 17.5.X, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 14.0.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.X, 14.0.1, 14.0.0, 14.1.0, 14.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K46241213">https://my.f5.com/manage/s/article/K46241213</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br><br>NTLM authentication with APM can fail when connecting with Chrome starting with version 85.x. When connecting for the first time to your VS with an APM policy, you get a &quot;Connection Timeout&quot; in the browser.</p>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>BIG-IP APM</li><li>NTLM authentication is configured in your APM policy</li><li>Beginning with Chrome version 85.x</li></ul>
+<p><span class="sectiontitle">Cause</span><br><br>The issue stems from a Chrome browser behavior where it sends the request headers first then posts body request data. APM responds with 401 after it receives the request headers, as expected, and the receipt of the post body after, this stalls NTLM as it expects the next request to contain authentication headers.</p>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<p>Use an iRule to pause post request from Chrome browser. For example:<br><span class="code">when HTTP_REQUEST {<br>  if { [string tolower [HTTP::header User-Agent]] contains &quot;chrome&quot; &amp;&amp; [string tolower [HTTP::method]] eq &quot;post&quot; &amp;&amp; [HTTP::uri] eq &quot;/saml/idp/profile/test/sso&quot; } {<br>    #log local0. &quot;Brief pause in milliseconds for BIG-IP to wait for Chrome to send the post body&quot;<br>    after 10<br>  }<br>}</span><br><span class="note">Note: In the above iRule,  the delay is set to 10 ms. If the solution requires more increment by 10, up to 1000 (1 second).</span></p>
+<p><span class="sectiontitle">Additional Information</span><br>If you take a packet capture, you observe Chrome sends the HTTP headers in one packet and the HTML body in another one.<br><span class="code">344     0.267139000     10.0.0.1     51914   10.0.0.2    443     1063    IN  s1/tmm0 : [TLS segment of a reassembled PDU] ----&gt; HTTP headers<br>347     0.000003000     10.0.0.1     51914   10.0.0.2    443     1662    IN  s1/tmm0 : 51914 → 443 [ACK] Seq=2941 Ack=3387 Win=14528 Len=1448 TSval=3992441449 TSecr=2370092069 [TCP segment of a reassembled PDU]<br>348     0.000005000     10.0.0.2    443     10.0.0.1     51914   214     OUT s1/tmm0 : 443 → 51914 [ACK] Seq=3387 Ack=4389 Win=18988 Len=0 TSval=2370092338 TSecr=3992441449<br>349     0.000011000     10.0.0.2    443     10.0.0.1     51914   532     OUT s1/tmm0 : HTTP/1.1 401 Unauthorized , NTLMSSP_CHALLENGE<br>350     0.000844000     10.0.0.1     51914   10.0.0.2    443     1662    IN  s1/tmm0 : 51914 → 443 [ACK] Seq=4389 Ack=3387 Win=14528 Len=1448 TSval=3992441451 TSecr=2370092337 [TCP segment of a reassembled PDU]<br>351     0.000003000     10.0.0.1     51914   10.0.0.2    443     1073    IN  s1/tmm0 : POST /saml/idp/profile/test/sso HTTP/1.1 , NTLMSSP_NEGOTIATE (application/x-www-form-urlencoded)<br>&lt;snip&gt;<br>Internet Protocol Version 4, Src: 10.0.0.1, Dst: 10.0.0.2<br>Transmission Control Protocol, Src Port: 51914, Dst Port: 443, Seq: 83266305, Ack: 2721816334, Len: 859<br>[4 Reassembled TCP Segments (5203 bytes): #346(1448), #347(1448), #350(1448), #351(859)]<br>Transport Layer Security<br>[2 Reassembled TLS segments (5994 bytes): #344(820), #351(5174)]<br>    [Frame: 344, payload: 0-819 (820 bytes)]  --------------------------&gt; HTTP headers sent in frame 344<br>    [Frame: 351, payload: 820-5993 (5174 bytes)] -----------------------&gt; Post body request data in frame 351<br>    [Segment count: 2]<br>    [Reassembled PDU length: 5994]<br>    [Reassembled PDU data: 504f5354202f73616d6c2f6964702f70726f66696c652f72…]<br>Hypertext Transfer Protocol<br>HTML Form URL Encoded: application/x-www-form-urlencoded<br>F5 Ethernet Trailer Protocol</span></p>
+</article>
+</body>
+</html>

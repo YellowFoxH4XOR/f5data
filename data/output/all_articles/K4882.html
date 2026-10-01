@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K4882: Citrix ICA Web Clients may not work with Portal Access</title>
+<meta name="description" content="Knowledge: Citrix ICA Web Clients may not work with Portal Access — You can configure a FirePass Portal Access Web Application favorite to view a web portal page such as Citrix Web Interface (formerly Citrix NFuse) with a list of published Citrix resources. However…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K4882">
+</head>
+<body>
+<header>
+<h1>K4882: Citrix ICA Web Clients may not work with Portal Access</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2011-03-24</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>FirePass: 6.1.0, 6.0.3, 6.0.2, 7.0.0, 6.0.0, 6.0.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K4882">https://my.f5.com/manage/s/article/K4882</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>You can configure a FirePass Portal Access Web Application favorite to view a web portal page such as Citrix Web Interface (formerly Citrix NFuse) with a list of published Citrix resources. However, if the web server which hosts the portal page does not return the HTTP <strong>Content-Type</strong> header of <strong>application/x-ica</strong>, or if an intermediate device such as a proxy or an application-aware firewall changes the HTTP <strong>Content-Type</strong> header from <strong>application/x-ica</strong> to another value, communication between the client and the Citrix web portal will not function properly through Portal Access.</p>
+
+<p>When a user selects a published resource on a Citrix web portal page, a Citrix ICA client configuration file is downloaded from the portal. The ICA configuration file contains the IP address of the Citrix XenApp server (formerly Citrix Presentation Server and Citrix MetaFrame Server), which will serve the published resource to the Citrix ICA Web Client. The line in the ICA configuration file with the server IP address appears similar to the following example:<br><br><span class="example">Address=192.168.101.128</span></p>
+
+<p>IP addresses are used by default; the Citrix server can be configured to use a hostname/fully qualified domain name (FQDN) instead.</p>
+
+<p>The HTTP response containing the ICA configuration file should have an HTTP <strong>Content-Type</strong> header of <strong>application/x-ica</strong>. The FirePass reverse-proxy engine uses this header to identify Citrix ICA traffic, and it rewrites the <strong>Address</strong> parameter in the ICA configuration file to a loopback IP address on the client system. The reverse-proxy engine will then automatically launch a Static Applicaton Tunnel (FirePass version 6.x) or an Application Tunnel (FirePass version 5.x) to permit the Citrix ICA Web Client to connect to the Citrix server using the ICA protocol. The ICA protocol uses either TCP port 1494, or TCP port 2598 if Session Reliability is enabled (FirePass version 6.0.2 or later). The loopback IP address inserted into the ICA file is used by the auto-launched Application Tunnel in the same manner as an Application Tunnel favorite created by the FirePass administrator would use the loopback IP address specified in the Application Tunnel favorite&#39;s <strong>Local Host</strong> field.</p>
+
+<p>If you cannot connect to a Citrix server with your ICA Web client, the FirePass reverse-proxy engine may not have been able to rewrite the IP address of the Citrix server in the ICA configuration file. If this is the case, the ICA Web Client may attempt a direct connection to the Citrix server instead of using a FirePass Application Tunnel. Typically, the Citrix server is not reachable directly by the client, and the connection fails.</p>
+
+<p>To determine whether the reverse-proxy engine was able to rewrite the IP address, you can use the <strong>Network packet dump</strong> utility on the Device Management: Maintenance: Troubleshooting Tools page. Using the <strong>Network packet dump</strong> utility, you can capture the SSL packets between the FirePass controller and the remote access client when attempting a Citrix session, then decode the SSL packets with the FirePass built-in SSL decoder. You can locate the ICA file in the decoded packets and determine whether the original IP address of the Citrix server is still present, or if it has been rewritten to a loopback IP address.</p>
+
+<p>For more information about performing a packet dump or using the SSL decode function, consult the FirePass online help on the Device Management: Maintenance: Troubleshooting Tools page.</p>
+
+<h4>Workaround</h4>
+
+<p>You can work around this issue by performing one of the following procedures:</p>
+
+<ul><li>Changing the appropriate server or firewall configuration to set or keep the correct Content-Type header value</li><li>Configuring a content processing script on the FirePass controller to rewrite the Citrix server IP address and insert the Application Tunnel into the configuration file</li></ul>
+
+<p><strong>Changing the appropriate server or firewall configuration to set or keep the correct Content-Type value </strong></p>
+
+<p>The most common reason for rewrite failure is a <strong>Content-Type</strong> header with a value other than <strong>application/x-ica</strong>. This rewrite failure may be due to the web server configuration on the Citrix server system failing to set the correct value, or it may be due to an intermediate system like a proxy server or application firewall that changes HTTP headers.</p>
+
+<p>You can resolve the issue by changing the appropriate server or firewall configuration to set or keep the correct value. You may use the FirePass <strong>Network packet dump</strong> utility described previously to capture the HTTP response with the ICA configuration file received by the FirePass controller from the Citrix server, and the HTTP response the FirePass controller sends to the client.</p>
+
+<p><strong>Configuring a content processing script to rewrite the Citrix server IP address and insert the Application Tunnel into the configuration file </strong></p>
+
+<p>If the IP address of the Citrix server is not rewritten, but the <strong>Content-Type</strong> is correct, or the <strong>Content-Type</strong> cannot be set to <strong>application/x-ica</strong>, you may be able to work around the issue by configuring a content processing script to perform the IP address rewriting that would normally be done automatically. In addition to the IP address rewriting, the content processing script will probably need to insert JavaScript into the HTML source to create an Application Tunnel for the Citrix ICA Web Client, since the condition that prevented rewriting of the Citrix server IP address will likely prevent insertion of the JavaScript for the Application Tunnel.</p>
+
+<p>Content processing scripts are configured on the Portal Access: Web Applications: Content Processing page.</p>
+
+<p>To rewrite the Citrix server IP address and insert the Application Tunnel in the configuration file, create a content processing script with values similar to the ones below, in the respective fields:</p>
+
+<ul><li><strong>URL match patterns field:</strong><br>    <br>    <span class="example2">     http://citrix.server.com/*</span></li><li><strong>Content Type field:</strong><br>    <br>    Determine this value from the packet dumps</li><li><strong>sed processing script field:</strong> <br>    <br>    <span class="example2">     s/Address=192\.168\.0\.10/Address=127\.100\.100\.100/g<br>    <br>    s/&lt;HEAD&gt;/&lt;HEAD&gt;&lt;script&gt; var w_name = name\+(Math.random()).toString().substring(2,16); var childWindow = window.open(&#39;\/vdesk\/geekster\/connection.php3?rhost0=192.168.0.10\&amp;rport0=1494\&amp;lhost0=127.100.100.100</span><span class="example2">\&amp;lport0=1494\<br>    &amp;name=Citrix%20Server&#39;, w_name,&#39;name=&#39;+w_name+&#39;,resizable=0,scrollbars=0,statusbar=0,menubar=0,width=320,height=240&#39;, false);&lt;\/script&gt;/<br>    <br>    s/&lt;BODY/&lt;BODY onunload=&quot;if(childWindow) childWindow.close();&quot;/</span><br>    <br>    <span class="warning"><b>Important</b>: Sed commands are case sensitive. If the Citrix web portal page uses a different capitalization format for its HTML tags, for example <b>&lt;Head&gt;</b> or <b>&lt;head&gt;</b> instead of <b>&lt;HEAD&gt;</b>, ensure that you modify the example sed scripts above to exactly match the format of the HTML tags on the Citrix web portal page.</span><br>    <br>    <span class="warning"><strong>Important:</strong> You may use line breaks to separate multiple sed commands, but you cannot use line breaks within a single sed command. If you copy the example command starting with </span><b><span class="warning">s/&lt;HEAD&gt;/&lt;HEAD&gt;</span></b><span class="warning"> from this Solution, you must remove the line breaks before pasting it into the FirePass Administrative Console.<br>    </span><span class="note"><span class="warning"><br>    </span><strong>Note:</strong> For Citrix Metaframe Presentation Server version 3.0 and later, Advanced or Enterprise edition (but not Standard addition), the default port for ICA/CGP sessions is 2598/TCP, which reflects the newer Session Reliability feature. If using a version of Citrix server with Session Reliability on port 2598/TCP, then substitute 2598 in place of 1494 for the <strong>lport</strong> and <strong>rport</strong> parameters.</span><span class="warning">     </span></li><li><strong>Processing:</strong><br>    <br>    Post-processing response data</li></ul>
+
+<p>The first <strong>sed</strong> command performs the IP address substitution, using a loopback address chosen by the FirePass administrator. For best results, select a loopback address value which is not used by any existing Static Application Tunnel favorites (FirePass version 6.x) or Application Tunnel favorites (FirePass version 5.x).</p>
+
+<p>The second and third commands insert the JavaScript. The JavaScript code opens a new popup window with an <strong>AppTunnel</strong> object and inserts a <strong>body.onunload</strong> event handler to close the popup window upon exiting. Note that the <strong>rhost</strong> parameter is the real IP address of the Citrix server, and <strong>lhost</strong> is the IP address of the loopback for the Application Tunnel. These values are the same IP addresses used in the first <strong>sed</strong> command. Post-processing is used so that the JavaScript functions are not rewritten by the reverse-proxy engine.<strong><br></strong></p>
+
+<p>For multiple Citrix servers, repeat the first and second commands for each Citrix server, using the IP addresses of the additional Citrix servers and different loopback addresses.  Do not repeat the third command for each Citrix server.<strong><br></strong></p>
+
+<p>Additionally, if you are running FirePass version 6.x, you must add the remote host and port to the <b>Allow List</b> field in the <b>Access Control List </b>section of the  Application Access : App Tunnels : Master Group Settings page. For example, if the <b>rhost</b> parameter is set to 192.168.0.10 and the <b>rport</b> parameter is set to 1494, you would add 192.168.0.10:1494 to the <b>Allow List</b> field. If you do not add the remote host and port to the master group Application Tunnel <b>Allow List</b>, users in that master group will receive a Security Exception error when the Application Tunnel attempts to connect to the remote host.</p>
+
+<p><span class="note"><b>Note</b>: For additional information about writing content processing scripts, refer to the </span><a href="https://support.f5.com/kb/en-us/products/firepass.html" target="_blank"><span class="note">FirePass Controller Administrator Guide</span></a><span class="note">. For an overview of Citrix access through Portal Access, refer to </span><a id="/content/kb/en-us/solutions/public/8000/600/sol8644" href="https://my.f5.com/manage/s/article/K8644" target="_blank">K8644: Overview of Citrix access through Portal Access</a><span class="note">.</span><strong><br></strong></p>
+</article>
+</body>
+</html>

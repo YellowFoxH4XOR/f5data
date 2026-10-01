@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K41555151: Install Knative using Aspen Mesh as a network layer</title>
+<meta name="description" content="Support Solution: Install Knative using Aspen Mesh as a network layer — Knative runs serverless containers on Kubernetes. It can use multiple network layers. Use the one that will accommodate your needs.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K41555151">
+</head>
+<body>
+<header>
+<h1>K41555151: Install Knative using Aspen Mesh as a network layer</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-04-20</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K41555151">https://my.f5.com/manage/s/article/K41555151</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+Knative runs serverless containers on Kubernetes. It can use multiple network layers. Use the one that will accommodate your needs.
+
+<p>In this article we will focus on Aspen Mesh/Istio as a network layer.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Kubernetes 1.20.x  </li><li>Aspen Mesh 1.9.x  </li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+N/A
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+Before continuing with the configuration process, we are assuming you are following the guide for installing Knative in <a href="https://knative.dev/docs/install/serving/install-serving-with-yaml/" target="_self">Install Serving with YAML</a>. You should take note of the requirements and prerequisites listed in the guide. Perform the following procedures:
+
+<ol><li><a href="#1" target="_self">Install Knative serving component</a></li><li><a href="#2" target="_self">Install Aspen Mesh as a network layer</a></li><li><a href="#3" target="_self">Verify the installation</a></li></ol>
+<strong><a id="1" name="1"></a>Install Knative serving component</strong>
+
+<p>Complete step 1 in the installation guide <a href="https://knative.dev/docs/install/serving/install-serving-with-yaml/" target="_self">here</a>:</p>
+
+<p>The manifest will create all the objects needed, namespace, deployments, services etc.</p>
+<strong><a id="2" name="2"></a>Install Aspen Mesh as a network Layer</strong>
+
+<p>At this point, if you are following this guide, we are assuming you have already Aspen Mesh installed. If not, refer to <a href="https://my.f5.com/manage/s/article/K74423478" target="_self">K74423478: Customizing Aspen Mesh installations</a>.</p>
+Once you have Aspen Mesh installed, you need to perform the following steps:
+
+<ol><li>Install <strong>knative istio</strong> controller by running this command:
+
+	<p><span class="code">kubectl apply -f https://github.com/knative/net-istio/releases/download/knative-v1.1.0/net-istio.yaml</span></p>
+	</li><li>Fetch the External IP address or CNAME by running the command and save it for later:
+	<p><span class="code">kubectl --namespace istio-system get service istio-ingressgateway</span></p>
+	</li><li>If the command above does not return anything maybe you don’t have an ingress-gateway, you need to install it following <a href="https://my.f5.com/manage/s/article/K50557252" target="_self">K50557252: Install Istio Ingress Gateway using the Aspen Mesh Ingress Helm Chart </a></li><li>With Aspen Mesh we do auto-injection and mTLS enabled, so you will need to inject sidecar in the <strong>knative-serving</strong> namespace by running this command:
+	<p><span class="code">kubectl label namespace knative-serving istio-injection=enabled</span></p>
+	</li><li>Restart the pods in the <strong>knative-serving</strong> namespace</li><li>Verify all the pods are running and the logs are not showing any errors.
+	<p><span class="note"><strong>Note</strong>: Verify that the manifest for the knative istio controller match the version of the knative serving component you installed.</span></p>
+	</li></ol>
+
+<div style="margin-left: 40px;"><span class="example2">kubectl get pods -n knative-serving<br>NAME                                    READY   STATUS    RESTARTS   AGE<br>activator-55ccd67d44-st7wt              2/2     Running   0          42d<br>autoscaler-bf6dd748b-xgfv4              2/2     Running   0          42d<br>controller-567fcf5588-2gd5w             2/2     Running   1          42d<br>net-istio-controller-544874485d-k7lx5   1/1     Running   0          42d<br>net-istio-webhook-695d588d65-rtdqg      2/2     Running   1          42d<br>webhook-864498df66-pjptx                2/2     Running   1          42d</span></div>
+ <br><strong><a id="3" name="3"></a>Verify the installation</strong>
+
+<p>After verifying all the pods are running in step 6, verify the installation.</p>
+
+<ol><li>Create a <strong>Knative </strong>service. The following shows an example:
+
+	<p><span class="example2">apiVersion: serving.knative.dev/v1<br>	kind: Service<br>	metadata:<br>	  name: httpbin-shell<br>	  namespace: default<br>	spec:<br>	  template:<br>	    spec:<br>	      containers:<br>	        - image: docker.io/kennethreitz/httpbin<br>	          imagePullPolicy: Always<br>	          ports:<br>	          - containerPort: 80<br>	          env:<br>	            - name: TARGET<br>	              value: &quot;httpbin Sample v1&quot;</span></p>
+	</li><li>Verify the <strong>Knative </strong>service is running until you see service is ready
+	<p><span class="example2">kubectl get ksvc<br>	NAME            URL                                        LATESTCREATED         LATESTREADY           READY   REASON<br>	httpbin-shell   http://httpbin-shell.default.example.com   httpbin-shell-00001   httpbin-shell-00001   True</span></p>
+	</li><li>If your <strong>Knative </strong>service never gets to ready <strong>status=True</strong> and the reason is failed to resolve image to digest, then you should need to do an extra step. Edit the config-deployment with the following command
+	<p><span class="code">kubectl edit cm config-deployment –n knative-serving</span></p>
+	Add the following line:
+
+	<p><span class="code">registriesSkippingTagResolving: kind.local,ko.local,dev.local,docker.io,index.docker.io</span></p>
+
+	<p>Items will be separated by <strong>‘,’</strong> and you should add your public or private registry in the case is not secured.<br>	You can find more information about <a href="https://knative.dev/docs/serving/tag-resolution/#skipping-tag-resolution" target="_blank">Tag Resolution</a>.<br>	Save it and restart the controller pod in the <strong>knative-serving</strong> namespace.</p>
+	</li><li>Verify routes have been created in the namespace your serverless container was deployed
+	<p><span class="example2">kubectl get virtualservices</span></p>
+
+	<p><span class="example2">NAME                                  GATEWAYS                                                                              HOSTS<br>	                                                                                                    AGE<br>	httpbin-shell-ingress                 [&quot;knative-serving/knative-ingress-gateway&quot;,&quot;knative-serving/knative-local-gateway&quot;]   [&quot;httpbin-shell.default&quot;,&quot;httpbin-shell.default.example.com&quot;,&quot;httpbin-shell.default.svc&quot;,&quot;httpbin-shell.default.svc.cluster.local&quot;]   25m<br>	<br>	httpbin-shell-mesh                    [&quot;mesh&quot;]                                                                              [&quot;httpbin-shell.default&quot;,&quot;httpbin-shell.default.svc&quot;,&quot;httpbin-shell.default.svc.cluster.local&quot;]                                       25m</span></p>
+	</li><li>Test application connectivity if you do not have a DNS that can be resolved, refer to the guide in <a href="https://knative.dev/docs/install/serving/install-serving-with-yaml/#configure-dns" target="_self">Configure DNS</a> in the <strong>Knative </strong>documentation<br>	You will use temporary DNS.</li><li>Run the <strong>curl </strong>command using the CNAME or external IP you saved from step 2 of the <strong>Install Aspen Mesh as a network Layer </strong>procedure
+	<p><span class="example2">curl -v -H &quot;Host: httpbin-shell.default.example.com&quot; http://[redacted].elb.amazonaws.com/headers<br>	*   Trying 35.xx.xx.xx:80...<br>	* TCP_NODELAY set<br>	* Connected to [redacted].elb.amazonaws.com (35.xx.xx.xx) port 80 (#0)<br>	&gt; GET /headers HTTP/1.1<br>	&gt; Host: httpbin-shell.default.example.com<br>	&gt; User-Agent: curl/7.68.0<br>	&gt; Accept: */*<br>	&gt; <br>	* Mark bundle as not supporting multiuse<br>	&lt; HTTP/1.1 200 OK<br>	&lt; access-control-allow-credentials: true<br>	&lt; access-control-allow-origin: *<br>	&lt; content-length: 784<br>	&lt; content-type: application/json<br>	&lt; date: Mon, 17 Jan 2022 20:30:45 GMT<br>	&lt; server: istio-envoy<br>	&lt; x-envoy-upstream-service-time: 10907<br>	&lt; <br>	{<br>	  &quot;headers&quot;: {<br>	    &quot;Accept&quot;: &quot;*/*&quot;,<br>	    &quot;Accept-Encoding&quot;: &quot;gzip&quot;,<br>	    &quot;Forwarded&quot;: &quot;for=100.96.x.x;proto=http, for=localhost&quot;,<br>	    &quot;Host&quot;: &quot;httpbin-shell.default.example.com&quot;,<br>	    &quot;K-Proxy-Request&quot;: &quot;activator&quot;,<br>	    &quot;User-Agent&quot;: &quot;curl/7.68.0&quot;,<br>	    &quot;X-B3-Parentspanid&quot;: &quot;34f76317589xxxxx&quot;,<br>	    &quot;X-B3-Sampled&quot;: &quot;0&quot;,<br>	    &quot;X-B3-Spanid&quot;: &quot;d127646068cxxxxx&quot;,<br>	    &quot;X-B3-Traceid&quot;: &quot;b0d8bcf8deeb321b6bdc245a16bxxxxx&quot;,<br>	    &quot;X-Envoy-Attempt-Count&quot;: &quot;1&quot;,<br>	    &quot;X-Envoy-External-Address&quot;: &quot;100.96.x.x&quot;,<br>	    &quot;X-Forwarded-Client-Cert&quot;: &quot;By=spiffe://cluster.local/ns/default/sa/default;Hash=3acd7eff2fdeb0614feca3c5b768c48fefccfbdfe0a5xxxxxxxxxxxxxxxxxxxx;Subject=\&quot;\&quot;;URI=spiffe://cluster.local/ns/knative-serving/sa/controller;DNS=controller.knative-serving.svc.cluster.local&quot;<br>	  }<br>	}<br>	* Connection #0 to host [redacted].elb.amazonaws.com left intact</span>???????</p>
+	</li></ol>
+</article>
+</body>
+</html>

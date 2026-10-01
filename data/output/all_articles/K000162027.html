@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162027: BIG-IP LTM may distribute client traffic unevenly across TMM CPU cores after reboot or core.</title>
+<meta name="description" content="Support Solution: BIG-IP LTM may distribute client traffic unevenly across TMM CPU cores after reboot or core. — After a reboot, upgrade, failover, blade replacement, or TMM restart, BIG-IP LTM may distribute client traffic unevenly across TMM CPU cores. A small number of cores can run persistently hot (for…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162027">
+</head>
+<body>
+<header>
+<h1>K000162027: BIG-IP LTM may distribute client traffic unevenly across TMM CPU cores after reboot or core.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-07-01</dd>
+<dt>Updated</dt><dd>2026-07-01</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.0.0, 15.0.X, 15.0.1, 15.X.X, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162027">https://my.f5.com/manage/s/article/K000162027</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>After a reboot, upgrade, failover, blade replacement, or TMM restart, BIG-IP LTM may distribute client traffic unevenly across TMM CPU cores. A small number of cores can run persistently hot (for example, sustained utilization above 80%) while other cores remain lightly loaded, even though overall throughput and memory usage appear normal. The condition is most visible on multi-core or multi-blade platforms and often first appears immediately after a maintenance event.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li></ul>
+<h2>Cause</h2>
+<p>Traffic is steered to TMM instances by the Disaggregation (DAG v2) hash table. The DAG v2 hash table is seeded with a value that is re-randomized on each reboot, failover, blade replacement, or TMM restart. Because the seed changes, the mapping of flows to TMM cores is non-deterministic and can shift after any such event, producing a different (and sometimes lopsided) distribution than before.</p>
+<p>The imbalance is amplified when the source-address-translation pool (SNAT or CGNAT/LSN) contains too few translation addresses. With few translation IPs, the hashing input has low cardinality, so flows concentrate onto a small number of cores. This same condition also increases the likelihood of port exhaustion on individual translation addresses.</p>
+<h2>Recommended Actions</h2>
+<ol><li><strong>Confirm the per-TMM CPU distribution:</strong><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh show sys tmm-info</span><br>Compare CPU usage ratios across TMM instances to confirm that a subset of cores is carrying a disproportionate share of the load rather than a general capacity issue.</li><li><strong>Review the source-address-translation pool sizing:</strong><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh list ltm virtual source-address-translation</span><br>Identify the SNAT or LSN pool in use, then confirm how many translation addresses it contains. A pool with few addresses reduces hashing granularity and concentrates flows on fewer cores.</li><li><strong>Expand the SNAT or LSN pool where feasible:</strong><br>Adding translation addresses increases hashing granularity and reduces both core concentration and per-address port exhaustion. Plan address additions in line with expected concurrent flow volume.</li><li><strong>Re-seed the distribution as a temporary workaround:</strong><br>Restarting TMM causes the DAG v2 table to be re-seeded, which may produce a more even distribution. This is disruptive to traffic and must be performed in a maintenance window. Note that the result is not deterministic and the imbalance can recur on any future reboot, failover, blade replacement, or TMM restart.</li><li><strong>Plan an upgrade if a stable mapping is required:</strong><br>A persistent DAG v2 mapping that survives restarts is only available through a fixed release. Where a stable distribution is a requirement, plan an upgrade to a version that includes the DAG v2 hash-table lock capability.</li></ol>
+<h2>Additional Information</h2>
+<ul><li>The re-seeding behavior is expected by design in affected releases; it is not a one-time upgrade artifact. The seed re-randomizes on every reboot, failover, blade replacement, or TMM restart, so the distribution can change after each such event.</li><li>A permanent remedy that allows the DAG v2 hash table to be locked or adjusted at runtime is delivered through a database-variable enhancement available only in later releases (17.1.3.2 and later, and 17.5.1.4 and later). This enhancement is not present in 15.1.x, where the change is not planned. Confirm the exact fixed versions against current F5 release notes before scheduling an upgrade.</li><li>Undersized CGNAT/LSN pools are a known trigger for both the uneven core loading and translation-port exhaustion. Increasing translation-address count typically addresses both symptoms together.</li><li>High utilization on a subset of cores does not by itself indicate user-visible impact. Correlate the hot cores with actual traffic behavior (drops, latency, or translation failures) before treating the imbalance as service-affecting.</li></ul>
+</article>
+</body>
+</html>

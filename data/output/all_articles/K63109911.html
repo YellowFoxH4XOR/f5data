@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K63109911: Quick deployment: BIG-IP LTM system with HTTP load balancing to two NGINX Plus web servers in AWS</title>
+<meta name="description" content="Knowledge: Quick deployment: BIG-IP LTM system with HTTP load balancing to two NGINX Plus web servers in AWS — You want to manually deploy a basic BIG-IP LTM and NGINX environment on Amazon Web Services (AWS) to build a custom configuration or test functionality.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K63109911">
+</head>
+<body>
+<header>
+<h1>K63109911: Quick deployment: BIG-IP LTM system with HTTP load balancing to two NGINX Plus web servers in AWS</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2020-02-19</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Public Cloud</li><li>BIG-IP</li><li>NGINX Products</li><li>NGINX Plus: R22, R21, R20</li><li>BIG-IP LTM: 16.1.X, 16.0.X, 16.1.0, 16.0.1, 16.0.0, 16.X.X, 16.1.3, 16.1.2, 16.1.1, 15.1.0</li><li>Amazon Web Services</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K63109911">https://my.f5.com/manage/s/article/K63109911</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>You should consider using these procedures under the following condition:</p>
+
+<ul><li>You want to manually deploy a basic BIG-IP LTM and NGINX environment on Amazon Web Services (AWS) to build a custom configuration or test functionality.</li></ul>
+<h3>Description</h3><p>This article guides you through a quick deployment of a standalone (no high-availability) BIG-IP LTM 15.1.0.4 VE system in AWS with HTTP load balancing to two NGINX Plus pool members. The examples provide a basic configuration; you can expand examples as needed for testing or custom configurations.</p>
+
+<p><span class="note"><strong>Note</strong>: After performing these procedures, you can optionally update your BIG-IP system to a later version. For more information, refer to the <a href="#proc_4" target="_self">Deploying a single NIC BIG-IP VE</a> section.</span></p>
+
+<p><span class="warning"><strong>Important:</strong> You are responsible for the cost of AWS services used in the deployment configuration described in this article. The AWS instance types selected for this article are intentionally configured to be as small as possible to prevent excessive costs for testing and deployment. Before deploying this configuration, F5 recommends that you review the pricing pages for each AWS service for cost estimates. Prices are subject to change.</span></p>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisites to use these procedures:</p>
+
+<ul><li>You have an AWS account.
+	<p><span class="note"><strong>Note</strong>: To sign up, go to <a href="https://aws.amazon.com" target="_self">https://aws.amazon.com</a>.</span></p>
+	</li><li>You have a BIG-IP registration key.
+	<p><span class="note"><strong>Note</strong>: If you need a registration key, contact your F5 Sales representative or request a trial key at<a href="https://www.f5.com/trials" target="_self"> https://www.f5.com/trials</a>.</span></p>
+	</li><li>You have two NGINX Plus licenses.
+	<p><span class="note"><strong>Note</strong>: If you need licenses, contact your F5 Sales representative or request trial licenses at <a href="https://www.nginx.com/products/nginx/" target="_self">https://www.nginx.com/products/nginx/</a>.</span></p>
+	</li><li>You have installed SSH and Secure Copy (SCP) protocol client utilities on your local computer to access the Amazon Elastic Compute Cloud (Amazon EC2) instances that you’ll create in AWS. Linux and Mac systems typically already have these utilities installed, but Windows users must install third-party tools such as <a href="https://www.chiark.greenend.org.uk/~sgtatham/putty/" target="_self">PuTTY</a> and <a href="https://winscp.net/eng/docs/introduction" target="_self">WinSCP</a>.</li></ul>
+
+<p><span class="note"><strong>Note</strong>: These links take you to resources outside of AskF5. The third parties could remove the documents without our knowledge.</span></p>
+
+<p><span class="sectiontitle">Procedures</span></p>
+
+<ul><li><a href="#proc_1" target="_self">Creating an AWS VPC</a></li><li><a href="#proc_2" target="_self">Deploying Ubuntu 18.04 LTS AMIs</a></li><li><a href="#proc_3" target="_self">Installing NGINX Plus</a></li><li><a href="#proc_4" target="_self">Deploying a single NIC BIG-IP VE</a></li><li><a href="#proc_5" target="_self">Performing BIG-IP LTM base configuration</a></li><li><a href="#proc_8" target="_self">Configuring BIG-IP LTM HTTP load balancing</a></li></ul>
+
+<p><span class="subsectiontitle"><a id="proc_1" name="proc_1"></a>Creating an AWS VPC</span></p>
+
+<p>This procedure uses the AWS Management Console to create an Amazon Virtual Private Cloud (Amazon VPC) with a single public subnet. The Amazon VPC is the networking layer for Amazon EC2 and is required for communication between the BIG-IP LTM and NGINX systems described in this deployment. For more information about Amazon EC2, Amazon VPC, and the AWS Management Console, refer to the following:</p>
+
+<ul><li><a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/concepts.html" target="_self">What Is Amazon EC2?</a></li><li><a href="https://docs.aws.amazon.com/vpc/latest/userguide/what-is-amazon-vpc.html" target="_self">What is Amazon VPC?</a></li><li><a href="https://docs.aws.amazon.com/awsconsolehelpdocs/latest/gsg/getting-started.html" target="_self">Working with the AWS Management Console</a>
+	<p><span class="note"><strong>Note</strong>: These links take you to resources outside of AskF5. The third party could remove these documents without our knowledge.</span></p>
+	</li></ul>
+
+<p>Additionally, all AWS objects listed in these procedures use the AWS <strong>Name</strong> tag with the value <strong>&lt;AWS username&gt;-&lt;project&gt;-&lt;object type&gt;</strong>. For example, <strong>user1-example-subnet</strong>. You should ensure that objects are tagged with a common naming convention to make it easier to identify associated resources in the AWS Management Console. For all of the following AWS procedures, replace <strong>user1-example-&lt;object type&gt;</strong> with your own AWS username, your chosen project name, and the object type you are configuring.</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: You are responsible for the cost of the AWS services used while running this deployment configuration. Some of these settings, such as instance type and elastic IP addresses, increase the cost of deployment. Review cost estimates on the pricing pages for each AWS service. Prices are subject to change.</span></p>
+
+<ol><li>Log in to the <a href="https://console.aws.amazon.com/console/home" target="_self">AWS Management Console</a> using your AWS account.</li><li>Under <strong>Services</strong>, enter “VPC” in the search box and then select <strong>VPC</strong>.</li><li>On the <strong>VPC Dashboard</strong> page, select <strong>Launch VPC Wizard</strong>.</li><li>Select <strong>VPC with a Single Public Subnet</strong>, then click <strong>Select</strong>.</li><li>Set the following values:
+	<ul><li><strong>VPC name</strong>: user1-example-vpc</li><li><strong>Subnet name</strong>: user1-example-subnet
+		<p><span class="note"><strong>Note</strong>: Use default values for all other options on this page.</span></p>
+		</li></ul>
+	</li><li>Select <strong>Create VPC</strong>.</li><li>Select <strong>OK</strong>.</li><li>Under <strong>Virtual Private Cloud</strong>, select <strong>Subnets</strong>.</li><li>Hold and select or right-click the subnet that you just created and then select <strong>Modify auto-assign IP settings</strong>.
+	<p><span class="note"><strong>Note</strong>: Use the search box at the top of the page to filter if needed.</span></p>
+	</li><li>Select the <strong>Auto-assign IPv4 </strong>check box and then select <strong>Save</strong>.</li></ol>
+
+<p><span class="subsectiontitle"><a id="proc_2" name="proc_2"></a>Deploying Ubuntu 18.04 LTS AMIs</span></p>
+
+<p>You perform this procedure twice to deploy two separate Ubuntu Linux EC2 instances, which you use to host the NGINX Plus web server software. The first time through this procedure, you create an Amazon EC2 instance named <strong>user1-example-ww1</strong>. The second time, you create an Amazon EC2 instance named <strong>user1-example-ww2</strong>. Some steps in this procedure are performed only once, the first time through, because you reuse those configuration objects. (For example: creating a new security group and creating a new cryptographic key to access Amazon EC2 instances.)</p>
+
+<p>An Amazon Machine Image (AMI) is a template that contains the software configuration (operating system, application server, and applications) required to launch your Amazon EC2 instance. You can select AMIs that have been created by AWS via Quick Start, AMIs that have been created by trusted Amazon partners via AWS Marketplace, your own AMIs that you have customized and saved, or AMIs from the AWS user community. F5 recommends selecting an AMI from Quick Start or AWS Marketplace. This procedure uses the AWS Marketplace. For more information about AMIs, refer to <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/AMIs.html" target="_self">Amazon Machine Images (AMI)</a>.</p>
+
+<p><span class="note"><strong>Note</strong>: This link take you to a resource outside of AskF5. The third party could remove these documents without our knowledge.</span></p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> You are responsible for the cost of the AWS services used while running this deployment configuration. Some of these settings, such as instance type, increase the cost of deployment. Review cost estimates on the pricing pages for each AWS service. Prices are subject to change.</span></p>
+
+<ol><li>Log in to the <a href="https://console.aws.amazon.com/console/home" target="_self">AWS Management Console</a> using your AWS account.</li><li>Under <strong>Services</strong>, enter “EC2” in the search box and then select <strong>EC2</strong>.</li><li>Under <strong>EC2 Dashboard</strong>, select <strong>Instances</strong>.</li><li>Select <strong>Launch Instance</strong>.</li><li>In the search box, enter the following:
+	<p><span class="code">Ubuntu 18.04 LTS - Bionic</span></p>
+	</li><li>Select <strong>AWS Marketplace</strong>, then click <strong>Select </strong>next to the image named <strong>Ubuntu 18.04 LTS - Bionic</strong>.</li><li>In the pop-up window, review the costs associated with the instance types and then select <strong>Continue</strong>.</li><li>Select the check the box for the smallest available instance type, <strong>t2.nano</strong>, then select <strong>Next: Configure Instance Details</strong>.</li><li>Set the following values:
+	<ul><li>From the <strong>Network</strong> list, select your newly created VPC. For example:
+		<p><span class="example2">vpc-0a1b2c3d4e5f6g7h8 | <strong>user1-example-vpc</strong></span></p>
+		</li><li>From the <strong>Subnet</strong> list, select your newly created subnet. For example:
+		<p><span class="example2">subnet-0abc1def2ghi3jkl4 | <strong>user1-example-subnet</strong></span></p>
+		</li><li>In the <strong>Network interfaces</strong> section, locate the <strong>Primary IP</strong> address box for <strong>eth0</strong> and enter one of the following IP addresses, depending on which Ubuntu EC2 instance you are deploying:
+		<ul><li><strong>user1-example-ww1</strong>: 10.0.0.201</li><li><strong>user1-example-ww2</strong>: 10.0.0.202</li></ul>
+		</li></ul>
+	</li><li>Select <strong>Next: Add Storage</strong>.</li><li>Keep the default settings and select <strong>Next: Add Tags</strong>.</li><li>Select <strong>Add Tag</strong> and then enter the following values:
+	<ul><li><strong>Key</strong>: Name</li><li><strong>Value</strong>: user1-example-ww1 (or user1-example-ww2 when creating the second EC2 instance).</li></ul>
+	</li><li>Select <strong>Next: Configure Security Group</strong>.</li><li>Enter the following values:
+	<ul><li><strong>Assign a security group</strong>: <strong>Create a new security group</strong> (or <strong>Select an existing security group</strong>, if deploying <strong>user1-example-ww2</strong>)</li><li><strong>Security group name</strong>: <strong>user1-example-nginx-sg</strong></li><li><strong>Description</strong>: <strong>NGINX web server security group</strong></li><li>Apply the following firewall rule
+		<table class="askf5table" border="1" cellpadding="1" cellspacing="1"><tbody><tr><td colspan="1" rowspan="1">Type</td><td colspan="1" rowspan="1">Protocol</td><td colspan="1" rowspan="1">Port range</td><td colspan="1" rowspan="1">Source</td><td colspan="1" rowspan="1">Description</td></tr><tr><td colspan="1" rowspan="1">SSH</td><td colspan="1" rowspan="1">TCP</td><td colspan="1" rowspan="1">22</td><td colspan="1" rowspan="1">IP address used to connect to AWS. For example: <strong>192.0.2.1/32</strong></td><td colspan="1" rowspan="1">SSH access</td></tr></tbody></table>
+		</li></ul>
+
+	<p><span class="note"><strong>Note</strong>: You create only one security group to use with both Ubuntu EC2 instances. When repeating this procedure to create the <strong>user1-example-ww2</strong> EC2 instance, reuse the security group that is created for the <strong>user1-example-ww1</strong> EC2 instance.</span></p>
+
+	<p><span class="warning"><strong>Important</strong>: The security group is the firewall setting for your instance. The default rule allows SSH access from any IP address. The Ubuntu image being installed uses certificates for SSH login, so there is no password assigned by default. However, F5 recommends setting a source address that limits access to either a single known IP address or range of addresses. You can add or modify rules after creation to allow for broader access or fine tuning, as needed.</span></p>
+	</li><li>Select <strong>Review and Launch</strong>.</li><li>Review your settings and, when ready, select <strong>Launch</strong>.</li><li>In the <strong>Select an existing key pair or create a new key pair</strong> window, select <strong>Create a new key pair</strong> from the list, enter <strong>user1-example-keys</strong> for the <strong>Key pair name</strong>, then select <strong>Download Key Pair</strong>. The key pair file is in the <strong>user1-example-keys.pem</strong> format, which you use to connect to your EC2 instances using SSH. If you are repeating this procedure to deploy <strong>user1-example-ww2</strong>, then select <strong>Choose an existing key pair</strong> and reuse the <strong>user1-example-keys</strong> key pair.
+	<p><span class="note"><strong>Note</strong>: You can create new keys for each EC2 instance to limit security exposure if one key is compromised; however, in this test deployment, you use one key to access all EC2 instances. </span></p>
+
+	<p><span class="warning"><strong>Important</strong>: Amazon EC2 uses public key cryptography to encrypt and decrypt login information, using 2048-bit SSH-2 RSA keys. Amazon EC2 stores the public key only, and you store the private key, in the form of the PEM file you are downloading. Anyone who possesses your private key can decrypt your login information, so it is important that you store your private keys in a secure place. Additionally, you won’t get another chance to download this key pair. If you lose this key pair, or fail to download it at this time, you cannot access the new instance you have created; when this happens, you must terminate this image and start over. For more information about key pairs, refer to <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-key-pairs.html" target="_self">Amazon EC2 Key Pairs</a>.</span></p>
+
+	<p><span class="note"><strong>Note</strong>: This link take you to a resource outside of AskF5. The third party could remove these documents without our knowledge.</span></p>
+	</li><li>Select <strong>Launch Instances</strong>.</li><li>Select <strong>View Instances</strong>. The new instance is not available until the <strong>Status Checks</strong> column changes from <strong>Initializing</strong> to <strong>2/2 checks passed</strong>. This may take several minutes after deploying a new EC2 instance.
+	<p><span class="note"><strong>Note</strong>: If this is the second time through this procedure, skip the following steps and start the <a href="#proc_3" target="_self">Installing NGINX Plus</a> procedure.</span></p>
+	</li><li>If connecting to AWS using a Linux or Mac computer, restrict permissions on the saved private key file using the following command:
+	<p><span class="code">chmod 400 user1-example-keys.pem</span></p>
+	</li><li>If connecting to AWS using a Windows computer, you must convert the PEM-formatted key file to PPK format for use with the PuTTY and WinSCP utilities:
+	<ol><li>From the Windows Start menu, open the PuTTYgen utility.</li><li>Select <strong>Load</strong>.</li><li>In the pop-up window, change the file type from <strong>PuTTY Private Key Files (*.ppk)</strong> to<strong> All Files (*.*)</strong>, then select the PEM file you saved in the previous procedure and select <strong>Open</strong>. The PuTTYgen utility displays a message similar to the following example:
+		<p><span class="example2">Successfully imported foreign key<br>		(OpenSSH SSH-2 private key (old PEM format)).<br>		To use this key with PuTTY, you need to<br>		use the &quot;Save private key&quot; command to<br>		save it in PuTTY&#39;s own format.</span></p>
+		</li><li>Select <strong>OK</strong>.</li><li>Select <strong>Save private key</strong>, and then select <strong>Yes</strong> at the passphrase warning.
+		<p><span class="note"><strong>Note</strong>: If you set a passphrase, you must provide this passphrase each time you use the private key to connect to your Ubuntu instance.</span></p>
+		</li></ol>
+	</li><li>Repeat this procedure to create the second Ubuntu 18.04 EC2 instance, <strong>user1-example-ww2</strong>.</li></ol>
+
+<p><span class="subsectiontitle"><a id="proc_3" name="proc_3"></a>Installing NGINX Plus</span></p>
+
+<p>You perform this procedure twice; once on each Ubuntu EC2 instance. The procedure describes the process of connecting to your Ubuntu EC2 instance, downloading and installing the NGINX Plus web server software, and configuring a basic HTML page to identify which EC2 instance is serving the web page. When performing this procedure the second time, ensure that you replace references to <strong>user1-example-ww1</strong> with <strong>user1-example-ww2</strong>.</p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the <a href="https://cs.nginx.com" target="_self">NGINX Plus Customer Portal</a>.</li><li>Download your <strong>nginx-repo.crt</strong> and <strong>nginx-repo.key</strong> files to your desktop.</li><li>Log in to the <a href="https://console.aws.amazon.com/console/home" target="_self">AWS Management Console</a> using your AWS account.</li><li>Under <strong>Services</strong>, enter “EC2” in the search box and then select <strong>EC2</strong>.</li><li>Under <strong>EC2 Dashboard</strong>, select <strong>Instances</strong>.</li><li>Select your <strong>user1-example-ww1</strong> EC2 instance.</li><li>At the bottom of the page, from the <strong>Description</strong> tab, make note of the <strong>Public DNS (IPv4) </strong>name assigned to your EC2 instance. For example:
+	<p><span class="example2">ec2-192-0-2-10.us-west-2.compute.amazonaws.com</span></p>
+	</li><li>For Linux and Mac users, use SCP to upload your <strong>nginx-repo.crt</strong> and <strong>nginx-repo.key</strong> files to the <strong>/home/ubuntu</strong> directory of your <strong>user1-example-ww1</strong> EC2 instance, using the <strong>Public DNS (IPv4)</strong> name from the EC2 instance. For example:
+	<p><span class="example2">scp -i &quot;user1-example-keys.pem&quot; nginx-repo.crt ubuntu@ec2-192-0-2-10.us-west-2.compute.amazonaws.com:~/<br>	scp -i &quot;user1-example-keys.pem&quot; nginx-repo.key ubuntu@ec2-192-0-2-10.us-west-2.compute.amazonaws.com:~/</span></p>
+	</li><li>For Windows users, use WinSCP to upload your <strong>nginx-repo.crt</strong> and <strong>nginx-repo.key</strong> files:
+	<ol><li>Open the WinSCP utility on your Windows computer.</li><li>In the <strong>Login</strong> window, for <strong>Host name</strong>, enter the<strong> Public DNS (IPv4) </strong>name of the EC2 instance. For example:
+		<p><span class="example2">ec2-192-0-2-10.us-west-2.compute.amazonaws.com</span></p>
+		</li><li>For <strong>User name</strong>, enter <strong>ubuntu</strong>.</li><li>Select <strong>Advanced</strong> and then go to <strong>SSH </strong>&gt; <strong>Authentication</strong>.</li><li>In the <strong>Authentication parameters </strong>section, select the button labeled &#39;<strong>...</strong>&#39; next to the <strong>Private key file</strong> box and then open your PPK file. For example:
+		<p><span class="example2">user1-example-keys.ppk</span></p>
+		</li><li>Select <strong>Login</strong> to open a connection to your <strong>user1-example-ww1</strong> EC2 instance.</li><li>Locate and upload your <strong>nginx-repo.crt</strong> and <strong>nginx-repo.key</strong> files to the<strong> /home/ubuntu</strong> directory of your <strong>user1-example-ww1 </strong>EC2 instance.</li></ol>
+	</li><li>For Linux and Mac users, use SSH to connect to your <strong>user1-example-ww1</strong> EC2 instance, using the <strong>Public DNS (IPv4)</strong> name. For example:
+	<p><span class="example2">ssh -i &quot;user1-example-keys.pem&quot; ubuntu@ec2-192-0-2-10.us-west-2.compute.amazonaws.com</span></p>
+	</li><li>For Windows users, use PuTTY to connect to your <strong>user1-example-ww1</strong> EC2 instance, using the <strong>Public DNS (IPv4)</strong> name:
+	<ol><li>Open the PuTTY utility on your Windows computer.</li><li>In the <strong>PuTTY Configuration</strong> window, for <strong>Host Name (or IP address)</strong>, enter the username <strong>ubuntu</strong> and the <strong>Public DNS (IPv4) </strong>name of the EC2 instance. For example:
+		<p><span class="example2">ubuntu@ec2-192-0-2-10.us-west-2.compute.amazonaws.com</span></p>
+		</li><li>In the <strong>Category</strong> menu, go to <strong>Connection</strong> &gt; <strong>SSH</strong> &gt; <strong>Auth</strong>.</li><li>Under <strong>Authentication parameters</strong>, select <strong>Browse</strong> and then open your PPK file. For example:
+		<p><span class="example2">user1-example-keys.ppk</span></p>
+		</li><li>Select <strong>Open</strong> to open a connection to your <strong>user1-example-ww1</strong> EC2 instance.<br>		 </li></ol>
+	</li><li>Create and change to the <strong>/etc/ssl/nginx </strong>directory by entering the following command:
+	<p><span class="code">sudo mkdir /etc/ssl/nginx &amp;&amp; cd /etc/ssl/nginx</span></p>
+	</li><li>Copy the <strong>nginx-repo.crt</strong> and <strong>nginx-repo.key</strong> files to the <strong>/etc/ssl/nginx</strong> directory by entering the following command:
+	<p><span class="code">sudo cp /home/ubuntu/nginx-repo.* /etc/ssl/nginx</span></p>
+	</li><li>Download the NGINX signing key from <a href="https://nginx.org/keys/nginx_signing.key" target="_self">nginx.org </a>by entering the following command:
+	<p><span class="code">sudo wget https://nginx.org/keys/nginx_signing.key</span></p>
+	</li><li>Add the NGINX signing key to your keyring by entering the following command:
+	<p><span class="code">sudo apt-key add nginx_signing.key</span></p>
+	</li><li>Prepare the package manager to use HTTPS and connect to the NGINX repository by entering the following command:
+	<p><span class="code">sudo apt-get install apt-transport-https lsb-release ca-certificates</span></p>
+	</li><li>Configure the NGINX Plus repository by entering the following commands:
+	<p><span class="code">printf &quot;deb https://plus-pkgs.nginx.com/ubuntu `lsb_release -cs` nginx-plus\n&quot; | sudo tee /etc/apt/sources.list.d/nginx-plus.list<br>	sudo wget -q -O /etc/apt/apt.conf.d/90nginx https://cs.nginx.com/static/files/90nginx</span></p>
+	</li><li>Update the local APT repository and install NGINX Plus by entering the following command:
+	<p><span class="code">sudo apt-get update &amp;&amp; sudo apt-get install -y nginx-plus</span></p>
+	</li><li>Start the NGINX Plus web server by entering the following command:
+	<p><span class="code">sudo systemctl start nginx</span></p>
+	</li><li>Create a backup of the original NGINX <strong>index.html</strong> file by entering the following commands:
+	<p><span class="code">cd /usr/share/nginx/html<br>	sudo mv index.html index.html.orig</span></p>
+	</li><li>Using a text editor, such as <strong>vi</strong>, create a new <strong>index.html</strong> file with the following contents:
+	<p><span class="example2">&lt;!DOCTYPE html&gt;<br>	&lt;html&gt;<br>	&lt;head&gt;<br>	  &lt;title&gt;user1-example-ww1&lt;/title&gt;<br>	&lt;/head&gt;<br>	&lt;body&gt;<br>	  &lt;h1&gt;You are connected to user1-example-ww1&lt;/h1&gt;<br>	&lt;/body&gt;<br>	&lt;/html&gt;</span></p>
+	</li><li>Save the file and then close the text editor.</li><li>Confirm the page loads by entering the following command:
+	<p><span class="code">curl localhost</span></p>
+
+	<p>The output should display the HTML contents added in step 21. If there are errors, review the output of the following two commands:</p>
+
+	<p><span class="code">systemctl status nginx</span></p>
+
+	<p><span class="code">sudo nginx -t</span></p>
+
+	<p><span class="note"><strong>Note</strong>: At this point, you cannot view your web server using the <strong>Public DNS (IPv4) </strong>name of the EC2 instance because the <strong>user1-example-nginx-sg</strong> security group is configured only to allow SSH access over TCP port 22.</span></p>
+	</li><li>Repeat this procedure for your <strong>user1-example-ww2</strong> EC2 instance.</li></ol>
+
+<p><span class="subsectiontitle"><a id="proc_4" name="proc_4"></a>Deploying a single NIC BIG-IP VE</span></p>
+
+<p>This procedure deploys an <strong>F5 BIG-IP VE - ALL (BYOL, 1 Boot Location)</strong> EC2 instance that has its own security group, but it reuses the cryptographic keys created for the Ubuntu EC2 instances. The <strong>F5 BIG-IP VE - ALL (BYOL, 1 Boot Location)</strong> uses BIG-IP version 15.1.0.4 and cannot be upgraded. In order to install a later BIG-IP version, you need to deploy the <strong>F5 BIG-IP VE - ALL (BYOL, 2 Boot Locations)</strong> EC2 instance instead of the <strong>F5 BIG-IP VE - ALL (BYOL, 1 Boot Location)</strong> EC2 instance, and then perform an upgrade after deploying the BIG-IP instance. For more information about bring-your-own-license (BYOL), and performing upgrades, refer to the following articles:</p>
+
+<ul><li><a href="https://my.f5.com/manage/s/article/K49243459" target="_self">K49243459: BIG-IP VE BYOL product listings in AWS Marketplace and Microsoft Azure Marketplace</a></li><li><a href="https://my.f5.com/manage/s/article/K84554955" target="_self">K84554955: Overview of BIG-IP system software upgrades</a></li></ul>
+
+<p>An AMI is a template that contains the software configuration (operating system, application server, and applications) required to launch your EC2 instance. You can select AMIs that have been created by AWS via Quick Start, AMIs that have been created by trusted Amazon partners via AWS Marketplace, your own AMIs that you have customized and saved, or AMIs from the AWS user community. F5 recommends selecting an AMI from Quick Start or AWS Marketplace. This procedure uses AWS Marketplace.</p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> You are responsible for the cost of the AWS services used while running this deployment configuration. Some of these settings, such as instance type and elastic IP addresses, increase the cost of deployment. Review cost estimates on the pricing pages for each AWS service. Prices are subject to change.</span></p>
+
+<ol><li>Log in to the <a href="https://console.aws.amazon.com/console/home" target="_self">AWS Management Console</a> using your AWS account.</li><li>Under <strong>Services</strong>, enter “EC2” in the search box and then select <strong>EC2</strong>.</li><li>Under <strong>EC2 Dashboard</strong>, select <strong>Instances</strong>.</li><li>Select <strong>Launch Instance</strong>.</li><li>In the search box, enter the following:
+	<p><span class="code">F5 BIG-IP VE - ALL (BYOL, 1 Boot Location)</span></p>
+	</li><li>Select <strong>AWS Marketplace</strong>, then click <strong>Select </strong>next to the image named <strong>F5 BIG-IP VE - ALL (BYOL, 1 Boot Location)</strong>.</li><li>In the pop-up window, review the costs associated with the instance types and then select <strong>Continue</strong>.</li><li>Select the check box next to the smallest available instance type, <strong>t2.medium</strong>, then select <strong>Next: Configure Instance Details</strong>.</li><li>Set the following values:
+	<ul><li>From the <strong>Network</strong> list, select your newly created VPC. For example:
+		<p><span class="example2">vpc-0a1b2c3d4e5f6g7h8 | <strong>user1-example-vpc</strong></span></p>
+		</li><li>From the <strong>Subnet</strong> list, select your newly created subnet. For example:
+		<p><span class="example2">subnet-0abc1def2ghi3jkl4 | <strong>user1-example-subnet</strong></span></p>
+		</li><li>In the <strong>Network interfaces</strong> section, locate the <strong>Primary IP</strong> address box for <strong>eth0</strong> and enter: <strong>10.0.0.200</strong></li></ul>
+	</li><li>Select <strong>Next: Add Storage</strong>.</li><li>Keep the default settings and select <strong>Next: Add Tags</strong>.</li><li>Select<strong> Add Tag </strong>and then enter the following values:
+	<ul><li><strong>Key</strong>: Name</li><li><strong>Value</strong>: user1-example-ltm</li></ul>
+	</li><li>Select <strong>Next: Configure Security Group</strong>.</li><li>Apply the following settings:
+	<ul><li><strong>Assign a security group</strong>: Create a new security group</li><li><strong>Security group name</strong>: user1-example-ltm-sg</li><li><strong>Description</strong>: BIG-IP LTM security group</li><li>Apply the following firewall rules
+		<table class="askf5table" border="1" cellpadding="1" cellspacing="1"><tbody><tr><td colspan="1" rowspan="1">Type</td><td colspan="1" rowspan="1">Protocol</td><td colspan="1" rowspan="1">Port Range</td><td colspan="1" rowspan="1">Source</td><td colspan="1" rowspan="1">Description</td></tr><tr><td colspan="1" rowspan="1">SSH</td><td colspan="1" rowspan="1">TCP</td><td colspan="1" rowspan="1">22</td><td colspan="1" rowspan="1">IP address used to connect to AWS.<br>					For example: <strong>192.0.2.1/32</strong></td><td colspan="1" rowspan="1">SSH access</td></tr><tr><td colspan="1" rowspan="1">Custom TCP Rule</td><td colspan="1" rowspan="1">TCP</td><td colspan="1" rowspan="1">8443</td><td colspan="1" rowspan="1">IP address used to connect to AWS.<br>					For example: <strong>192.0.2.1/32</strong></td><td colspan="1" rowspan="1">BIG-IP management access</td></tr><tr><td colspan="1" rowspan="1">HTTP</td><td colspan="1" rowspan="1">TCP</td><td colspan="1" rowspan="1">80</td><td colspan="1" rowspan="1"><strong>0.0.0.0/0</strong><br>					(Allows access from all IP addresses)</td><td colspan="1" rowspan="1">Web application traffic</td></tr></tbody></table>
+		</li></ul>
+
+	<p><span class="note"><strong>Note</strong>: Do not reuse the security group created previously for the Ubuntu EC2 instances. Instead, create a second security group to allow for a different set of firewall rules for the BIG-IP LTM system.</span></p>
+
+	<p><span class="warning"><strong>Important</strong>: The security group is the firewall setting for your instance. The default rule allows SSH access from any IP address. The F5 BIG-IP VE image being installed uses certificates for SSH login, so there is no password assigned by default. However, F5 recommends setting a source address that limits access to either a single known IP address or range of addresses. You can add or modify rules after creation to allow for broader access or fine tuning, as needed.</span></p>
+	</li><li>Select <strong>Review and Launch</strong>.</li><li>Review your settings and, when ready, select <strong>Launch</strong>.</li><li>In the <strong>Select an existing key pair or create a new key pair </strong>window, select <strong>Choose an existing key pair</strong> from the list, enter <strong>user1-example-keys</strong> for the <strong>Key pair</strong> name, then select <strong>Launch Instances</strong>.
+	<p><span class="note"><strong>Note</strong>: You can create new keys for each EC2 instance to limit security exposure if one key is compromised; however, in this test deployment, you use one key to access all EC2 instances.</span></p>
+
+	<p><span class="warning"><strong>Important</strong>: Amazon EC2 uses public key cryptography to encrypt and decrypt login information, using 2048-bit SSH-2 RSA keys. Amazon EC2 stores the public key only, and you store the private key, in the form of the PEM file you are downloading. Anyone who possesses your private key can decrypt your login information, so it is important that you store your private keys in a secure place. Additionally, you won’t get another chance to download this key pair. If you lose this key pair, or fail to download it at this time, you cannot access the new instance you have created; when this happens, you must terminate this image and start over.</span></p>
+	</li><li>Select <strong>Launch</strong>.</li><li>Select <strong>View Instances</strong>. The new instance is not available until the <strong>Status Checks</strong> column changes from <strong>Initializing</strong> to <strong>2/2 checks passed</strong>. This may take several minutes after deploying a new EC2 instance.</li></ol>
+
+<p><span class="subsectiontitle"><a id="proc_5" name="proc_5"></a>Performing BIG-IP LTM base configuration</span></p>
+
+<ul><li><a href="#proc_6" target="_self">Changing the admin password</a></li><li><a href="#proc_7" target="_self">Activating the BIG-IP VE license and provisioning the LTM module</a></li></ul>
+
+<p><span class="subsubsectiontitle"><a id="proc_6" name="proc_6"></a>Changing the admin password</span></p>
+
+<p>This procedure sets an admin password, which is required for access to the Configuration utility of the BIG-IP LTM EC2 instance.</p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the <a href="https://console.aws.amazon.com/console/home" target="_self">AWS Management Console</a> using your AWS account.</li><li>Under <strong>Services</strong>, enter “EC2” in the search box and then select <strong>EC2</strong>.</li><li>Under <strong>EC2 Dashboard</strong>, select <strong>Instances</strong>.</li><li>Select your <strong>user1-example-ltm </strong>EC2 instance.</li><li>At the bottom of the page, from the <strong>Description</strong> tab, make note of the <strong>Public DNS (IPv4)</strong> name assigned to your EC2 instance. For example:
+	<p><span class="example2">ec2-192-0-2-20.us-west-2.compute.amazonaws.com</span></p>
+	</li><li>For Linux and Mac users, use SSH to connect to your <strong>user1-example-ltm</strong> EC2 instance, using the <strong>Public DNS (IPv4)</strong> name. For example:
+	<p><span class="example2">ssh -i &quot;user1-example-keys.pem&quot; admin@ec2-192-0-2-20.us-west-2.compute.amazonaws.com</span></p>
+	</li><li>For Windows users, use PuTTY to connect to your <strong>user1-example-ltm</strong> EC2 instance, using the <strong>Public DNS (IPv4)</strong> name:
+	<ol><li>Open the PuTTY utility on your Windows computer.</li><li>In the <strong>PuTTY Configuration</strong> window, for <strong>Host Name (or IP address)</strong>, enter the username <strong>admin</strong> and the <strong>Public DNS (IPv4)</strong> name of the EC2 instance. For example:
+		<p><span class="example2">admin@ec2-192-0-2-20.us-west-2.compute.amazonaws.com</span></p>
+		</li><li>In the <strong>Category</strong> menu, go to <strong>Connection</strong> &gt; <strong>SSH</strong> &gt; <strong>Auth</strong>.</li><li>Under <strong>Authentication parameters</strong>, select <strong>Browse</strong> and then open your PPK file. For example:
+		<p><span class="example2">user1-example-keys.ppk</span></p>
+		</li><li>Select <strong>Open</strong> to open a connection to your <strong>user1-example-ltm</strong> EC2 instance.</li></ol>
+	</li><li>To modify the admin password, in the TMOS Shell (<strong>tmsh</strong>), enter the following command:
+	<p><span class="code">modify auth password admin</span></p>
+	</li><li>
+	<p>Enter the new password, and then press <strong>Enter</strong>.</p>
+	</li><li>Re-enter the new password to confirm, and then press <strong>Enter</strong>.</li><li>Save the system configuration by entering the following command:
+	<p><span class="code">save sys config</span></p>
+	</li><li>Close the SSH connection by entering the following command:
+	<p><span class="code">quit</span></p>
+	</li></ol>
+
+<p><span class="subsubsectiontitle"><a id="proc_7" name="proc_7"></a>Activating the BIG-IP VE license and provisioning the LTM module</span></p>
+
+<p>This procedure uses the Configuration utility to activate the BIG-IP license and provision the LTM module.</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the BIG-IP Configuration utility, using HTTPS with the <strong>Public DNS (IPv4)</strong> name of your <strong>user1-example-ltm</strong> EC2 instance and TCP port 8443. For example:
+
+	<p><span class="example2">https://ec2-192-0-2-20.us-west-2.compute.amazonaws.com:8443</span></p>
+	</li><li>Log in with username <strong>admin</strong> and the password that you created.</li><li>Select <strong>Activate</strong>.</li><li>For <strong>Base Registration Key</strong>, enter your registration key from F5.</li><li>For <strong>Activation Method</strong>, if you have a production or trial license, select <strong>Automatic</strong> and then select <strong>Next</strong>.</li><li>Optional: If you select <strong>Manual</strong>, perform the following steps:
+	<ol><li>In the <strong>Step 1: Dossier</strong> box, copy all of the text.</li><li>In the <strong>Step 2: Licensing Server</strong> box, select <strong>Click here to access F5 Licensing Server</strong>.</li><li>Select <strong>Activate License</strong>.</li><li>In the <strong>Enter your dossier</strong> box, paste the text and then select <strong>Next</strong>.</li><li>Accept the agreement and then select <strong>Next</strong>.</li><li>On the <strong>Activate F5 Product </strong>page, copy the license text.</li><li>In the BIG-IP Configuration utility, paste the license text into the <strong>Step 3: License </strong>box, and then select <strong>Next</strong>.</li></ol>
+	</li><li>When the BIG-IP configuration change is successful, select <strong>Continue</strong> to provision the BIG-IP VE system.</li><li>On the <strong>Resource Provisioning </strong>page, select <strong>LTM</strong> and <strong>Nominal</strong>, and then select <strong>Submit</strong>.</li></ol>
+
+<p><span class="subsectiontitle"><a id="proc_8" name="proc_8"></a>Configuring BIG-IP LTM HTTP load balancing</span></p>
+
+<ul><li><a href="#proc_9" target="_self">Modifying your AWS security group</a></li><li><a href="#proc_10" target="_self">Creating a pool and virtual server</a></li></ul>
+
+<p><span class="subsubsectiontitle"><a id="proc_9" name="proc_9"></a>Modifying your AWS security group</span></p>
+
+<p>To allow HTTP traffic to flow from the BIG-IP LTM system to the NGINX pool members, you must add a new firewall rule to the <strong>user1-example-nginx-sg</strong> security group. You can create multiple rules to allow for different types of monitor traffic, such as ICMP, TCP, or HTTP monitors. You can also specify a single IP address, an IP range, all IP addresses, or another security group as the <strong>Source</strong> for the firewall rule. The more restrictive the firewall rule settings, the more difficult it may be to troubleshoot certain connectivity issues; however, it is considered a best practice to configure rules to only allow expected traffic. In this deployment, you configure a new rule with HTTP as the <strong>Type</strong> and the <strong>user1-example-ltm-sg</strong> security group as the <strong>Source</strong>.</p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> Misconfigured firewall rules can unexpectedly block legitimate traffic and can also leave your system vulnerable to illegitimate traffic. Pay close attention to the rules you are configuring.</span></p>
+
+<ol><li>Log in to the <a href="https://console.aws.amazon.com/console/home" target="_self">AWS Management Console</a> using your AWS account.</li><li>Under <strong>Services</strong>, enter “EC2” in the search box and then select <strong>EC2</strong>.</li><li>Go to <strong>EC2 Dashboard </strong>&gt; <strong>Network &amp; Security</strong> &gt; <strong>Security Groups</strong>.</li><li>Locate your <strong>user1-example-ltm-sg</strong> security group and copy the <strong>Group ID</strong>. For example:
+	<p><span class="example2">sg-012a345bcd67askf5</span></p>
+	</li><li>Select your <strong>user1-example-nginx-sg </strong>security group, select the <strong>Inbound rules</strong> tab, and then select <strong>Edit inbound rules</strong>.</li><li>Select <strong>Add rule</strong> and then add the following values for the new rule.<br>	 
+	<table class="askf5table" border="1" cellpadding="1" cellspacing="1"><tbody><tr><td colspan="1" rowspan="1">Type</td><td colspan="1" rowspan="1">Protocol</td><td colspan="1" rowspan="1">Port Range</td><td colspan="1" rowspan="1">Source</td><td colspan="1" rowspan="1">Description</td></tr><tr><td colspan="1" rowspan="1">HTTP</td><td colspan="1" rowspan="1">TCP</td><td colspan="1" rowspan="1">80</td><td colspan="1" rowspan="1">Your <strong>user1-example-ltm-sg</strong> Group ID.<br>				For example: <strong>sg-012a345bcd67askf5</strong></td><td colspan="1" rowspan="1">HTTP traffic from the BIG-IP LTM system</td></tr></tbody></table>
+	</li><li>Select <strong>Save rules</strong>.</li></ol>
+
+<p><span class="subsubsectiontitle"><a id="proc_10" name="proc_10"></a>Creating a pool and virtual server</span></p>
+
+<p>This final procedure creates the HTTP load balancing configuration, including the pool for the NGINX web servers, a health monitor for the pool members, and a virtual server to accept HTTP traffic from web clients.</p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the BIG-IP Configuration utility. For example:
+	<p><span class="example2">https://ec2-192-0-2-20.us-west-2.compute.amazonaws.com:8443</span></p>
+	</li><li>Go to <strong>Local Traffic</strong> &gt; <strong>Pools</strong> &gt; <strong>Pool List</strong>, and then select <strong>Create</strong>.</li><li>For <strong>Name</strong>, enter <strong>pool_nginx</strong>.</li><li>For <strong>Description</strong>, enter a short description.</li><li>For <strong>Health Monitors</strong>, select <strong>tcp</strong> in the <strong>Available</strong> list and move it to the <strong>Active</strong> list.</li><li>For <strong>New Members</strong>, enter <strong>10.0.0.201</strong> in the <strong>Address </strong>box, and <strong>80</strong> in the <strong>Service Port</strong> box, then select <strong>Add</strong>.</li><li>Repeat the previous step to add <strong>10.0.0.202</strong>.</li><li>Keep all other settings at default and select <strong>Finished</strong>.</li><li>Go to <strong>Local Traffic</strong> &gt; <strong>Virtual Servers</strong> &gt; <strong>Virtual Server List</strong>, and then select <strong>Create</strong>.</li><li>For <strong>Name</strong>, enter <strong>vs_nginx</strong>.</li><li>For <strong>Description</strong>, enter a short description.</li><li>For <strong>Destination Address/Mask</strong>, select <strong>Host </strong>and then enter <strong>10.0.0.200</strong>.</li><li>For <strong>Service Port</strong>, select <strong>Port </strong>and then enter <strong>80</strong>.</li><li>For <strong>HTTP Profile (Client)</strong>, select <strong>http</strong>.</li><li>For <strong>Source Address Translation</strong>, select <strong>Auto Map</strong>.</li><li>For <strong>Default Pool</strong>, select <strong>pool_nginx</strong>.</li><li>Select <strong>Finished</strong>.</li><li>Open a new browser window and connect to your virtual server using the <strong>Public DNS (IPv4) </strong>address of your <strong>user1-example-ltm </strong>EC2 instance and port 80. For example:
+	<p><span class="example2">http://ec2-192-0-2-20.us-west-2.compute.amazonaws.com</span></p>
+	</li><li>Reload your browser multiple times, using Ctrl+F5, to observe load balancing between the NGINX pool members.</li><li>In the BIG-IP Configuration utility, go to <strong>Statistics</strong> &gt; <strong>Module Statistics</strong> &gt; <strong>Local Traffic</strong>.</li><li>For <strong>Statistics Type</strong>, select <strong>Pools</strong> to view the load balancing statistics between the NGINX pool members.</li></ol>
+</article>
+</body>
+</html>

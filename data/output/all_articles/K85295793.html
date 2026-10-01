@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K85295793: Classifying Metrics based on Request in Aspen Mesh</title>
+<meta name="description" content="Support Solution: Classifying Metrics based on Request in Aspen Mesh — You can customize your metrics in such a way that groups request to a fixed number of logical operations. This article describes the procedure with an example.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K85295793">
+</head>
+<body>
+<header>
+<h1>K85295793: Classifying Metrics based on Request in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-12-28</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K85295793">https://my.f5.com/manage/s/article/K85295793</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>You can customize your metrics in such a way that groups request to a fixed number of logical operations. This article describes the procedure with an example.</p>
+
+<p><span class="sectiontitle"><strong>Environment</strong></span></p>
+
+<ul><li>Aspen Mesh: 1.9.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>None</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>In bookinfo application, for example, we would like to count the number of review request for element <strong>review_id</strong>. The basic structure of the request is:</p>
+
+<p><span class="code">GET /reviews/{review_id}</span></p>
+
+<p>Attributes are the contextual properties provided by Envoy sidecar during request and connection processing. For more information, refer to the <a href="https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/advanced/attributes#arch-overview-request-attributes" target="_self">official documentation</a>. You can create your own classification rule based on attributes. In the following example, we will be creating an operation called <strong>GetReviews</strong> which will count the number of time GET requests for various <strong>review_id</strong> has been called. That makes the request <strong>GET /review/1</strong> followed by <strong>GET /review/2</strong> count as 2 requests. In similar fashion, we will be creating operations like <strong>ListReviews</strong> and <strong>CreateReviews</strong>.</p>
+
+<ol><li>
+	<p>Create an Envoy filter with following configuration. In this example, we are creating a new attribute called <strong>istio_operationId</strong> and it has values from 3 operations listed above. This filter is applied to the inbound connection for review pod as stated in the label:</p>
+
+	<p><span class="example2">apiVersion: networking.istio.io/v1alpha3<br>	kind: EnvoyFilter<br>	metadata:<br>	  name: istio-attributegen-filter<br>	spec:<br>	  workloadSelector:<br>	    labels:<br>	      app: reviews<br>	  configPatches:<br>	  - applyTo: HTTP_FILTER<br>	    match:<br>	      context: SIDECAR_INBOUND<br>	      proxy:<br>	        proxyVersion: &#39;1\.9.*&#39;<br>	      listener:<br>	        filterChain:<br>	          filter:<br>	            name: &quot;envoy.http_connection_manager&quot;<br>	            subFilter:<br>	              name: &quot;istio.stats&quot;<br>	    patch:<br>	      operation: INSERT_BEFORE<br>	      value:<br>	        name: istio.attributegen<br>	        typed_config:<br>	          &quot;@type&quot;: type.googleapis.com/udpa.type.v1.TypedStruct<br>	          type_url: type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm<br>	          value:<br>	            config:<br>	              configuration:<br>	                &quot;@type&quot;: type.googleapis.com/google.protobuf.StringValue<br>	                value: |<br>	                  {<br>	                    &quot;attributes&quot;: [<br>	                      {<br>	                        &quot;output_attribute&quot;: &quot;istio_operationId&quot;,<br>	                        &quot;match&quot;: [<br>	                          {<br>	                            &quot;value&quot;: &quot;ListReviews&quot;,<br>	                            &quot;condition&quot;: &quot;request.url_path == &#39;/reviews&#39; &amp;&amp; request.method == &#39;GET&#39;&quot;<br>	                          },<br>	                          {<br>	                            &quot;value&quot;: &quot;GetReview&quot;,<br>	                            &quot;condition&quot;: &quot;request.url_path.matches(&#39;^/reviews/[[:alnum:]]*$&#39;) &amp;&amp; request.method == &#39;GET&#39;&quot;<br>	                          },<br>	                          {<br>	                            &quot;value&quot;: &quot;CreateReview&quot;,<br>	                            &quot;condition&quot;: &quot;request.url_path == &#39;/reviews/&#39; &amp;&amp; request.method == &#39;POST&#39;&quot;<br>	                          }<br>	                        ]<br>	                      }<br>	                    ]<br>	                  }<br>	              vm_config:<br>	                runtime: envoy.wasm.runtime.null<br>	                code:<br>	                  local: { inline_string: &quot;envoy.wasm.attributegen&quot; }</span></p>
+	</li><li>
+	<p>You will have to create the Envoy filter mentioned above in the <strong>istio-system</strong> namespace with the following command:</p>
+
+	<p><span class="code">kubectl -n istio-system apply -f attribute_gen_service.yaml</span></p>
+	</li><li>
+	<p>Open your override value file and add the telemetry with the necessary dimension. For more information on customizing you mesh, refer to the Aspen Mesh article: <a href="https://my.aspenmesh.io/client/docs/1.9/getting-started/customizing-aspen-mesh/" target="_self">Customizing your mesh</a>.</p>
+
+	<p><span class="example2">#Custom metrics<br>	telemetry:<br>	  v2:<br>	    prometheus:<br>	      configOverride:<br>	        inboundSidecar:<br>	          metrics:<br>	            - name: requests_total<br>	              dimensions:<br>	                  request_operation: &quot;istio_operationId&quot;<br>	        outboundSidecar:<br>	          metrics:<br>	            - name: requests_total<br>	              dimensions:<br>	                 request_operation: &quot;istio_operationId&quot;<br>	        gateway:<br>	          metrics:<br>	            - name: requests_total<br>	              dimensions:<br>	                 request_operation: &quot;istio_operationId&quot;</span></p>
+	</li><li>
+	<p>Upgrade the helm installation for istiod using the newly edited file with the following command syntax:</p>
+
+	<p><span class="code">helm upgrade istiod &lt;path to release&gt;/manifests/charts/istio-control/istio-discovery -n istio-system --values sample_overrides-aspenmesh.yaml</span></p>
+	</li><li>
+	<p>After the upgrade is done, you can check the envoy filter if the new metrics are added correctly. The output example below shows that we have successfully added <strong>request_operation</strong> as dimensions for <strong>requests_total </strong>metric:</p>
+
+	<p><span class="note"><strong>Note</strong>: The name of the envoy filter is <strong>stats-filter-1.9 </strong>because of the Aspen Mesh version 1.9.</span></p>
+
+	<p><span class="example2">kubectl get envoyfilters -n istio-system stats-filter-1.9 -o yaml | grep metrics -A 3 –B3<br>	<br>	              configuration:<br>	                &#39;@type&#39;: type.googleapis.com/google.protobuf.StringValue<br>	                value: |<br>	                  {&quot;metrics&quot;:[{&quot;dimensions&quot;:{&quot;destination_port&quot;:&quot;string(destination.port)&quot;,&quot;request_host&quot;:&quot;request.host&quot;,&quot;request_operation&quot;:&quot;istio_operationId&quot;},&quot;name&quot;:&quot;requests_total&quot;}]}<br>	              root_id: stats_outbound<br>	              vm_config:<br>	                code:<br>	--<br>	--<br>	              configuration:<br>	                &#39;@type&#39;: type.googleapis.com/google.protobuf.StringValue<br>	                value: |<br>	                  {&quot;metrics&quot;:[{&quot;dimensions&quot;:{&quot;destination_port&quot;:&quot;string(destination.port)&quot;,&quot;request_host&quot;:&quot;request.host&quot;,&quot;request_operation&quot;:&quot;istio_operationId&quot;},&quot;name&quot;:&quot;requests_total&quot;}]}<br>	              root_id: stats_inbound<br>	              vm_config:<br>	                code:<br>	--<br>	--<br>	              configuration:<br>	                &#39;@type&#39;: type.googleapis.com/google.protobuf.StringValue<br>	                value: |<br>	                  {&quot;metrics&quot;:[{&quot;dimensions&quot;:{&quot;destination_port&quot;:&quot;string(destination.port)&quot;,&quot;request_host&quot;:&quot;request.host&quot;,&quot;request_operation&quot;:&quot;istio_operationId&quot;},&quot;name&quot;:&quot;requests_total&quot;}]}<br>	              root_id: stats_outbound<br>	              vm_config:<br>	                code:</span></p>
+	</li><li>
+	<p>This step is the same as step 4 from the article <a href="https://my.f5.com/manage/s/article/K48274816" target="_self">K48274816: Custom metrics in Aspen Mesh</a>, where you can see how to get your DefaultStatTags list. The only difference is the tag in this example is <strong>request_operation</strong>:</p>
+
+	<p><span class="example2">apiVersion: apps/v1<br>	kind: Deployment<br>	spec:<br>	  template: # pod template<br>	    metadata:<br>	      annotations:<br>	        sidecar.istio.io/extraStatTags: request_operation</span></p>
+
+	<p>As you can see <strong>request_operation</strong> is already in the DefaultStatTags list, so there was no need to annotate. If the dimension was not in the list, you would have to add the annotation.</p>
+	</li><li>
+	<p>To verify if the new dimensions are collected in Prometheus, port-forward the pod to 15090 port and curl to grep for dimensions. For example:</p>
+
+	<p><span class="example2">kubectl port-forward &lt;review pod&gt; &lt;namespace&gt;  15090:15090<br>	<br>	curl localhost:15090/stats/prometheus | grep &#39;request_operation&#39;<br>	<br>	# TYPE istio_requests_total counteristio_requests_total{response_code=&quot;200&quot;,reporter=&quot;destination&quot;,source_workload=&quot;productpage-v1&quot;,destination_app=&quot;reviews&quot;,destination_version=&quot;v3&quot;,destination_service=&quot;reviews.default.svc.cluster.local&quot;,destination_service_name=&quot;reviews&quot;,destination_service_namespace=&quot;default&quot;,destination_port=&quot;9080&quot;,request_protocol=&quot;http&quot;,request_operation=&quot;GetReview&quot;,request_host=&quot;reviews:9080&quot;} 291372</span></p>
+
+	<p><span class="note"><strong>Note</strong>: the <strong>GetReview </strong>operation is matched only when a GET request are generated for the reviews pod. You can do that via running a curl from a sleep pod in the same namespace with the following command syntax:</span></p>
+
+	<p><span class="code"><span class="note">kubectl exec -it &lt;sleep-pod&gt; -c sleep -- curl http://reviews.default.svc.cluster.local:9080/reviews/0</span></span></p>
+	</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

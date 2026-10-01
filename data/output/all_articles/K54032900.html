@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K54032900: High levels of UDP traffic may result in port exhaustion on a given virtual server when using the default idle-timeout value</title>
+<meta name="description" content="Support Solution: High levels of UDP traffic may result in port exhaustion on a given virtual server when using the default idle-timeout value — In certain cases where heavy UDP traffic traverses a properly configured virtual server, the BIG-IP system may experience port exhaustion.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K54032900">
+</head>
+<body>
+<header>
+<h1>K54032900: High levels of UDP traffic may result in port exhaustion on a given virtual server when using the default idle-timeout value</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-07-22</dd>
+<dt>Updated</dt><dd>2025-02-07</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.X.X, 16.X.X, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.10, 15.1.9, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.X.X, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 14.0.0, 15.X.X, 12.X.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.X.X, 12.1.1, 12.1.0, 12.1.2, 12.0.0, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K54032900">https://my.f5.com/manage/s/article/K54032900</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+<p>In certain cases where heavy UDP traffic traverses a properly configured virtual server, the BIG-IP system may experience port exhaustion.</p>
+<p>For example, if you use a high-speed logger on your network which is operated behind a UDP virtual server on UDP port 514, and one appliance that utilizes this service sends profuse levels of syslog traffic to the virtual server, you may experience this issue.</p>
+<p><span class="sectiontitle">Environment</span></p>
+<p>Protocol profile for virtual server</p>
+<p><span class="sectiontitle">Cause</span></p>
+<p>The default UDP profile will use an idle timeout value of 60 seconds, such as this example profile:</p>
+<p><span class="example2">ltm profile udp /Common/sample_udp_profile {<br>    app-service none<br>    datagram-load-balancing enabled<br>    defaults-from /Common/udp<br>    idle-timeout 60<br>}</span></p>
+<p>It&#39;s notable that TMM will create a connection table entry for every UDP session that traverses, but these connections are not reused, and in this case, they take one minute to time out. Where heavy traffic is experienced, it is possible for a single node to exceed the port exhaustion thresholds, thus resulting in port exhaustion warnings.</p>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<p>Reduce the <strong>idle-timeout</strong> setting to a maximum of <strong>5</strong> seconds, especially for high-traffic UDP applications. To do so, perform the following procedure:</p>
+<p><span class="impact"><strong>Impact of procedure:</strong> The impact of the following procedure depends on the changes you apply through the local traffic profile. Always ensure modifications are compatible with your environment. F5 recommends that you test any such changes during a maintenance window and consider the possible impact on your specific environment.</span></p>
+<ol><li>Log in to the BIG-IP Advanced shell (<strong>bash</strong>).</li><li>Enter the following command:
+<p><span class="code">tmsh</span></p>
+</li><li>Create a new UDP profile using the following syntax:
+<p><span class="example2">create /ltm profile udp &lt;profile_name&gt; [&lt;property_1&gt; &lt;value&gt;] [&lt;property_2&gt; &lt;value2&gt;] ... [&lt;property_n&gt; &lt;value&gt;]</span></p>
+<p>For example, to create a UDP profile named <strong>udp_example</strong> with an <strong>idle-timeout</strong> of <strong>5</strong> seconds and <strong>datagram-load-balancing</strong> enabled, enter the following command:</p>
+<p><span class="code">create /ltm profile udp udp_example idle-timeout 5 datagram-load-balancing enabled</span></p>
+</li><li>Enter the following command to save the changes:
+<p><span class="code">save /sys config</span></p>
+</li><li>In order to apply the new UDP profile to the virtual server, you need to first remove the existing UDP profile, then add the new UDP profile to the virtual server. To avoid errors when a profile has dependencies, make the changes in batch mode. Use the following syntax to create a transaction and enter into batch mode:
+<p><span class="code">create /cli transaction </span></p>
+<p>The command line displays <strong>[batch mode]</strong>.</p>
+<p><span class="note"><strong>Note</strong>: You can get help by entering the command <strong>help /cli transaction</strong>.</span></p>
+</li><li>Add a command to the transaction to remove the UDP profile you want to replace. To do so, use the following syntax:
+<p><span class="example2">modify /ltm virtual &lt;virtual_name&gt; { profiles delete { &lt;profile name&gt; }}</span></p>
+<p>For example, this command removes the default UDP profile from the virtual server named <strong>vs_example</strong>:</p>
+<p><span class="code">modify /ltm virtual vs_example { profiles delete { udp }}</span></p>
+</li><li>Add the new UDP profile to the virtual server by using the following syntax:
+<p><span class="example2">modify /ltm virtual &lt;virtual name&gt; { profiles add { &lt;profile name&gt; }}</span></p>
+<p>For example, this command adds the <strong>udp_example</strong> profile to the virtual server:</p>
+<p><span class="code">modify /ltm virtual vs_example { profiles add { udp_example }}</span></p>
+</li><li>(Optional) Review the commands in the transaction by entering the following command:
+<p><span class="code">list /cli transaction</span></p>
+</li><li>Submit the transaction by entering the following command:
+<p><span class="code">submit /cli transaction</span></p>
+</li><li>Save the configuration change to disk by entering the following command:
+<p><span class="code">save /sys config</span></p>
+</li></ol>
+<p><span class="sectiontitle">Additional Information</span></p>
+<p>None</p>
+</article>
+</body>
+</html>

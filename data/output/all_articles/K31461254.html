@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K31461254: BIG-IP LTM Configuring In-TMM Health Monitor Causes HTTP Monitors to Fail</title>
+<meta name="description" content="Support Solution: BIG-IP LTM Configuring In-TMM Health Monitor Causes HTTP Monitors to Fail — After you enable sys db bigd.tmm, http monitors begin to fail.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K31461254">
+</head>
+<body>
+<header>
+<h1>K31461254: BIG-IP LTM Configuring In-TMM Health Monitor Causes HTTP Monitors to Fail</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-02-11</dd>
+<dt>Updated</dt><dd>2024-04-15</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.X.X, 17.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.4, 15.1.X, 15.1.10, 15.1.9, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 15.1.2, 15.1.1, 15.1.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.X.X, 13.1.0, 16.1.1, 14.X.X, 16.1.X, 16.0.X, 14.0.X, 13.1.X, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K31461254">https://my.f5.com/manage/s/article/K31461254</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>After you enable <strong>sys db </strong><strong>bigd.tmm</strong>, http monitors begin to fail.<br><br>The following logs are present in <strong>/var/log/ltm</strong> when <strong>sys db log.tma.level value debug</strong></p>
+
+<p style="margin-left: 40px;"><span class="example2">Feb 11 10:16:58 bigip1 debug tmm[28032]: 01ad0017:7: Monitor Agent <strong>TMM 0</strong>: sent probe: <strong>MID 3</strong><br>Feb 11 10:16:58 bigip1 debug tmm[28032]: 01ad0019:7: Monitor Agent TMM 0: received probe response: MID 3, reason TMA_RESULT_FAIL(Probe response lost due to transient failure), info 0<br>Feb 11 10:16:58 bigip1 debug tmm[28032]: 01ad0009:7: Monitor Agent TMM 0: sent NOTIFY message: MID 3, seqno 159, status down</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP LTM</li><li><strong>sys db bigd.tmm value enable</strong></li><li>HTTP Monitor with a custom SEND string.</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+TMM Monitors enforce RFC 2616 more strictly than bigd monitors did.<br>The http monitor send string has a space is configured just before an HTTP header.<br> 
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1" summary="Example Valid and Invalid Send String"><caption>Example Valid and Invalid Send String</caption><tbody><tr><td colspan="1" rowspan="1"> </td><td colspan="1" rowspan="1">Send String</td></tr><tr><td colspan="1" rowspan="1">Invalid</td><td colspan="1" rowspan="1">GET / HTTP/1.1<strong>\r\n H</strong>ost: example.com\r\nConnection: Close\r\n\r\n</td></tr><tr><td colspan="1" rowspan="1">Valid</td><td colspan="1" rowspan="1">GET / HTTP/1.1<strong>\r\nH</strong>ost: example.com\r\nConnection: Close\r\n\r\n</td></tr></tbody></table>
+
+<p>This has been Enhancements <a href="https://cdn.f5.com/product/bugtracker/ID1013937.html" target="_self">Bug ID 1013937</a> and <a href="https://cdn.f5.com/product/bugtracker/ID1016973.html" target="_self">Bug ID 1016973</a></p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<span class="subsectiontitle">Identify all monitors with a space before a header</span>
+
+<ol><li>
+	<p>SSH to log into the Advanced Shell (<strong>bash</strong>) prompt of a BIG-IP</p>
+	</li><li>
+	<p>Run the following command to identify all affected monitors:<br>	<span class="code">tmsh -c &#39;cd /;list /ltm monitor recursive&#39; | grep -e &#39;^ltm monitor&#39; -e &#39;^    send&#39; | grep -B1 -P &#39;(\\r|\\n){1,2}\s+.&#39; --color</span><br>	<br>	Example Output:<br>	<span class="example2">ltm monitor http Common/example_http {<br>	    send &quot;GET / HTTP/1.1<strong>\r\n H</strong>ost: example.com\r\nConnection: Close\r\n\r\n&quot;</span></p>
+	</li><li>
+	<p>For every monitor identified, you must remove the offending space.<br>	<br>	Example:</p>
+	<span class="example2">   send &quot;GET / HTTP/1.1<strong>\r\nH</strong>ost: example.com\r\nConnection: Close\r\n\r\n&quot;</span></li></ol>
+
+<p><span class="subsectiontitle">Enable TMM Monitor Agent (TMA) Debug Logging</span></p>
+
+<ol><li>
+	<p>SSH to log into the Advanced Shell (<strong>bash</strong>) prompt of a BIG-IP</p>
+	</li><li>
+	<p>Enable TMA Logging<br>	<span class="code">tmsh modify /sys db log.tma.level value debug</span></p>
+	</li><li>
+	<p>Review /var/log/ltm for messages similar to the following:<br>	<span class="example2">Feb 11 10:16:58 bigip1 debug tmm[28032]: 01ad0017:7: Monitor Agent <strong>TMM 0</strong>: sent probe: <strong>MID 3</strong><br>	Feb 11 10:16:58 bigip1 debug tmm[28032]: 01ad0019:7: Monitor Agent <strong>TMM 0</strong>: received probe response: <strong>MID 3</strong>, reason <strong>TMA_RESULT_FAIL(Probe response lost due to transient failure)</strong>, info 0<br>	Feb 11 10:16:58 bigip1 debug tmm[28032]: 01ad0009:7: Monitor Agent <strong>TMM 0</strong>: sent NOTIFY message: <strong>MID 3</strong>, seqno 159, <strong>status down</strong></span></p>
+	</li><li>
+	<p>Disable TMA Logging<br>	<span class="code">tmsh modify /sys db log.tma.level value notice</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle">Enable Pool Member Monitor Logging</span></p>
+
+<ul><li>See <a href="https://my.f5.com/manage/s/article/K12531" target="_self">K12531: Troubleshooting health monitors</a> for details on enabling Pool Member Monitor logging.</li></ul>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>See the following for the requirements of an HTTP Header:<br><br><a href="https://tools.ietf.org/html/rfc2616#section-4.2" target="_self">RFC 2616 -- Section 4.2</a><br><br><span class="example2">4.2 Message Headers<br><br>   HTTP header fields, which include general-header (section 4.5),<br>   request-header (section 5.3), response-header (section 6.2), and<br>   entity-header (section 7.1) fields, follow the same generic format as<br>   that given in Section 3.1 of RFC 822 [9]. Each header field consists   <strong>&lt;&lt;== Refers to RFC 822 Section 3.1 for definition of request-headers</strong><br>   of a name followed by a colon (&quot;:&quot;) and the field value. Field names</span><br><br><br><a href="https://tools.ietf.org/html/rfc822#section-3.1" target="_self">RFC 822 -- Section 3.1</a><br><br><span class="example2">     3.1.2.  STRUCTURE OF HEADER FIELDS<br>     <br>        Once a field has been unfolded, it may be viewed as being com-<br>        posed of a field-name followed by a colon (&quot;:&quot;), followed by a<br>        field-body, and  terminated  by  a  carriage-return/line-feed.<br>        <strong>The  field-name must be composed of printable ASCII characters</strong>  <strong>&lt;&lt;== Here</strong><br>        (i.e., characters that  have  values  between  33.  and  126.,<br>        decimal, except colon).</span><br> </p>
+</article>
+</body>
+</html>

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000141193: Application fails with ERR_HTTP2_PROTOCOL_ERROR when HTTP2 is enabled on F5 BIG-IP</title>
+<meta name="description" content="Support Solution: Application fails with ERR_HTTP2_PROTOCOL_ERROR when HTTP2 is enabled on F5 BIG-IP — When the HTTP/2 profile is enabled on a Virtual Server in F5 BIG-IP, the application may fail to load correctly. In such cases, the browser displays an error message: ERR_HTTP2_PROTOCOL_ERROR. This…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000141193">
+</head>
+<body>
+<header>
+<h1>K000141193: Application fails with ERR_HTTP2_PROTOCOL_ERROR when HTTP2 is enabled on F5 BIG-IP</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-09-30</dd>
+<dt>Updated</dt><dd>2025-05-29</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.X.X, 16.X.X, 17.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000141193">https://my.f5.com/manage/s/article/K000141193</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When the HTTP/2 profile is enabled on a Virtual Server in F5 BIG-IP, the application may fail to load correctly. In such cases, the browser displays an error message: ERR_HTTP2_PROTOCOL_ERROR. This issue can prevent users from accessing the application as expected.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>HTTP/2 profile</li><li>Base HTTP profile</li></ul>
+<h2>Cause</h2>
+<p>The HTTP/2 profile works in conjunction with the base HTTP profile...&quot;<span style="color: #222222;font-family: ProximaNova-Reg, Arial, Helvetica, sans-serif;font-size: 14px;white-space: normal;background-color: #ffffff;float: none;display: inline;">In HTTP/1.x and prior you dealt with certain syntax. HTTP/2 is an &quot;alternative to, but does not obsolete the HTTP/1.1 message syntax&quot;. As a matter of fact HTTP&#39;s current semantics remain unchanged. Basically what HTTP/2 does is add to it. Because of this you will see the afore mentioned items and more.</span> &quot; <a href="https://my.f5.com/manage/s/article/K95032535" target="_self">K95032535: Detecting the use of and troubleshooting HTTP/2 traffic on the BIG-IP </a>Because of this  some of the fields overlap and what is set in the HTTP profile is used by the HTTP/2 profile.</p>
+<p>Due to the &quot;overlap&quot; one potential cause of this error is that the default setting in the HTTP profile (64) effects the HTTP/2 traffic. For instance, if the maximum header count in the HTTP profile default setting is too low, it can prevent the processing of certain requests, such as GET requests that contain a large number of headers. When this threshold is exceeded, the server may terminate the connection, resulting in the ERR_HTTP2_PROTOCOL_ERROR in the browser.</p>
+<h2>Recommended Actions</h2>
+<p>1) To begin the analysis, it is helpful to have a decrypted packet capture of the traffic. The HTTP/2 protocol can only be seen when the traffic is decrypted. You can perform this capture as described here:  <a href="https://my.f5.com/manage/s/article/K31793632" target="_self">K31793632: Creating a decrypted tcpdump capture without using an iRule</a></p>
+<p>Looking at the GET request in the gathered packet trace:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">HyperText Transfer Protocol 2</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    Stream: HEADERS, Stream ID: 419, Length 2469, GET &lt;............&gt;</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        Length: 2469</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        Type: HEADERS (1)</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        Flags: 0x25, Priority, End Headers, End Stream</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        [...]</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        [Weight real: 256]</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        Header Block Fragment: 824190f1e3c2d6a595d254257b6a3761af5d1f8704b463a8e8eb6d0349ec62d8cbeeb314…</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        [Header Length: 5496]</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        [Header Count: 75] &lt;------------------------!!!!</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        Header: :method: GET</span></p>
+<p>Sometimes you can also notice the cause of the RST in the GOAWAY packet in the error section:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">HyperText Transfer Protocol 2</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    Stream: GOAWAY, Stream ID: 0, Length 8</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        [...]</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        Error: FRAME_SIZE_ERROR (6) &lt;-----------!!!!!!!!!!</span></p>
+<p>2) Verify the HTTP Profile Settings of the HTTP profile associated with the virtual server: This can be done via the GUI by going to <strong>Local Traffic  ››  Profiles : Services : HTTP  ››  &lt;name of http profile&gt; : Enforcement, </strong>and checking the setting for Maximum Header Count. It can also be checked via the CLI...</p>
+<p style="padding-left: 40px;"><span style="background-color: #f1f1f1;">tmsh list /ltm profile http &lt;name of http profile&gt; </span></p>
+<p style="padding-left: 40px;">Example output of the default profile:</p>
+<p style="padding-left: 40px;">root@(big-ip)(cfg-sync In Sync)(Standby)(/Common)(tmos)# list ltm profile http http<br>ltm profile http http {<br>    app-service none<br>    basic-auth-realm none<br>    enforcement {<br>        max-header-count 64<br>        max-header-size 32768<br>        pipeline allow<br>        unknown-method allow<br>    }<br>    lws-width 80<br>    oneconnect-status-reuse &quot;200 206&quot;<br>    oneconnect-transformations enabled<br>    proxy-type reverse<br>    request-chunking sustain<br>    response-chunking sustain<br>}</p>
+<p>3) Adjust the max-header-count as needed.</p>
+<h2>Additional Information</h2>
+<p> </p>
+</article>
+</body>
+</html>

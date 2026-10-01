@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000159849: F5 Access App for Android Certificate Verification Failure During SAML Authentication with Microsoft Azure IdP Due to Missing Intermediate CA Certificate</title>
+<meta name="description" content="Support Solution: F5 Access App for Android Certificate Verification Failure During SAML Authentication with Microsoft Azure IdP Due to Missing Intermediate CA Certificate — # F5 Access App for Android Certificate Verification Failure During SAML Authentication with Microsoft Azure IdP Due to Missing Intermediate CA Certificate">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000159849">
+</head>
+<body>
+<header>
+<h1>K000159849: F5 Access App for Android Certificate Verification Failure During SAML Authentication with Microsoft Azure IdP Due to Missing Intermediate CA Certificate</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-03</dd>
+<dt>Updated</dt><dd>2026-02-03</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000159849">https://my.f5.com/manage/s/article/K000159849</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p># F5 Access App for Android Certificate Verification Failure During SAML Authentication with Microsoft Azure IdP Due to Missing Intermediate CA Certificate</p>
+<h2>Description</h2>
+<p>Android users are unable to authenticate through F5 Access App when connecting to BIG-IP APM VPN configured with SAML authentication using Microsoft Azure as the Identity Provider (IdP). The following symptoms occur:</p>
+<ul><li>Error message: &quot;Unable to verify SSL certificate presented by the server: aadcdn.msauthimages.net&quot;</li><li>Error states: &quot;This certificate is not from a trusted authority&quot;</li><li>Certificate verification fails specifically for Microsoft authentication portal URLs during the SAML redirect process</li><li>Issue affects all Android users while other devices (laptops, Windows, iOS) authenticate successfully</li><li>No recent changes or upgrades to BIG-IP APM or F5 Access App</li></ul>
+<p><strong>F5 Access App logs show:</strong></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">java.security.cert.CertPathValidatorException: Trust anchor for certification path not found</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">handshake failed; returned -1, SSL error code 1, net_error -202</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">onReceivedSslError: primary error: 3 certificate: Issued to: CN=idnaakamaicdn.msftauth.net</span></p>
+<p>The certificate validation error occurs when the F5 Access App attempts to load content from Microsoft authentication sites (aadcdn.msftauth.net, idnaakamaicdn.msftauth.net) during the SAML authentication flow, not during the initial connection to the BIG-IP APM virtual server.</p>
+<h2>Environment</h2>
+<ul><li><strong>Product:</strong> BIG-IP APM</li><li><strong>Version:</strong> 17.1.3 (all versions with SAML authentication)</li><li><strong>Platform:</strong> F5-BIG-APM-I5800-B, C119 (all platforms)</li><li><strong>Client:</strong> F5 Access App version 3.2.1 on Android devices (Android 13 and later)</li><li><strong>Configuration:</strong> APM virtual server configured as SAML Service Provider with Microsoft Azure as SAML Identity Provider</li><li><strong>Affected URLs:</strong> aadcdn.msauthimages.net, aadcdn.msftauth.net, idnaakamaicdn.msftauth.net</li><li><strong>Certificate Chain:</strong> Microsoft TLS G2 ECC CA OCSP 06 (intermediate), Microsoft TLS ECC Root G2 (root CA)</li><li><strong>Authentication Flow:</strong> SAML-based authentication with redirect to Microsoft Azure IdP</li></ul>
+<h2>Cause</h2>
+<p>The intermediate CA certificate (Microsoft TLS ECC Root G2) required to validate certificates presented by Microsoft authentication portals is missing from the Android device&#39;s trusted certificate store. This issue typically occurs due to certificate renewal on Microsoft&#39;s intermediate CA infrastructure.</p>
+<p>Android devices do not automatically download missing CA certificates from the authorityInformationAccess field of certificates, which is an Android platform limitation. When the certificate chain is incomplete, the F5 Access App cannot validate the server certificates presented during the SAML authentication flow to Microsoft&#39;s authentication portals, resulting in authentication failures.</p>
+<p><span style="color: #c20025;"><span style="background-color: #f1f1f1;"><em><strong>Important</strong>: This issue is not related to the BIG-IP APM&#39;s own SSL certificates. The certificate validation failure occurs during client-to-Microsoft communication after the SAML redirect, which does not traverse the BIG-IP APM.</em></span></span></p>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>Resolution Steps:</strong></p>
+<ol><li>Obtain the missing intermediate CA certificate (Microsoft TLS ECC Root G2) in .CER format:
+<ul><li>Extract it from a packet capture taken on the Microsoft authentication server during a successful authentication from a non-Android device</li><li>Or obtain it directly from Microsoft</li></ul>
+</li><li>Distribute the certificate file to affected Android users via email, file sharing, or mobile device management (MDM) system</li><li>Instruct users to manually import the certificate on their Android devices:
+<ul><li>Save the .CER file to the device&#39;s internal storage</li><li>Navigate to <strong>Settings</strong> → <strong>Security &amp; Privacy</strong> → <strong>Other Security settings</strong> → <strong>Install from device storage</strong> → <strong>CA certificate</strong></li><li>Select the saved .CER file and install it</li><li>The device may prompt for the device PIN or password</li></ul>
+</li><li>Verify VPN connectivity through F5 Access App after certificate installation</li><li>Test authentication with multiple Android users to confirm resolution</li></ol>
+<p><strong>Preventive Measures:</strong></p>
+<ul><li>Ensure Network Load Balancers and authentication infrastructure certificate stores include the entire certificate chain</li><li>When deploying SAML authentication with Microsoft Azure for Android devices, pre-distribute all required intermediate CA certificates to users via MDM</li><li>Monitor for certificate renewals on Microsoft authentication infrastructure that may impact Android clients</li><li>Consider implementing automated certificate distribution through MDM for enterprise deployments</li><li>Document the required certificate chain for your SAML authentication flow</li></ul>
+<p><strong>Verification Steps:</strong></p>
+<p>To verify the certificate chain issue before resolution:</p>
+<ol><li>Capture packets from the authentication server to the client during authentication</li><li>Extract server certificates and intermediate certificates from the packet capture</li><li>Compare against the Android device&#39;s trusted CA store to identify missing certificates</li><li>Use OpenSSL to verify the certificate chain:<br><span style="background-color: #f1f1f1;">openssl verify -CAfile &lt;ca_bundle&gt; &lt;server_cert&gt;</span></li></ol>
+<h2>Additional Information</h2>
+<p><strong>Android Certificate Handling Limitation:</strong></p>
+<p>Android does not support downloading additional certificates from the authorityInformationAccess field of certificates. This is true across all Android versions and devices, including the Chrome browser. Any server authentication certificate requiring additional certificate downloads will trigger validation errors if the entire certificate chain is not already present on the device.</p>
+<p><strong>Traffic Flow Context:</strong></p>
+<p>During SAML authentication with BIG-IP APM as Service Provider:</p>
+<ol><li>F5 Access App connects to the APM virtual server</li><li>APM generates a SAMLRequest and redirects to Microsoft Azure SAML IdP</li><li>The client follows the redirect and submits the SAMLRequest to Microsoft&#39;s authentication portal</li><li>Microsoft&#39;s authentication portal loads content from multiple Microsoft CDN sites (aadcdn.msftauth.net, idnaakamaicdn.msftauth.net, etc.)</li><li><strong>At this stage, the client communicates directly with Microsoft sites</strong> - this traffic does NOT traverse the BIG-IP APM</li><li>Certificate validation failures occur during this direct client-to-Microsoft communication</li></ol>
+<p>Because the traffic does not traverse the BIG-IP APM, packet captures on the APM will not reveal this client-to-Microsoft communication. Troubleshooting requires client-side logs (F5 Access App logs) or packet captures from the client device.</p>
+<p><strong>Why Other Devices Work:</strong></p>
+<ul><li>Windows, macOS, and iOS devices typically have more comprehensive trusted CA certificate stores</li><li>These platforms may already include the Microsoft TLS ECC Root G2 certificate</li><li>Some platforms automatically download missing intermediate certificates during TLS handshakes</li><li>Android&#39;s strict certificate validation and inability to auto-download certificates makes it more susceptible to this issue</li></ul>
+<p><strong>Microsoft Documentation Reference:</strong></p>
+<p>Using ADAL to authenticate from Android devices fails if additional certificate downloads are required. This is a known limitation documented by Microsoft for Android authentication scenarios.</p>
+<p><a href="https://learn.microsoft.com/en-us/troubleshoot/entra/entra-id/mfa/adal-authenticate-android-devices-fail" target="_blank">https://learn.microsoft.com/en-us/troubleshoot/entra/entra-id/mfa/adal-authenticate-android-devices-fail</a></p>
+</article>
+</body>
+</html>

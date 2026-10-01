@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000137238: Envoy/Istio sends traffic to the same IP when different ServiceEntry resources point to different hosts</title>
+<meta name="description" content="Support Solution: Envoy/Istio sends traffic to the same IP when different ServiceEntry resources point to different hosts — For non-HTTP traffic i.e. TCP traffic, Envoy/istio-proxy container sends traffic out of the mesh to the same IP when different ServiceEntry resources point to different hosts but use the same port…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000137238">
+</head>
+<body>
+<header>
+<h1>K000137238: Envoy/Istio sends traffic to the same IP when different ServiceEntry resources point to different hosts</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-10-14</dd>
+<dt>Updated</dt><dd>2023-10-14</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.11, 1.14</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000137238">https://my.f5.com/manage/s/article/K000137238</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>For non-HTTP traffic i.e. TCP traffic, Envoy/istio-proxy container sends traffic out of the mesh to the same IP when different ServiceEntry resources point to different hosts but use the same port number.<br>ServiceEntry resources do not define an address in the .spec.addresses. field:</p>
+
+<pre class="ckeditor_codeblock">
+❯ more testse1-noaddresses.yaml
+  apiVersion: networking.istio<strong>.</strong>io/v1beta1
+  kind: ServiceEntry
+  metadata:
+    name: example1-se
+  spec:
+    exportTo:
+    - &quot;.&quot;
+    hosts:
+    - example1.example<strong>.</strong>com
+    location: MESH_EXTERNAL
+    ports:
+    - name: tcp-3868
+      number: 3868
+      protocol: TCP
+    resolution: DNS
+
+❯ more testse2-noaddresses.yaml
+  apiVersion: networking.istio<strong>.</strong>io/v1beta1
+  kind: ServiceEntry
+  metadata:
+    name: example2-se
+  spec:
+    exportTo:
+    - &quot;.&quot;
+    hosts:
+    - example2.example<strong>.</strong>com
+    location: MESH_EXTERNAL
+    ports:
+    - name: tcp-3868
+      number: 3868
+      protocol: TCP
+    resolution: DNS</pre>
+
+<p><br>The istioctl proxy-config listener command shows a wildcard address for the port we are using:</p>
+
+<pre class="ckeditor_codeblock">
+❯ istioctl pc l nettools-69c48ffbd9-g6vsx --port 3868
+ADDRESS PORT MATCH DESTINATION
+0.0.0.0 3868 ALL Cluster: outbound|3868||example1.example<strong>.</strong>com
+</pre>
+
+<h2><br><strong>Environment</strong></h2>
+
+<p>Aspen Mesh 1.11.x, 1.14.x, ServiceEntry resources, TCP traffic leaving the mesh<br> </p>
+
+<h2><strong>Cause</strong></h2>
+
+<p>TCP requests carry much less information compared to HTTP requests; you can only route on the destination IP and port number. Because you don’t have a stable IP for the backend, you cannot route based on that either, leaving only port number, which leads to conflicts when multiple ServiceEntry resources for TCP services share the same port.<br> </p>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>There are two possible solutions:</p>
+
+<p>1. Define the IP address in the spec.addresses. field of the ServiceEntry resource</p>
+
+<pre class="ckeditor_codeblock">
+❯ cat testse1-addresses.yaml
+  apiVersion: networking.istio<strong>.</strong>io/v1beta1
+  kind: ServiceEntry
+  metadata:
+    name: example1-se
+  spec:
+    addresses:
+    - 192.0.2.1
+    exportTo:
+    - &quot;.&quot;
+    hosts:
+    - example1.example<strong>.</strong>com
+    location: MESH_EXTERNAL
+    ports:
+    - name: tcp-3868
+      number: 3868
+      protocol: TCP
+    resolution: DNS
+
+❯ cat testse2-addresses.yaml
+  apiVersion: networking.istio<strong>.</strong>io/v1beta1
+  kind: ServiceEntry
+  metadata:
+    name: example2-se
+  spec:
+    addresses:
+    - 198.51.100.1
+    exportTo:
+    - &quot;.&quot;
+    hosts:
+    - example2.example<strong>.</strong>com
+    location: MESH_EXTERNAL
+    ports:
+    - name: tcp-3868
+      number: 3868
+      protocol: TCP
+    resolution: DNS
+
+❯ istioctl pc l nettools-69c48ffbd9-g6vsx --port 3868
+ADDRESS       PORT MATCH DESTINATION
+198.51.100.1  3868 ALL Cluster: outbound|3868||example2.example<strong>.</strong>com
+192.0.2.1     3868 ALL Cluster: outbound|3868||example1.example<strong>.</strong>com
+</pre>
+
+<p><br>2. Enable DNS Proxying and address auto allocation; ServiceEntry resources should not have an address in the .spec.addresses. field and hosts should not be a wildcard. These features can be enabled on pod by pod basis by adding the proxy.istio<strong>.</strong>io/config annotation:</p>
+
+<pre class="ckeditor_codeblock">
+kind: Deployment
+metadata:
+  name: sleep
+spec:
+...
+  template:
+    metadata:
+      annotations:
+        proxy.istio<strong>.</strong>io/config: |
+          proxyMetadata:
+            ISTIO_META_DNS_CAPTURE: &quot;true&quot;
+            ISTIO_META_DNS_AUTO_ALLOCATE: &quot;true&quot;
+...</pre>
+
+<p><br>The feature can also be enabled globally by adding the following to the override values file:</p>
+
+<pre class="ckeditor_codeblock">
+meshConfig:
+  defaultConfig:
+    proxyMetadata:
+      # Enable basic DNS proxying
+      ISTIO_META_DNS_CAPTURE: &quot;true&quot;
+      # Enable automatic address allocation, optional
+      ISTIO_META_DNS_AUTO_ALLOCATE: &quot;true&quot;</pre>
+
+<p><br>The listeners will look like this once the feature is enabled:</p>
+
+<pre class="ckeditor_codeblock">
+❯ istioctl pc l nettools-69c48ffbd9-g6vsx --port 3868
+ADDRESS      PORT MATCH DESTINATION
+240.240.0.1  3868 ALL Cluster: outbound|3868||example2.example<strong>.</strong>com ##Class E VIP assigned by the Istio
+240.240.0.2  3868 ALL Cluster: outbound|3868||example1.example<strong>.</strong>com</pre>
+
+<p> </p>
+
+<h2><strong>Additional Information</strong></h2>
+
+<p>In addition to capturing application traffic, Istio can also capture DNS requests to improve the performance and usability of your mesh. When proxying DNS, all DNS requests from an application will be redirected to the sidecar, which stores a local mapping of domain names to IP addresses. If the request can be handled by the sidecar, it will directly return a response to the application, avoiding a roundtrip to the upstream DNS server. Otherwise, the request is forwarded upstream following the standard /etc/resolv.conf DNS configuration.<br><br>While Kubernetes provides DNS resolution for Kubernetes Services out of the box, any custom ServiceEntrys will not be recognized. With this feature, ServiceEntry addresses can be resolved without requiring custom configuration of a DNS server. For Kubernetes Services, the DNS response will be the same, but with reduced load on kube-dns and increased performance.<br><br>This functionality is also available for services running outside of Kubernetes. This means that all internal services can be resolved without clunky workarounds to expose Kubernetes DNS entries outside of the cluster.<br><br>It’s common to access external services that do not have stable addresses, and instead rely on DNS. In this case, the DNS proxy will not have enough information to return a response, and will need to forward DNS requests upstream.<br><br>This is especially problematic with TCP traffic. Unlike HTTP requests, which are routed based on Host headers, TCP carries much less information; you can only route on the destination IP and port number. Because you don’t have a stable IP for the backend, you cannot route based on that either, leaving only port number, which leads to conflicts when multiple ServiceEntry resources for TCP services share the same port.<br><br>To work around these issues, the DNS proxy additionally supports automatically allocating addresses for ServiceEntry resources that do not explicitly define one. This is configured by the ISTIO_META_DNS_AUTO_ALLOCATE option.<br><br>When this feature is enabled, the DNS response will include a distinct and automatically assigned address for each ServiceEntry. The proxy is then configured to match requests to this IP address, and forward the request to the corresponding ServiceEntry. When using ISTIO_META_DNS_AUTO_ALLOCATE, Istio will automatically allocate non-routable VIPs (from the Class E subnet) to such services as long as they do not use a wildcard host. The Istio agent on the sidecar will use the VIPs as responses to the DNS lookup queries from the application. Envoy can now clearly distinguish traffic bound for each external TCP service and forward it to the right target. For more information check respective Istio blog about smart DNS proxying.</p>
+</article>
+</body>
+</html>

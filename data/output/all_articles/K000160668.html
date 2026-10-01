@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160668: Large TCP data transfer failures, configsync failures, multicast packet drops, or tmm cores on BIG-IP VE on Hyper-V / Azure</title>
+<meta name="description" content="Support Solution: Large TCP data transfer failures, configsync failures, multicast packet drops, or tmm cores on BIG-IP VE on Hyper-V / Azure — After upgrading the BIG-IP VE or its Hyper-V host hypervisor, intermittent TCP connection failures may appear. This can manifest in symptoms ranging from large TCP data transfers connections…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160668">
+</head>
+<body>
+<header>
+<h1>K000160668: Large TCP data transfer failures, configsync failures, multicast packet drops, or tmm cores on BIG-IP VE on Hyper-V / Azure</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-04-08</dd>
+<dt>Updated</dt><dd>2026-04-12</dd>
+<dt>Applies to</dt><dd><ul><li>Virtual Editions</li><li>BIG-IP</li><li>BIG-IP SSL Orchestrator: 17.5.0, 21.0.0</li><li>BIG-IP PEM: 17.5.1, 17.5.0, 21.0.0</li><li>BIG-IP AFM: 17.5.0, 17.5.1, 21.0.0</li><li>BIG-IP APM: 21.0.0, 17.5.1, 17.5.0</li><li>BIG-IP ASM: 21.0.0, 17.5.1, 17.5.0</li><li>BIG-IP DNS: 21.0.0, 17.5.1, 17.5.0</li><li>BIG-IP Link Controller: 17.5.0, 17.5.1</li><li>BIG-IP FPS: 21.0.0, 17.5.1, 17.5.0</li><li>BIG-IP Cloud Edition</li><li>Microsoft Hyper-V</li><li>BIG-IP LTM: 21.0.0, 17.5.0, 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160668">https://my.f5.com/manage/s/article/K000160668</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>After upgrading the BIG-IP VE or its Hyper-V host hypervisor, intermittent TCP connection failures may appear. This can manifest in symptoms ranging from large TCP data transfers connections stalling, taking much longer or large HA configsync operations being unable to complete. (For example, ASM and APM tend to be large)</p>
+<p> </p>
+<h2>Environment</h2>
+<p>This may happen when:</p>
+<ul><li>Making changes on the hypervisor on Azure or Hyper-V platforms</li><li>Installing BIG-IP VE versions between 17.5.0 to 17.5.1.5 or 21.0.0</li><li>Installing BIG-IP VE versions that include ID 1983145</li></ul>
+<h2>Cause</h2>
+<p>As described in K000153024, BIG-IP VE version 17.5.0 and 21.0.0 on Hyper-V/Azure started using the dpdk driver to enable higher performance for network packet processing. However, some drivers did not handle IP fragments well. This resulted in TCP transfers stalling when packets become large enough to need fragmentation handling.</p>
+<p> </p>
+<h2>Symptoms</h2>
+<p>Without ID 1983145, the result is that when large packets that require TSO/LSO handling are observed, sometimes TCP transfers seem to stall. Also, tmm cores may occur when memory becomes corrupted.</p>
+<p>Without ID 2224937, large TCP data transfers between tmms may fail intermittently. Large configsync operations may not be able to complete.</p>
+<p>Without ID 2219929, multicast traffic may be dropped, causing symptoms ranging from BIG-IP VE may not be able to complete ipv6 neighbor discovery, resulting in loss of connectivity, to various failures related to protocols that require multicast.</p>
+<p> </p>
+<h2>Answer/Recommended Actions</h2>
+<p>Check that certain Hyper-V hypervisor parameters are set to appropriate values ( see K000137614 )</p>
+<p> </p>
+<p>To make IP fragments work, it is recommended to install BIG-IP VE that have all of the following fixes:</p>
+<p>- ID 1983145 allowed the forced processing of IP fragments for those drivers and avoided unexpected conditions that cause BIG-IP to crash</p>
+<p>- ID 2224937 ensured the checksums are correct for IP fragments. ID 2224937 must also be applied to any EHF version that has ID 1983145, otherwise IP fragments may be dropped.</p>
+<p>- ID 2219929 ensures the drivers are set to process multicast traffic even if promiscuous mode cannot be enabled. Without this fix, multicast and ipv6 ndp may fail, especially if the hypervisor blocks promiscuous mode or broadcasts.</p>
+<p> </p>
+<h2>Workarounds</h2>
+<ul><li>Alternatively, users who do not need the fast packet processing or SR-IOV capability from the dpdk driver may revert back to the old Sock driver ( See K10142141 ).<br>However, using the sock driver comes with the lack of GRO, lowering performance (see Bug ID 1106489 ).</li><li>Another workaround for failed configsync and HA operations, users may try configuring the configsync IP to the management port (which does not use the tmm to process packets).</li></ul>
+<h2>Additional Information</h2>
+<p><a href="https://my.f5.com/manage/s/article/K000153024" target="_blank">K000153024: xnet-DPDK Driver Default for BIG-IP VE on Azure/Hyper-V from 17.5.0 - https://my.f5.com/manage/s/article/K000153024</a></p>
+<p><a href="https://cdn.f5.com/product/bugtracker/ID1983145.html" target="_blank">Bug ID 1983145: Memory Corruption due to xnet-DPDK - https://cdn.f5.com/product/bugtracker/ID1983145.html</a></p>
+<p><a href="https://cdn.f5.com/product/bugtracker/ID2219929.html" target="_blank">Bug ID 2219929: Tmm running in Hyper-V environments might not receive multicast traffic - https://cdn.f5.com/product/bugtracker/ID2219929.html</a></p>
+<p><a href="https://my.f5.com/s/article/K000137614" target="_blank">K000137614: HA connections over port 1029 are lost every ~4 hours  - https://my.f5.com/s/article/K000137614</a></p>
+<p><a href="https://my.f5.com/manage/s/article/K10142141" target="_blank">K10142141: Configure the BIG-IP VE system to use the SOCK network driver - https://my.f5.com/manage/s/article/K10142141</a></p>
+<p><a href="https://cdn.f5.com/product/bugtracker/ID1106489.html" target="_blank"></a><a href="https://cdn.f5.com/product/bugtracker/ID1106489.html" target="_blank">Bug ID 1106489: GRO/LRO is disabled in environments using the TMM raw socket &quot;sock&quot; driver - https://cdn.f5.com/product/bugtracker/ID1106489.html</a></p>
+<p> </p>
+<p> </p>
+<p> </p>
+</article>
+</body>
+</html>

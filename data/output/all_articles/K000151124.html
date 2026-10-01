@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000151124: WebSocket fails when a OneConnect profile is applied to the Virtual Server</title>
+<meta name="description" content="Support Solution: WebSocket fails when a OneConnect profile is applied to the Virtual Server — When upgrading an HTTP connection to WebSocket, authentication cookies or bearer tokens in headers can be lost or misapplied—especially when OneConnect or custom iRules are active. This can result in…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000151124">
+</head>
+<body>
+<header>
+<h1>K000151124: WebSocket fails when a OneConnect profile is applied to the Virtual Server</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-05-01</dd>
+<dt>Updated</dt><dd>2025-05-08</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.0.0, 15.0.X, 15.0.1, 17.X.X, 16.X.X, 15.X.X, 17.5.X, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000151124">https://my.f5.com/manage/s/article/K000151124</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><strong>Description</strong></p>
+<p>When upgrading an HTTP connection to WebSocket, authentication cookies or bearer tokens in headers can be lost or misapplied—especially when OneConnect or custom iRules are active. This can result in failed handshakes or unauthorized access to your WS backend.</p>
+<p><strong>Environment</strong></p>
+<ul><li>BIG-IP LTM with an HTTP profile and WebSocket profile bound</li><li>OneConnect enabled on the Virtual Server</li><li>Custom iRules manipulating headers or using header-based security</li><li>Backend application relying on JSESSIONID cookie or Authorization header for WS authentication</li></ul>
+<p><strong>Cause</strong></p>
+<p>WebSocket handshakes reuse TCP connections; OneConnect may pool and replay requests without original headers. Custom header rewrites, HTTP compression, or ASM policies can strip or alter authentication headers before the WS upgrade, causing the backend to reject the connection.</p>
+<p><strong>Recommended Actions</strong></p>
+<p>Below are some of the ways you can overcome the challenges of authentication persistence with websockets, these recommendations might not work for your specific case, but they are guidelines on how to tackle this issue for various scenarios:</p>
+<p><em>Inspect tokens early and keep track of them:</em></p>
+<p><span style="background-color: #f1f1f1;">when HTTP_REQUEST {</span></p>
+<p><span style="background-color: #f1f1f1;"> if { [HTTP::cookie exists &quot;JSESSIONID&quot;] } {</span></p>
+<p><span style="background-color: #f1f1f1;">  table set ws_token_[IP::client_addr] [HTTP::cookie &quot;JSESSIONID&quot;] 300</span></p>
+<p><span style="background-color: #f1f1f1;"> }</span></p>
+<p><span style="background-color: #f1f1f1;">}</span></p>
+<p><em>Disable OneConnect for WS Paths</em></p>
+<p><span style="background-color: #f1f1f1;">when HTTP_REQUEST {</span></p>
+<p><span style="background-color: #f1f1f1;"> if { [HTTP::uri] starts_with &quot;/ws/&quot; } {</span></p>
+<p><span style="background-color: #f1f1f1;">  TCP::disable reuse</span></p>
+<p><span style="background-color: #f1f1f1;"> }</span></p>
+<p><span style="background-color: #f1f1f1;">}</span></p>
+<p><em>Reapply Cookies on Upgrade</em></p>
+<p><span style="background-color: #f1f1f1;">when HTTP_REQUEST {</span></p>
+<p><span style="background-color: #f1f1f1;"> if { [HTTP::header exists &quot;Upgrade&quot;] and</span></p>
+<p><span style="background-color: #f1f1f1;">    [string tolower [HTTP::header &quot;Upgrade&quot;]] eq &quot;websocket&quot; } {</span></p>
+<p><span style="background-color: #f1f1f1;">  set token [table lookup ws_token_[IP::client_addr]]</span></p>
+<p><span style="background-color: #f1f1f1;">  if { $token ne &quot;&quot; } {</span></p>
+<p><span style="background-color: #f1f1f1;">   HTTP::header replace &quot;Cookie&quot; &quot;JSESSIONID=$token&quot;</span></p>
+<p><span style="background-color: #f1f1f1;">  }</span></p>
+<p><span style="background-color: #f1f1f1;"> }</span></p>
+<p><span style="background-color: #f1f1f1;">}</span></p>
+<p><strong>Additional Information</strong></p>
+<ul><li>Use short TTLs (e.g. 300 s) in iRule tables to limit memory usage.</li><li>If you use ASM, remember that selective unmasking may still alter masked data; test your header logic end-to-end.</li><li>For JWTs, consider in-iRule HMAC validation or external introspection to offload backend verification.</li><li style="text-align: left;">Disable Compression/ASM for WS Handshake</li><li style="text-align: left;">Exclude /ws/ from HTTP compression or ASM unmasking so header-grab logic runs unaltered.</li></ul>
+<p> </p>
+</article>
+</body>
+</html>

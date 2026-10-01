@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K44250344: Error: No Vlan association for STP Interface Member</title>
+<meta name="description" content="Support Solution: Error: No Vlan association for STP Interface Member — Mon DD HH:MM:SS bigip err mcpd[#]: 01070523:3: No Vlan association for STP Interface Member #.#.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K44250344">
+</head>
+<body>
+<header>
+<h1>K44250344: Error: No Vlan association for STP Interface Member</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-05-05</dd>
+<dt>Updated</dt><dd>2026-06-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 13.X.X, 17.X.X, 21.X.X, 21.1.X, 21.1.0, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.6, 16.1.5, 16.1.4, 15.1.10, 15.1.9, 13.1.X, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.X, 13.0.1, 13.0.0, 15.1.3, 15.1.2, 16.X.X, 15.X.X, 14.X.X, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 16.1.3, 16.1.2, 16.1.1, 15.1.1, 15.1.0, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K44250344">https://my.f5.com/manage/s/article/K44250344</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+<p>The configuration fails to load with the following diagnostics also seen in <strong>/var/log/ltm</strong>:</p>
+<pre style="margin-left: 40px;"><span class="example2">Mon DD HH:MM:SS <em>bigip</em> err mcpd[<em>#</em>]: 01070523:3: No Vlan association for STP Interface Member <em>#.#</em>.
+Mon DD HH:MM:SS <em>bigip</em> err tmsh[<em>#</em>]: 01420006:3: Loading configuration process failed.
+Mon DD HH:MM:SS <em>bigip</em> emerg load_config_files[<em>#</em>]: &quot;/usr/bin/tmsh -n -g -a load sys config partitions all base &quot; - failed. -- 01070523:3: No Vlan association for STP Interface Member <em>#.#</em>.</span></pre>
+<p>or</p>
+<p style="margin-left: 40px;"><code><span class="example2">Mon DD HH:MM:SS bigip err 01070523:3: No Vlan association for STP Interface Member x.x <br>Unexpected Error: Loading configuration process failed.</span></code></p>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>BIG-IP</li><li>A closer examination of <strong>/config/bigip_base.conf</strong> file includes the interface in <strong>net stp</strong> section e. g.:
+<pre><span class="code">net stp /Common/cist {<br>    interfaces {<br>        1.1 {<br>            external-path-cost 2000<br>            internal-path-cost 2000<br>        }<br>        1.2 {<br>            external-path-cost 2000<br>            internal-path-cost 2000<br>        }<br>        1.3 {<br>            external-path-cost 2000<br>            internal-path-cost 2000<br>        }<br>    }<br>    vlans {<br>        /Common/external<br>        /Common/internal<br>    }<br>}<br>NOTE: Path values can vary by interface speed.<br></span></pre>
+</li></ul>
+<p>However, there is no VLAN present in the configuration for one of the interfaces.</p>
+<p><span class="sectiontitle">Cause</span></p>
+<p><span class="sectiontitle" style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;font-size: 14px;">The problem may be caused by one of the following:</span></p>
+<ul><li>For BIG-IP VE software defect<a href="https://cdn.f5.com/product/bugtracker/ID637827.html" target="_self"> ID637827: VADC: after re-deploying a single-nic VM with multiple nics, a load can fail due to stp member 1.0</a></li><li>Configuration changes prior to the reboot</li></ul>
+<p>This error occurs when there is a presence of a STP (Spanning Tree Protocol) interface member configuration on a multi NIC VE. </p>
+<p>Per <a href="https://my.f5.com/manage/s/article/K61172462" target="_self">K61172462: Disabling or enabling the Spanning Tree Protocol for a trunk (11.x - 16.x)</a> &quot;STP is not supported on BIG-IP Virtual Edition (VE).&quot;. </p>
+<p>Despite STP being non-functional on VE, TMOS still writes net stp configuration into bigip_base.conf when interfaces are assigned to VLANs. This is because the STP configuration object is automatically created/maintained by mcpd as part of the standard TMOS configuration model — it&#39;s a side effect of the VLAN-to-interface association, not something a user explicitly configures. On physical hardware, this is meaningful; on VE, it&#39;s vestigial but harmless — unless the interface-to-VLAN relationship becomes inconsistent.</p>
+<p>Thus when this happens it can safely be removed to correct the situation.</p>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<p>Remove from the STP configuration in file <strong>bigip_base.conf</strong> the affected interface, then reload the configuration.</p>
+<ol><li> Before editing /config/bigip_base.conf, please create a backup file for this via command &quot; <span class="code">cp /config/bigip_base.conf /config/bigip_base.conf_backup</span></li><li>Using  an editor such as nano/vi/vim open the <strong>bigip_base.conf.</strong></li><li>Comment out or delete the &quot;<span class="example2">net stp /Common/cist configuration</span>:<code>#net stp /Common/cist {<br>#    interfaces {<br>#        1.1 {<br>#            external-path-cost 2000<br>#           internal-path-cost 2000<br>#        }<br>#        1.2 {<br>#            external-path-cost 2000<br>#            internal-path-cost 2000<br>#        }<br>#        1.3 {<br>#            external-path-cost 2000<br>#            internal-path-cost 2000<br>#        }<br>#    }<br>#    vlans {<br>#        /Common/external<br>#        /Common/internal<br>#   }<br>#}<br></code></li><li>Verify the config file you modified using the command:<br><span class="code">tmsh load sys config verify</span></li><li>If no errors , load the configuration<br><span class="code">tmsh load sys config</span></li><li>Save the loaded configuration<br><span class="code">tmsh save sys config</span></li></ol>
+<p>When the configuration is loading you may see the named daemon and others restart. This is expected.</p>
+<p><strong>Additional Information</strong></p>
+<ul><li><a href="https://clouddocs.f5.com/cli/tmsh-reference/v15/modules/net/net_stp.html" target="_self">net stp</a> configuration syntax<br> </li></ul>
+</article>
+</body>
+</html>

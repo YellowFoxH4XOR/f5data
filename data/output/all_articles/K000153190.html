@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000153190: BIG-IP LTM iRule STREAM::expression HTTP-to-HTTPS Rewriting Fails Due to Incorrect Delimiter Syntax</title>
+<meta name="description" content="Support Solution: BIG-IP LTM iRule STREAM::expression HTTP-to-HTTPS Rewriting Fails Due to Incorrect Delimiter Syntax — When using a BIG-IP LTM iRule with STREAM::expression to rewrite HTTP references to HTTPS in HTTP responses, a syntax error in the iRule can cause the website to fail to render correctly.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000153190">
+</head>
+<body>
+<header>
+<h1>K000153190: BIG-IP LTM iRule STREAM::expression HTTP-to-HTTPS Rewriting Fails Due to Incorrect Delimiter Syntax</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-09-17</dd>
+<dt>Updated</dt><dd>2026-05-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.2</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000153190">https://my.f5.com/manage/s/article/K000153190</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When using a BIG-IP LTM iRule with <span style="background-color: #f1f1f1;">STREAM::expression</span> to rewrite HTTP references to HTTPS in HTTP responses, a syntax error in the iRule can cause the website to fail to render correctly.</p>
+<p><strong>Symptoms:</strong></p>
+<ul><li>Website fails to load properly (broken page rendering) when the <span style="background-color: #f1f1f1;">STREAM::expression</span> iRule is applied.</li><li>Removing the <span style="background-color: #f1f1f1;">@http:@https:@</span> expression from the iRule allows the page to load, but results in mixed content warnings in the browser.</li><li>HTTP references in response body content (such as JavaScript URLs) are not being rewritten to HTTPS as expected.</li></ul>
+<h2>Environment</h2>
+<ul><li><strong>Product:</strong> BIG-IP LTM</li><li><strong>Version:</strong> 17.1.2</li><li><strong>Feature:</strong> iRule with <span style="background-color: #f1f1f1;">STREAM::expression</span> for HTTP-to-HTTPS response body rewriting</li><li><strong>Backend application:</strong> WordPress (recently patched/upgraded)</li><li><strong>Virtual server configuration:</strong>
+<ul><li>HTTPS frontend (port 443) with SSL offload</li><li>HTTP backend (port 80)</li><li>Stream profile attached</li><li><span style="background-color: #f1f1f1;">Accept-Encoding</span> header removed in <span style="background-color: #f1f1f1;">HTTP_REQUEST</span> event</li></ul>
+</li><li><strong>iRule events used:</strong> <span style="background-color: #f1f1f1;">HTTP_REQUEST</span>, <span style="background-color: #f1f1f1;">HTTP_RESPONSE</span></li></ul>
+<h2>Cause</h2>
+<p>Incorrect delimiter syntax in <span style="background-color: #f1f1f1;">STREAM::expression</span> within the iRule. Specifically, a space was present between the opening brace<span style="background-color: #ffffff;color: #000000;"> <span style="background-color: #f1f1f1;"><strong> { </strong></span> </span>and the first delimiter character <strong><span style="background-color: #f1f1f1;color: #000000;">@</span>.</strong> According to F5 documentation, this space causes <span style="background-color: #f1f1f1;">STREAM::expression</span> to not function as intended, preventing proper HTTP-to-HTTPS rewriting of response body content.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>Per the <a href="https://clouddocs.f5.com/api/irules/STREAM__expression.html" target="_blank">STREAM::expression iRules documentation</a>, there must be <strong>no space</strong> between the opening brace <span style="color: #747474;background-color: #f1f1f1;"> <span style="color: #000000;">{ </span></span> and the first delimiter in the expression.</p>
+<p><strong>Incorrect syntax (will NOT work):</strong></p>
+<p><code>STREAM::expression { @http:@https:@ @Windows@Linux@ }</code></p>
+<p>Please take note on the<span style="color: #000000;"> <span style="background-color: #ffffff;"><strong>space</strong> between <span style="background-color: #f1f1f1;"> <strong>{</strong> </span> and the first <span style="font-size: 13px;background-color: #f1f1f1;"><strong>@</strong></span></span></span>)</p>
+<p><strong>Correct syntax (will work):</strong></p>
+<p><code>STREAM::expression {@http:@https:@ @Windows@Linux@}</code></p>
+<ol><li>Locate the iRule applied to the affected virtual server that contains the <span style="background-color: #f1f1f1;">STREAM::expression</span> command.</li><li>In the <span style="background-color: #f1f1f1;">HTTP_RESPONSE</span> event, verify the <span style="background-color: #f1f1f1;">STREAM::expression</span> block <span style="color: #000000;background-color: #ffffff;"><strong>does not </strong>have a <strong>space</strong> between the opening brace <span style="background-color: #f1f1f1;"><strong> { </strong></span> an</span>d the first delimiter.</li><li>Update the iRule to use the correct syntax. Example of a corrected iRule for HTTP-to-HTTPS rewriting:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when HTTP_REQUEST {
+    STREAM::disable
+    HTTP::header remove &quot;Accept-Encoding&quot;
+}
+when HTTP_RESPONSE {
+    STREAM::disable
+    if { [HTTP::header exists &quot;Location&quot;] } {
+        HTTP::header replace Location [string map {&quot;http://&quot; &quot;https://&quot;} [HTTP::header Location]]
+}
+    if { [HTTP::header &quot;Content-Type&quot;] starts_with &quot;text/html&quot; } {
+        STREAM::expression {@http:@https:@ @http://@https://@ @http:\/\/@https:\/\/@}
+        STREAM::enable
+    }
+}</code></pre>
+</li></ol>
+<ol start="4"><li>Apply the updated iRule to the virtual server.</li><li>Test the website to confirm that HTTP references in the response body are correctly rewritten to HTTPS and that no mixed content warnings appear.</li></ol>
+<h2>Additional Information</h2>
+<ul><li>The incorrect syntax issue may not have been apparent prior to the backend WordPress upgrade if the previous WordPress version generated response content that did not trigger the problematic code path in the same way.</li><li>When <span style="background-color: #f1f1f1;">STREAM::expression</span> fails silently due to the syntax error, HTTP references in the response body are not rewritten, causing browsers to report mixed content warnings or fail to load resources.</li><li>The <span style="background-color: #f1f1f1;">Accept-Encoding</span> header should be removed in the <span style="background-color: #f1f1f1;">HTTP_REQUEST</span> event (as shown above) to prevent the backend from sending compressed responses, which would interfere with stream-based content rewriting.</li><li>Ensure the Stream profile is attached to the virtual server for <span style="background-color: #f1f1f1;">STREAM::expression</span> and <span style="background-color: #f1f1f1;">STREAM::enable</span> to function correctly.</li><li>The <span style="background-color: #f1f1f1;">Content-Type</span> condition (<span style="background-color: #f1f1f1;">starts_with &quot;text/html&quot;</span> or <span style="background-color: #f1f1f1;">contains &quot;text&quot;</span>) controls which responses are subject to stream rewriting. Using <span style="background-color: #f1f1f1;">contains &quot;text&quot;</span> is broader and may affect additional content types such as JavaScript files.</li></ul>
+</article>
+</body>
+</html>

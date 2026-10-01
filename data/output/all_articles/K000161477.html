@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161477: BIG-IP LTM: HTTP/2 client requests intermittently delayed or reset</title>
+<meta name="description" content="Support Solution: BIG-IP LTM: HTTP/2 client requests intermittently delayed or reset — Intermittent http2_protocol_error messages and HTTP/2 RST_STREAM frames occur when BIG-IP LTM uses HTTP/2 on the client side and HTTP/1.1 on the server side. Affected requests may be acknowledged by…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161477">
+</head>
+<body>
+<header>
+<h1>K000161477: BIG-IP LTM: HTTP/2 client requests intermittently delayed or reset</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-25</dd>
+<dt>Updated</dt><dd>2026-08-25</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161477">https://my.f5.com/manage/s/article/K000161477</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Intermittent <span style="font-family: &#39;courier new&#39;, courier, monospace;">http2_protocol_error</span> messages and HTTP/2 <span style="font-family: &#39;courier new&#39;, courier, monospace;">RST_STREAM</span> frames occur when BIG-IP LTM uses HTTP/2 on the client side and HTTP/1.1 on the server side. Affected requests may be acknowledged by BIG-IP without application data being forwarded to the backend, while other streams complete normally with HTTP/1.1 <span style="font-family: &#39;courier new&#39;, courier, monospace;">200 OK</span> responses.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM 17.1.3</li><li>Client-side HTTP/2 profile enabled</li><li>Server-side HTTP/1.1 connections to pool members</li><li>HTTP/2-to-HTTP/1.1 gateway </li></ul>
+<p>The HTTP MRF Router (<span style="font-family: &#39;courier new&#39;, courier, monospace;">httprouter</span>) profile is not generally required when the configuration uses HTTP/2 on the client side and HTTP/1.1 on the server side. It is required for specific full-proxy scenarios involving HTTP/2 on the backend or internal message routing.</p>
+<h2>Cause</h2>
+<p>The issue is associated with backend server-side TCP connection attempts being reset or delayed because of source-port reuse, port exhaustion, or <span style="font-family: &#39;courier new&#39;, courier, monospace;">TIME_WAIT</span> collisions.</p>
+<p>For affected streams, BIG-IP attempts to establish new TCP connections to the backend but receives TCP resets or no response. BIG-IP consequently cannot forward the HTTP/2 request to the backend or return an application response to the client.</p>
+<p>In an HTTP/2-to-HTTP/1.1 gateway configuration, multiple client-side HTTP/2 streams can result in frequent server-side TCP connection creation. A backend server with a long <span style="font-family: &#39;courier new&#39;, courier, monospace;">TIME_WAIT</span> interval or limited ephemeral-port range can contribute to connection collisions and resets.</p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li><strong>Check the backend server during the failure.</strong>
+<ul><li>Review backend operating-system logs and TCP statistics.</li><li>Confirm whether SYN packets from BIG-IP are being reset, dropped, or left unanswered.</li><li>Check for ephemeral-port exhaustion and a large number of connections in <span style="font-family: &#39;courier new&#39;, courier, monospace;">TIME_WAIT</span>.</li><li>Verify firewall, load balancer, and server-side connection limits.</li></ul>
+</li><li><strong>Review the BIG-IP HTTP profile.</strong>
+<ul><li>Check the server-side connection timeout.</li><li>Increase the timeout if connections are being recycled prematurely.</li><li>Apply changes first to a test virtual server or during an approved maintenance window.</li></ul>
+</li><li><strong>Review backend TCP <span style="font-family: &#39;courier new&#39;, courier, monospace;">TIME_WAIT</span> behavior.</strong>
+<ul><li>Check the backend operating system’s TCP FIN/TIME_WAIT configuration.</li><li>If permitted by the backend platform and security policy, reduce an unnecessarily long FIN timeout so ports become available sooner.</li><li>Do not change operating-system TCP settings without validating the effect with the backend platform owner.</li></ul>
+</li><li><strong>Configure OneConnect where appropriate.</strong>
+<ul><li>Attach and configure a OneConnect profile on the virtual server to promote server-side connection reuse.</li><li>Validate application behavior because OneConnect changes how server-side connections are selected and reused.</li></ul>
+</li><li><strong>Increase the available source-port space if required.</strong>
+<ul><li>Enable SNAT for the virtual server if appropriate for the application and network design.</li><li>Use a SNAT pool with additional addresses when one source address does not provide sufficient concurrent source ports.</li><li>Confirm that backend servers allow the SNAT addresses and that application logging and access controls account for translated source addresses.</li></ul>
+</li><li><strong>Capture both sides of the BIG-IP connection if the issue persists.</strong>
+<ul><li>Capture client-side and server-side traffic simultaneously.</li><li>Include the TLS handshake when decrypted analysis is required.</li><li>Correlate the HTTP/2 stream ID, backend TCP connection, SYN/RST packets, and response timing.</li><li>Clear existing connections to the test virtual server before a controlled reproduction to simplify traffic correlation.</li></ul>
+</li></ol>
+<h2>Additional Information</h2>
+<ul><li>HTTP/2 stream IDs on the client side do not necessarily match the corresponding server-side transaction identifiers because BIG-IP translates HTTP/2 requests into HTTP/1.1 requests.</li><li>A client-side HTTP/2 <span style="font-family: &#39;courier new&#39;, courier, monospace;">RST_STREAM</span> is not by itself proof of an HTTP/2 header-format problem. It can be a downstream symptom of a missing or delayed backend response.</li><li>Some streams may receive backend responses normally while other streams have no corresponding backend request until the connection-establishment delay ends.</li><li>HTTP/2-to-HTTP/1.1 translation commonly requires frequent server-side connection establishment unless connection reuse is configured and effective.</li><li>The MRF Router profile should be enabled only when the deployment scenario requires it. It is not generally mandatory for client-side HTTP/2 to server-side HTTP/1.1 traffic.</li></ul>
+</article>
+</body>
+</html>

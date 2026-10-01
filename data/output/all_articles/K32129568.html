@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K32129568: &#x27;&#x27;413 Request Entity Too Large&#x27;&#x27; error message.</title>
+<meta name="description" content="Support Solution: &#x27;&#x27;413 Request Entity Too Large&#x27;&#x27; error message. — In PCAP capture file &quot;413 Request Entity Too Large&quot; header or response is captured.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K32129568">
+</head>
+<body>
+<header>
+<h1>K32129568: &#x27;&#x27;413 Request Entity Too Large&#x27;&#x27; error message.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-12-21</dd>
+<dt>Updated</dt><dd>2022-12-21</dd>
+<dt>Applies to</dt><dd><ul><li>Virtual Editions</li><li>BIG-IP Platforms</li><li>VIPRION Platforms</li><li>BIG-IP</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K32129568">https://my.f5.com/manage/s/article/K32129568</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<div>
+<div>
+<div>Details:</div>
+</div>
+</div>
+
+<div>
+<p><span class="sectiontitle">Description</span></p>
+When uploading a large size file, the following errors are displayed:
+
+<ul><li>In PCAP capture file <strong>&quot;413 Request Entity Too Large&quot; </strong>header or response is captured.</li><li>In browser, &quot;ERR_HTTP2_PROTOCOL_ERR&quot; might be shown.<br>	 </li></ul>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP  LTM</li><li>HTTP Virtual Server</li><li>HTTP POST requests processing Virtual Server</li><li>HTTP2 protocol might be used</li><li>ASM policy applied to http Virtual Server  (*)</li><li>Apache pool member</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Cause 1:<br><br>User uploads an object larger in size than max configured size in http application limit in pool member.<br><br>In PCAP capture, then following message is received from http application server:<br> </p>
+
+<pre>
+HTTP2	359	HEADERS[3]: 413 Request Entity Too Large
+
+
+</pre>
+
+<pre>
+HyperText Transfer Protocol 2
+    Stream: HEADERS, Stream ID: 3, Length 267, 413 Request Entity Too Large
+        Length: 267
+        Type: HEADERS (1)
+        Flags: 0x04
+        0... .... .... .... .... .... .... .... = Reserved: 0x0
+        .000 0000 0000 0000 0000 0000 0000 0011 = Stream Identifier: 3
+        [Pad Length: 0]
+        Header Block Fragment: 3fe11f08033431330f1297df3dbf4a01b5349fba820080a0…
+        [Header Length: 436]
+        [Header Count: 9]
+        Header table size update
+            Header table size: 4096
+        Header: :status: 413 Request Entity Too Large        &lt;------------------------ Object size larger than configured
+            Name Length: 7
+            Name: :status
+            Value Length: 3
+            Value: 413
+            :status: 413
+            [Unescaped: 413]
+            Representation: Literal Header Field without Indexing - Indexed Name
+            Index: 8</pre>
+
+<p>-----------------------------------------------------------------------------<br><br>Cause 2 (* when ASM policy is applied to http VS):<br><br>- ASM restricts HTTP Payload to 10MB by default.<br><br>-----------------------------------------------------------------------------<br><br>Cause 3:<br><br>HTTP 413 response code coming from the Apache pool member during file upload. It may come with the a similar body:</p>
+
+<pre>
+Line-based text data: text/html (8 lines)
+    &lt;!DOCTYPE HTML PUBLIC &quot;-//IETF//DTD HTML 2.0//EN&quot;&gt;\n
+    &lt;html&gt;&lt;head&gt;\n
+    &lt;title&gt;413 Request Entity Too Large&lt;/title&gt;\n
+    &lt;/head&gt;&lt;body&gt;\n
+    &lt;h1&gt;Request Entity Too Large&lt;/h1&gt;\n
+    The requested resource does not allow request data with PUT requests, or the amount of data provided in\n
+    the request exceeds the capacity limit.\n
+    &lt;/body&gt;&lt;/html&gt;\n</pre>
+
+<p>Apache server configured with default or too small values of the below parameters:</p>
+
+<pre>
+<strong>LimitRequestBody
+LimitRequestFieldSize
+SSLRenegBufferSize
+</strong></pre>
+
+<p>The below messages might be logged in Apache log files:</p>
+
+<p><em><strong>request body exceeds maximum size (131072) for SSL buffer<br>could not buffer message body to allow SSL renegotiation to proceed</strong></em></p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<h4><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your BigIP system. </h4>
+
+<ol><li>Recommend http application to be correctly configured, regarding max object size, in affected pool member(s).</li><li>If ASM policy is restricting file size, reconfigure to required size. <a class="sol" href="https://my.f5.com/manage/s/article/K11434152" target="_blank">K11434152</a><a href="https://my.f5.com/manage/s/article/K11434152" target="_self">: Configuring the BIG-IP ASM system to process large requests</a></li><li>Modify Apache parameters accordingly to Apache logs. For example, if Apache tells about SSL buffer, then modify <strong>SSLRenegBufferSize</strong>.</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<pre>
+From <a class="rfc" href="https://tools.ietf.org/html/rfc7231" target="_blank">RFC 7231</a>:
+
+
+<a href="https://tools.ietf.org/html/rfc7231#section-6.5.11" target="_blank">https://tools.ietf.org/html/rfc7231#section-6.5.11</a>
+
+
+6.5.11.  413 Payload Too Large
+
+   The 413 (Payload Too Large) status code indicates that the server is
+   refusing to process a request because the request payload is larger
+   than the server is willing or able to process.  The server MAY close
+   the connection to prevent the client from continuing the request.
+
+   If the condition is temporary, the server SHOULD generate a
+   Retry-After header field to indicate that it is temporary and after
+   what time the client MAY try again.</pre>
+
+<pre>
+ ---------------------------------
+
+<strong><a class="sol" href="https://my.f5.com/manage/s/article/K01235989" target="_blank">K01235989</a>: Understanding BIG-IP ASM large file upload behavior <a href="https://my.f5.com/manage/s/article/K01235989" target="_blank">https://my.f5.com/manage/s/article/K01235989</a></strong></pre>
+</div>
+</article>
+</body>
+</html>

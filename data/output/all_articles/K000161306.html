@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161306: New BIG-IP continuously sending TCP/443 traffic to Old Management IP after UCS platform migration</title>
+<meta name="description" content="Support Solution: New BIG-IP continuously sending TCP/443 traffic to Old Management IP after UCS platform migration — After migrating a BIG-IP configuration from one platform to another using UCS platform-migrate, the new device continuously initiates outbound TCP connections on port 443 to the management IP of the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161306">
+</head>
+<body>
+<header>
+<h1>K000161306: New BIG-IP continuously sending TCP/443 traffic to Old Management IP after UCS platform migration</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-05-18</dd>
+<dt>Updated</dt><dd>2026-05-18</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.0.0, 15.0.X, 15.0.1, 17.X.X, 16.X.X, 15.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161306">https://my.f5.com/manage/s/article/K000161306</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>After migrating a BIG-IP configuration from one platform to another using UCS platform-migrate, the new device continuously initiates outbound TCP connections on port 443 to the management IP of the old device. The connections time out and are reset, as confirmed by packet captures showing repeated TCP SYN attempts followed by RST/ACK resets.</p>
+<p>Observed symptoms:</p>
+<ul><li>The new BIG-IP self IP continuously initiates TCP SYN packets to the old device&#39;s tenant management IP on port 443</li><li>Connections fail with [F5RST(peer): handshake timeout] resets</li><li>The old device&#39;s IP addresses are not present as pool members or nodes in the migrated configuration</li><li>Behavior persists even after ARP table clearing and data cable migration</li></ul>
+<p>Example packet capture output:</p>
+<ul><li><span style="font-family: courier;">10.0.0.0 → 172.16.0.0  TCP OUT : 50721 → 443 [SYN]</span></li><li><span style="font-family: courier;">10.0.0.0 → 172.16.0.0  TCP OUT : 50721 → 443 [RST, ACK] [F5RST(peer): handshake timeout]</span></li></ul>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>Migration via UCS platform-migrate</li><li>Source BIG-IP device was previously managed by BIG-IQ</li></ul>
+<h2>Cause</h2>
+<p>After the UCS platform-migrate, stale BIG-IQ iControl REST framework state from the previous BIG-IQ management relationship was retained on the new BIG-IP. This leftover REST framework configuration caused the new tenant to continuously attempt TCP/443 connections back to the old device&#39;s management IP, even though BIG-IQ had been removed from the environment.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>Follow this troubleshooting steps prior to clearing the REST framework:</p>
+<ol><li>Verify the old device&#39;s IP is not referenced as a pool member or node:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh list /ltm node | grep &lt;old_mgmt_ip&gt;
+tmsh list /ltm pool recursive | grep &lt;old_mgmt_ip&gt;</code></pre>
+</li><li>Check for stale device trust or CM peer references:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh list /cm device all
+tmsh show /cm device-group</code></pre>
+</li><li>Review all routes (management and data) on the new device for any references to the old device.</li><li>If no stale pool members, nodes, or CM references are found and the device was previously managed by BIG-IQ, follow the F5 article &quot;<a href="https://my.f5.com/manage/s/article/K78734243" target="_self">K78734243: Clearing or restoring REST framework from BIG-IP after being managed by BIG-IQ</a>&quot; to remove the stale BIG-IQ iControl REST framework state from the migrated BIG-IP tenant.</li></ol>
+<h2>Additional Information</h2>
+<p>This issue is specific to scenarios where the source BIG-IP was previously managed by BIG-IQ. The BIG-IQ iControl REST framework leaves residual state on the BIG-IP device that is carried over during a UCS platform-migrate operation.</p>
+<p>Simply removing BIG-IQ from the environment or decommissioning the old device does not automatically clear the stale REST framework references on the BIG-IP tenant.</p>
+<p>The stale REST framework state is not visible in standard LTM configuration objects (pool members, nodes, routes, ARP) — it resides within the REST framework layer.</p>
+<p>All other traffic may function normally while this issue is present.</p>
+</article>
+</body>
+</html>

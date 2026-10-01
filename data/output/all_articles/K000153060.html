@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000153060: Dynamic CRL check fails when client submits certificate that has CRLDP extension with multiple CRLDP URI and first CRLDP is LDAP URI.</title>
+<meta name="description" content="Support Solution: Dynamic CRL check fails when client submits certificate that has CRLDP extension with multiple CRLDP URI and first CRLDP is LDAP URI. — When client accesses to client-ssl virtual server that uses dynamic CRL check (client-ssl profile &quot;CRL&quot; parameter under &quot;Client Authentication&quot; section), following error may be thrown and SSL…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000153060">
+</head>
+<body>
+<header>
+<h1>K000153060: Dynamic CRL check fails when client submits certificate that has CRLDP extension with multiple CRLDP URI and first CRLDP is LDAP URI.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-08-19</dd>
+<dt>Updated</dt><dd>2025-08-19</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.1.0, 16.1.2, 16.1.1, 17.1.X, 17.5.X, 16.1.X, 17.5.1, 17.5.0, 17.1.2, 17.1.1, 17.1.0, 16.1.6, 16.1.5, 16.1.4, 16.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000153060">https://my.f5.com/manage/s/article/K000153060</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When client accesses to client-ssl virtual server that uses dynamic CRL check (client-ssl profile &quot;CRL&quot; parameter under &quot;Client Authentication&quot; section), following error may be thrown and SSL handshake may be terminated.</p>
+<p> </p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Aug 18 17:39:30 bigip.local warning tmm11[17967]: 01260009:4: 10.1.1.50:39478 -&gt; 10.1.1.191:443: Connection error: ssl_hs_do_crl_validation:XXXX: alert(46) unknown certificate error</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">Aug 18 17:39:30 bigip.local warning tmm11[17967]: 01260013:4: SSL Handshake failed for TCP 10.1.1.50:39478 -&gt; 10.1.1.191:443</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">Aug 18 17:39:30 bigip.local err keymgmtd[11845]: 01a40000:3: Invalid CRL distrubution point from the certificate (cert_common_name=testuser104)</span></p>
+<p> </p>
+<p>Looking at packet capture, just after client submits its certificate to virtual server, handshake alert is generated and SSL connection is torn down. At that time, neither DNS lookup request for dns-resolver nor HTTP/LDAP traffic towards CRLDP server happens.</p>
+<p> </p>
+<p> </p>
+<h2>Environment</h2>
+<ul><li>Dynamic CRL check is in use.</li><li>Client certificate has a CRLDP extension with multiple CRLDP URI.</li><li>First CRLDP URI is LDAP URI, not HTTP URI.</li></ul>
+<p> </p>
+<p>Here is example configuration and client certificate that reproduces errors.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>### BIG-IP configuration
+ltm virtual /Common/clientssl_vs {
+    destination /Common/10.1.1.191:443
+    ip-protocol tcp
+    mask 255.255.255.255
+    pool /Common/http_pool
+    profiles {
+        /Common/http { }
+        /Common/my_clientssl {
+            context clientside
+        }
+        /Common/tcp { }
+    }
+    serverssl-use-sni disabled
+    source 0.0.0.0/0
+    source-address-translation {
+        pool /Common/my_snatpool
+        type snat
+    }
+    translate-address enabled
+    translate-port enabled
+}
+ltm profile client-ssl /Common/my_clientssl {
+    app-service none
+    authenticate always
+    ca-file /Common/ubuntu2204server1ca.f5ss.local
+    cert-key-chain {
+        web001.f5ss_0 {
+            cert /Common/web001.f5ss.local
+            key /Common/web001.f5ss.local
+        }
+    }
+    client-cert-ca /Common/ubuntu2204server1ca.f5ss.local
+    crl /Common/my_dynamic_crl
+    defaults-from /Common/clientssl
+    inherit-ca-certkeychain true
+    inherit-certkeychain false
+    peer-cert-mode require
+}
+net dns-resolver /Common/my_crldp_resolver {
+    cache-size 10bytes
+    forward-zones {
+        . {
+            nameservers {
+                10.1.1.203:53 { }
+            }
+        }
+    }
+    randomize-query-name-case no
+    route-domain /Common/0
+    use-ipv6 no
+    use-tcp no
+}
+sys crypto cert-validator crl /Common/my_dynamic_crl {
+    internal-proxy /Common/my_dynamic_crl_proxy
+    strict-revocation-check enabled
+}
+sys internal-proxy /Common/my_dynamic_crl_proxy {
+    dns-resolver /Common/my_crldp_resolver
+    route-domain /Common/0
+}</code></pre>
+<p> </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>### client certificate
+user1@ubuntu2204client1:~$ openssl x509 -in /home/user1/testuser104.crt -text -noout
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            64:d0:b0:f7:49:c7:39:be:40:ce:f4:37:75:67:3f:bc:9c:1b:71:5b
+        Signature Algorithm: sha256WithRSAEncryption
+        Issuer: C = JP, ST = Kanagawa, O = F5SS, CN = ubuntu2204server1ca.f5ss.local
+        Validity
+            Not Before: Aug 18 07:39:36 2025 GMT
+            Not After : May 14 07:39:36 2028 GMT
+        Subject: C = JP, ST = Kanagawa, L = Yokohama, O = F5SS, CN = testuser104
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+			...(snip)...
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            X509v3 CRL Distribution Points:
+                Full Name:
+                  URI:ldap://ubuntu2204server2.f5ss.local/CN=crldp,DC=f5ss,DC=local   &lt;=== !!! 1st CRLDP (LDAP)
+                Full Name:
+                  URI:http://ubuntu2204server1.f5ss.local/mycrl.crl   &lt;=== !!! 2nd CRLDP (HTTP)
+            X509v3 Subject Key Identifier:
+                16:44:D4:0B:80:DC:2F:43:F3:18:7E:1D:B1:73:92:FD:84:69:49:42
+            X509v3 Authority Key Identifier:
+                4C:E7:23:98:EC:37:E4:CD:74:C0:B7:86:6C:79:ED:39:44:39:B1:E6
+    Signature Algorithm: sha256WithRSAEncryption
+			...(snip)...</code></pre>
+<p> </p>
+<p> </p>
+<h2>Cause</h2>
+<p>By design. Dynamic CRL supports client certificate with only one CRLDP and CRLDP has to be HTTP URI.</p>
+<p> </p>
+<p> </p>
+<h2>Recommended Actions</h2>
+<p>Use client certificate that has only one CRLDP with HTTP URI when dynamic CRL check is in use. Here is example client certificate with which dynamic CRL check works fine. Only one CRLDP is there and that is HTTP URI.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>### client certificate
+user1@ubuntu2204client1:~$ openssl x509 -in /home/user1/testuser103.crt -text -noout
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            64:d0:b0:f7:49:c7:39:be:40:ce:f4:37:75:67:3f:bc:9c:1b:71:58
+        Signature Algorithm: sha256WithRSAEncryption
+        Issuer: C = JP, ST = Kanagawa, O = F5SS, CN = ubuntu2204server1ca.f5ss.local
+        Validity
+            Not Before: Aug 14 08:22:22 2025 GMT
+            Not After : May 10 08:22:22 2028 GMT
+        Subject: C = JP, ST = Kanagawa, L = Yokohama, O = F5SS, CN = testuser103
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+			...(snip)...
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            X509v3 CRL Distribution Points:
+                Full Name:
+                  URI:http://ubuntu2204server1.f5ss.local/mycrl.crl	&lt;=== !!! only one CRLDP and it&#39;s HTTP URI.
+            X509v3 Subject Key Identifier:
+                99:CF:16:21:A6:DD:25:4E:7D:A9:D6:28:C7:4E:65:29:70:BF:FC:87
+            X509v3 Authority Key Identifier:
+                4C:E7:23:98:EC:37:E4:CD:74:C0:B7:86:6C:79:ED:39:44:39:B1:E6
+    Signature Algorithm: sha256WithRSAEncryption
+			...(snip)...</code></pre>
+<p> </p>
+<p>If it is not possible to use such client certificate, consider using static CRL file instead of dynamic CRL check.</p>
+<p> </p>
+<p>Alternatively, consider using APM &quot;On-Demand Cert Auth + CRLDP auth&quot; setup. APM &quot;On-Demand Cert Auth + CRLDP auth&quot; supports multiple CRLDP URIs and supports LDAP URI as well as HTTP URI.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000TyGv&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000QciaX" alt="" style="display: block;margin-left: auto;margin-right: auto;" width="636" height="204"></img></p>
+<p style="text-align: center;"><span style="color: #666666;">Figure: APM On-Demand Cert Auth combined with CRLDP server</span></p>
+<p> </p>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None.</p>
+<p> </p>
+</article>
+</body>
+</html>

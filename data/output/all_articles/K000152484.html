@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000152484: How to calculate SSL handshake buffer</title>
+<meta name="description" content="Support Solution: How to calculate SSL handshake buffer — The SSL handshake failures may occur on BIG-IP LTM systems, with error messages such as">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000152484">
+</head>
+<body>
+<header>
+<h1>K000152484: How to calculate SSL handshake buffer</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-09-30</dd>
+<dt>Updated</dt><dd>2025-09-30</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.0.0, 15.0.X, 15.0.1, 15.X.X, 16.X.X, 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000152484">https://my.f5.com/manage/s/article/K000152484</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>The SSL handshake failures may occur on BIG-IP LTM systems, with error messages such as <br><span style="background-color: #f1f1f1;font-family: &#39;courier new&#39;, courier, monospace;">&quot;SSL Handshake failed for TCP &lt;ip&gt;:&lt;port&gt; -&gt; &lt;ip&gt;:443&quot;</span><br><span style="background-color: #f1f1f1;font-family: &#39;courier new&#39;, courier, monospace;">&quot;Connection error: ssl_null_parse:3779: alert(40) hs msg overflow&quot;</span> <br>appearing in the logs. One possible reason for these SSL handshake failures is that the total size of handshake messages exceeded the allowed buffer, resulting in a &quot;handshake message overflow.&quot; This can occur, for example, if a client SSL profile receives a client authentication certificate or if the backend server sends large SSL certificate files.  Packet captures may show abrupt TLS handshake terminations, and the handshake does not complete successfully. </p>
+<p> </p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>HTTPS Virtual Server</li><li>SSL Profile<br> </li></ul>
+<h2>Cause</h2>
+<p>The total size of SSL handshake messages—including Client Hello, Server Hello, Certificate, Server Key Exchange, Certificate Request, Server Hello Done, Certificate, Client Key Exchange and Certificate Verify , and associated data—exceeded the buffer limit defined by &quot;tmm.ssl.maxhandshakesize&quot;. This is typically triggered by a large CA bundle or long certificate chains that increase the size of handshake messages beyond the configured buffer.</p>
+<p>The default SSL handshake buffer size is 32KB (32,768 bytes). In this scenario is set to 40,000 bytes:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>sys db tmm.ssl.maxhandshakesize {
+default-value &quot;32768&quot;
+scf-config &quot;true&quot;
+value &quot;40000&quot;
+value-range &quot;unsigned_integer min:32768 max:2091752&quot;
+}</code></pre>
+<p> </p>
+<h2>Recommended Actions</h2>
+<p>Calculate SSL handshake buffer by using one of the command below:<br><span style="background-color: #f1f1f1;"> tshark -r SSLfailure23rdJune.pcap -Y &quot;tls.handshake and tcp.stream eq &lt;stream number&gt;&quot; -T fields -e frame.number -e ip.src -e ip.dst -e _ws.col.Protocol -e frame.len -e _ws.col.Info -e tls.handshake.length</span></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>426     172.16.0.0    192.168.0.0   TLSv1.2  IN  s1/tmm0 : Client Hello (SNI=test.test2.com) 186
+428     192.168.0.0   172.16.0.0    TLSv1.2  OUT s1/tmm0 : Server Hello, Certificate, Server Key Exchange    83,5867,329
+432     192.168.0.0   172.16.0.0    TLSv1.2  OUT s1/tmm0 : [Certificate Request Fragment]
+436     192.168.0.0   172.16.0.0    TLSv1.2  OUT s1/tmm0 : Certificate Request, Server Hello Done    27916,0
+445     172.16.0.0    192.168.0.0   TLSv1.2  IN  s1/tmm0 : Certificate, Client Key Exchange  5864,66
+448     172.16.0.0    192.168.0.0   TLSv1.2  IN  s1/tmm0 : Certificate Verify        260
+451     172.16.0.0    192.168.0.0   TLSv1.2  IN  s1/tmm0 : Encrypted Handshake Message</code></pre>
+<p>or<br><span style="background-color: #f1f1f1;"> tshark -r SSLfailure23rdJune.pcap -Y &quot;tls.handshake and tcp.stream eq &lt;stream number&gt;&quot; -T fields -e tls.handshake.length</span></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>186
+83,5867,329
+
+27916,0
+5864,66
+260</code></pre>
+<p>Adding all together =40571 </p>
+<p>Then, increase &quot;tmm.ssl.maxhandshakesize&quot; to accommodate larger handshake messages. For example:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify sys db tmm.ssl.maxhandshakesize value 42000
+tmsh save sys config</code></pre>
+<p><strong>Impact of procedure:</strong> The impact of the suggested procedure depends on the specific environment. F5 recommends that you test any such changes during a maintenance window, with consideration to the possible impact on your specific environment.</p>
+<h2>Additional Information</h2>
+<p>When analyzing SSL handshake failures using Wireshark, if you observe an &quot;<em><strong>Alert (Level: Fatal, Description: Handshake Failure)</strong></em>&quot; message at any point during the handshake process, you should calculate the cumulative size of all handshake messages exchanged up to and without the packet where this alert occurs. This total represents the effective buffer usage at the point of failure and is critical for diagnosing buffer overflow issues.</p>
+</article>
+</body>
+</html>

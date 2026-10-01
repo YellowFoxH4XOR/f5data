@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162643: CNF CGNAT 2.2.0 EHF1 dnsapp with transparent cache fails to forward resolver.arpa DNS requests to pool members</title>
+<meta name="description" content="Support Solution: CNF CGNAT 2.2.0 EHF1 dnsapp with transparent cache fails to forward resolver.arpa DNS requests to pool members — The ingress component may report successful custom-resource processing, while the cache resolver is absent from TMM. DNS queries then fail to use the configured local-zone response.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162643">
+</head>
+<body>
+<header>
+<h1>K000162643: CNF CGNAT 2.2.0 EHF1 dnsapp with transparent cache fails to forward resolver.arpa DNS requests to pool members</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-07-29</dd>
+<dt>Updated</dt><dd>2026-07-29</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP Next CGNAT CNF: 2.2.0</li><li>BIG-IP Next CNF</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162643">https://my.f5.com/manage/s/article/K000162643</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>A transparent DNS cache may fail to load into TMM when a configured local-zone TXT record contains embedded double quotes, such as:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">example.com. IN TXT &quot;dummy&quot;</span></p>
+<p>The ingress component may report successful custom-resource processing, while the cache resolver is absent from TMM. DNS queries then fail to use the configured local-zone response.</p>
+<p>Queries for <span style="font-family: &#39;courier new&#39;, courier, monospace;">_dns.resolver.arpa</span> without a valid overriding local-zone configuration may receive a local Unbound response instead of being forwarded to the configured DNS pool.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP Next CGNAT CNF</li><li>F5BigDnsApp</li><li>F5BigDnsCache</li><li>Transparent DNS cache</li><li>DNS listener with configured backend pool members</li><li>Local-zone records configured under F5BigDnsCache</li><li>TXT records containing embedded double quotes</li><li>Unbound reserved local zones, including:
+<ul><li>resolver.arpa</li><li>service.arpa</li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p>Two separate behaviors can produce similar symptoms:</p>
+<ol><li><strong>Quoted TXT record configuration</strong>
+<p>The ingress component inserts local-zone record strings into the TMM configuration message without properly escaping embedded double quotes. The resulting malformed JSON/gRPC message is rejected by TMM.</p>
+<p>The cache is therefore not created in TMM, even though the custom resource may appear to have been processed successfully.</p>
+</li><li><strong>Unbound reserved local zones</strong>
+<p>When no valid overriding local-zone configuration exists, queries for <span style="font-family: &#39;courier new&#39;, courier, monospace;">resolver.arpa</span> are handled by Unbound’s built-in reserved local zone. These queries receive a local response and are not forwarded to the configured DNS pool.</p>
+<p>This behavior is expected for the built-in reserved zone and is independent of the quoted TXT record configuration problem.</p>
+</li></ol>
+<h2>Recommended Actions</h2>
+<ol><li>Review the <span style="background-color: #f1f1f1;">F5BigDnsCache</span> configuration for TXT records containing embedded double quotes.</li><li>For single-word TXT values, remove the quotation marks. For example, change:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">- example.com. IN TXT &quot;dummy&quot;</span></p>
+to:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">- example.com. IN TXT dummy</span></p>
+</li><li>Reapply the corrected <span style="background-color: #f1f1f1;">F5BigDnsCache</span> configuration.</li><li>Verify that the cache resolver is present in TMM and that query and response counters increase.</li><li>Review ingress logs if the cache is not created. A malformed configuration may generate an error similar to:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">invalid character &#39;d&#39; after object key:value pair</span></p>
+</li><li>Test the configured local-zone record and confirm that the response is returned locally without being forwarded to the backend DNS pool.</li><li>For <span style="font-family: &#39;courier new&#39;, courier, monospace;">_dns.resolver.arpa</span> queries:
+<ul><li>Configure a valid local zone if the query must be answered by the CNF cache.</li><li>Do not expect the query to be forwarded to the backend pool when it is handled by Unbound’s built-in <span style="font-family: &#39;courier new&#39;, courier, monospace;">resolver.arpa</span> local zone.</li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">answer-default-zones no</span> does not disable the built-in reserved-zone behavior.</li></ul>
+</li><li>Avoid quoted multi-word TXT values until a product fix for the configuration serialization issue is available. Multi-word TXT RDATA normally requires quotation marks, but the affected configuration path cannot safely process those values.</li></ol>
+<h2>Verification</h2>
+<p>A valid local-zone configuration should produce the following results:</p>
+<ul><li>The cache resolver is present in TMM.</li><li>TMM query and response counters increase.</li><li>The configured local-zone response is returned to the client.</li><li>The query is not forwarded to the backend DNS pool when answered locally.</li></ul>
+<p>An immediate response containing an SOA with local host information, such as:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">resolver.arpa. 10800 IN SOA localhost. nobody.example.net.</span></p>
+<p>indicates that the response was generated locally by Unbound rather than returned by a backend pool member.</p>
+</article>
+</body>
+</html>

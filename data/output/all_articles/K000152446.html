@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000152446: Intermittent Packet Loss and Latency on BIG-IP LTM (F5OS Tenant) with VRRP</title>
+<meta name="description" content="Support Solution: Intermittent Packet Loss and Latency on BIG-IP LTM (F5OS Tenant) with VRRP — Intermittent packet loss and latency may occur on BIG-IP LTM systems running as F5OS tenants, when peer device has a MAC address which is just for receiving traffic but not used for sending traffic…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000152446">
+</head>
+<body>
+<header>
+<h1>K000152446: Intermittent Packet Loss and Latency on BIG-IP LTM (F5OS Tenant) with VRRP</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-07-08</dd>
+<dt>Updated</dt><dd>2026-06-16</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS</li><li>BIG-IP</li><li>BIG-IP LTM: 16.0.0, 16.1.0, 16.0.X, 16.0.1, 16.X.X, 17.X.X, 21.X.X, 21.1.X, 21.1.0, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1</li><li>F5OS-A</li><li>F5OS-C</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000152446">https://my.f5.com/manage/s/article/K000152446</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Intermittent packet loss and latency may occur on BIG-IP LTM systems running as F5OS tenants, when peer device has a MAC address which is just for receiving traffic but not used for sending traffic to F5. This is particularly common in environments where VRRP, HSRP, Arista IP Anycast, or other virtual-MAC redundancy protocols are enabled.</p>
+<h3>How it works:</h3>
+<ul><li>BIG-IP learns the gateway MAC address via ARP — the virtual VRRP MAC is returned</li><li>BIG-IP uses this virtual MAC as the destination MAC for all egress traffic</li><li>The peer device uses its physical/system MAC as the source MAC for all traffic it sends back to F5</li><li>The virtual VRRP MAC is never used as a source MAC by the peer (except for ARP responses). As a result, the F5OS FDB (Forwarding Database) entry for the virtual VRRP MAC is never refreshed by regular business traffic. When the entry expires, packet loss occurs until the MAC is re-learned via ARP.</li></ul>
+<p>When you run into this issue, the following symptoms may be observed:</p>
+<ul><li>Intermittent TCP retransmissions and delayed application traffic</li><li>Periodic packet loss burst approximately every 5 minutes, correlating with the FDB aging interval</li><li>Intermittently missing ICMP replies in ping tests</li><li>Application connection accumulation or timeouts around gateway ARP refresh time</li><li>Slow file transfers (for example, SCP) on specific VLANs while other VLANs on the same LAG work normally</li><li>No physical interface errors/drops or physical link issues observed</li></ul>
+<h2>Environment</h2>
+<ul><li><strong>Platform:</strong>
+<ul><li>rSeries: <strong>R5000 </strong>(r5600/r5800/r5900), <strong>R10000 </strong>(r10600 / r10800 / r10900, R12000)</li><li>VELOS platform (all blade types)</li></ul>
+</li><li><strong>Protocol:</strong> VRRP, HSRP, Arista IP Anycast, or any virtual MAC redundancy technology, where the virtual MAC is used only for receiving but not for sending</li><li><strong>F5OS Version:</strong> F5OS-A 1.5.x, 1.7.x, 1.8.x; F5OS-C 1.6.x, 1.8.x</li><li><strong>BIG-IP Tenant Version:</strong> 17.1.x, 17.5.x, and other tenant versions</li></ul>
+<h2>Cause</h2>
+<p>F5OS does not dynamically learn the VRRP virtual MAC address from regular business traffic when the peer device uses its physical MAC as source for egress. As a result:</p>
+<ul><li>The business traffic does not update or refresh the dynamic FDB entry for the virtual VRRP virtual MAC.</li><li>When this entry expires (default timeout: 5 minutes), new packets destined for that MAC are sent to the DLF queue.</li><li>If no ARP request/response occurs to trigger relearning before DLF queue fills, packet loss occurs at FPGA level.</li></ul>
+<p>The detailed issue procedure is as follows:</p>
+<ol><li><strong>FDB entry created:</strong> BIG-IP issues an ARP request; the VRRP device responds with the virtual MAC, creating a dynamic FDB entry in F5OS.</li><li><strong>FDB entry not regularly refreshed:</strong> All inbound business traffic from the peer uses the physical MAC as source — the virtual MAC FDB entry is never refreshed by production traffic.</li><li><strong>FDB entry expires:</strong> After the default 5-minute (300-second) timeout, the virtual VRRP MAC entry is removed from the FDB table.</li><li><strong>Packet loss occurs:</strong> Egress traffic destined to the expired virtual MAC cannot be forwarded normally, causing packet drops until the MAC is re-learned.</li></ol>
+<h2>Recommended Actions</h2>
+<ol><li><strong>Confirm this is an FDB aging issue</strong>
+<p>Check for elevated DLF packet counts. A high and increasing rx_dlf counter in the output indicates the FDB aging issue is active.</p>
+<p><strong>F5OS-A (rSeries):</strong></p>
+<pre>docker exec -it system_fpga tmctl -d blade -w 200 rbcast_pkt_stat</pre>
+<p><strong>F5OS-C (VELOS) — run on each affected partition blade:</strong></p>
+<pre>ssh blade-1
+docker exec -it partition_fpga tmctl -d blade -w 200 rbcast_pkt_stat</pre>
+<p>Example output:</p>
+<pre>name         connected rx_pkts   rx_bytes  rx_bytes_copied  ...  rx_dlf   rx_bcast<br>------------ --------- -------   --------  ---------------  ...  ------   --------<br>SwRbcaster-1         1 1142650   ...                            1142189      461</pre>
+</li><li><strong>Confirm the affected MAC is aging out</strong>
+<p>Regularly check using the commands below.</p>
+<p><strong>F5OS-A (rSeries):</strong></p>
+<pre>docker exec -it system_fpga tmctl -d blade -w 200 nse_l2</pre>
+<p><strong>F5OS-C (VELOS):</strong></p>
+<pre>docker exec -it partition_fpga tmctl -d blade -w 200 nse_l2</pre>
+<p><strong>Via F5OS admin CLI:</strong></p>
+<pre>show fdb | tab</pre>
+<p>Look for the virtual gateway MAC entry. If it is absent from the table, or if its age value is low and keeps decreasing, the entry is aging out. Only dynamic FDB entries are subject to aging; static entries are not.</p>
+</li><li><strong>Verify via packet capture</strong>
+<p>Confirm that the virtual MAC never appears as a source MAC in regular inbound traffic — only in ARP replies:</p>
+<pre>tcpdump -s0 -nni 0.0:nnn &#39;ether src &#39;</pre>
+</li></ol>
+<h2><strong>Workaround/Solution:</strong></h2>
+<p>You can use any one of the following solutions to fix this issue.</p>
+<p><em><strong>Impact of workaround:</strong> Adding or removing static FDB entries does not disrupt ongoing business traffic. Changes to ARP timeout or health monitors apply only to the BIG-IP tenant and do not require maintenance windows.</em></p>
+<h3>Option 1: Add a static FDB entry for the virtual VRRP MAC (Recommended)</h3>
+<p>Prevent expiration by configuring a static entry for the relevant virtual VRRP virtual MAC address on F5OS:</p>
+<pre>appliance-1(config)# fdb mac-table entries entry tag_type_vid interface interface-ref config interface 
+appliance-1(config)# commit</pre>
+<p>For LAG interfaces, specify the LAG name.</p>
+<p><strong>Remove static entry if needed:</strong></p>
+<pre>appliance-1(config)# no fdb mac-table entries entry  
+appliance-1(config)# commit</pre>
+<h3>Option 2: Lower ARP timeout on the tenant</h3>
+<p>Configure the BIG-IP tenant to send ARP requests before the F5OS FDB entry expires (default: 300 seconds).</p>
+<pre>tmsh modify sys db arp.timeout value 250
+tmsh save sys config</pre>
+<h3>Option 3: Configure upstream router to use virtual VRRP MAC as source</h3>
+<p>Configure your upstream router&#39;s VRRP implementation to use its virtual VRRP MAC as both source and destination in outgoing frames. This allows dynamic learning by normal traffic. This is the most permanent solution but requires changes on the peer network device.</p>
+<h3>Option 4: Reduce GARP interval on upstream device</h3>
+<p>If the peer device sends periodic GARP or VRRP advertisements, reduce the advertisement interval to well below the F5OS FDB aging timer (300 seconds). This ensures the FDB entry is refreshed before it expires.</p>
+<h2>Additional Information</h2>
+<p>Additional scenarios where this can occur:</p>
+<ul><li><strong>Selective VLAN impact:</strong> On the same LAG, only VLANs where the gateway virtual MAC is never refreshed by inbound traffic are affected. VLANs where the peer sends traffic using the virtual MAC as source are not affected.</li><li><strong>rSeries R10000/R12000 (Dual-FPGA platforms):</strong> These platforms have 2 FPGAs handling different port ranges. When a LACP trunk spans both FPGAs, FDB aging may occur even with inbound traffic, because aging events are only processed by the FPGA that originally learned the entry.</li><li><strong>VELOS Multi-Blade:</strong> On multi-blade VELOS, FDB aging is managed by the &quot;owner&quot; blade (the blade that first learned the MAC). Traffic arriving on a non-owner blade does not refresh the aging timer on the owner blade. This can compound the issue in LACP configurations spanning multiple blades.</li><li><strong>Static ARP entries:</strong> A static ARP entry configured on the BIG-IP tenant does <strong>not</strong> automatically create or refresh an FDB entry on F5OS. This affects clone pool and SSLO service chain scenarios where traffic is sent to a MAC address that never generates inbound traffic.</li></ul>
+</article>
+</body>
+</html>

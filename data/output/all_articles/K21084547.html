@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K21084547: Reviewing the conditions of Istio Authorization Policy that does not work as expected</title>
+<meta name="description" content="Support Solution: Reviewing the conditions of Istio Authorization Policy that does not work as expected — Action: If the rule matches the request define whether it is a deny or allow.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K21084547">
+</head>
+<body>
+<header>
+<h1>K21084547: Reviewing the conditions of Istio Authorization Policy that does not work as expected</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-04-05</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K21084547">https://my.f5.com/manage/s/article/K21084547</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p><span class="subsectiontitle">Understanding authorization policies</span></p>
+
+<p>Authorization policies enable access control of workloads in the mesh. To define an authorization policy resource, we need to specify three fields in the spec section:</p>
+
+<ul><li>Selector: Defines what workloads this policy will apply to.</li><li>Action: If the rule matches the request define whether it is a deny or allow.</li><li>Rules: Defines a list of rules that will trigger this policy.</li></ul>
+
+<p>At the rules level we can optionally specify three fields:</p>
+
+<ul><li>From: Defines where the request is coming from, this could be ipblocks, namespaces, principals, notIpblocks, notnamespaces, etc.</li><li>To: Specifies the operation of a request, such as host or method.</li><li>When: It will define additional conditions of a request.</li></ul>
+
+<p><span class="subsectiontitle">Istio Authorization Policy with XFCC condition</span></p>
+
+<ul><li>As explained before we can specify additional conditions using the field when we can use different keys and values. For information about the list of supported keys, refer to the Istio configuration guide: <a href="https://istio.io/latest/docs/reference/config/security/conditions/" target="_self">Authorization Policy Conditions</a>.</li><li>The following example shows a Authorization Policy has been defined to allow communication from pods in <strong>test1-ns</strong> and <strong>test-ns2</strong> to host <strong>httpbin.dummy1-ns.svc.cluster.local </strong>using XFCC headers as a matching condition, but does not work properly:
+	<p><span class="note"><strong>Note</strong>: This condition intends to check sleep’s pod XFCC header and look for the DNS key using wildcards with unsupported format: <strong>*DNS=sleep.example.com*</strong>, after testing this policy, it didn’t work as expected and getting a <strong>RBAC: access denied </strong>message.</span></p>
+
+	<p><span class="example2">apiVersion: security.istio.io/v1beta1<br>	kind: AuthorizationPolicy<br>	metadata:<br>	  name: test-authz-policy<br>	  namespace: dummy1-ns<br>	spec:<br>	  action: ALLOW<br>	  rules:<br>	  - from:<br>	    - source:<br>	        namespaces: [&quot;test1-ns&quot;, &quot;test2-ns&quot;]<br>	    to:<br>	    - operation:<br>	        hosts: [&quot;httpbin.dummy1-ns.svc.cluster.local&quot;]<br>	        paths: [&quot;/headers&quot;]<br>	    when:<br>	    - key: request.headers[X-Forwarded-Client-Cert]<br>	      values: [&quot;*DNS=sleep.example.com*&quot;]</span></p>
+	</li></ul>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Kubernetes: 1.17x, 1.18.x, 1.19.x, 1.20.x</li><li>Aspen Mesh: 1.6.x, 1.9.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Istio Authorization Policy rules only support Exact, Prefix, Suffix and Presence match:</p>
+
+<ul><li>Exact match: “abc” will match on value “abc”.</li><li>Prefix match: “abc*” will match on value “abc” and “abcd”.</li><li>Suffix match: “*abc” will match on value “abc” and “xabc”.</li><li>Presence match: “*” will match when value is not empty.</li></ul>
+<span class="warning"><strong>Important</strong>: Expressions like *string* are not currently supported.</span>
+
+<p>Contents of XFCC header will be seen as a single string, even if it seems keys are separated by semi-colons. For example:</p>
+
+<p><span class="example2"><strong>&#39;x-forwarded-client-cert&#39;</strong>, &#39;By=spiffe://cluster.local/ns/dummy1-ns/sa/httpbin;Hash=ee902b419baac145c784692a2cb1dfa6c9c8bd34ffec55cae5878d5d5d50be65;Subject=&quot;&quot;;URI=spiffe://cluster.local/ns/test1-ns/sa/sleep;DNS=a.example.com;DNS=sleep.example.com&#39;</span></p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>Since the XFCC header value is seen as a single string if we want to use the DNS key from the XFCC header the following condition must be defined. For example:</p>
+<span class="example2">    when:<br>    - key: request.headers[X-Forwarded-Client-Cert]<br>      values: [&quot;*DNS=sleep.example.com&quot;]</span>
+
+<p>This condition is using a suffix for the string defined in the XFCC header, it will match everything that is before <strong>DNS=sleep.example.com</strong>.</p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>For information about XFCC headers, refer to the Aspen Mesh operations guide: <a href="https://my.aspenmesh.io/client/docs/1.9/operations/configure-xfcc-header/" target="_self">Configuring XFCC Headers</a>.</p>
+</article>
+</body>
+</html>

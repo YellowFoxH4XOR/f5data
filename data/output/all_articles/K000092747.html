@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000092747: traffic-splitting with subselector to pod</title>
+<meta name="description" content="Support Solution: traffic-splitting with subselector to pod — The app team wants the call from (MSRV-A) with mass_auth value pod1 to go to POD1 of MSRV-B and likewise value pod2 to upstream traffic only to pod2.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000092747">
+</head>
+<body>
+<header>
+<h1>K000092747: traffic-splitting with subselector to pod</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-12-09</dd>
+<dt>Updated</dt><dd>2023-08-07</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000092747">https://my.f5.com/manage/s/article/K000092747</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Description</strong></h2>
+
+<p><span style="font-size: 14px;">We have a microservice ( lets say MSRV-A) that is deployed in Azure Kubernetes Services that needs to make a call to another service deployed in the same AKS ( MSRV-B) . The microservice initiating the request (MSRV-A) will make a call with a COOKIE or a header example :</span></p>
+
+<p> </p>
+
+<p><span style="font-size: 14px;">KEY : mass_auth</span></p>
+
+<p><span style="font-size: 14px;">Value: pod1/pod2/pod3</span></p>
+
+<p> </p>
+
+<p><span style="font-size: 14px;">The app team wants the call from (MSRV-A) with mass_auth value pod1 to go to POD1 of MSRV-B and likewise value pod2 to upstream traffic only to pod2.</span></p>
+
+<p> </p>
+
+<p><span style="font-size: 14px;">The reason for this as per app team is that the expected auth token response for MSRV-A would only be available in a specific pod in MSRV-B and they believe if they send some headers NGINX INGRESS CONTROLLER can make the choice of upstream based on that header and proxy it to specific header.</span><br> </p>
+
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Environment</strong></h2>
+
+<ul><li>NGINX Ingress Controller</li><li>traffic-splitting</li><li>subselector</li></ul>
+
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Cause</strong></h2>
+
+<p> </p>
+
+<h2><span style="font-size: 10.5pt;font-family: Arial, sans-serif;"> </span><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Recommended Actions</strong></h2>
+
+<p><span style="font-size: 11pt;font-family: Calibri, sans-serif;"> Pod and service config</span></p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tea-cookie
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cafe
+  template:
+    metadata:
+      labels:
+        app: cafe
+        cookie: tea
+    spec:
+      containers:
+      - name: tea
+        image: nginxdemos/nginx-hello:plain-text
+        ports:
+        - containerPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coffee-cookie
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cafe
+  template:
+    metadata:
+      labels:
+        app: cafe
+        cookie: coffee
+    spec:
+      containers:
+      - name: coffee
+        image: nginxdemos/nginx-hello:plain-text
+        ports:
+        - containerPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cafe
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cafe
+  template:
+    metadata:
+      labels:
+        app: cafe
+    spec:
+      containers:
+      - name: cafe
+        image: nginxdemos/nginx-hello:plain-text
+        ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cafe-svc
+spec:
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: cafe
+</pre>
+
+<p>Virtual Server config</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: k8s<strong>.</strong>nginx<strong>.</strong>org/v1
+kind: VirtualServer
+metadata:
+  name: cafe
+spec:
+  host: cafe<strong>.</strong>example<strong>.</strong>com
+  upstreams:
+  - name: tea-cookie
+    service: cafe-svc
+    subselector:
+      cookie: tea
+    port: 80
+  - name: coffee-cookie
+    service: cafe-svc
+    subselector:
+      cookie: coffee
+    port: 80
+  - name: cafe
+    service: cafe-svc
+    port: 80
+  routes:
+  - path: /cafe
+    matches:
+    - conditions:
+      - cookie: cafe
+        value: tea
+      action:
+        pass: tea-cookie
+    - conditions:
+      - cookie: cafe
+        value: coffee
+      action:
+        pass: coffee-cookie
+    action:
+      pass: cafe
+</pre>
+
+<p><br> </p>
+
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Additional Information</strong></h2>
+
+<p><a href="https://github.com/nginxinc/kubernetes-ingress/tree/main/examples/custom-resources/traffic-splitting" target="_blank">traffic-splitting</a></p>
+
+<p><a href="https://docs.nginx.com/nginx-ingress-controller/configuration/virtualserver-and-virtualserverroute-resources/#upstream" target="_blank">subselector</a></p>
+</article>
+</body>
+</html>

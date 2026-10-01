@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162469: Troubleshooting BIG-IP LTM HA Failover After Lost Heartbeats and Post-Failover Traffic Loss</title>
+<meta name="description" content="Support Solution: Troubleshooting BIG-IP LTM HA Failover After Lost Heartbeats and Post-Failover Traffic Loss — A BIG-IP LTM HA pair can fail over when the standby device stops receiving failover status messages for longer than the configured failover.nettimeoutsec value. Logs may show 010c0083, 010c007e…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162469">
+</head>
+<body>
+<header>
+<h1>K000162469: Troubleshooting BIG-IP LTM HA Failover After Lost Heartbeats and Post-Failover Traffic Loss</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-07-27</dd>
+<dt>Updated</dt><dd>2026-07-27</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162469">https://my.f5.com/manage/s/article/K000162469</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>A BIG-IP LTM HA pair can fail over when the standby device stops receiving failover status messages for longer than the configured <span style="background-color: #f1f1f1;">failover.nettimeoutsec</span> value. Logs may show <span style="font-family: &#39;courier new&#39;, courier, monospace;">010c0083</span>, <span style="font-family: &#39;courier new&#39;, courier, monospace;">010c007e</span>, <span style="font-family: &#39;courier new&#39;, courier, monospace;">010c006d</span>, <span style="font-family: &#39;courier new&#39;, courier, monospace;">010c0053</span>, and <span style="font-family: &#39;courier new&#39;, courier, monospace;">010c0084</span>. After failover, some virtual servers may appear online while their traffic is inaccessible.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM HA pair.</li><li>Active/standby traffic-group configuration.</li><li>Network failover using unicast communication.</li><li>Floating virtual server addresses.</li><li>MAC masquerading configured for the traffic group.</li><li>Upstream switches and routers responsible for MAC-table and ARP-table updates.</li><li>The <span style="background-color: #f1f1f1;">failover.nettimeoutsec</span> system database variable controls the interval before a peer is considered disconnected.</li><li>Automated REST API or Ansible log extraction may increase management-plane utilization.</li></ul>
+<h2>Cause</h2>
+<p>The immediate failover condition is a gap in failover status messages that exceeds the configured <span style="background-color: #f1f1f1;">failover.nettimeoutsec</span> value. Typical messages include:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">010c0083: No failover status messages received for &lt;duration&gt; seconds</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">010c007e: Not receiving status updates from peer device (Disconnected)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">010c006d: Leaving Standby for Active</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">010c0053: Active for traffic group traffic-group-1</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">010c0084: Failover status message received after &lt;duration&gt; second gap</span></p>
+<p>The available BIG-IP evidence may confirm the heartbeat interruption without identifying the device or event that caused it. Possible external causes include a transient interruption involving a switch, trunk, link, router, or other network device. Switch-side or router-side captures are required to identify the specific failure mechanism.</p>
+<p>If only some virtual servers fail to pass traffic after failover, investigate the upstream network handling of the corresponding floating addresses. Potential causes include:</p>
+<ul><li>MAC-table learning or forwarding issues.</li><li>ARP-table update failures.</li><li>VLAN configuration differences.</li><li>Port-channel or trunk behavior.</li><li>ARP inspection or other network policies.</li><li>Different routing paths for affected and unaffected virtual servers.</li></ul>
+<p>A management-plane CPU or memory condition caused by <span style="font-family: &#39;courier new&#39;, courier, monospace;">restjavad</span>, REST API, or Ansible activity is a separate issue. It should not be identified as the cause of an HA heartbeat gap without supporting evidence such as TMM termination, SIGABRT, a core dump, or SOD messages indicating that TMM was killed.</p>
+<h2>Recommended Actions</h2>
+<ul><li><strong>Validate the HA failover</strong>
+<ol><li>Review <span style="background-color: #f1f1f1;">/var/log/ltm</span> on both BIG-IP devices.</li><li>Search for missing-heartbeat, peer-disconnected, active, standby, and heartbeat-recovery messages.</li><li>Compare the heartbeat gap with the configured <span style="background-color: #f1f1f1;">failover.nettimeoutsec</span> value:<br><span style="background-color: #f1f1f1;">tmsh list sys db failover.nettimeoutsec</span></li><li>Check for evidence of TMM termination, SIGABRT, core files, or SOD messages indicating that TMM was killed.</li><li>Confirm whether the peer completed the expected active-to-standby or standby-to-active state transition.</li><li>Review interface, VLAN, failover-network, and system resource logs for evidence of a BIG-IP-side interruption.</li><li>Do not attribute the event to management-plane starvation unless the corresponding diagnostic evidence is present.</li></ol>
+</li><li><strong>Review the failover timeout</strong>
+<p>The <span style="background-color: #f1f1f1;">failover.nettimeoutsec</span> value determines how long the standby device waits for a failover status update before attempting to become active.</p>
+<p>To modify the value:</p>
+<span style="background-color: #f1f1f1;">tmsh</span><br><span style="background-color: #f1f1f1;">modify /sys db failover.nettimeoutsec value &lt;new_value&gt;</span>
+<p>After changing the value, verify that the configuration is synchronized to the peer device. A value that is too low can cause unnecessary failovers, while a value that is too high can delay legitimate failover detection. Changing the timeout does not correct the underlying network interruption.</p>
+</li><li><strong>Validate post-failover traffic</strong>
+<ol><li>Identify affected and unaffected virtual servers.</li><li>Compare their floating IP addresses, VLANs, routes, upstream devices, and network paths.</li><li>Confirm that the newly active BIG-IP sent GARPs for the required floating addresses.</li><li>Verify that the upstream switches learned the correct MAC-to-port mapping.</li><li>Verify that upstream routers refreshed their ARP entries.</li><li>Check VLAN configuration, MAC learning, ARP inspection, port-channel behavior, and network policies.</li><li>Ask the network team whether any GARP traffic received back on another BIG-IP interface is expected for the physical topology.</li><li>Compare the network behavior of affected and unaffected virtual servers to identify configuration or path differences.</li></ol>
+</li><li><strong>Perform a controlled GARP or failover test</strong>
+<ol><li>Use a DR or maintenance environment with a test virtual server.</li><li>Use a planned force failover when validating normal failover and GARP behavior.</li><li>Avoid restarting the SOD service unless the test specifically requires that behavior.</li><li>Capture traffic simultaneously:
+<ul><li>On both BIG-IP devices.</li><li>On the switchports connected to the BIG-IP devices.</li><li>On relevant upstream switches or directly connected network devices.</li></ul>
+</li><li>Confirm that the newly active BIG-IP sends GARPs for every required floating address.</li><li>Confirm that the upstream network receives the GARPs and updates its MAC and ARP information.</li><li>Compare BIG-IP captures with switch-side captures to identify where traffic is lost, reflected, or ignored.</li><li>Verify application access for each test virtual server after the state transition.</li><li>Restore the preferred active device after testing.</li></ol>
+</li><li><strong>Investigate management-plane utilization</strong>
+<ol><li>Correlate REST API or Ansible activity with <span style="font-family: &#39;courier new&#39;, courier, monospace;">restjavad</span> CPU and memory utilization.</li><li>Avoid high-volume automated REST API collection during critical production activity.</li><li>Use QKView or other supported diagnostic collection methods where possible.</li><li>Review management-plane memory, disk utilization, process restarts, and system resource data before changing provisioning values.</li><li>If memory provisioning or service restarts are required, perform the changes during a maintenance window with the device in standby.</li><li>Review the guidance for <span style="background-color: #f1f1f1;">provision.extramb</span>, <span style="background-color: #f1f1f1;">provision.restjavad.extramb</span>, and Tomcat memory settings before making changes.</li><li>Treat <span style="background-color: #f1f1f1;">extramb</span> values as additional memory above a nonzero baseline. The baseline can vary by BIG-IP version and provisioning configuration.</li></ol>
+</li><li><strong>Collect evidence if the issue recurs</strong>
+<ol><li>Use continuous or rotating packet captures at strategic points in the HA and application traffic paths.</li><li>Preserve BIG-IP captures covering the heartbeat interruption and traffic-group transition.</li><li>Collect switch and router information for:
+<ul><li>Link-state changes.</li><li>Interface errors and discards.</li><li>MAC-table changes.</li><li>ARP-table changes.</li><li>Spanning Tree events.</li><li>Port-channel events.</li><li>CPU and I/O utilization.</li></ul>
+</li><li>Ensure that BIG-IP and network-device clocks are synchronized.</li><li>Compare the heartbeat interruption with GARP transmission and upstream MAC or ARP updates.</li><li>Preserve diagnostic data immediately after the event because a short network interruption cannot generally be reconstructed without captures taken during the interruption.</li></ol>
+</li></ul>
+<h2>Additional Information</h2>
+<ul><li>A <span style="font-family: &#39;courier new&#39;, courier, monospace;">Clock advanced by &lt;number&gt; ticks</span> message should be correlated with a failover only when its timestamp overlaps the heartbeat interruption. A message recorded outside that interval does not establish the cause of the failover.</li><li>A GARP capture on BIG-IP confirms that BIG-IP transmitted the GARP. It does not confirm that every upstream switch or router accepted the GARP or updated its forwarding and ARP state.</li><li>Increasing <span style="background-color: #f1f1f1;">failover.nettimeoutsec</span> may reduce failovers caused by shorter transient interruptions, but it does not resolve the underlying network condition.</li><li>Management-plane utilization and TMM traffic-plane processing must be analyzed separately.</li><li>High <span style="font-family: &#39;courier new&#39;, courier, monospace;">restjavad</span> utilization alone does not prove that TMM failed or that HA heartbeat communication was interrupted.</li><li>A specific external network root cause cannot be confirmed without packet captures or network-device diagnostics from the time of the interruption.</li></ul>
+</article>
+</body>
+</html>

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162467: F5 Container Ingress Services AS3 Declarations Fail with HTTP 422 on Non-Default Route Domains</title>
+<meta name="description" content="Support Solution: F5 Container Ingress Services AS3 Declarations Fail with HTTP 422 on Non-Default Route Domains — severe: [appsvcs] {&quot;message&quot;:&quot;Declaration failed: one or more properties must be specified&quot;,&quot;level&quot;:&quot;error&quot;}">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162467">
+</head>
+<body>
+<header>
+<h1>K000162467: F5 Container Ingress Services AS3 Declarations Fail with HTTP 422 on Non-Default Route Domains</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-07-27</dd>
+<dt>Updated</dt><dd>2026-07-27</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Automation and Orchestration</li><li>BIG-IP</li><li>F5 Application Services 3 Extension</li><li>F5 BIG-IP Container Ingress Services</li><li>BIG-IP LTM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162467">https://my.f5.com/manage/s/article/K000162467</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>F5 Container Ingress Services (CIS) cannot create or update virtual servers, pools, or other Kubernetes-managed objects in a tenant partition that uses a non-default route domain. BIG-IP returns an HTTP 422 response containing:</p>
+<p>When deploying an AS3 declaration to a tenant partition that uses a non-default (non-zero) Route Domain and AFM (Advanced Firewall Manager) is not provisioned, every declaration attempt fails with the following error:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">{<br>  &quot;code&quot;: 422,<br>  &quot;message&quot;: &quot;declaration failed&quot;,<br>  &quot;response&quot;: &quot;one or more properties must be specified&quot;,<br>  &quot;tenant&quot;: &quot;&lt;partition-name&gt;&quot;<br>}</span></p>
+<p>The corresponding BIG-IP `restnoded.log` entry:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">severe: [appsvcs] {&quot;message&quot;:&quot;Declaration failed: one or more properties must be specified&quot;,&quot;level&quot;:&quot;error&quot;}</span></p>
+<p>CIS (Container Ingress Services) users may additionally observe:  </p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">[ERROR] [AS3] Response from BIG-IP: code: 422 --- tenant:&lt;partition&gt; --- message: declaration failed one or more properties must be specified</span></p>
+<p>After the 422 failure, CIS may retry and receive a `201/202` response — but with an empty `tenant:[]` in the result. No objects are created or updated on the BIG-IP despite CIS logging apparent success. </p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>F5 Container Ingress Services (CIS) 2.20.3</li><li>AS3 versions 3.55 through 3.57</li><li>Tenant partitions configured with non-default route domains (Route Domain ID ≠ 0)</li><li>AFM not provisioned on the BIG-IP</li><li>CIS using AS3 declarations to manage Kubernetes resources</li></ul>
+<h2>Symptoms</h2>
+<p>CIS logs may show:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">code: 422</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">message: Declaration failed: one or more properties must be specified</span></p>
+<p>The AS3 logs may contain a command similar to:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh::modify net route-domain &lt;partition&gt;/&lt;route-domain&gt; fw-enforced-policy none</span></p>
+<p>CIS may then report a successful declaration even though the declaration is empty and no virtual server or pool is deployed.</p>
+<p>A separate temporary error may also occur while BIG-IP REST services are processing another asynchronous task:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">503 Service Unavailable</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">There is an active asynchronous task executing.</span></p>
+<p>The HTTP 503 condition is separate from the persistent AS3 declaration failure.</p>
+<h2>Cause</h2>
+<p><a href="https://cdn.f5.com/product/bugtracker/ID2376329.html" target="_blank" rel="noopener noreferrer">Bug ID 2376329</a> (AUTOTOOL-5289) affects AS3 processing when all of the following conditions apply:</p>
+<ul><li>The tenant partition uses a non-default route domain.</li><li>AFM is not provisioned.</li><li>The AS3 release generates an internal route-domain command containing the AFM-only <span style="font-family: &#39;courier new&#39;, courier, monospace;">fw-enforced-policy</span> property.</li></ul>
+<p>Because the property is unavailable without AFM, declaration processing fails. AS3 returns the generic error:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">one or more properties must be specified</span></p>
+<h2>Recommended Actions</h2>
+<p>Install AS3 3.58 or a later release containing the fix for <a href="https://cdn.f5.com/product/bugtracker/ID2376329.html" target="_blank" rel="noopener noreferrer">Bug ID 2376329</a>.</p>
+<p>Upgrade AS3 on all BIG-IP devices in your deployment.</p>
+<p>1. Download AS3 3.58.0<br>Download `f5-appsvcs-3.58.0-x.noarch.rpm` from the [F5 Downloads portal](<a href="https://downloads.f5.com" target="_blank" rel="noopener noreferrer">https://downloads.f5.com</a>).</p>
+<p>2. Upload the RPM to the BIG-IP<br><span style="font-family: &#39;courier new&#39;, courier, monospace;">scp f5-appsvcs-3.58.0-x.noarch.rpm admin@&lt;bigip-mgmt&gt;:/var/config/rest/downloads/</span></p>
+<p>3. Install via iControl REST<br><span style="font-family: &#39;courier new&#39;, courier, monospace;">curl -sku admin:&lt;password&gt; -X POST \</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">  https://&lt;bigip-mgmt&gt;/mgmt/shared/iapp/package-management-tasks \</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">  -H &#39;Content-Type: application/json&#39; \</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">  -d &#39;{&quot;operation&quot;:&quot;INSTALL&quot;,&quot;packageFilePath&quot;:&quot;/var/config/rest/downloads/f5-appsvcs-3.58.0-x.noarch.rpm&quot;}&#39;</span></p>
+<p>4. Verify the installed version*<br><span style="font-family: &#39;courier new&#39;, courier, monospace;">curl -sku admin:&lt;password&gt; \</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">  https://&lt;bigip-mgmt&gt;/mgmt/shared/appsvcs/info | python3 -m json.tool | grep version</span><br># Expected output: &quot;version&quot;: &quot;3.58.0&quot;</p>
+<p>5. Restart REST services</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh restart sys service restjavad</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh restart sys service restnoded</span></p>
+<p>6. For CIS environments — restart the CIS pod</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">kubectl rollout restart deployment/&lt;cis-deployment-name&gt; -n &lt;namespace&gt;</span></p>
+<p>7. Verify declarations succeed</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">kubectl logs -n &lt;namespace&gt; deployment/&lt;cis-deployment-name&gt; | grep &quot;Response from BIG-IP&quot;</span><br># Expected: code: 200 or 201 — tenant: &lt;partition&gt; — message: success</p>
+<p> </p>
+<p>Workaround (if immediate upgrade is not possible)<br>Downgrade AS3 to version <strong>3.52.x or earlier.</strong> Versions prior to 3.55 do not contain the defective `fw-enforced-policy` logic. Note that this is a temporary workaround only — upgrading to AS3 3.58.0 is the recommended long-term resolution.</p>
+<h2>Additional Information</h2>
+<ul><li>This issue does not affect tenant partitions using the default Route Domain (Route Domain ID 0).</li><li>If you observe an additional log message alongside the 422 error —  <br><span style="font-family: &#39;courier new&#39;, courier, monospace;">`ng_profile command failed: PHP Warning: mkdir(): Permission denied in /var/sam/www/`  </span><br>— this indicates a secondary filesystem permission issue on the BIG-IP. Check and correct ownership of `/var/sam/www/`:<br><span style="font-family: &#39;courier new&#39;, courier, monospace;">ls -la /var/sam/www/ 2&gt;/dev/null || echo &quot;Directory does not exist&quot;</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">mkdir -p /var/sam/www/</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">chown -R apache:apache /var/sam/www/</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">chmod -R 755 /var/sam/www/</span></li><li>In **CIS deployments**, after the 422 failure CIS may retry and submit an empty declaration that BIG-IP accepts (`201/202` with `tenant:[]`). This causes CIS to log a false success. No BIG-IP objects are created in this case. After upgrading to AS3 3.58, a CIS pod restart is required to trigger a fresh full declaration cycle.</li><li>Related bugs and references:<br>- Bug ID2376329 (AUTOTOOL-5289)<br>- Internal KB K000162326</li></ul>
+</article>
+</body>
+</html>

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000159905: BIG IP IP Intelligence does not work with empty feedlist</title>
+<meta name="description" content="Support Solution: BIG IP IP Intelligence does not work with empty feedlist — IP Intelligence feed lists configured with HTTPS URLs fail to download. The IP Intelligence policy remains empty (0 IPs), and traffic from blacklisted IP addresses is not blocked. System logs show…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000159905">
+</head>
+<body>
+<header>
+<h1>K000159905: BIG IP IP Intelligence does not work with empty feedlist</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-05</dd>
+<dt>Updated</dt><dd>2026-08-19</dd>
+<dt>Status</dt><dd>Final</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP AFM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000159905">https://my.f5.com/manage/s/article/K000159905</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>IP Intelligence feed lists configured with HTTPS URLs fail to download. The IP Intelligence policy remains empty (0 IPs), and traffic from blacklisted IP addresses is not blocked. System logs show certificate authentication errors indicating the BIG-IP system cannot validate the feed list server&#39;s SSL certificate.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP AFM (all versions)</li><li>IP Intelligence with external feed lists configured</li><li>Feed list URL using HTTPS protocol</li><li>Feed list server using SSL certificate signed by a CA not present in BIG-IP&#39;s default trust bundle</li></ul>
+<h2>Cause</h2>
+<p>The dwbld daemon responsible for downloading IP Intelligence feed lists uses the system trust bundle at /etc/pki/tls/certs/ca-bundle.crt`` to validate the SSL certificate presented by the feed list server during HTTPS connections. When the server&#39;s CA certificate (root or intermediate) is not present in this trust bundle, the TLS handshake fails and the feed list cannot be downloaded, leaving the IP Intelligence policy empty and not function.</p>
+<h2>Recommended Actions</h2>
+<ol><li><strong>Verify the issue</strong> by checking /var/log/dwbl/dwbld.log`` for errors similar to for errors similar to:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">dwbld| err|&lt;timestamp&gt;|&lt;pid&gt;|CURLER|curler|(null)|CURL failed with error Peer certificate cannot be authenticated with given CA certificates</span></p>
+</li><li><strong>Obtain the feed list server&#39;s CA certificate chain</strong>:
+<ul><li>Contact your feed list provider for the root and any intermediate CA certificates</li><li>Alternatively, use OpenSSL to retrieve the certificate chain:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">openssl s_client -connect &lt;feed_list_server_hostname&gt;:443 -showcerts</span></p>
+</li><li>Save the CA certificates (not the server certificate itself) to a file</li></ul>
+</li><li><strong>Add the CA certificate(s) to the BIG-IP trust bundle</strong>:
+<ul><li>Log in to the BIG-IP Advanced shell (bash) as root</li><li>Back up the existing ca-bundle.crt:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">cp /etc/pki/tls/certs/ca-bundle.crt /etc/pki/tls/certs/ca-bundle.crt.backup</span></p>
+</li><li>Append the CA certificate(s) to ca-bundle.crt:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">cat /path/to/your_ca_certificate.crt &gt;&gt; /etc/pki/tls/certs/ca-bundle.crt</span></p>
+</li><li>If multiple certificates are needed (root + intermediates), append each one</li></ul>
+</li><li><strong>Restart the dwbld service</strong> to apply the changes:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh restart sys service dwbld</span></p>
+<span style="color: #15891f;"><em><strong>Note</strong>: This command does not impact traffic processing</em></span></li><li><strong>Verify the resolution</strong>:
+<ul><li>Monitor /var/log/dwbl/dwbld.log`` for successful feed list download messages (errors should cease for successful)</li><li>Confirm the feed list file is cached in /var/dwbl/.cache/``</li><li>Verify the IP Intelligence policy is populated:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh show security ip-intelligence info address &lt;known_blacklisted_ip&gt;</span></p>
+</li><li>Test that traffic from a blacklisted IP is now blocked as expected</li></ul>
+</li><li><strong>Save the configuration</strong> to preserve changes across reboots:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh save sys config</span></p>
+</li></ol>
+<h2>Additional Information</h2>
+<ul><li>The /etc/pki/tls/certs/ca-bundle.crt`` file is used by the BIG-IP system for outbound HTTPS client connections, including those made by the dwbld daemon for IP Intelligence feed list downloads file.</li><li>This procedure is specific to external feed list servers and is different from configuring SSL certificates for Virtual Server SSL profiles.</li><li>If your feed list server&#39;s certificate changes in the future (e.g., certificate renewal with a different CA), you will need to repeat this procedure.</li><li><span>The ca-bundle.crt is overwritten during upgrades. This procedure must be re-applied after BIG-IP software upgrades.</span></li><li>For general information about updating the default CA bundle file, refer to <a href="https://support.f5.com/csp/article/K60612439" target="_blank" rel="noopener noreferrer">K60612439: Manually updating the BIG-IP default CA certificate bundle file</a></li><li>For information about configuring IP Intelligence feed lists, refer to the BIG-IP AFM documentation.</li></ul>
+</article>
+</body>
+</html>

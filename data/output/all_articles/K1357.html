@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K1357: Overview of BIG-IP SIP (Session Initiation Protocol) features</title>
+<meta name="description" content="Knowledge: Overview of BIG-IP SIP (Session Initiation Protocol) features — F5 Networks includes SIP transaction persistence in its suite BIG-IP application layer functionality and we currently support load balancing and persistence to SIP proxy servers. The initial…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K1357">
+</head>
+<body>
+<header>
+<h1>K1357: Overview of BIG-IP SIP (Session Initiation Protocol) features</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2006-02-17</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>BIG-IP 4.X: 4.6.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K1357">https://my.f5.com/manage/s/article/K1357</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p><a href="#Introduction">Introduction</a><br> <a href="#SIP Calls">SIP Calls</a><br> <a href="#SIP Messages">SIP Messages</a><br> <a href="#SIP Call-ID">SIP Call-ID Persistence</a><br> <a href="#Inbound SIP">Inbound SIP Messages</a><br> <a href="#SIP Proxy">SIP Proxy Server Health Monitoring</a><br> <a href="#Forwarding ICMP">Forwarding ICMP Messages</a><br> <a href="#Packet Flow">Packet Flow - Client to Downstream SIP Host</a><br> <a href="#BIG-IP Configuration">BIG-IP Configuration</a></p>
+<p><a name="Introduction"></a></p>
+<h3>Introduction</h3>
+<p>F5 Networks includes SIP transaction persistence in its suite BIG-IP application layer functionality and we currently support load balancing and persistence to SIP proxy servers. The initial implementation (before BIG-IP version 4.5) supported SIP messages sent over UDP. As of version 4.5, BIG-IP supports SIP over TCP using the Universal Inspection Engine (UIE) and persisting on the Call-ID header.</p>
+<p>Following is an overview of SIP as well as specific information about how to configure BIG-IP to add UDP SIP Call-ID persistence to a server pool.</p>
+<p>The Session Initiation Protocol (SIP), as described in RFC 2543 (<a href="http://www.ietf.org/rfc/rfc2543.txt" target="_blank">http://www.ietf.org/rfc/rfc2543.txt</a>), is an application-layer control (signaling) protocol for creating, modifying and terminating sessions with one or more participants. These sessions include Internet multimedia conferences, Internet telephone calls, and multimedia distribution. Members in a session can communicate through multicast or through a mesh of unicast relations, or a combination of the two.</p>
+<p>SIP invitations are used to create and carry session descriptions that allow participants to agree on a set of compatible media types.</p>
+<p>SIP does not provide streaming media capability, but it does provide a means whereby participants can agree upon mutually acceptable streaming media parameters. SIP-enabled applications communicate by sending messages to each other using either UDP or TCP.</p>
+<p>SIP supports user mobility by proxy and redirection requests to the current location of the user, which is registered by the user. SIP is not tied to any particular conference control protocol. A SIP message can be sent directly to its recipient, or it can pass through one or more proxy servers on the way. A proxy server is typically located at the edge of the recipient&#39;s network, and provides forwarding of messages for a group of individuals at the recipient&#39;s site.</p>
+<p>SIP is designed to be independent of the lower-layer transport protocol and can be extended with additional capabilities.</p>
+<p><a name="SIP Calls"></a></p>
+<h3>SIP Calls</h3>
+<p>A SIP call consists of two transactions, the initial call setup and call termination. Call setup begins when the call originator sends an INVITE message to one or more participants. Following the INVITE, several messages are exchanged between client and server. Messages may pass through one or more SIP proxy servers between the client and server. SIP call termination begins with either the client or server sending a BYE message.</p>
+<p><a name="SIP Messages"></a></p>
+<h3>SIP Messages</h3>
+<p>SIP messages are text based, using ISO 10646 in UTF-8 encoding, and have a header field format that is very similar to HTML. The following example shows the header syntax:</p>
+<pre class="example2">
+CRLF
+[ message-body ]
+message-header = ( general-header
+| request-header
+| response-header
+| entity-header )</pre>
+<p>All SIP messages within the context of a call contain a common identifier, the <b>Call-ID</b>, which is part of the general-header and has the following format:</p>
+<pre class="example2">
+Call-ID = ( &#39;Call-ID&#39; | &#39;i&#39; ) &#39;:&#39; local-id
+local-id = 1*uricA Call-ID will not be reused for another call.
+</pre>
+<p>A Call-ID will not be reused for another call.</p>
+<p><a name="SIP Call-ID"></a></p>
+<h3>SIP Call-ID Persistence</h3>
+<p>SIP Call-ID persistence is included to all available persistence types for BIG-IP server pools. In the future, BIG-IP will be modified to provide persistence to a SIP proxy server based upon the SIP <b>Call-ID</b> general header field.</p>
+<p><a name="Inbound SIP"></a></p>
+<h3>Inbound SIP Messages</h3>
+<p>For each UDP packet BIG-IP receives that is destined to a virtual server using a SIP Call-ID persistence pool, BIG-IP extracts the <b>Call-ID</b> field from the SIP header and attempts to match a persistence record. If BIG-IP does not find a matching persistence record, it chooses a proxy server based on the load balancing method for the pool. It then creates a persistence record referencing the selected member server for that Call-ID and forwards the packet to the proxy server stated in the persistence record.</p>
+<p><a name="Outbound SIP"></a></p>
+<h3>Outbound SIP Messages</h3>
+<p>For BIG-IP to forward packets from a proxy server to an array of downstream hosts, you must configure a SNAT with a translated IP address that is the same as the virtual server handling inbound SIP messages.</p>
+<p>For each outbound packet that is routed through the SNAT, the source IP address will be translated to the IP address of the SNAT, and the source port will be translated to a unique value for the flow consisting of the IP address and port of both the proxy server and the downstream host.</p>
+<p>In order to allow BIG-IP to free resources associated with old SIP persistence entries without having to test each inbound packet for one of the variety of SIP final messages, a configurable timeout mechanism for SIP persistence records has been implemented on BIG-IP. This timer has a default value of 32 seconds when the SIP persistence attribute is assigned to a pool. When no messages are received for a specific Call-ID for the timer period, BIG-IP will remove the persistence record for that Call-ID. The timer will apply to all SIP persistence records pertaining to the particular server pool. The timeout value may be modified by a user at any time, but should be set to a value of no less than the SIP message timeout period.</p>
+<p><a name="SIP Proxy"></a></p>
+<h3>SIP Proxy Server Health Monitoring</h3>
+<p>To provide high availability for SIP proxy servers, a new type of SIP monitor will be added to the existing health monitoring system on BIG-IP. This is currently being discussed and will be added at a later time.</p>
+<p><a name="Forwarding ICMP"></a></p>
+<h3>Forwarding ICMP Messages</h3>
+<p>Although the implementation will include a health monitoring mechanism, there is the likelihood that a UDP SIP message may be forwarded by BIG-IP to a down proxy server between service check intervals. This may cause an ICMP message to be sent from the proxy server. Forwarding an internally generated ICMP error would cause an outside SIP host to consider the entire proxy server array to be down, so BIG-IP will not forward any ICMP messages generated by members of the SIP proxy server pool.</p>
+<p>SIP applications using UDP employ a built-in mechanism for message retransmission and expiration. Since SIP relies on ICMP messages for timely notification of host-related errors, BIG-IP must pass ICMP messages destined for the virtual server IP address on to the proxy server that originated the request. ICMP messages are not likely to contain the SIP <b>Call-ID</b> field, so BIG-IP will find the correct proxy server to forward an ICMP message to by looking up the SNAT flow that matches the source address and port in the ICMP message data. BIG-IP will change the source IP address and port in the ICMP message data to that of the proxy server.</p>
+<p><a name="Packet Flow"></a></p>
+<h3>Packet Flow - Client to Downstream SIP Host</h3>
+<p>SIP applications that use UDP are likely to send messages from one port and receive them on another. Furthermore, a SIP application may use the same source port to send messages for more than one transaction. To determine which proxy server should handle a SIP message, BIG-IP examines the <b>Call-ID</b> field of all UDP datagrams that are destined to a virtual server that uses a SIP pool.</p>
+<p><a name="BIG-IP Configuration"></a></p>
+<h3>BIG-IP Configuration</h3>
+<p>To add SIP Call-ID persistence to a server pool, use the following command:</p>
+<p class="code">bigpipe pool &lt;pool name&gt; { persist_mode sip [sip_timeout ] }</p>
+<p class="note"><b>Note:</b>The default timeout value is 32 seconds.</p>
+<p>To display the contents of the SIP persistence hash table, use the following command:</p>
+<p class="code">bigpipe sip dump</p>
+<p class="note"><b>Note:</b> New commands will be provided in future releases of BIG-IP to add support for SIP health monitoring.</p>
+</article>
+</body>
+</html>

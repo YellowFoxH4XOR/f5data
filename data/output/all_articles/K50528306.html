@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K50528306: HTTPS connections may fail with TCP reset when pool members require SNI</title>
+<meta name="description" content="Support Solution: HTTPS connections may fail with TCP reset when pool members require SNI — By default the Server SSL profile does not send a TLS server_name extension.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K50528306">
+</head>
+<body>
+<header>
+<h1>K50528306: HTTPS connections may fail with TCP reset when pool members require SNI</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2019-05-15</dd>
+<dt>Updated</dt><dd>2025-04-01</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K50528306">https://my.f5.com/manage/s/article/K50528306</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<ul><li>Some pool members require Server Name Indication (SNI).</li><li>By default the Server SSL profile does not send a TLS server_name extension.</li><li>Pool member sends a TCP reset immediately after receiving Client Hello from BIG-IP LTM.<br>	<br>	For example, the following will be logged in the <strong>/var/log/ltm</strong> file:<br>	<br>	<span class="example2">info tmm[&lt;PID&gt;]: 01260013:6: SSL Handshake failed for TCP &lt;client_IP&gt;:&lt;client_port&gt; -&gt; &lt;virtual_IP&gt;:&lt;virtual_port&gt;</span><br>	<br>	In this error message, note the following:
+	<ul><li><strong>&lt;PID&gt;</strong> is the process ID for the <strong>tmm</strong> process</li><li><strong>&lt;client_IP&gt;</strong> is the IP address of the client.</li><li><strong>&lt;client_port&gt;</strong> is the ephemeral port of the client.</li><li><strong>&lt;virtual_IP&gt;</strong> is the destination IP address of the virtual server.</li><li><strong>&lt;virtual_port&gt;</strong> is the destination port of the virtual server.</li></ul>
+	</li></ul>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP LTM</li><li>Server SSL profile</li><li>Pool members require SNI</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>By default, the Server SSL profile does not include TLS server_name extension.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ul><li><a href="#A1">Determining if the pool member requires SNI</a></li><li><a href="#A2">Checking if the Server SSL</a><a href="#SNIEnabled"> profile is configured for SNI</a></li><li><a href="#A3">Configuring the Server SSL profile to use SNI</a></li></ul>
+
+<p><span class="subsectiontitle"><a id="A1" name="A1"></a>Determining if the pool member requires SNI</span></p>
+
+<p>The HTTPS servers in your pool may have been configured to require SNI.  If you are unable to verify the server configuration yourself of with the server administrator, perform the following procedures:</p>
+
+<p><span class="subsubsectiontitle">Using the openssl s_client command to test for SNI</span></p>
+
+<ol><li>Log into the Advanced Shell (<strong>bash</strong>).
+
+	<p> </p>
+
+	<p><span class="note"><strong>Note</strong>: If you are at the <strong>(tmos) #</strong> prompt, type <strong>q</strong> to exit to the <strong>bash</strong> shell.</span></p>
+	</li><li>Test the connection to the pool member without SNI by typing the following command:
+	<p><strong>(echo -e &quot;GET / HTTP/1.1\nHost: &lt;server_name&gt;\nConnection: Close\n\n&quot;;sleep 1) | openssl s_client -quiet -crlf -connect &lt;pool_member_IP&gt;:&lt;pool_member_port&gt;</strong></p>
+
+	<p>For example:</p>
+
+	<p><span class="example2">(echo -e &quot;GET / HTTP/1.1\nHost: example.com\nConnection: Close\n\n&quot;;sleep 1) | openssl s_client -quiet -crlf -connect 192.168.10.10:443</span></p>
+
+	<p><span class="note"><strong>Note</strong>: If the connection is reset or you receive an <strong>HTTP/1.1 403 Forbidden</strong> then your server likely requires SNI.</span></p>
+
+	<p>Example output from an Apache web server when SNI is required:</p>
+
+	<p><span class="example2">(echo -e &quot;GET /test HTTP/1.1\nHost: example.com\nConnection: Close\n\n&quot;;sleep 1) | openssl s_client -quiet -crlf -connect 192.168.10.10:443<br>	depth=0 CN = pool-vm6958<br>	verify error:num=18:self signed certificate<br>	verify return:1<br>	depth=0 CN = pool-vm6958<br>	verify return:1<br>	HTTP/1.1 403 Forbidden<br>	Date: Fri, 15 Mar 2019 22:15:08 GMT<br>	Server: Apache/2.4.29 (Ubuntu)<br>	Content-Length: 429<br>	Connection: close<br>	Content-Type: text/html; charset=iso-8859-1<br>	<br>	&lt;!DOCTYPE HTML PUBLIC &quot;-//IETF//DTD HTML 2.0//EN&quot;&gt;<br>	&lt;html&gt;&lt;head&gt;<br>	&lt;title&gt;403 Forbidden&lt;/title&gt;<br>	&lt;/head&gt;&lt;body&gt;<br>	&lt;h1&gt;Forbidden&lt;/h1&gt;<br>	&lt;p&gt;You don&#39;t have permission to access /test<br>	on this server.&lt;br /&gt;<br>	Reason: The client software did not provide a hostname using Server Name Indication (SNI), which is required to access this server.&lt;br /&gt;<br>	&lt;/p&gt;<br>	&lt;hr&gt;<br>	&lt;address&gt;Apache/2.4.29 (Ubuntu) Server at example.com Port 443&lt;/address&gt;<br>	&lt;/body&gt;&lt;/html&gt;</span><br>	 </p>
+	</li><li>Test the connection to the pool member with SNI by typing the following command:
+	<p><strong>(echo -e &quot;GET / HTTP/1.1\nHost: &lt;server_name&gt;\nConnection: Close\n\n&quot;;sleep 1) | openssl s_client -quiet -crlf -connect &lt;pool_member_IP&gt;:&lt;pool_member_port&gt; -servername &lt;server_name&gt;</strong></p>
+
+	<p>For example:</p>
+
+	<p><span class="example2">(echo -e &quot;GET / HTTP/1.1\nHost: example.com\nConnection: Close\n\n&quot;;sleep 1) | openssl s_client -quiet -crlf -connect 192.168.10.10:443 -servername www.example.com</span></p>
+
+	<p><span class="note"><strong>Note</strong>: If connection is successful, you have confirmed the server requires SNI.</span></p>
+
+	<p>Example successful output:</p>
+
+	<p><span class="example2">(echo -e &quot;GET /test HTTP/1.1\nHost: example.com\nConnection: Close\n\n&quot;;sleep 1) | openssl s_client -quiet -crlf -connect 192.168.10.10:443 -servername www.example.com depth=0 CN = pool-vm6958<br>	verify error:num=18:self signed certificate<br>	verify return:1<br>	depth=0 CN = pool-vm6958<br>	verify return:1<br>	HTTP/1.1 200 OK<br>	Date: Fri, 15 Mar 2019 22:10:15 GMT<br>	Server: Apache/2.4.29 (Ubuntu)<br>	Last-Modified: Fri, 15 Mar 2019 20:55:53 GMT<br>	ETag: &quot;30-5842843bfae96&quot;<br>	Accept-Ranges: bytes<br>	Content-Length: 48<br>	Connection: close<br>	<br>	<br>	##############<br>	www.example.com<br>	##############</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="A2" name="A2"></a>Checking if the Server SSL profile is configured for SNI</span></p>
+
+<p>When using a Server SSL profile, the BIG-IP system acts as a client to the pool member, and the SSL properties of the connection is defined in the Server SSL profile. You can examine the properties of the Server SSL profile using the Configuration utility or the TMOS Shell (<strong>tmsh</strong>).</p>
+
+<p><span class="subsubsectiontitle">Verifying Server SSL profile settings using the Configuration utility</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Navigate to <strong>Local Traffic</strong> &gt; <strong>Profiles </strong>&gt; <strong>SSL </strong>&gt; <strong>Server</strong>.</li><li>Click the affected Server SSL profile.</li><li>For <strong>Configuration</strong>, click <strong>Advanced</strong>.</li><li>Review the <strong>Server Name</strong> property. If the field is blank, the BIG-IP system does not send a TLS SNI in the Client Hello.</li></ol>
+
+<p><span class="subsubsectiontitle">Verifying Server SSL profile settings using tmsh</span></p>
+
+<ol><li>Log into <strong>tmsh</strong> by typing the following command:<br>	<br>	<strong>tmsh</strong><br>	 </li><li>Run the following command replacing <strong>&lt;profile_name&gt;</strong> with the name of the affected Server SSL profile:<br>	<br>	<strong>list /ltm profile server-ssl &lt;profile_name&gt; { server-name }</strong><br>	<br>	The following output shows <strong>server-name</strong> is set to <strong>none</strong>, indicating SNI will not be sent in the Client Hello message:<br>	<br>	<span class="example2">ltm profile server-ssl &lt;profile_name&gt; {<br>	    server-name none<br>	}</span></li></ol>
+
+<p><span class="subsubsectiontitle">Using tcpdump and tshark to confirm SNI is not in use</span></p>
+
+<p> </p>
+
+<ol><li>Log in to the Advanced shell (<strong>bash</strong>)</li><li>Start a fresh packet capture by typing the following command and replacing <strong>&lt;pool_member_IP&gt;</strong> and <strong>&lt;pool_member_port&gt;</strong> with the IP address and port of the pool member:<br>	<br>	<strong>tcpdump -s0 -i 0.0 host &lt;pool_member_IP&gt; and port &lt;pool_member_port&gt; -c 50 -w /var/tmp/K50528306_SNI.pcap -v</strong><br>	<br>	<span class="note"><strong>Note</strong>: The above capture will write 50 packets to <strong>/var/tmp/K50528306_SNI.pcap</strong> and exit. To exit the capture early, type <strong>Ctrl-c</strong>.</span><br>	 </li><li>Send test traffic that includes the SNI server name to the pool member. You can use the command from step 3 of the <span class="subsubsectiontitle">Using the openssl s_client command to test for SNI</span> procedure.</li><li>Review the capture using <strong>tshark</strong>:<br>	<br>	<strong>tshark -r /var/tmp/K50528306_SNI.pcap -V -2 -R ssl | grep -A 7 &#39;Extension: server_name&#39;</strong><br>	<br>	<span class="note"><strong>Note</strong>: If the output is empty, then SNI is not in use.</span><br>	<br>	<span class="example2">Extension: server_name (len=20)<br>	    Type: server_name (0)<br>	    Length: 20<br>	    Server Name Indication extension<br>	        Server Name list length: 18<br>	        Server Name Type: host_name (0)<br>	        Server Name length: 15<br>	        Server Name: www.example.com</span></li></ol>
+
+<p><span class="subsectiontitle"><a id="A3" name="A3"></a>Configuring the Server SSL profile to use SNI</span></p>
+
+<p><span class="subsubsectiontitle">Configuring the Server SSL profile to use SNI using the Configuration utility</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Navigate to <strong>Local Traffic</strong> &gt; <strong>Profiles </strong>&gt; <strong>SSL </strong>&gt; <strong>Server</strong>.</li><li>Click the affected Server SSL profile</li><li>For <strong>Configuration </strong>click <strong>Advanced</strong>.</li><li>For the Server Name option, enter the host name of the pool member.</li></ol>
+
+<p><span class="subsubsectiontitle">Configuring the Server SSL profile to use SNI using tmsh</span></p>
+
+<p> </p>
+
+<ol><li>Log in to <strong>tmsh</strong> by typing the following command:
+
+	<p><strong>tmsh</strong></p>
+	</li><li>To view the current value for the <strong>server-name</strong> setting, type the following command replacing <strong>&lt;profile_name&gt;</strong> with the name of the Server SSL profile:
+	<p> </p>
+
+	<p><span class="example2">list /ltm profile server-ssl &lt;profile_name&gt; { server-name }</span></p>
+	</li><li>If the <strong>server-name</strong> setting is not configured with the correct host name, modify the Server SSL profile to use the desired host name by typing the following command. In the command, replace <strong>&lt;profile_name&gt;</strong> with the name of the Server SSL profile and <strong>&lt;server_name&gt;</strong> with the host name of the pool member:
+	<p><span class="example2">modify /ltm profile server-ssl &lt;profile_name&gt; { server-name &lt;server_name&gt; }</span></p>
+
+	<p>For example:</p>
+
+	<p><span class="example2">modify /ltm profile server-ssl serverssl_K50528306 { server-name example.com }</span></p>
+	</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>The SNI extension to the TLS protocol allows the client to include the host name it is connecting to in the client hello message.  Some HTTPS servers require SNI and may close a connection with a TCP reset if SNI is not provided in the Client Hello message.</p>
+
+<p>In situations when HTTPS pool members consistently close connections from the BIG-IP system with a TCP reset immediately after receiving Client Hello, the lack of SNI in the Client Hello could be the reason, but it is not the only possible reason. You may need to troubleshoot to confirm if the lack of SNI is the cause.</p>
+
+<p>Apache web servers will respond with an HTTP 4xx message when an invalid Server Name has been received and Microsoft IIS Servers (starting with IIS 8.0) will issue a TCP reset after receiving the Client Hello without a server_name TLS extension.</p>
+</article>
+</body>
+</html>

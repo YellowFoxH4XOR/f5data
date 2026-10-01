@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K48543204: Unable to reconfigure iAPPs that use LDAP template</title>
+<meta name="description" content="Support Solution: Unable to reconfigure iAPPs that use LDAP template — When trying to reconfigure iapp that was deployed with LDAP template you are unable to edit.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K48543204">
+</head>
+<body>
+<header>
+<h1>K48543204: Unable to reconfigure iAPPs that use LDAP template</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-11-18</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K48543204">https://my.f5.com/manage/s/article/K48543204</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br><br>When trying to reconfigure iapp that was deployed with LDAP template you are unable to edit. <br>you may see similar messages in the webui log or in the webui</p>
+
+<ul><li>
+	<pre>
+Error parsing template:MCP call &#39;mcpmsg_set_string_item(msg, CID2TAG(m_cid), val.c_str())&#39; failed with error: 16908375, 01020057:3: The string with more than 65535 characters cannot be stored in a message.</pre>
+	</li><li>
+	<pre>
+webui	 2021-09-20 21:24:26.608 +02:00 	 Error	 ajp-bio-127.0.0.1-8009-exec-8 application.template_jsp:error - com.f5.app_template.BindingException: MCP call &#39;mcpmsg_set_string_item(msg, CID2TAG(m_cid), val.c_str())&#39; failed with error: 16908375, 01020057:3: The string with more than 65535 characters cannot be stored in a message.
+at com.f5.app_template.TclDataBinder.getAsScalar(TclDataBinder.java:87)</pre>
+	</li></ul>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<p>This occurs when there is a large configuration or a large number of items to be returned from a query the iApp calls.</p>
+
+<ul><li>return string exceeds 65K character</li><li>iApp configured using the default LDAP template</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Limitation in the amount of data that can be returned from iApp</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ol><li>Manually reconfigure the LDAP template to make use of ::safe_display function</li></ol>
+
+<pre>
+- Create a copy of f5.ldap iApp template
+
+  iApps &gt; Templates &gt; click f5.ldap &gt; scroll to bottom and click Copy
+
+  * default name of file is &quot;Copy_of_f5.ldap&quot;
+
+ - Edit the &quot;Presentation&quot; section of &quot;Copy_of_f5.ldap&quot; and change the following:
+
+
+         choice pool_to_use display &quot;xxlarge&quot; default &quot;/#create_new#&quot; tcl {
+            package require iapp 1.1.3
+            return &quot;/#create_new#\n[iapp::get_items ltm pool]&quot;
+
+TO:
+
+        choice pool_to_use display &quot;xxlarge&quot; default &quot;/#create_new#&quot; tcl {
+            package require iapp 1.1.3
+            set ::choices  &quot;/#create_new#\n[iapp::get_items ltm pool]&quot;
+	    return  [iapp::safe_display ::choices]
+        }
+
+==============================================================================
+
+	optional ( create_new_pool == &quot;Use Pool...&quot; ) {
+            choice reuse_pool_name display &quot;xlarge&quot; tcl {
+                tmsh::run_proc f5.app_utils:get_items ltm pool
+                package require iapp 1.1.3
+                return [iapp::get_items ltm pool]
+            }
+        }
+
+TO:
+
+        optional ( create_new_pool == &quot;Use Pool...&quot; ) {
+            choice reuse_pool_name display &quot;xlarge&quot; tcl {
+                tmsh::run_proc f5.app_utils:get_items ltm pool
+                package require iapp 1.1.3
+                set ::choices  [iapp::get_items ltm pool]
+	        return [iapp::safe_display ::choices]
+            }
+        }
+
+==============================================================================
+
+- click Save
+- Create a new iApp using &quot;Copy_of_f5.ldap&quot; template
+
+=============</pre>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p><a href="https://cdn.f5.com/product/bugtracker/ID435592.html" target="_self">ID435592</a> is tracking this issue.</p>
+</article>
+</body>
+</html>

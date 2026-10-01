@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000156797: What is a HelloRequest?</title>
+<meta name="description" content="Support Solution: What is a HelloRequest? — In some packet captures, when decrypted, a Hello Request will be seen. Why is it there and how can it apply to an F5...">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000156797">
+</head>
+<body>
+<header>
+<h1>K000156797: What is a HelloRequest?</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-10-03</dd>
+<dt>Updated</dt><dd>2025-10-03</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000156797">https://my.f5.com/manage/s/article/K000156797</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>In some packet captures, when decrypted, a <strong>Hello Request</strong> will be seen. Why is it there and how can it apply to an F5...</p>
+<pre>55 443 192.168.0.1 192.168.1.1 10002 OUT s1/tmm6 : Hello Request TLSv1.2</pre>
+<p>Digging into the Packet Panel a view of the Transport Layer Security will show:</p>
+<pre>Transport Layer Security<br>    TLSv1.2 Record Layer: Handshake Protocol: Hello Request<br>        Content Type: Handshake (22)<br>        Version: TLS 1.2 (0x0303)<br>        Length: 28<br>        Handshake Protocol: Hello Request<br>            Handshake Type: Hello Request (0)<br>            Length: 0</pre>
+<h2>Environment</h2>
+<ul><li>This will most likely be something you review when investigating TLS mAuth or some kind of unexpected behavior that could cause a server to send a client the HelloRequest to  begin the negotiation process <span style="text-decoration: underline;"><em><strong>anew</strong></em></span>. </li><li>Clientssl and Serverssl profiles.</li><li>Secure Renegotiation, Client Authentication</li></ul>
+<h2>Cause</h2>
+<p>Per RFC5246 <span class="uiOutputText" dir="ltr"></span><a target="_blank" title="https://datatracker.ietf.org/doc/html/rfc5246#section-7.4.1.1" href="https://datatracker.ietf.org/doc/html/rfc5246#section-7.4.1.1"><strong><span class="uiOutputText" dir="ltr">7.4.1.1</span></strong></a><strong><span class="uiOutputText" dir="ltr">. Hello Request</span></strong> </p>
+<ul><li>
+<p><span class="uiOutputText" dir="ltr"> The HelloRequest message MAY be sent by the server at any time.</span></p>
+</li><li><span class="uiOutputText" dir="ltr">HelloRequest is a simple notification that the client should begin the negotiation process <strong><em><span style="text-decoration-line: underline;">anew</span></em></strong>. In response, the client should send a ClientHello message when convenient. </span></li><li><span class="uiOutputText" dir="ltr">Since handshake messages are intended to have transmission precedence over application data, it is expected that the negotiation will begin before no more than a few records are received from the client. </span></li><li><span class="uiOutputText" dir="ltr">If the server sends a HelloRequest but does not receive a ClientHello in response, it may close the connection with a fatal alert. </span></li></ul>
+<p><span class="uiOutputText" dir="ltr">A BIG-IP may send a Hello Request when something in the SSL/TLS Handshake is not as expected. For instance...</span></p>
+<p><span class="uiOutputText" dir="ltr">If a Client Hello is missing the <strong>renegotiation_info</strong> extension the BIG-IP will mark it as False in the Server Hello by showing the length as &#39;0&#39;...</span></p>
+<pre><span class="uiOutputText" dir="ltr">Extension: renegotiation_info (len=1)<br>    Type: renegotiation_info (65281)<br>    Length: 1<br>    Renegotiation Info extension<br>        Renegotiation info extension length: 0</span></pre>
+<p><span class="uiOutputText" dir="ltr">The client can refuse to respond or resend the Client Hello. If it resends it and it now includes the <span class="uiOutputText" dir="ltr"><strong>renegotiation_info:</strong></span></span></p>
+<pre><span class="uiOutputText" dir="ltr"><span class="uiOutputText" dir="ltr">Extension: renegotiation_info (len=13)<br>    Type: renegotiation_info (65281)<br>    Length: 13<br>    Renegotiation Info extension<br>        Renegotiation info extension length: 12<br>        Renegotiation info: 5c34a81e4cb04c57f02fc820</span></span></pre>
+<p><span class="uiOutputText" dir="ltr">The BIG-IP will now show it as True and continue with the TLS handshake...</span></p>
+<pre><span class="uiOutputText" dir="ltr">Extension: renegotiation_info (len=25)<br>    Type: renegotiation_info (65281)<br>    Length: 25<br>    Renegotiation Info extension<br>        Renegotiation info extension length: 24<br>        Renegotiation info: 5c34a81e4cb04c57f02fc8200b424fc3fe5ac3321bfbd9f6</span></pre>
+<p><span class="uiOutputText" dir="ltr">If it is does not respond properly the connection attempt will be reset.</span></p>
+<p><span class="uiOutputText" dir="ltr">Note: </span><span class="uiOutputText" dir="ltr">Per RFC 5746 </span><a target="_blank" title="https://datatracker.ietf.org/doc/html/rfc5746#section-3.5" href="https://datatracker.ietf.org/doc/html/rfc5746#section-3.5"><strong><span class="uiOutputText" dir="ltr">3.5</span></strong></a><span class="uiOutputText" dir="ltr">:</span></p>
+<ul><li><span class="uiOutputText" dir="ltr"> This text applies if the connection&#39;s &quot;secure_renegotiation&quot; flag is </span><span class="uiOutputText" dir="ltr">set to TRUE (if it is set to FALSE, see </span><a target="_blank" title="https://datatracker.ietf.org/doc/html/rfc5746#section-4.2" href="https://datatracker.ietf.org/doc/html/rfc5746#section-4.2"><span class="uiOutputText" dir="ltr">Section 4.2</span></a><span class="uiOutputText" dir="ltr">).</span></li><li><span class="uiOutputText" dir="ltr">The client MUST include the &quot;renegotiation_info&quot; extension in the </span><span class="uiOutputText" dir="ltr">ClientHello, containing the saved client_verify_data.</span></li></ul>
+<h2>Recommended Actions</h2>
+<p>When a review of a decrypted capture has a reset, and a Hello Request is being seen, determine where and when the reset happens.</p>
+<ul><li>If the client does not respond to the Hello Request with a new Client Hello the BIG-IP will reset the connection. Review the Client Hello for something that is missing or in error.</li><li>If the Client Hello is sent and the connection is completed then this may be investigated because it should not happen.</li><li>If the Client Hello persists in being incorrect that will result in a reset and will need to be investigated. </li></ul>
+<ol></ol>
+<h2>Additional Information</h2>
+</article>
+</body>
+</html>

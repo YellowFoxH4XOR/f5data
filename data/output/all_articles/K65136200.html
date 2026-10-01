@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K65136200: Overview of the Local OCSP responder feature for F5 SSL Orchestrator</title>
+<meta name="description" content="Knowledge: Overview of the Local OCSP responder feature for F5 SSL Orchestrator — A Certificate Revocation List (CRL): A CA periodically publishes a list of certificates that have been revoked.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K65136200">
+</head>
+<body>
+<header>
+<h1>K65136200: Overview of the Local OCSP responder feature for F5 SSL Orchestrator</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2021-09-03</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>F5 App Protect</li><li>F5 SSL Orchestrator: 16.1.X, 16.1.2, 16.1.1, 16.1.3, 16.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K65136200">https://my.f5.com/manage/s/article/K65136200</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>One of the key functions of a Public Key Infrastructure (PKI) is certificate lifecycle management. In a typical Certificate Authority (CA) setup, you can implement this function using one of the following methods:</p>
+
+<ul><li>A Certificate Revocation List (CRL): A CA periodically publishes a list of certificates that have been revoked.</li><li>Online Certificate Status Protocol (OCSP) service: A CA’s OCSP responder receives a request to check the status of a certificate and returns a digitally signed response containing the status (good, revoked or unknown) of the certificate.</li><li>OCSP stapling: A web server caches the OCSP response from the CA’s OCSP responder and sends it together with its certificate to a client web browser when the client initiates a TLS handshake.</li></ul>
+<h3>Description</h3><p>When F5 SSL Orchestrator acts as an SSL proxy between a client and a server, it uses the certificate from the server to forge a unique server certificate to send to the client. Since SSL Orchestrator signs the unique server certificate as a private CA, the client expects it to respond to OCSP requests.</p>
+
+<p>SSL Orchestrator currently responds with OCSP stapled messages when it sends the forged server certificate to clients that include the Certificate Status Request extension in their SSL ClientHello handshake. Although OCSP stapling is the preferred approach adopted by most modern browsers, it is possible that some clients, for example clients with smart card certificate revocation checking, may need to verify the forged server certificate status through an out-of-band OCSP responder directly. </p>
+
+<p>Starting in SSL Orchestrator 16.1.0-9.0, you can include a local OCSP responder. When you configure a local OCSP responder, SSL Orchestrator sets up a new virtual server to process OCSP requests from the clients and associates an OCSP profile (located on the <strong>Local Traffic</strong> &gt; <strong>Profiles</strong> &gt; <strong>Services</strong> &gt; <strong>OCSP</strong> page) to the virtual server. The OCSP profile performs the following functions:</p>
+
+<ul><li>Checks if the certificate serial number from the client’s OCSP request exists in the local forged certificate cache.</li><li>If it exists, extracts and returns it to the client with the Nonce extension, if enabled.
+	<p><span class="note"><strong>Note</strong>: The <strong>Nonce</strong> setting is enabled by default. Enabling the <strong>Nonce</strong> setting allows the local OCSP responder virtual server to include the client’s nonce in its response so that the client can validate if the latest response is from the OCSP server or an old copy from a replay attack. Typically, an OCSP responder responds in clear text, however SSL Orchestrator associates an SSL profile to the local OCSP responder virtual server to resign its OCSP response with the client’s Nonce. </span></p>
+	</li></ul>
+
+<p>Additionally, SSL Orchestrator inserts the configured local OCSP responder URL into the Authority Information Access (AIA) extension of the unique server certificate that is send to the clients.</p>
+
+<p>As part of the enhancements, SSL Orchestrator uses the following two settings from the Server SSL profile to provide certificate gateway response control for revoked and unknown certificate status:</p>
+
+<ul><li>Revoked Certificate Status Response Control (revoked-cert-status-response-control)</li><li>Unknown Certificate Status Response Control (unknown-cert-status-response-control)</li></ul>
+
+<p>These two settings are set to <strong>Ignore</strong> by default. Additional options are <strong>Drop</strong> or <strong>Mask</strong>. The following table describes the expected behavior for each option when SSL Orchestrator deployment is a forward proxy (for example, L3 outbound topology) or a reverse proxy (for example, L3 inbound topology):</p>
+
+<p><span class="note"><strong>Note</strong>: When SSL Orchestrator deployment is a reverse proxy, the system is no longer the CA. As a result, it does not forge a unique server certificate to send to the client or generate a OCSP response for the certificate sent to the client by the Client SSL profile.</span></p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1"><tbody><tr><td colspan="1" rowspan="1">Option</td><td colspan="1" rowspan="1">Proxy type</td><td colspan="1" rowspan="1">Description</td></tr><tr><td colspan="1" rowspan="2">Ignore</td><td colspan="1" rowspan="1">Forward</td><td colspan="1" rowspan="1">SSL Orchestrator ignores certificate status error for the server certificate and forges the same certificate status error for the client side. If the client does not send a OCSP request, the SSL Orchestrator decides whether to corrupt the forged certificate signature based the value of the db variable <strong>tmm.ssl.corruptcertenabled</strong> (value is <strong>true</strong> by default).</td></tr><tr><td colspan="1" rowspan="1">Reverse</td><td colspan="1" rowspan="1">SSL Orchestrator ignores certificate status error for the server certificate and continues with the SSL handshake on the client side.</td></tr><tr><td colspan="1" rowspan="2">Mask</td><td colspan="1" rowspan="1">Forward</td><td colspan="1" rowspan="1">SSL Orchestrator does not respond with a OCSP status stapled response for a forged certificate or add an AIA/CRLDP extension if the client sends a OCSP request.</td></tr><tr><td colspan="1" rowspan="1">Reverse</td><td colspan="1" rowspan="1">Unsupported.</td></tr><tr><td colspan="1" rowspan="2">Drop</td><td colspan="1" rowspan="1">Forward</td><td colspan="1" rowspan="2">SSL Orchestrator sends an SSL Alert message indicating the certificate is revoked or unknown and closes the SSL handshake connection with the client.</td></tr><tr><td colspan="1" rowspan="1">Reverse</td></tr></tbody></table>
+
+<p><span class="subsectiontitle">Local OCSP responder profile statistics</span></p>
+
+<p>You can view the following statistics for the local OCSP responder profile:</p>
+
+<ul><li>OCSP responder profile (name)</li><li>Associated virtual server (vs_name)</li><li>OCSP request received (req_rcvd)</li><li>OCSP cache miss (cache_miss)</li><li>OCSP response expired (resp_exp)</li><li>OCSP response re-sign failed (resp_sign_fail)</li><li>OCSP response successfully sent (resp_send_success)</li></ul>
+To view these statistics, enter the following command from the SSL Orchestrator command line:
+
+<p><span class="code">tmctl -w 150 profile_ocsp_responder_stat</span></p>
+
+<p>The output appears similar to the following example:</p>
+
+<p><span class="example2"><em>name                                             vs_name                                            req_rcvd cache_miss resp_exp resp_sign_fail resp_send_success</em><br><em>------------------------------------------------ -------------------------------------------------- -------- ---------- -------- -------------- -----------------</em><br><em>/Common/ocsp                                     _listener                                                 0          0        0              0                 0</em><br><em>/Common/sslo-default-ocsp                        _listener                                                 0          0        0              0                 0</em><br><em>/Common/ssloA_OCSP.app/ssloA_OCSP-ocsp           /Common/ssloA_OCSP.app/ssloA_OCSP-ocsp-4              21558         11        0              0                 3</em><br><em>/Common/ssloA_OCSP.app/ssloA_OCSP-ocsp           _listener                                                 0          0        0              0                 0</em><br><em>ocsp_responder                                   _listener                                                 0          0        0              0                 0</em></span></p>
+ 
+
+<p><span class="sectiontitle">Recommendations</span></p>
+
+<p>You can configure the local OCSP responder feature using SSL Orchestrator Guided Configuration, located under the <strong>Authentication</strong> section in SSL Orchestrator Guided Configuration. When you configure the local OCSP responder feature, you should note the following:</p>
+
+<ul><li>Ensure the client must be able to resolve the hostname in the <strong>FQDN</strong> setting to the IP address in the <strong>Destination Address/Mask</strong> setting.</li><li>Ensure the client must be able to reach the IP address in the <strong>Destination Address/Mask</strong> setting as well as the listening port in the <strong>Port</strong> setting.
+	<p><span class="note"><strong>Note</strong>: SSL Orchestrator combines the configuration from these settings to form the OCSP responder URL for the AIA extension when forging the unique server certificate. </span></p>
+	</li></ul>
+<span class="subsectiontitle">Validation of the forged unique server certificate with the local OCSP responder</span>
+
+<p>You can use the OpenSSL utility on a Linux client to manually validate the unique server certificate forged by SSL Orchestrator with the local OCSP responder. You should ensure the traffic from the Linux client goes through the SSL Orchestrator deployment. The following example uses an SSL Orchestrator L3 Outbound Transparent Proxy deployment with an intermediate CA <strong>intermediateca.askf5.local</strong> to forge the unique server certificate and <strong>http://ocsp.sslo.sea.askf5.local:80</strong> as the local OCSP responder.</p>
+
+<p>Using the OpenSSL utility on the Linux client, connect to an external site (for example, www.amazon.com) through the L3 Outbound Transparent Proxy, extract the unique server certificate sent by SSL Orchestrator, and save it to the <strong>certificate.pem</strong> file:</p>
+
+<p><span class="code">openssl s_client -connect www.amazon.com:443 &lt; /dev/null 2&gt;&amp;1 | sed -n ‘/-----BEGIN/,/-----END/p’ &gt; certificate.pem</span></p>
+
+<p>You can inspect the unique server certificate and verify the AIA extension using the following OpenSSL command:</p>
+
+<p><span class="code">openssl x509 -in certificate.pem -text -noout</span></p>
+
+<p>The output contains snippets similar to the following example:</p>
+
+<p><span class="example2"><em>…</em><br>        <em>Issuer: C = US, ST = WA, O = F5Networks, OU = AskF5, CN = intermediateca.askf5.local</em><br><em>…</em><br>            <em>Authority Information Access:</em> <br>                <em>OCSP - URI:http://ocsp.sslo.sea.askf5.local:80</em><br><em>…</em></span></p>
+
+<p>Next, extract the chain certificates that are associated with the external site and save them to the <strong>chain.pem</strong> file:</p>
+
+<p><span class="code">openssl s_client -showcerts -connect www.amazon.com:443 &lt; /dev/null 2&gt;&amp;1 | sed -n ‘/-----BEGIN/,/-----END/p’ &gt; chain.pem</span></p>
+
+<p>With both the <strong>certificate.pem</strong> and <strong>chain.pem</strong> files, you can now validate the unique server certificate forged by SSL Orchestrator using the following OpenSSL command:</p>
+
+<p><span class="code">openssl ocsp -issuer chain.pem -cert certificate.pem -text -url http://ocsp.sslo.sea.askf5.local:80</span></p>
+
+<p>The output snippet appears similar to the following example:</p>
+
+<p><span class="example2"><em>OCSP Request Data:</em><br>    <em>Version: 1 (0x0)</em><br>    <em>Requestor List:</em><br>        <em>Certificate ID:</em><br>          <em>Hash Algorithm: sha1</em><br>          <em>Issuer Name Hash: 7DDA19671C609C4A966E30891EA137ECA91DD898</em><br>          <em>Issuer Key Hash: E62BBF8067645DB7B807F5348133E433DC8E158B</em><br>          <em>Serial Number: 612DD515200A63F0</em><br>    <em>Request Extensions:</em><br>        <em>OCSP Nonce:</em> <br>            <em>0410A687AD7D613296C9D6CE4A41D5E55189</em><br><em>OCSP Response Data:</em><br>    <em>OCSP Response Status: successful (0x0)</em><br>    <em>Response Type: Basic OCSP Response</em><br>    <em>Version: 1 (0x0)</em><br>    <em>Responder Id: CD4F51969AC113275F268858FBD754F264919D87</em><br>    <em>Produced At: Aug 31 07:07:01 2021 GMT</em><br>    <em>Responses:</em><br>    <em>Certificate ID:</em><br>      <em>Hash Algorithm: sha1</em><br>      <em>Issuer Name Hash: 7DDA19671C609C4A966E30891EA137ECA91DD898</em><br>      <em>Issuer Key Hash: 3B41DEB8021A2DE8AD0C2FEF39FFCC8A7090580F</em><br>      <em>Serial Number: 612DD515200A63F0</em><br>    <em>Cert Status: good</em><br>    <em>This Update: Aug 24 13:15:01 2021 GMT</em><br>    <em>Next Update: Aug 31 12:30:01 2021 GMT</em><br> <br>    <em>Response Extensions:</em><br>        <em>OCSP Nonce:</em> <br>            <em>0410A687AD7D613296C9D6CE4A41D5E55189</em><br><em>…</em></span><br> </p>
+</article>
+</body>
+</html>

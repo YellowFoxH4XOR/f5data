@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K1548: Overview of the OneConnect (web aggregation) feature</title>
+<meta name="description" content="Knowledge: Overview of the OneConnect (web aggregation) feature — When a client makes a request for a server, BIG-IP parses the HTTP request, selects a server, and creates a connection to that server using the client IP address and port as the source address. If…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K1548">
+</head>
+<body>
+<header>
+<h1>K1548: Overview of the OneConnect (web aggregation) feature</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2006-03-16</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>BIG-IP 4.X: 4.6.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K1548">https://my.f5.com/manage/s/article/K1548</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3>
+<h3>How HTTP OneConnect Works</h3>
+<p>When a client makes a request for a server, BIG-IP parses the HTTP request, selects a server, and creates a connection to that server using the client IP address and port as the source address. If the client is using a SNAT, the source IP address and port will be a Secure Network Address Translation (SNAT) address. That means that all clients appear as one, and all clients are eligible to reuse a single HTTP Keep-Alive connection, hence the name OneConnect.</p>
+<p>When the initial HTTP request is complete, BIG-IP disassociates the connections to the client and the to the server. The idle connection to the server then becomes available to a client with the same source address (or with the same SNAT, if SNAT is in use).</p>
+<p>If a request from the same client or SNAT) is made for the same server, the existing connection to that server is used.</p>
+<p>If a request is made for a different server, the original connection to the first server is left open and a new connection to the selected server is created. The same source IP address and port used in the first connection are used for subsequent connections to different servers unless SNAT is in use, in which case the actual client address and port may be different.</p>
+<p>To optimize the TCP connection flow, BIG-IP attempts to detect at what point a server will allow only one more request on a Keep-Alive connection. At that point, it closes the server connection (before the last request is issued) and reopens a new connection to the same server. In this way, BIG-IP allows the client to continue to make Keep-Alive requests on the same TCP connection for as long as desired.</p>
+<p>As of BIG-IP version 4.0, any idle connections to the servers are allowed to remain open (in an idle state) for up to 5 seconds.</p>
+<p>Starting in BIG-IP version 4.5, the timeout for these server-side idle connections is configurable through a global variable called web aggregate timeout, which is set from the command line or through the Configuration utility. For more information about web aggregate timeout, refer to <a href="https://my.f5.com/manage/s/article/K2380" target="_blank">K2380: Changes to the web aggregation (OneConnect?) feature beginning in BIG-IP version 4.5</a>.</p>
+<h3>Performance</h3>
+<h4>BIG-IP versions 4.0 - 4.2</h4>
+<p>To maximize the efficiency of the OneConnect feature with BIG-IP 4.0 through 4.2, it is necessary to use a SNAT for all inbound traffic. When using a SNAT for all inbound traffic, OneConnect literally operates at 100% efficiency. This enables you to have as many concurrent connections to your backend servers (nodes) as you have simultaneous connections to the BIG-IP.</p>
+<p>To further clarify, if you have 2 backend nodes and receive 10 simultaneous connections to BIG-IP, you would have 5 connections to each server. However, clients always use more than one request per Keep-Alive session (if they didn&#39;t, what would be the point?), and servers typically allow between 10 to 20 Keep-Alive requests per connection. This means that if each of those 10 simultaneous client connections request, at the same time, 10 objects (for a total of 100 requests) the servers would still only see 5 connections each. Therefore, even though the server is serving 100 requests, it is doing it more efficiently because it only has to work with 5 TCP connections, as opposed to 50.</p>
+<h4>BIG-IP versions 4.5 - 4.6.4</h4>
+<p>As of BIG-IP version 4.5, the OneConnect feature allows you to configure aggregation using the web aggregate global variable based on IP address, TCP port, all, or none (without the need for SNAT). Prior to BIG-IP 4.5, the behavior was always to aggregate based on IP address. These options are as follows:</p>
+<p><b>web aggregate IP</b><br>&lt;default&gt; BIG-IP aggregates based on IP address, as in BIG-IP version 4.0 through 4.2.</p>
+<p><b>web aggregate port</b><br>BIG-IP only aggregates HTTP requests from the same IP address and port. (Require for NTLM authentication.)</p>
+<p><b>web aggregate all</b> <br>BIG-IP allows aggregation for all HTTP requests, regardless of IP address or port. In this setting, BIG-IP behaves as though as though all client connections are coming from the same source IP address, just as though it is using a SNAT.</p>
+<p><b>web aggregate none</b> <br>BIG-IP attempts to split all HTTP requests to individual connections, allow for now aggregation.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000ZC7x&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000VvZtd" alt="without oneconnect results in many more connections to the server"></img></p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000ZC7x&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000VvZyT" alt="with oneconnect results in fewer connections to the server"></img></p>
+<h3>Excerpt from the HTTP 1.1 RFC (RFC2616) relating to this functionality</h3>
+<p>The following is a directly-related excerpt from the HTTP 1.1 RFC (RFC2616), section 8, subsection 1, part 1 (8.1.1) [Persistent Connections: Purpose]:</p>
+<p class="note"><b>Note:</b> the RFC calls Keep-Alive connections <b>Persistent Connections</b>. This has nothing to do with Persistence as setup on your BIG-IP.</p>
+<p>Prior to persistent connections, a separate TCP connection was established to fetch each URL, increasing the load on HTTP servers and causing congestion on the Internet. The use of inline images and other associated data often require a client to make multiple requests of the same server in a short amount of time. Analysis of these performance problems and results from a prototype implementation are available [26] [30]. Implementation experience and measurements of actual HTTP/1.1 (RFC 2068) implementations show good results [39]. Alternatives have also been explored, for example, T/TCP [27].</p>
+<p>Persistent HTTP connections have the following advantages:</p>
+<ul><li>By opening and closing fewer TCP connections, CPU time is saved in routers and hosts (clients, servers, proxies, gateways, tunnels, or caches), and memory used for TCP protocol control blocks can be saved in hosts.</li><li>Network congestion is reduced by reducing the number of packets caused by TCP opens, and by allowing TCP sufficient time to determine the congestion state of the network.</li><li>Latency on subsequent requests is reduced since there is no time spent in TCP&#39;s connection opening handshake.</li><li>HTTP can evolve more gracefully, since errors can be reported without the penalty of closing the TCP connection. Clients using future versions of HTTP might optimistically try a new feature, but if communicating with an older server, retry with old semantics after an error is reported.</li></ul>
+</article>
+</body>
+</html>

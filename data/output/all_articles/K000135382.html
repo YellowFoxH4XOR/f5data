@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000135382: mTLS connection using Aspen Mesh and an external proxy</title>
+<meta name="description" content="Support Solution: mTLS connection using Aspen Mesh and an external proxy — Need to initiate an mTLS connection to a URL that is located on the internet. All traffic needs to go via an external proxy which means the URL needs to be redirected to the proxy.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000135382">
+</head>
+<body>
+<header>
+<h1>K000135382: mTLS connection using Aspen Mesh and an external proxy</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-07-06</dd>
+<dt>Updated</dt><dd>2023-07-06</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.11</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000135382">https://my.f5.com/manage/s/article/K000135382</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>Need to initiate an mTLS connection to a URL that is located on the internet. All traffic needs to go via an external proxy which means the URL needs to be redirected to the proxy.<br> </p>
+
+<h2><strong>Environment</strong></h2>
+
+<p>Aspen Mesh 1.11.x, Istio 1.11.x<br> </p>
+
+<h2><strong>Cause</strong></h2>
+
+<p>Aspen Mesh / Istio in version 1.11.x can work with an external proxy with the help of cURL, DestinationRule and ServiceEntry resources.<br> </p>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>For this scenario a ServiceEntry with the proxy IP and port and a DestinationRule defining the mTLS mode and certificate/secret are needed; then the connection is initiated from the pod using cURL and the --proxy or -x flag. See the configuration examples below. The proxy then would handle the traffic coming from the pod.</p>
+
+<pre class="ckeditor_codeblock">
+##Service Entry##
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: proxy
+spec:
+  hosts:
+  - my-external-proxy.com # ignored
+  addresses:
+  - $PROXY_IP/32
+  exportTo: ##The ’exportTo’ field allows for control over the visibility of a service declaration to other namespaces in the mesh. By default, a service is exported to all namespaces. The following example restricts the visibility to the current namespace, represented by “.”, so that it cannot be used by other namespaces.
+  - &quot;.&quot;
+  ports:
+  - number: $PROXY_PORT
+    name: tcp
+    protocol: TCP
+  location: MESH_EXTERNAL
+
+##Destination Rule##
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: mtls-to-external
+spec:
+  host: example.com
+  exportTo: ##The ’exportTo’ field allows for control over the visibility of a service declaration to other namespaces in the mesh. By default, a service is exported to all namespaces. The following example restricts the visibility to the current namespace, represented by “.”, so that it cannot be used by other namespaces.
+  - &quot;.&quot;
+  workloadSelector:
+    matchLabels:
+      app: myapp
+  trafficPolicy:
+    tls:
+      mode: MUTUAL
+      clientCertificate: /etc/certs/myclientcert.pem
+      privateKey: /etc/certs/client_private_key.pem
+      caCertificates: /etc/certs/rootcacerts.pem
+#OR
+      credentialName: client-credential #The name of the secret that holds the TLS certs for the client including the CA certificates. 
+      mode: MUTUAL
+
+&gt;&gt;curl -x &quot;[protocol://]$PROXY_IP:$PROXY_PORT&quot; http://example.com
+</pre>
+
+<h2><br><strong>Additional Information</strong></h2>
+
+<p>The credentialName option has some caveats, see below from <a href="https://istio.io/latest/docs/reference/config/networking/destination-rule/" target="_blank">Istio documentation</a></p>
+
+<p>The name of the secret that holds the TLS certs for the client including the CA certificates. This secret must exist in the namespace of the proxy using the certificates. An Opaque secret should contain the following keys and values: key: , cert: , cacert: . Here CACertificate is used to verify the server certificate. For mutual TLS, cacert: can be provided in the same secret or a separate secret named -cacert. A TLS secret for client certificates with an additional ca.crt key for CA certificates is also supported. Only one of client certificates and CA certificate or credentialName can be specified.</p>
+
+<p>NOTE: This field is applicable at sidecars only if DestinationRule has a workloadSelector specified. Otherwise the field will be applicable only at gateways, and sidecars will continue to use the certificate paths.</p>
+</article>
+</body>
+</html>

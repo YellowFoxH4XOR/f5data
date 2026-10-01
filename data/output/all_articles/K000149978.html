@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000149978: Resolving the DNSSEC query to local BIND failed when the ZSK roll overs</title>
+<meta name="description" content="Support Solution: Resolving the DNSSEC query to local BIND failed when the ZSK roll overs — A DNSSEC-related issue was identified where the BIG-IP local BIND failed to respond to TCP-based DNS queries when there were two active Zone Signing Keys (ZSKs) for a zone. This failure occurred due…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000149978">
+</head>
+<body>
+<header>
+<h1>K000149978: Resolving the DNSSEC query to local BIND failed when the ZSK roll overs</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-02-26</dd>
+<dt>Updated</dt><dd>2025-02-26</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 15.0.0, 15.0.X, 15.0.1, 17.X.X, 16.X.X, 15.X.X, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000149978">https://my.f5.com/manage/s/article/K000149978</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>A DNSSEC-related issue was identified where the BIG-IP local BIND failed to respond to TCP-based DNS queries when there were two active Zone Signing Keys (ZSKs) for a zone. This failure occurred due to the local BIND process being unable to handle an increased number of concurrent TCP connections, resulting in connection failed.</p>
+<p>The issue happens every time after the ZSK rollover and there are two active ZSKs for the zone. Logs may show errors as below in /var/log/ltm when the BIND unable to respond the query over TCP and the flow was closed by remote client. </p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #ecf0f1;"><span class="uiOutputText" dir="ltr" style="box-sizing: border-box;color: #181818;font-family: Menlo, Consolas, &#39;DejaVu Sans Mono&#39;, &#39;Courier New&#39;, monospace;font-size: 13px;font-weight: 500;text-align: left;white-space: pre-wrap;background-color: #ecf0f1;">Jan  8 06:08:14 </span><a class="cuf-url forceOutputURL" style="box-sizing: border-box;background-color: #ecf0f1;color: var(--lwc-brandtextlink,rgba(11, 92, 171, 1));text-decoration-line: none;transition: color 0.1s linear;cursor: pointer;font-family: Menlo, Consolas, &#39;DejaVu Sans Mono&#39;, &#39;Courier New&#39;, monospace;font-size: 13px;font-weight: 500;text-align: left;white-space: pre-wrap;" target="_blank" title="" href="https://p-intlb1.hkicl.com.hk/">&lt;hostname&gt;</a><span class="uiOutputText" dir="ltr" style="box-sizing: border-box;color: #181818;font-family: Menlo, Consolas, &#39;DejaVu Sans Mono&#39;, &#39;Courier New&#39;, monospace;font-size: 13px;font-weight: 500;text-align: left;white-space: pre-wrap;background-color: #ecf0f1;"> warning tmm1[12509]: 01010264:4: DNSSEC: flow shutdown (11) for zone &lt;zone name&gt;</span><span class="uiOutputText" dir="ltr" style="box-sizing: border-box;color: #181818;font-family: Menlo, Consolas, &#39;DejaVu Sans Mono&#39;, &#39;Courier New&#39;, monospace;font-size: 13px;font-weight: 500;text-align: left;white-space: pre-wrap;background-color: #ecf0f1;"> during pkt completion</span></span></p>
+<h2>Environment</h2>
+<ul><li>BIG-IP DNS</li><li>BIND</li><li>DNSSEC</li><li>ZSK rollover</li></ul>
+<h2>Cause</h2>
+<p>The issue arises when the response size for a DNS query exceeds the default UDP payload size (512 bytes without EDNS or client-defined limits). This triggers the BIG-IP system to set the Truncated (TC) flag in its UDP response, prompting clients to retry their queries over TCP. When there are two active ZSKs, the response size increases further due to additional RRSIG records, leading to more frequent retries over TCP.</p>
+<p>The local BIND process on BIG-IP has a default limit of 150 concurrent TCP connections (<span style="background-color: #ecf0f1;">tcp-clients</span>). When this limit is exceeded, subsequent TCP queries fail, causing connection resets and unresponsive behavior for affected zones.</p>
+<p>The failure only happens on the queries responded by local BIND, the queries responded by GSLB, DNS express or DNS cache wouldn&#39;t be impact, as there is no limit for TCP connections on TMM.</p>
+<h2>Recommended Actions</h2>
+<p><strong>Increase tcp-clients Limit in BIND:</strong></p>
+<ul><li>Modify the <span style="background-color: #ecf0f1;">tcp-clients</span> value in BIND&#39;s configuration to accommodate a higher number of concurrent TCP connections.</li><li><strong>Recommended initial value:</strong> start with <span style="background-color: #ecf0f1;">1024</span>
+<ul><li><strong>Monitoring: </strong>Use<span style="background-color: #ecf0f1;"> rndc status </span>after applying changes to monitor the current status.</li><li>Look for lines like <span style="background-color: #ecf0f1;">tcp clients:<strong> X/Y</strong></span><strong>,</strong> where the <strong>X </strong>is the current TCP connection over BIND, and the <strong>Y </strong>is your configured limit.</li><li>If necessary, increase further based on observed traffic patterns, the <strong>X </strong>value.</li></ul>
+</li></ul>
+<p><strong>Long-Term Solutions (Since a high load BIND may cause the performance issue):</strong></p>
+<ol><li><strong>Implement DNS Express:</strong></li></ol>
+<ul><ul><li>Configure DNS Express on BIG-IP to pre-store zone data in TMM memory instead of relying solely on BIND for responses. This improves performance and reduces dependency on BIND&#39;s limitations.</li></ul></ul>
+<ol start="2"><li><strong>Implement DNS Cache (transparent mode):</strong></li></ol>
+<ul><ul><li>Configure transparent mode caching so that frequently queried records are cached by TMM, reducing the load on BIND.</li></ul></ul>
+<h2>Additional Information</h2>
+<p>The maximum size over UPD for a DNS response is controlled by one of the EDNS options, <strong>UDP payload size</strong>. EDNS (Extension Mechanisms for DNS) is a specification that extends the original DNS protocol to overcome its limitations, particularly the size constraints of DNS messages. Traditional DNS over UDP has a maximum message size of 512 bytes. EDNS allows clients and servers to negotiate larger UDP packet sizes (commonly up to 4096 bytes), enabling the transmission of larger DNS responses without requiring TCP.</p>
+<p>Find EDNS in a DNS request packet, in <span style="background-color: #ecf0f1;"><strong>Additional records</strong></span> field, the <strong><span style="background-color: #ecf0f1;">UDP payload size</span></strong> is <strong>4096</strong>.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>Domain Name System (query)
+    Length: 41
+    Transaction ID: 0xece9
+    Flags: 0x0000 Standard query
+        0... .... .... .... = Response: Message is a query
+        .000 0... .... .... = Opcode: Standard query (0)
+        .... ..0. .... .... = Truncated: Message is not truncated
+        .... ...0 .... .... = Recursion desired: Don&#39;t do query recursively
+        .... .... .0.. .... = Z: reserved (0)
+        .... .... ...0 .... = Non-authenticated data: Unacceptable
+    Questions: 1
+    Answer RRs: 0
+    Authority RRs: 0
+    Additional RRs: 1
+    Queries
+    Additional records
+        &lt;Root&gt;: type OPT
+            Name: &lt;Root&gt;
+            Type: OPT (41) 
+            UDP payload size: 4096
+            Higher bits in extended RCODE: 0x00
+            EDNS0 version: 0
+            Z: 0x8000
+                1... .... .... .... = DO bit: Accepts DNSSEC security RRs
+                .000 0000 0000 0000 = Reserved: 0x0000
+            Data length: 0</code></pre>
+<p> </p>
+</article>
+</body>
+</html>

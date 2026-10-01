@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160957: BIG-IQ CM GUI keeps showing “Waiting on services restarting” after a large DNS configuration is imported</title>
+<meta name="description" content="Support Solution: BIG-IQ CM GUI keeps showing “Waiting on services restarting” after a large DNS configuration is imported — The BIG-IQ CM GUI keeps showing “Waiting on services restarting”.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160957">
+</head>
+<body>
+<header>
+<h1>K000160957: BIG-IQ CM GUI keeps showing “Waiting on services restarting” after a large DNS configuration is imported</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-04-23</dd>
+<dt>Updated</dt><dd>2026-07-29</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li><li>BIG-IQ Centralized Management: 8.4.2, 8.4.X, 8.3.0, 8.3.X, 8.4.0, 8.4.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160957">https://my.f5.com/manage/s/article/K000160957</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><strong style="font-size: 16px;">Description</strong></p>
+<ul><li>The BIG-IQ CM GUI keeps showing “Waiting on services restarting”.</li><li>The tokumond daemon is in a restart loop on the BIG-IQ CM.</li><li>The log file /var/log/tokumon/current shows messages similar to the following sample:</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">YYYY-MM-DD_HH:MM:SS.XXXX [SEVERE] es: _index:dns command:index status:400 _id:https://localhost/mgmt/cm/dns/working-config/wideip/a/XXXXXX-XXX-XXXX-XXXX-XXXXXXX error:{&quot;type&quot;:&quot;illegal_argument_exception&quot;,&quot;reason&quot;:&quot;Limit of total fields [5000] in index [dns] has been exceeded&quot;} see searchd log for complete error.</span></p>
+<p><strong style="font-size: 16px;">Environment</strong></p>
+<ul><li>BIG-IQ 8.3 or 8.4</li><li>Import of a BIG-IP DNS configuration that includes more than 5,000 DNS items.</li></ul>
+<p><strong style="font-size: 16px;">Cause</strong></p>
+<p>F5 tracks this issue as Bug ID 1571973</p>
+<p><strong style="font-size: 16px;">Recommended Action</strong></p>
+<p>To estimate the current total_fields limit value in the searchd Elasticsearch instance, use the following command:</p>
+<p><span style="background-color: #f1f1f1;">curl -s XGET &quot;localhost:9210/dns/_mapping&quot; | jq . | grep &quot;\&quot;:&quot; | wc -l</span></p>
+<div>
+<p dir="auto">There is a workaround to mitigate this issue by following these steps:</p>
+</div>
+<p>1. Change the /usr partition permissions to read/write to allow editing of configuration files:</p>
+<p><span style="background-color: #f1f1f1;">mount -o remount,rw /usr</span></p>
+<p>2. Make a backup copy of the tokumond configuration file dns.js:</p>
+<p><span style="background-color: #f1f1f1;">cp /usr/share/rest/tokumon/config/modules/{dns.js,dns.js.orig}</span></p>
+<p>3. Edit the /usr/share/rest/tokumon/config/modules/dns.js file using nano or vim. Under settings.index, modify the following line, then save the file and exit the editor:</p>
+<p><code><span>settings: {}, // Use these to overwrite parts or all of ES_SETTINGS</span></code></p>
+<p>To this:</p>
+<p><code><span>settings: {   // Use these to overwrite parts or all of ES_SETTINGS<br>  &quot;index&quot; : {<br>    &quot;mapping&quot; : {<br>      &quot;total_fields&quot; : {<br>        &quot;limit&quot; : &quot;5000&quot;<br>      }<br>    }<br>  }<br>},</span></code></p>
+<p>4. Force tokumon to delete and rebuild all indices in searchd:</p>
+<p><span style="background-color: #f1f1f1;">bigstart kill tokumond</span></p>
+<p>5. If tokumond enters a continuous restart loop, there is likely a syntax error in the changes made in step 3. In this case, stop tokumond, review and correct the changes from step 3, and then restart the service.</p>
+<p><span style="background-color: #f1f1f1;">bigstart stop tokumond</span></p>
+<p>6. If a similar error persists with the new limit, repeat steps 3 and 7, increasing the limit by 5,000 each time. The maximum supported value is 20,000.</p>
+<p>If the problem persists, restore the file from the backup created in step 2 and open a case with F5 Support.</p>
+<p>7. If tokumond is no longer in a restart loop, wait approximately five minutes for the indices to be created, and then verify the change:</p>
+<p><span style="background-color: #f1f1f1;">curl -s localhost:9210/dns/_settings | jq .dns.settings.index.mapping</span></p>
+<p><span>The follwing output will be seen:</span></p>
+<p><strong><span style="font-family: &#39;courier new&#39;, courier, monospace;">{ </span></strong><strong><span style="font-family: &#39;courier new&#39;, courier, monospace;">&quot;total_fields&quot;: { &quot;limit&quot;: &quot;10000&quot; } } </span></strong></p>
+<p>8. Ensure that the /usr partition is remounted as read-only:</p>
+<p><span style="background-color: #f1f1f1;">mount -o remount,ro /usr</span></p>
+<p><strong style="font-size: 16px;">Additional Information</strong></p>
+<p>None</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K02214692: APM - HTTP POST requests fail when the body is larger than 64 KB</title>
+<meta name="description" content="Support Solution: APM - HTTP POST requests fail when the body is larger than 64 KB — Clients uploading files or sending POST requests with a body larger than 64 KB through a BIG-IP virtual server configured with an APM access profile receive TCP RST packets, causing the upload or API…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K02214692">
+</head>
+<body>
+<header>
+<h1>K02214692: APM - HTTP POST requests fail when the body is larger than 64 KB</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-05-16</dd>
+<dt>Updated</dt><dd>2026-09-23</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 15.0.0, 17.X.X, 16.X.X, 15.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K02214692">https://my.f5.com/manage/s/article/K02214692</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<p>Clients uploading files or sending POST requests with a body larger than 64 KB through a BIG-IP virtual server configured with an APM access profile receive TCP RST packets, causing the upload or API call to fail. Requests below the 64 KB threshold succeed normally.</p>
+<p>Observed error messages:</p>
+<p>In /var/log/ltm</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>RST sent from &lt;VS_IP&gt;:443 to &lt;Client_IP&gt;:&lt;port&gt;, APM HTTP body too big</code></pre>
+<p>In packet captures (F5 Ethernet Trailer)</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>[F5RST: APM HTTP body too big]</code></pre>
+<p>In /var/log/apm</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>Access encountered error: ERR_NOT_SUPPORTED. File: ../modules/hudfilter/access/access.c, Function: hud_access_process_ingress</code></pre>
+<p>Client-side application error: <strong></strong></p>
+<p><code>httpx.ReadError</code><strong></strong></p>
+<h2><strong style="font-family: NeusaNextProWideMedium-normal-expanded, Arial, Helvetica, sans-serif;font-size: 22px;color: #d9d6d1;--darkreader-inline-color: var(--darkreader-text-d9d6d1, #cdc9c3);">Environment</strong><strong></strong></h2>
+<ul><li><strong>Virtual server:</strong> Configured with an APM access profile (OAuth Resource Server type)</li><li><strong>Backend:</strong> API/AI gateway backend (e.g., LiteLLM server)<strong></strong><strong></strong></li></ul>
+<h2><strong>Cause</strong></h2>
+<p><strong><a href="https://cdn.f5.com/product/bugtracker/ID1085629.html" target="_blank" rel="noopener noreferrer">Bug ID1085629</a></strong> — <em>APM sends &quot;HTTP body too big&quot; reset message when POST body is greater than 64 KB</em></p>
+<p>The underlying behavior is:</p>
+<ol><li>Client sends an initial POST with body &lt; 64 KB → APM session is created successfully.</li><li>Client sends a subsequent POST with body &gt; 64 KB → APM enforces the 64 KB limit and resets the connection with <code>[F5RST: APM HTTP body too big]</code></li></ol>
+<p> </p>
+<h2><strong>Resolution</strong></h2>
+<p><strong>APM enforces a maximum HTTP request body size controlled by the <code>tmm.access.maxrequestbodysize</code>sys db variable. The default value is 64,000 bytes (64 KB). When a client establishes an APM session with an initial POST request under 64 KB, any subsequent POST request with a body exceeding this limit is rejected by APM with a TCP RST.</strong></p>
+<p> </p>
+<p>The maximum configurable value of <strong>tmm.access.maxrequestbodysize </strong>is capped at <strong>25,000,000 bytes (25 MB)</strong>, which may still be insufficient for large file uploads ( in some cases), if that is the case then v17.5.1.4 or greater has been upped to 250 MB.</p>
+<p> </p>
+<p>The bug is classified as <strong>&quot;Functions as Designed&quot;</strong> by F5 Engineering, with no standard code fix planned. </p>
+<p>For file uploads:</p>
+<ul><li>Smaller than 25 MB: increase the value of the sys db variable up to 25 MB using the below command
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify sys db tmm.access.maxrequestbodysize value &lt;value_in_bytes&gt;
+</code></pre>
+</li><li>For file uploads more than 25MB, you will need to install 17.5.1.4 or greater, the value is increased to 250 MB.</li></ul>
+<p> </p>
+<h2><strong>Additional Information</strong></h2>
+<p>None</p>
+</article>
+</body>
+</html>

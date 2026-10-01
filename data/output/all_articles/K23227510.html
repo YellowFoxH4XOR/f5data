@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K23227510: How To: Packet Capture restjavad and iControl REST (icrd/icrd_child)</title>
+<meta name="description" content="Support Solution: How To: Packet Capture restjavad and iControl REST (icrd/icrd_child) — Troubleshooting BIG-IQ or BIG-IP internal restjavad, restnoded, and icrd[_child]">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K23227510">
+</head>
+<body>
+<header>
+<h1>K23227510: How To: Packet Capture restjavad and iControl REST (icrd/icrd_child)</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2019-10-23</dd>
+<dt>Updated</dt><dd>2025-04-02</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>BIG-IP</li><li>BIG-IQ</li><li>F5 iWorkflow: 2.X.X, 2.3.X, 2.2.X, 2.1.X, 2.0.X, 2.3.0, 2.2.0, 2.1.0, 2.0.2, 2.0.1, 2.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K23227510">https://my.f5.com/manage/s/article/K23227510</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><span class="sectiontitle">Description</span></h2>
+<p>Troubleshooting BIG-IQ or BIG-IP internal <strong>restjavad</strong>, <strong>restnoded</strong>, and <strong>icrd[_child]</strong></p>
+<h2><span class="sectiontitle">Environment</span></h2>
+<ul><li>BIG-IQ
+<ul><li>Device Service Cluster (DSC)</li><li>Centralized Management</li></ul>
+</li><li>BIG-IP</li></ul>
+<h2><span class="sectiontitle">Cause</span></h2>
+<p>None</p>
+<h2><span class="sectiontitle">Recommended Actions</span></h2>
+<h3><span class="subsectiontitle">Perform a packet capture</span></h3>
+<p><em><span class="impact"><strong>Impact of this procedure</strong>: There should not be a negative impact as a result of performing this procedure.</span></em></p>
+<ol><li>SSH to log into the <strong>bash</strong> prompt of the BIG-IP or BIG-IQ system.</li><li>Execute the following commands in sequence:
+<p><span class="note"><strong>Note</strong>: You may also save this as a shell script or simply copy/paste the entire script below</span></p>
+<pre class="ckeditor_codeblock">#!/usr/bin/env bash
+# Set the environment variables
+source /etc/bashrc
+
+# Set the name of the output file
+output=&quot;/shared/tmp/$(getHostName).$(getPromptStatus | sed &#39;s/[ :/]/_/g&#39;).$(date +%F.%H%M%S).v$(awk &#39;$1==&quot;Build:&quot;{b=$2}$1==&quot;Version:&quot;{v=$2}END{print v &quot;_HF-&quot; b}&#39; /VERSION).pcap&quot;
+
+# Discover the ephemeral ports for all icrd and java processes.
+ports=$(ss -nlpi | awk &#39;$0~&quot;icrd&quot;||$0~&quot;java&quot;{gsub(/([:f]?.+)?:/,&quot;&quot;,$5);if($5!=&quot;*&quot;){print $5}}&#39;)
+
+# Output the tshark syntax to parse this capture. Non-default http ports will be used, so we use the -d flag to &#39;decode as&#39; http.
+echo -e &#39;\nUse the following syntax to decode the random ports as http:\n\ttshark -r &#39;${output} $(echo ${ports} | xargs printf &quot;-d tcp.port==%s,http &quot;) -2 -R http&quot;\n&quot;
+
+# Convert our ports to BPF consumable syntax
+ports=$(echo ${ports}|xargs printf &quot;%s or &quot;) &amp;&amp; ports=${ports%????}
+
+# Start our packet capture
+tcpdump -s0 -i lo &quot;port ($ports)&quot; -w ${output} -v</pre>
+<p><strong>For Example</strong></p>
+<pre class="ckeditor_codeblock">source /etc/bashrc
+output=&quot;/shared/tmp/$(getHostName).$(getPromptStatus | sed &#39;s/[ :/]/_/g&#39;).$(date +%F.%H%M%S).v$(awk &#39;$1==&quot;Build:&quot;{b=$2}$1==&quot;Version:&quot;{v=$2}END{print v &quot;_HF-&quot; b}&#39; /VERSION).pcap&quot; &amp;&amp; &gt; ports=$(ss -nlpi | awk &#39;$0~&quot;icrd&quot;||$0~&quot;java&quot;{gsub(/([:f]?.+)?:/,&quot;&quot;,$4);print $4}&#39;) &amp;&amp;
+&gt; echo -e &quot;\nUse the following syntax to decode the random ports as http:\n\ttshark -r ${output} $(echo ${ports} | xargs printf &quot;-d tcp.port==%s,http &quot;) -2 -R http\n&quot; &amp;&amp;
+&gt; ports=$(echo ${ports}|xargs printf &quot;%s or &quot;) &amp;&amp;
+&gt; ports=${ports%????} &amp;&amp;
+&gt; tcpdump -s0 -i lo &quot;port ($ports)&quot; -w ${output} -v
+
+tcpdump: listening on lo, link-type EN10MB (Ethernet), capture size 65535 bytes
+1865 packets captured
+5757 packets received by filter
+10 packets dropped by kernel
+</pre>
+<br><strong>Use the following syntax to decode the random ports as http</strong>:
+<pre class="ckeditor_codeblock">tshark -r /shared/tmp/bigip.Active.2019-03-19.094646.v6.1.0_HF-0.5.1224.pcap -d tcp.port==1514,http -d tcp.port==9200,http -d tcp.port==8081,http -d tcp.port==2514,http -d tcp.port==8018,http -d tcp.port==8020,http -d tcp.port==9300,http -d tcp.port==9081,http -d tcp.port==9210,http -d tcp.port==9310,http -d tcp.port==8514,http -d tcp.port==8100,http -d tcp.port==33928,http -2 -R http
+</pre>
+</li><li>
+<p>Parse the capture on the command line with <strong>tshark</strong> using the syntax output in step 2.</p>
+<p>For Example, I want to search for all POST messages in packet capture <strong>/shared/tmp/bigip.Active.2019-03-19.094646.v6.1.0_HF-0.5.1224.pcap</strong>:</p>
+<pre class="ckeditor_codeblock">tshark -r /shared/tmp/bigip.Active.2019-03-19.094646.v6.1.0_HF-0.5.1224.pcap -d tcp.port==1514,http -d tcp.port==9200,http -d tcp.port==8081,http -d tcp.port==2514,http -d tcp.port==8018,http -d tcp.port==8020,http -d tcp.port==9300,http -d tcp.port==9081,http -d tcp.port==9210,http -d tcp.port==9310,http -d tcp.port==8514,http -d tcp.port==8100,http -d tcp.port==33928,http -2 -R http.request.method==POST
+</pre>
+</li><li>
+<p>Alternatively, you may download the capture and view it with <strong>Wireshark</strong> or your favorite packet parser.</p>
+</li></ol>
+<h2><span class="sectiontitle">Additional Information</span></h2>
+<p>While the external communication coming into TCP Port 443 is encrypted, some of the internal traffic is proxied in plain-text to the internal daemons. This can aid in troubleshooting various processes</p>
+</article>
+</body>
+</html>

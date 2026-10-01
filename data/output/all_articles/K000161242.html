@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161242: Configuring iRule Logs to Write to a Custom Local File and Forward to a Remote Syslog Server</title>
+<meta name="description" content="Support Solution: Configuring iRule Logs to Write to a Custom Local File and Forward to a Remote Syslog Server — When using iRules to generate log messages, the default behavior writes all local0 facility messages to /var/log/ltm. This article describes how to simultaneously write iRule log output to a custom…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161242">
+</head>
+<body>
+<header>
+<h1>K000161242: Configuring iRule Logs to Write to a Custom Local File and Forward to a Remote Syslog Server</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-05-15</dd>
+<dt>Updated</dt><dd>2026-05-15</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161242">https://my.f5.com/manage/s/article/K000161242</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When using iRules to generate log messages, the default behavior writes all <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">local0</span> facility messages to <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">/var/log/ltm</span>. This article describes how to simultaneously write iRule log output to a custom local log file (e.g., <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">/var/log/irule_custom</span>) and forward those same messages to a remote syslog server, using a single syslog-ng <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">include</span> block configured via <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">tmsh</span>.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM (11.x – 17.x)</li><li>iRules using <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">log local0.</span> facility</li><li>Remote syslog server (UDP or TCP)</li><li>BIG-IP syslog-ng</li></ul>
+<h2>Cause</h2>
+<p>By default, the BIG-IP syslog-ng configuration routes <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">local0</span> facility messages only to <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">/var/log/ltm</span>. There is no built-in mechanism to simultaneously write iRule logs to a separate custom file and forward them remotely. However, syslog-ng supports multiple destinations within a single <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">log {}</span> block, which enables this behavior through a custom <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">include</span> statement.</p>
+<p>Additionally, if a remote syslog server is configured via <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">tmsh modify /sys syslog remote-servers</span>, it forwards <strong>all</strong> syslog traffic without filtering. To apply filtering (e.g., only iRule messages), the <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">remote-servers</span> statement must be replaced with a custom <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">include</span> block.</p>
+<p> </p>
+<h2>Recommended Actions</h2>
+<h3>Step 1 — Tag iRule log messages with a unique string</h3>
+<p>Modify your iRule to embed a unique tag string in the log message. This allows syslog-ng to distinguish iRule output from other <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">local0</span> traffic (such as AUDIT entries).</p>
+<blockquote>
+<p class="ql-quote-block"><span style="color: #15891f;"><strong>Note:</strong> Use a tag string that includes a colon-space suffix (e.g., <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">&lt;IRULE_TAG&gt;: </span>). Matching on the colon-space pattern avoids false matches on AUDIT log entries, which contain the tag string itself but not the <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">: </span> suffix.</span></p>
+</blockquote>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when HTTP_REQUEST {
+  log local0.info &quot;&lt;IRULE_TAG&gt;: [IP::remote_addr] accessed [HTTP::uri]&quot;
+}</code></pre>
+<p>The examples in this article use <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">&lt;IRULE_TAG&gt;</span>. You may use any unique string as your tag. For example: </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when HTTP_REQUEST {
+  log local0.info &quot;my_irule_tag: [IP::remote_addr] accessed [HTTP::uri]&quot;
+}</code></pre>
+<p> </p>
+<h3>Step 2 — Remove any existing remote-servers configuration</h3>
+<p>If a remote syslog server was previously configured using the <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">remote-servers</span> statement, it must be removed before defining a custom <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">include</span> filter. Leaving it in place will cause unfiltered forwarding of all syslog traffic in parallel.</p>
+<blockquote>
+<p class="ql-quote-block"><strong>Impact:</strong> This step temporarily disables remote syslog forwarding until the new <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">include</span> block is applied in Step 3.</p>
+</blockquote>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify /sys syslog remote-servers none
+tmsh save sys config</code></pre>
+<p> </p>
+<h3>Step 3 — Define the combined syslog-ng include block</h3>
+<p>Open the syslog configuration in the <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">vi</span> editor:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh edit /sys syslog all-properties</code></pre>
+<p>Locate the &#39; <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">include none &#39;</span> line and replace it with the following block. Substitute <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">&lt;remote_syslog_ip&gt;</span> and the port number with values appropriate for your environment:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>include &quot;
+    filter f_local0 {
+        facility(local0) and not match(\&quot;&lt;IRULE_TAG&gt;: \&quot;);
+    };
+    filter f_irule_tag {
+        facility(local0) and match(\&quot;&lt;IRULE_TAG&gt;: \&quot;);
+    };
+    destination d_customlog {
+        file(\&quot;/var/log/irule_custom\&quot; create_dirs(yes));
+    };
+    destination d_remote_loghost 
+        udp(\&quot;&lt;remote_syslog_ip&gt;\&quot; port(514));
+        tcp(\&quot;&lt;remote_syslog_ip&gt;\&quot; port(514));
+    };
+    log {
+        source(s_syslog_pipe);
+        filter(f_irule_tag);
+        destination(d_customlog);
+        destination(d_remote_loghost);
+     };
+&quot;</code></pre>
+<blockquote>
+<p class="ql-quote-block"><span style="color: #c20025;"><strong>Important:</strong> The system does <strong>not</strong> validate the syntax of the <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">include</span> parameter. An error in this block may cause syslog-ng to fail. Test in a non-production environment before deploying. See <a href="https://my.f5.com/manage/s/article/K13333" target="_blank" style="color: #c20025;">K13333: Filtering log messages sent to remote syslog servers (11.x – 17.x)</a>.</span></p>
+</blockquote>
+<p>Exit the editor and save:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>:wq!</code></pre>
+<p>At the prompt </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>Save changes? (y/n/e), enter y.</code></pre>
+<p>If syslog filter syntax errors are present, <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">tmsh</span> will return:</p>
+<p><span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">There were errors. Continue editing (y) or discard changes (n) (y/n)</span></p>
+<p>Correct any errors before proceeding.</p>
+<p> </p>
+<h3>Step 4 — Save the configuration and restart syslog-ng</h3>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh save /sys config</code></pre>
+<p>Restart the syslog-ng service: </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>bigstart restart syslog-ng</code></pre>
+<blockquote>
+<p class="ql-quote-block"><span style="color: #15891f;"><strong>Note:</strong> Restarting syslog-ng does not affect traffic processing.</span></p>
+</blockquote>
+<h3>Step 5 — (Optional) Add log rotation for the custom log file</h3>
+<p>To include <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">/var/log/irule_custom</span> in the standard BIG-IP log rotation scheme:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify /sys logrotate include &quot;/var/log/irule_custom {compress missingok notifempty}&quot;</code></pre>
+<p>Save the configuration: </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh save /sys config</code></pre>
+<h3>Step 6 — Verify</h3>
+<p>Test that messages are being written locally and forwarded remotely:</p>
+<p><strong>Trigger a test log entry:</strong></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>logger -p local0.info &quot;&lt;IRULE_TAG&gt;: test message&quot;</code></pre>
+<p> </p>
+<p><strong>Check the local custom log file:</strong></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tail -f /var/log/irule_custom</code></pre>
+<p> </p>
+<p><strong>Capture remote syslog traffic (management interface):</strong></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tcpdump -i eth0 host &lt;remote_syslog_ip&gt; and port 514</code></pre>
+<p> </p>
+<p><strong>Capture remote syslog traffic (TMM interfaces):</strong></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tcpdump -nni 0.0:nnn host &lt;remote_syslog_ip&gt; and port 514</code></pre>
+<p> </p>
+<blockquote></blockquote>
+<h2>Additional Information</h2>
+<p>iRules log at informational level by default. If your filter uses level(warning..emerg), informational messages will be silently dropped. Either use log local0.warning in the iRule, or include info in the filter level range. See K000139985.</p>
+<p>Syslog-ng supports multiple destination() entries within a single log {} block. The message is delivered to all listed destinations simultaneously.</p>
+<p>The tmsh modify /sys syslog remote-servers method and the include method are mutually exclusive for the same destination. The include approach must be used when filtering is required.</p>
+<p>Always run tmsh save /sys config after modifying the syslog include. Changes are lost on configuration reload if not saved.</p>
+<p><span style="color: #c20025;"><strong><span style="color: #222222;font-family: ProximaNova-Reg, Arial, Helvetica, sans-serif;font-size: 14px;white-space: normal;background-color: #ffffff;float: none;display: inline;">A syslog-ng issue with remote logging to an invalid remote syslog server may lead to an unexpected reboot. See K45824351.</span></strong></span></p>
+<h2></h2>
+<p> </p>
+</article>
+</body>
+</html>

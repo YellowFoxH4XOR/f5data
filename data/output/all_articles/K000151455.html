@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000151455: Monitoring Device Trust Certificate Expiry on BIG-IP Using a Shell Script</title>
+<meta name="description" content="Knowledge: Monitoring Device Trust Certificate Expiry on BIG-IP Using a Shell Script — This article provides a method to monitor the expiration status of a device trust certificate (such as dtca.crt) on a BIG-IP system. The solution uses a shell script to check the certificate&#x27;s expiry…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000151455">
+</head>
+<body>
+<header>
+<h1>K000151455: Monitoring Device Trust Certificate Expiry on BIG-IP Using a Shell Script</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2025-05-22</dd>
+<dt>Updated</dt><dd>2025-05-23</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 14.0.0, 14.0.X, 14.0.1, 17.X.X, 16.X.X, 15.X.X, 14.X.X, 17.5.X, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000151455">https://my.f5.com/manage/s/article/K000151455</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>This article provides a method to monitor the expiration status of a device trust certificate (such as <span style="font-size: 13.5px;font-family: monospace;">dtca.crt</span>) on a BIG-IP system. The solution uses a shell script to check the certificate&#39;s expiry date, calculate the number of days remaining, and log messages to the system log (LTM log) with different severity levels depending on the certificate status.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP system (any platform or version)</li><li>Device trust certificate (e.g., <span style="font-size: 13.5px;font-family: monospace;">dtca.crt</span>)</li><li>Access to the BIG-IP shell (bash)</li><li>Ability to schedule scripts via cron</li></ul>
+<h2>Solution</h2>
+<h3>Shell Script for Certificate Expiry Monitoring</h3>
+<p>Below is a sample shell script that checks the expiry date of a specified certificate file and logs the result:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>#!/bin/bash
+
+ 
+CERT_PATH=&quot;/config/ssl/ssl.crt/dtca.crt&quot;
+
+ 
+if [ ! -f &quot;$CERT_PATH&quot; ]; then
+
+  echo &quot;Certificate not found: $CERT_PATH&quot;
+
+  exit 1
+
+fi
+
+
+EXPIRY_DATE=$(openssl x509 -enddate -noout -in &quot;$CERT_PATH&quot; | cut -d= -f2)
+
+EXPIRY_SECONDS=$(date -d &quot;$EXPIRY_DATE&quot; +%s)
+
+NOW_SECONDS=$(date +%s)
+
+DAYS_LEFT=$(( (EXPIRY_SECONDS - NOW_SECONDS) / 86400 ))
+
+ 
+if [ &quot;$DAYS_LEFT&quot; -lt 0 ]; then
+
+  echo &quot;Certificate expired on $EXPIRY_DATE&quot;
+
+  logger -p local0.err &quot;Device Trust certificate has expired (on $EXPIRY_DATE)&quot;
+
+elif [ &quot;$DAYS_LEFT&quot; -le 30 ]; then
+
+  echo &quot;Certificate is running in $DAYS_LEFT days from (on $EXPIRY_DATE)&quot;
+
+  logger -p local0.warning &quot;Device Trust Certificate expires in $DAYS_LEFT days from (on $EXPIRY_DATE)&quot;
+
+else
+
+  echo &quot;Certificate is valid until $EXPIRY_DATE ($DAYS_LEFT Days remaining)&quot;
+
+  logger -p local0.notice &quot;Device Trust Certificate is valid until $EXPIRY_DATE ($DAYS_LEFT Days remaining)&quot;
+
+fi
+</code></pre>
+<h3>How It Works</h3>
+<ul><li>The script sets the path to the certificate file.</li><li>It checks if the certificate file exists. If not, it outputs an error and exits.</li><li>It extracts the expiry date from the certificate using <span style="font-size: 13.5px;font-family: monospace;">openssl</span>.</li><li>It calculates the number of days left until the certificate expires.</li><li>Depending on the result:
+<ul><li>If the certificate is expired, it logs an error.</li><li>If the certificate will expire within 30 days, it logs a warning.</li><li>If the certificate is valid for more than 30 days, it logs a notice.</li></ul>
+</li></ul>
+<h3>Example LTM Log Output</h3>
+<p><span style="font-size: 11.8125px;font-family: monospace;">May 19 10:17:17 localhost [26282]: Device Trust certificate has expired (on May 16 10:00:04 2025 GMT)</span></p>
+<h2>Scheduling the Script</h2>
+<p>You can schedule this script to run at your desired interval (e.g., daily or weekly) using cron. For example, to run the script every day at midnight, add the following line to your crontab:</p>
+<p><span style="font-size: 11.8125px;font-family: monospace;">0 0 * * * /path/to/your/script.sh</span></p>
+<h2>Recommendations</h2>
+<ul><li>Regularly monitor the LTM logs for warnings or errors about certificate expiry.</li><li>Adjust the script and scheduling as needed for your operational requirements.</li></ul>
+<h2>Additional Notes</h2>
+<ul><li>The script can be adapted to monitor other certificates by changing the <span style="font-size: 13.5px;font-family: monospace;">CERT_PATH</span> variable.</li><li>Ensure the script has execute permissions and is owned by an appropriate user.</li><li>Logging to local0 allows easy filtering and alerting based on certificate status.</li></ul>
+<p>This approach provides proactive monitoring and helps prevent unexpected issues due to expired device trust certificates on BIG-IP systems.</p>
+</article>
+</body>
+</html>

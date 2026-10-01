@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K10318: Cache-Control headers may still be modified when the client cache policy is set to &#x27;Do not change&#x27;</title>
+<meta name="description" content="Known Issue: Cache-Control headers may still be modified when the client cache policy is set to &#x27;Do not change&#x27; — This is the result of a known issue. When the client cache policy is set to Do Not Change, the BIG-IP WebAccelerator should not modify any of the Cache-Control HTTP headers in the response from the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K10318">
+</head>
+<body>
+<header>
+<h1>K10318: Cache-Control headers may still be modified when the client cache policy is set to &#x27;Do not change&#x27;</h1>
+<dl>
+<dt>Type</dt><dd>Known Issue</dd>
+<dt>Published</dt><dd>2011-03-09</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>BIG-IP WebAccelerator: 10.2.0, 10.1.0, 10.0.1, 9.4.6, 10.2.1, 9.4.7, 10.0.0, 9.4.8</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K10318">https://my.f5.com/manage/s/article/K10318</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Known Issue</h3><p>This is the result of a known issue. When the client cache policy is set to <b>Do Not Change</b>, the BIG-IP WebAccelerator should not modify any of the <b>Cache-Control </b>HTTP headers in the response from the origin webserver to the client. However, the BIG-IP WebAccelerator may modify or remove the <b>Cache-Control</b>, <b>Pragma</b>, and <b>Expires</b> HTTP headers even if the client cache policy is set to <b>Do Not Change</b>.</p>
+<p>F5 Product Development is tracking this issue as ID 222320 (formerly CR117405).</p>
+<h4><b>Workaround</b></h4>
+<p>In BIG-IP WebAccelerator version 9.4.x, you can work around this issue by preserving the <b>Cache-Control </b>HTTP headers with a server-side iRule, then restoring them with a client-side iRule. The server-side iRule saves the original <b>Expires</b>, <b>Cache-Control</b>, and <b>Pragma</b> headers as new headers named <b>OWS-Expires</b>, <b>OWS-Cache-Control</b>, and <b>OWS-Pragma</b>. The client-side iRule restores the original header values, and optionally deletes the temporary headers. You must first create and apply the client-side iRule to your existing virtual server before modifying the system server-side iRule. To do so, perform the following procedures: </p>
+<p><b>Creating and applying the client-side iRule to your existing virtual server</b></p>
+<ol><li>Log in to the BIG-IP Configuration utility.</li><li>Browse to Local Traffic &gt; iRules, and click <b>Create</b>.</li><li>Enter a name for your iRule.<br> <br> For example:<br> <br> <span class="example2" id="cq-gen2467">CacheControlHeaderRestore</span></li><li>Copy the following code into the <b>Definition</b> field:<br><p><span class="code"><span class="example2">when HTTP_RESPONSE {<br>    if {[HTTP::header exists &quot;OWS-Cache-Control&quot;]} {<br>       HTTP::header replace Cache-Control [HTTP::header value &quot;OWS-Cache-Control&quot;]<br>       # HTTP::header remove OWS-Cache-Control<br>    }<br>    if {[HTTP::header exists &quot;OWS-Pragma&quot;]} {<br>       HTTP::header replace Pragma [HTTP::header value &quot;OWS-Pragma&quot;]<br>       # HTTP::header remove OWS-Pragma<br>    }<br>    if {[HTTP::header exists &quot;OWS-Expires&quot;]} {<br>       HTTP::header replace Expires [HTTP::header value &quot;OWS-Expires&quot;]<br>       # HTTP::header remove OWS-Expires<br>    }<br> }</span></span></p>
+<p><span class="note"><b>Note</b>: To remove the temporary <b>OWS-*</b> headers, uncomment those commands by removing the leading <b>#</b> symbol.</span></p>
+</li><li>Browse to Local Traffic &gt; Virtual Servers, and select the affected virtual server.</li><li>Click <b>Resources</b>.</li><li>Above the <b>iRules</b> field, click <b>Manage</b>.</li><li>Select the iRule you just created from the <b>Available</b> list, and move it to the <b>Enabled</b> list by clicking the <b>&lt;&lt;</b> button.</li></ol>
+<p><b>Modifying the system server-side iRule</b></p>
+<ol><li>Log in to the BIG-IP command line.</li><li>To back up the original <b>/config/profile_base.conf </b>file, type the following command:<br> <br> <span class="code">cp /config/profile_base.conf /config/profile_base.conf.sol10318 </span></li><li>Open the <b>/config/profile_base.conf</b> in a text editor.</li><li>Locate the <b>_sys_WA_serverside</b> iRule, which begins at approximately line 1490 with the following line: <br> <span class="example2"><br>rule _sys_WA_serverside { </span></li><li>Add the following code to the bottom of the <b>HTTP_RESPONSE</b> event: <span class="code"> <br> <br>    if { [HTTP::header value &quot;Expires&quot;] &lt;= &quot;0&quot; } {<br>       set exp_time [HTTP::header value &quot;Expires&quot;]<br>    } else {<br>       set exp_time [ clock scan &quot;[ HTTP::header value &quot;Expires&quot; ]&quot; ]<br>    }<br>    if {$exp_time &lt;= 0 } {<br>       set header_date &quot;Thu, 01 Jan 1970 00:00:01 GMT&quot;<br>       HTTP::header replace &quot;Expires&quot; $header_date<br>    }<br>    if {[HTTP::header exists Content-Type] &amp;&amp; ([HTTP::header Content-Type] starts_with &quot;text/html&quot;)} {<br>       if {[HTTP::header exists Cache-Control]} {<br>          HTTP::header insert OWS-Cache-Control [HTTP::header value &quot;Cache-Control&quot;]<br>       }<br>       if {[HTTP::header exists Pragma]} {<br>          HTTP::header insert OWS-Pragma [HTTP::header value &quot;Pragma&quot;]<br>       }<br>   } <br> </span></li><li>Save and close the <b>profile_base.conf </b>file.</li><li>Reload the configuration by typing the following command:<br> <span class="code"><br>bigpipe load </span></li><li>Clear the BIG-IP WebAccelerator cache by typing the following command: <br> <br> <span class="code">wa_clear_cache</span></li></ol>
+<p><span class="warning"><b>Important: </b>Clearing the cache on the BIG-IP WebAccelerator system will temporarily increase traffic to the origin web servers until the BIG-IP WebAccelerator system repopulates its cache.</span></p>
+</article>
+</body>
+</html>

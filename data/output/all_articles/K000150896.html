@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000150896: Configure IPv6 BGP Neighbors on BIG-IP and Advertise Virtual Server IPv6 Addresses to BGP Neighbors</title>
+<meta name="description" content="Support Solution: Configure IPv6 BGP Neighbors on BIG-IP and Advertise Virtual Server IPv6 Addresses to BGP Neighbors — To exchange BGP routing updates between BIG-IP and another BGP-speaking neighbor over IPv6, BIG-IP supports the BGP4+ extension.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000150896">
+</head>
+<body>
+<header>
+<h1>K000150896: Configure IPv6 BGP Neighbors on BIG-IP and Advertise Virtual Server IPv6 Addresses to BGP Neighbors</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-04-16</dd>
+<dt>Updated</dt><dd>2025-04-23</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000150896">https://my.f5.com/manage/s/article/K000150896</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>To exchange BGP routing updates between BIG-IP and another BGP-speaking neighbor over IPv6, BIG-IP supports the BGP4+ extension.</p>
+<p>This guide details step-by-step, how to establish a BGP neighbor adjacency relationship so available network prefixes (Network Layer Reachability Information or NLRI within BGP UPDATE messages) are exchanged between BGP peers in IPv6 networks. <br><br>After establishing BGP, <a href="https://my.f5.com/manage/s/article/K15923612" target="_blank">Route Health Injection (RHI)</a> will be configured for IPv6 virtual-addresses, allowing them to be advertised to BGP neighbors (RIB-Out). Additional context will be provided to detail the changes in the BGP routing tables (BGP RIB): Adj-RIBs-In, Loc-RIB, and Adj-RIBs-Out.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM with Advanced Routing Module (ARM) licensed and provisioned </li><li>Route Domain with BGP routing-protocol enabled</li><li>eBGP (BIG-IP with different ASN as external core router network) or iBGP (BIG-IP with same ASN as its peer) neighbor configured</li><li>Virtual Server with its associated virtual-address &quot;route-advertisement&quot; setting configured to &quot;selective&quot; or &quot;enabled&quot; (RHI).</li></ul>
+<h2>Cause</h2>
+<p>Need BIG-IP to communicate BGP routing updates in an IPv6 network. BGP neighbor can share the same Autonomous System Number (ASN) or different ASN as BIG-IP.</p>
+<h2>Recommended Actions</h2>
+<p>In this example, the peers already have BGP configured and Established over IPv4. The desired configuration is a dual stack IPv4/IPv6 network.</p>
+<p>The iBGP neighbor relationship will be established between localhost1 (self ip: 10.2.115.171, 2620:100d:100e:f5::11)  and localhost2 (self ip: 10.2.115.171, 2620:100d:100e:f5::10). Both are BIG-IP devices in an HA pair and have ASN 255.</p>
+<p>eBGP neighbor relationship will be established from localhost1 to localhost3 (self ip: 10.2.115.172, 2620:100d:100e:f5::9), and from localhost2 to localhost3. localhost3 has ASN 365.</p>
+<ol><li>Prior to adding the BGP configuration in ZebOS, ensure BIG-IP is configured with an IPv6 self ip address. Additionally, the BGP routing protocol must be added to the route-domain configuration. <br><pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># IPv6 self ip addresses
+[root@localhost1:Standby:In Sync] config # tmsh list net self 2620*
+net self 2620:100d:100e:f5::11/64 {
+    address 2620:100d:100e:f5::11/64
+    allow-service all   &lt;&lt;&lt;&lt; allow port 179
+    traffic-group traffic-group-local-only
+    vlan Internal
+}
+
+[root@localhost2:Active:In Sync] config # tmsh list net self 2620*
+net self 2620:100d:100e:f5::10/64 {
+    address 2620:100d:100e:f5::10/64
+    allow-service all   &lt;&lt;&lt;&lt; allow port 179
+    traffic-group traffic-group-local-only
+    vlan Internal
+}
+
+[root@localhost3:Standby:In Sync] config # tmsh list net self 2620*
+net self 2620:100d:100e:f5::9/64 {
+    address 2620:100d:100e:f5::9/64
+    allow-service all   &lt;&lt;&lt;&lt; allow port 179
+    traffic-group traffic-group-local-only
+    vlan Internal
+}
+
+# add BGP routing protocol
+[root@localhost1:Standby:In Sync] config # tmsh list net route-domain
+net route-domain 0 {
+    id 0
+    routing-protocol {
+        BGP   &lt;&lt;&lt;&lt;
+    }
+
+[root@localhost2:Active:In Sync] config # tmsh list net route-domain
+net route-domain 0 {
+    id 0
+    routing-protocol {
+        BGP   &lt;&lt;&lt;&lt;
+    }
+
+root@(localhost3)(cfg-sync In Sync)(Standby)(/Common)(tmos)# list net route-domain
+net route-domain 0 {
+    id 0
+    routing-protocol {
+        BGP    &lt;&lt;&lt;&lt;
+    }</code></pre>
+<em><strong><br>Note</strong>: For simplicity in this example, <a href="https://my.f5.com/manage/s/article/K17333" target="_self">Port Lockdown</a> is configured on the self ip addresses to allow all traffic. The default setting does not allow port 179 for BGP traffic. Review F5 Support&#39;s guidelines on <a href="https://my.f5.com/manage/s/article/K17333" target="_self">Port Lockdown</a> to properly secure your network.<br><br></em></li><li>Configure the BGP neighbor relationship on both devices over IPv6.<br><br><pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>1. Configure BGP neighbor in router configuration mode
+(config-router)# neighbor [y:y:y:y:y:y:y:y] remote-as [ASN]
+
+2. Enter address-family ipv6 configuration mode
+(config-router)# address-family ipv6 unicast
+
+3. Activate BGP neighbor under address-family ipv6
+(config-router-af)# neighbor [y:y:y:y:y:y:y:y] activate
+
+4. Redistribute Kernel injected routes for Route Health Injection
+(config-router-af)# redistribute kernel
+
+5. save running-configuration to startup-configuration (can be executed in any command mode, except the initial User EXEC Mode)
+# write</code></pre>
+<br>In our example, we will add the IPv6 address of the respective peer devices on localhost1, localhost2, and localhost3 to configure iBGP and eBGP respectively. <br><pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>1. Note that the BGP neighbor must be added first, prior to activating.
+localhost1[0](config-router)# neighbor 2620:100d:100e:f5::10 remote-as 255
+localhost1[0](config-router)# neighbor 2620:100d:100e:f5::9 remote-as 365
+
+2. Enter address-family IPv6 configuration mode
+localhost1[0](config-router)# address-family ipv6 unicast
+
+3. activate iBGP and eBGP neighbors
+localhost1[0](config-router-af)# neighbor 2620:100d:100e:f5::10 activate
+localhost1[0](config-router-af)# neighbor 2620:100d:100e:f5::9 activate
+
+4. Redistribute Kernel routes, allowing tmrouted to share with BGP process
+localhost1[0](config-router-af)# redistribute kernel
+
+5. Configure the same for the peer device, localhost2
+localhost2[0](config-router)# neighbor 2620:100d:100e:f5::11 remote-as 255
+localhost2[0](config-router)# neighbor 2620:100d:100e:f5::9 remote-as 365
+localhost2[0](config-router)# address-family ipv6
+localhost2[0](config-router-af)# neighbor 2620:100d:100e:f5::11 activate
+localhost2[0](config-router-af)# neighbor 2620:100d:100e:f5::9 activate
+localhost2[0](config-router-af)# redistribute kernel
+
+6. Configure the eBGP neighbors for localhost3 over IPv6
+localhost3[0](config-router)# neighbor 2620:100d:100e:f5::11 remote-as 255
+localhost3[0](config-router)# neighbor 2620:100d:100e:f5::10 remote-as 255
+localhost3[0](config-router)# address-family ipv6
+localhost3[0](config-router-af)# neighbor 2620:100d:100e:f5::11 activate
+localhost3[0](config-router-af)# neighbor 2620:100d:100e:f5::10 activate
+localhost3[0](config-router-af)# redistribute kernel
+
+
+7. Save running-configuration to startup-configuration on both devices
+localhost1[0](config-router-af)# write
+Building configuration...
+[OK]
+
+localhost2[0](config-router)# write
+Building configuration...
+[OK]
+
+localhost3[0]#write
+Building configuration...
+[OK]</code></pre>
+<br><br></li><li>Verify iBGP neighbor is in Established state in BGP neighbor status tables. A numerical value under the &quot;State/PfxRcd&quot; column means BGP is &quot;Established&quot;. Note that the &quot;Active&quot; state means the local device is actively attempting to establish BGP with the configured neighbor.<br><pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>show ip bgp summary</code></pre>
+<br>In the example configuration, the <span style="text-decoration: underline;">BGP neighbor table</span> shows the newly configured BGP neighbors configured on IPv6.<br><pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>localhost1[0]#show ip bgp summary
+BGP router identifier 10.79.111.97, local AS number 255
+BGP table version is 14
+1 BGP AS-PATH entries
+0 BGP community entries
+
+Neighbor        V    AS MsgRcvd MsgSent   TblVer  InQ OutQ Up/Down  State/PfxRcd
+10.2.115.171    4   255    2289    2297       14    0    0 08:17:52        6
+10.2.115.172    4   365    2280    2298       14    0    0 18:58:55        0
+2620:100d:100e:f5::9 4   365      56      63       14    0    0 00:12:58        0
+2620:100d:100e:f5::10 4   255     145     151       14    0    0 00:42:50        6
+
+Total number of neighbors 4
+
+
+localhost2[0]#show ip bgp summary
+BGP router identifier 10.79.111.98, local AS number 255
+BGP table version is 11
+1 BGP AS-PATH entries
+0 BGP community entries
+
+Neighbor        V    AS MsgRcvd MsgSent   TblVer  InQ OutQ Up/Down  State/PfxRcd
+10.2.115.170    4   255    2282    2286       11    0    0 08:17:58        4
+10.2.115.172    4   365    2279    2288       11    0    0 01:26:14        0
+2620:100d:100e:f5::9 4   365      58      60       11    0    0 00:18:30        0
+2620:100d:100e:f5::11 4   255     144     148       11    0    0 00:42:56        4
+
+Total number of neighbors 4
+
+
+localhost3[0]#show ip bgp summ
+BGP router identifier 10.79.111.99, local AS number 365
+BGP table version is 49
+1 BGP AS-PATH entries
+0 BGP community entries
+
+Neighbor        V    AS MsgRcvd MsgSent   TblVer  InQ OutQ Up/Down  State/PfxRcd
+10.2.115.170    4   255   23815   24393       49    0    0 18:58:45        6
+10.2.115.171    4   255   23760   23797       49    0    0 01:26:19        6
+2620:100d:100e:f5::10 4   255      91      92       49    0    0 00:18:35        6
+2620:100d:100e:f5::11 4   255      62      58       49    0    0 00:13:09        6
+
+Total number of neighbors 4</code></pre>
+<p> </p>
+</li><li>
+<p>Configuring the IPv6 BGP neighbor under &quot;address-family ipv6&quot; allows the use of some IPv6-specific commands for BGP routing in ZebOS, such as the <span style="text-decoration: underline;">IPv6 BGP neighbor table</span> command and filtering inbound or outbound IPv6 route-map updates.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>show bgp ipv6 summary</code></pre>
+<p><br>In the example below, the IPv6 BGP neighbor table only outputs the IPv6 neighbor statuses. Rather than both IPv4 and IPv6 neighbors like the &quot;show ip bgp summary&quot; command.<br><br>Notice how iBGP neighbor (2620:100d:100e:f5::11) is not shared in the localhost2 IPv6 BGP neighbor table; however, it is present in the localhost2 show ip bgp neighbor table. This is due to not configuring &quot;neighbor [y:y:y:y::y] activate&quot; under &quot;address-family ipv6&quot;. This will be corrected in the example for Step 5.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>1. BGP Configurations
+localhost1[0]#sh run bgp
+!
+router bgp 255
+ bgp log-neighbor-changes
+ bgp graceful-restart restart-time 120
+ redistribute kernel
+ neighbor 10.2.115.171 remote-as 255
+ neighbor 10.2.115.172 remote-as 365
+ neighbor 2620:100d:100e:f5::9 remote-as 365
+ neighbor 2620:100d:100e:f5::10 remote-as 255
+ !
+ address-family ipv6
+ redistribute kernel   &lt;&lt;&lt;&lt; configured under &quot;address-family ipv6&quot; to enable RHI for IPv6
+ neighbor 2620:100d:100e:f5::9 activate
+ neighbor 2620:100d:100e:f5::10 activate
+ exit-address-family
+!
+
+## Note: iBGP neighbor (2620:100d:100e:f5::11) is not configured under address-family ipv6 ##
+localhost2[0]#sh run bgp
+!
+router bgp 255
+ bgp log-neighbor-changes
+ bgp graceful-restart restart-time 120
+ redistribute kernel
+ neighbor 10.2.115.170 remote-as 255
+ neighbor 10.2.115.172 remote-as 365
+ neighbor 2620:100d:100e:f5::9 remote-as 365   &lt;&lt;&lt;&lt; see the impact in Step 3 below to see the impact of not activating under address-family ipv6
+ neighbor 2620:100d:100e:f5::11 remote-as 255
+ !
+ address-family ipv6
+ redistribute kernel   &lt;&lt;&lt;&lt; configured under &quot;address-family ipv6&quot; to enable RHI for IPv6
+ neighbor 2620:100d:100e:f5::11 activate
+ exit-address-family
+!
+
+localhost3[0]#sh run bgp
+!
+router bgp 365
+ bgp graceful-restart restart-time 120
+ redistribute kernel
+ neighbor 10.2.115.170 remote-as 255
+ neighbor 10.2.115.171 remote-as 255
+ neighbor 2620:100d:100e:f5::10 remote-as 255
+ neighbor 2620:100d:100e:f5::11 remote-as 255
+ !
+ address-family ipv6
+ redistribute kernel   &lt;&lt;&lt;&lt; configured under &quot;address-family ipv6&quot; to enable RHI for IPv6
+ neighbor 2620:100d:100e:f5::10 activate
+ neighbor 2620:100d:100e:f5::11 activate
+ exit-address-family
+!
+
+
+2. IPv6 BGP neighbor tables, before adding to the address-family ipv6 configuration
+localhost1[0]#show bgp ipv6 summary
+localhost1[0]#
+
+localhost2[0]#show bgp ipv6 summary
+localhost2[0]#
+
+localhost3[0]#show bgp ipv6 summary
+localhost3[0]#
+
+
+3. IPv6 BGP neighbor tables, after activating the BGP neighbors under address-family IPv6. 
+localhost1[0]#show bgp ipv6 summary
+BGP router identifier 10.79.111.97, local AS number 255
+BGP table version is 1
+1 BGP AS-PATH entries
+0 BGP community entries
+
+Neighbor        V    AS MsgRcvd MsgSent   TblVer  InQ OutQ Up/Down  State/PfxRcd
+2620:100d:100e:f5::9 4   365      65      72        1    0    0 00:17:43        0
+2620:100d:100e:f5::10 4   255     155     161        1    0    0 00:47:35        0
+
+Total number of neighbors 2
+
+## Note: iBGP neighbor (2620:100d:100e:f5::11) is not present in IPv6 BGP neighbor table ##
+localhost2[0]#show bgp ipv6 summary
+BGP router identifier 10.79.111.98, local AS number 255
+BGP table version is 1
+1 BGP AS-PATH entries
+0 BGP community entries
+
+Neighbor        V    AS MsgRcvd MsgSent   TblVer  InQ OutQ Up/Down  State/PfxRcd
+2620:100d:100e:f5::9 4   365      67      69        1    0    0 00:23:27        0
+
+Total number of neighbors 1
+
+localhost3[0]#show bgp ipv6 summary
+BGP router identifier 10.79.111.99, local AS number 365
+BGP table version is 1
+1 BGP AS-PATH entries
+0 BGP community entries
+
+Neighbor        V    AS MsgRcvd MsgSent   TblVer  InQ OutQ Up/Down  State/PfxRcd
+2620:100d:100e:f5::10 4   255     101     102        1    0    0 00:23:32        0
+2620:100d:100e:f5::11 4   255      72      68        1    0    0 00:18:06        0
+
+Total number of neighbors 2
+</code></pre>
+<p> </p>
+</li><li>
+<p>With the BGP peers now established over IPv6, the &quot;redistribute kernel&quot; command must be configured under &quot;address-family ipv6&quot;. &quot;redistribute kernel&quot; allows virtual-addresses, which appear as Kernel-injected routes in the IP routing table, to be advertised to BGP neighbors (Adj-RIBs-Out). If this was not done earlier, then IPv6 virtual-addresses enabled with RHI will be in the BGP Loc-RIB table (IPv6: show bgp ipv6 | IPv4: show ip bgp), but not advertised to BGP neighbors (Adj-RIBs-Out table, show bgp ipv6 neighbors [y:y:y:y::y] advertised-routes). </p>
+<p>Configuring &quot;redistribute kernel&quot; in the BGP router process alone will only enable RHI for IPv4 virtual-addresses, not IPv6 virtual-addresses.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>router bgp [ASN]
+
+...
+ 
+ !
+ address-family ipv6
+ redistribute kernel   
+ neighbor [y:y:y:y::y] activate
+ neighbor [y:y:y:y::y] activate</code></pre>
+<p><br>In the example, the IPv6 virtual-address (2620:11e:100:45::200) is configured to advertise to both BGP neighbors.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>1. Route-advertisement is enabled or selective; Availability status marked Unknown or Available 
+root@(localhost2)(cfg-sync In Sync)(Active)(/Common)(tmos)# list ltm virtual-address 2620:11e:100:45::200
+ltm virtual-address 2620:11e:100:45::200 {
+    address 2620:11e:100:45::200
+    route-advertisement selective
+    traffic-group traffic-group-1
+}
+root@(localhost2)(cfg-sync In Sync)(Active)(/Common)(tmos)# show ltm virtual-address 2620*
+-----------------------------------------------------------------
+Ltm::Virtual Address: 2620:11e:100:45::200 (2620:11e:100:45::200)
+-----------------------------------------------------------------
+Status
+  Availability : unknown
+  State        : enabled
+  Reason       : The children virtual server(s) either don&#39;t have service checking enabled, or service check results are not available yet
+
+2. Active BIG-IP (localhost2) BGP Loc-RIB, the IPv6 virtual-address is present
+localhost2.jgarcia[0]#show bgp ipv6
+BGP table version is 2, local router ID is 10.79.111.98
+Status codes: s suppressed, d damped, h history, * valid, &gt; best, i - internal, l - labeled
+              S Stale
+Origin codes: i - IGP, e - EGP, ? - incomplete
+
+   Network          Next Hop            Metric     LocPrf     Weight Path
+*&gt; 2620:11e:100:45::200/128
+                    ::                                          32768 ?
+
+Total number of prefixes 1
+
+3. Active BIG-IP localhost2 is advertising the IPv6 virtual-address to both BGP peers (Adj-RIBs-Out table)
+localhost2[0]#sh bgp ipv6 neighbors 2620:100d:100e:f5::9 advertised-routes
+BGP table version is 2, local router ID is 10.79.111.98
+Status codes: s suppressed, d damped, h history, * valid, &gt; best, i - internal
+Origin codes: i - IGP, e - EGP, ? - incomplete
+
+   Network          Next Hop            Metric     LocPrf     Weight Path
+*&gt; 2620:11e:100:45::200/128
+                    2620:100d:100e:f5::10(fe80::250:56ff:fe9d:6ceb)
+                                                                32768 ?
+
+Total number of prefixes 1
+
+localhost2[0]#sh bgp ipv6 neighbors 2620:100d:100e:f5::11 advertised-routes
+BGP table version is 2, local router ID is 10.79.111.98
+Status codes: s suppressed, d damped, h history, * valid, &gt; best, i - internal
+Origin codes: i - IGP, e - EGP, ? - incomplete
+
+   Network          Next Hop            Metric     LocPrf     Weight Path
+*&gt;i2620:11e:100:45::200/128
+                    2620:100d:100e:f5::10(fe80::250:56ff:fe9d:6ceb)
+                                                       100      32768 ?
+
+Total number of prefixes 1
+
+4. Confirming Standby BIG-IP localhost1 is receiving the advertised IPv6 virtual-address from localhost2 (Adj-RIBs-In table).
+localhost1[0]#show bgp ipv6 neighbors 2620:100d:100e:f5::10 received-routes
+BGP table version is 4, local router ID is 10.79.111.97
+Status codes: s suppressed, d damped, h history, * valid, &gt; best, i - internal
+Origin codes: i - IGP, e - EGP, ? - incomplete
+
+   Network          Next Hop            Metric     LocPrf     Weight Path
+*&gt;i2620:11e:100:45::200/128
+                    2620:100d:100e:f5::10(fe80::250:56ff:fe9d:6ceb)
+                                                       100          0 ?
+Total number of prefixes 1
+
+5. BGP path selection algorithm installs received route from Adj-RIBs-In table into IPv6 routing table.
+localhost1[0]#sh ipv6 route  bgp
+IPv6 Routing Table
+Codes: K - kernel route, C - connected, S - static, R - RIP, O - OSPF,
+       IA - OSPF inter area, E1 - OSPF external type 1,
+       E2 - OSPF external type 2, I - IS-IS, B - BGP
+Timers: Uptime
+B      2620:11e:100:45::200/128 [200/0] via fe80::250:56ff:fe9d:6ceb, Internal, 04:00:49
+
+localhost1[0]#sh ipv6 route 2620:11e:100:45::200
+Routing entry for 2620:11e:100:45::200/128
+  Known via &quot;bgp&quot;, distance 200, metric 0, best
+  Last update 03:48:48 ago
+  * via fe80::250:56ff:fe9d:6ceb, Internal
+
+[root@localhost2:Active:In Sync] config # ip -f inet6 address show Internal
+12: Internal: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 state UP qlen 1000
+    inet6 2620:100d:100e:f5::10/64 scope global
+       valid_lft forever preferred_lft forever
+    inet6 fe80::250:56ff:fe9d:6ceb/64 scope link.   &lt;&lt;&lt;&lt; localhost2 link-local address
+       valid_lft forever preferred_lft forever</code></pre>
+<p> </p>
+</li></ol>
+<h2>Additional Information</h2>
+<p>Allow some time for the BGP to go through the 6 states: Idle, Connect, Active, OpenSent, OpenConfirm, Established.  </p>
+<p>Depending on the size of the configuration and network topology, BGP may not immediately show an Established state. Convergence can take several seconds, possibly longer. </p>
+<p>The BGP neighbor tables (show ip bgp summary | show bgp ipv6 summary | show ip bgp neighbors | show bgp ipv6 neighbors) will output the number of prefixes (State/PfxRcd) learned from its peer when BGP is Established.</p>
+<p>While BGP configurations can be implemented in ZebOS IMI, <a href="https://techdocs.f5.com/en-us/bigip-14-0-0/big-ip-dynamic-routing-with-tmsh-and-icontrol-rest-14-0-0/configuring-dynamic-routing-with-tmsh.html" target="_blank">BGP configurations can be deployed in TMOS</a> with a few exceptions. Review the subsection titled, <a href="https://techdocs.f5.com/en-us/bigip-14-0-0/big-ip-dynamic-routing-with-tmsh-and-icontrol-rest-14-0-0/configuring-dynamic-routing-with-tmsh.html" target="_self">Move ZebOS BGP routing configuration to tmsh</a>, within the BIG-IP Dynamic Routing with tmsh and iControl REST guide. Migrating the BGP configuration to TMOS would allow replication of the ZebOS config in a DSC cluster and compatibility with iControl automation.</p>
+<p><a href="https://techdocs.f5.com/en-us/bigip-14-1-0/big-ip-tmos-routing-administration-14-1-0/dynamic-routing/about-route-health-injection/redistribution-of-routes-for-big-ip-virtual-addresses.html" target="_self">Route redistribution can be implemented with route-maps</a>, but is out of scope for this article.</p>
+<p>Manual configuration of the ZebOS configuration file in the IMI shell, such as the examples detailed in this article, needs to be done on each BIG-IP device, whether in an HA pair or not.</p>
+<p> </p>
+</article>
+</body>
+</html>

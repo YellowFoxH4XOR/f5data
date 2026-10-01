@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K27227217: http and https monitor &#x27;&#x27;last error&#x27;&#x27; log message is inaccurate and misleading</title>
+<meta name="description" content="Support Solution: http and https monitor &#x27;&#x27;last error&#x27;&#x27; log message is inaccurate and misleading — Monitor status &#x27;down&#x27; messages log a &quot;last error&quot; reason that would actually mark the pool member &quot;up&quot;, not &quot;down&quot;.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K27227217">
+</head>
+<body>
+<header>
+<h1>K27227217: http and https monitor &#x27;&#x27;last error&#x27;&#x27; log message is inaccurate and misleading</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-08-27</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.X.X, 14.X.X, 13.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 13.1.0, 13.0.1, 15.X.X, 12.1.5, 12.1.4, 12.1.3, 13.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K27227217">https://my.f5.com/manage/s/article/K27227217</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>Monitor status &#39;down&#39; messages log a &quot;last error&quot; reason that would actually mark the pool member &quot;up&quot;, not &quot;down&quot;.</p>
+
+<p>The following Monitor:</p>
+
+<p><span class="example2">ltm monitor http http_example {<br>    defaults-from http<br>    recv &quot;HTTP/1.[01] ([23]0[0-8])&quot;<br>    send &quot;GET http://www.example.com/ HTTP/1.1\r\nPragma: no-cache\r\nConnection: Close\r\n\r\n&quot;<br>}</span></p>
+
+<p>May result in the following log message:</p>
+
+<p><span class="example2">example.com notice mcpd[6338]: 01070638:5: Pool /Common/pool_example member /Common/192.0.2.10:80 monitor status down. [ /Common/http_example: down; last error: /Common/http_example: Response Code: 301 (Moved Permanently) @2020/08/26 10:21:05. ] [ was up for 0hr:2mins:2sec ]</span><br><span class="note"><strong>Note</strong>: 301 response code is in fact valid with the above configuration.</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP LTM</li><li>http or https monitor</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br><a href="https://cdn.f5.com/product/bugtracker/ID874877.html" target="_self">Bug ID 874877</a></p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+None.
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>When monitor status changes (e.g., uncheck-&gt;up), the response code on that monitor response is stored to LAST_FAIL_REASON.<br>And then, assume that there is no more monitor status change happens for a while.<br>Without monitor status change, LAST_FAIL_REASON is never updated.<br>And then, assume that monitor server stops responding to monitor probes.<br>After predefined retries, bigd marks the pool member as down, and at that time, LAST_FAIL_REASON is populated on the log.<br><br>Further, here is an example of how this failure can be observed:</p>
+
+<ol><li>
+	<p>Following monitor object is associated with pool. Monitor tries to get &quot;/monitor_example.php&quot; and expects string &quot;myubuntuserver&quot; (which could be seen in Host header, on my example).</p>
+
+	<p><span class="code">tmsh list ltm monitor http http_example_monitor send recv</span></p>
+
+	<p><span class="example2">ltm monitor http http_example_monitor {<br>	    adaptive disabled<br>	    recv ubuntumyserver<br>	    send &quot;GET /monitor_example.php HTTP/1.0\r\n\r\n&quot;<br>	}</span></p>
+
+	<p><span class="note"><strong>Note</strong>: What is monitor_example.php? It&#39;s here. No HTML content, just simply replies HTTP response code and Host header.</span></p>
+
+	<p><span class="code">cat monitor_example.php</span></p>
+
+	<p><span class="example2">&lt;?php<br>	  header(&quot;HTTP/1.1 503 ERROR&quot;);<br>	  header(&#39;Host: ubuntumyserver&#39;);<br>	?&gt;</span></p>
+	</li><li>
+	<p>When I first time attach http_example_monitor to pool, monitor_instance table becomes as follows. Monitor status expectedly changes from &quot;uncheck&quot; to &quot;up&quot;. And at that time, HTTP response code 503 is internally stored.<br>	<span class="note"><strong>Note</strong>: You may feel 503 is not right code, yes, but it&#39;s just a part of this example.</span></p>
+
+	<p>ltm log</p>
+
+	<p><span class="example2">example notice mcpd[6113]: 01070638:5: Pool /Common/monitor_pool member /Common/10.1.1.70:80 monitor status unchecked. [  ]  [ was up for 0hr:3mins:10sec ]<br>	example notice mcpd[6113]: 01070727:5: Pool /Common/monitor_pool member /Common/10.1.1.70:80 monitor status up. [ /Common/http_example_monitor: up ]  [ was unchecked for 0hr:0min:11sec ]</span></p>
+
+	<p><span class="code">guishell -c &quot;select MON_NAME,LAST_FAIL_REASON,TIME_STAMP from monitor_instance where MON_NAME=&#39;/Common/http_example_monitor&#39;&quot;</span></p>
+
+	<p><span class="example2">|----------------------------------------------------------------------------------|<br>	|            MON_NAME |            LAST_FAIL_REASON |          TIME_STAMP          |<br>	|----------------------------------------------------------------------------------|<br>	| /Common/http_example_monitor |  Response Code: 503 (ERROR) | 2018-01-22 10:22:08 |<br>	|----------------------------------------------------------------------------------|</span></p>
+	</li><li>
+	<p>Next, change monitor response contents. Specifically, just changes &quot;503 ERROR&quot; to &quot;200 OK&quot;. Please note at this time &quot;Host: ubuntumyserver&quot; part is still maintained (and therefore, monitor down never happens).</p>
+
+	<p><span class="code">sed -i -e &#39;s/503 ERROR/200 OK/g&#39; monitor_example.php<br>	cat monitor_example.php</span></p>
+
+	<p><span class="example2">&lt;?php<br>	  header(&quot;HTTP/1.1 200 OK&quot;);<br>	  header(&#39;Host: ubuntumyserver&#39;);<br>	?&gt;</span></p>
+	</li><li>
+	<p>Wait for a while (until next time monitor fires), and you will see that pmbr changes response from &quot;503&quot; to &quot;200 OK&quot; expectedly. But please note that there is no &quot;monitor down&quot; happens.</p>
+
+	<p><span class="example2">14 2018-01-22 10:26:08.647057    10.1.1.82 → 10.1.1.70    HTTP 95 GET /monitor_example.php HTTP/1.0<br>	15 2018-01-22 10:26:08.667808    10.1.1.70 → 10.1.1.82    TCP 66 80 → 1805 [ACK] Seq=1 Ack=30 Win=29056 Len=0 TSval=1357229951 TSecr=460913158<br>	16 2018-01-22 10:26:08.668444    10.1.1.70 → 10.1.1.82    TCP 234 [TCP segment of a reassembled PDU]<br>	17 2018-01-22 10:26:08.668451    10.1.1.70 → 10.1.1.82    HTTP 66 HTTP/1.1 200 OK</span><br>	<span class="warning"><strong>Important</strong>: Even though bigd receives different monitor response code, mcpd does not change LAST_FAIL_REASON since no monitor status change happens.</span></p>
+
+	<p><span class="code">date ; guishell -c &quot;select MON_NAME,LAST_FAIL_REASON,TIME_STAMP from monitor_instance where MON_NAME=&#39;/Common/http_example_monitor&#39;&quot;</span></p>
+
+	<p><span class="example2">|----------------------------------------------------------------------------------|<br>	|            MON_NAME |            LAST_FAIL_REASON |          TIME_STAMP          |<br>	|----------------------------------------------------------------------------------|<br>	| /Common/http_example_monitor |  Response Code: 503 (ERROR) | 2018-01-22 10:22:08 |<br>	|----------------------------------------------------------------------------------|</span></p>
+	</li><li>
+	<p>And then, stop httpd server. And BIG-IP correctly marks pmbr as <strong>montior down</strong>. Here is monitor down log. You can see that &quot;Response Code: 503 (ERROR)&quot; is there.</p>
+
+	<p><span class="example2">example notice mcpd[6113]: 01070638:5: Pool /Common/monitor_pool member /Common/10.1.1.70:80 monitor status down. [ /Common/http_example_monitor: down; last error: /Common/http_example_monitor:  Response Code: 503 (ERROR) @2018/01/22 10:31:39.  ]  [ was up for 0hr:9mins:31sec ]</span></p>
+	</li><li>
+	<p>Looking at LAST_FAIL_REASON, string changes from &quot;Response Code: 503 (ERROR)&quot; to &quot;No successful responses received before deadline.&quot;.</p>
+
+	<p><span class="code">date ; guishell -c &quot;select MON_NAME,LAST_FAIL_REASON,TIME_STAMP from monitor_instance where MON_NAME=&#39;/Common/http_example_monitor&#39;&quot;</span></p>
+
+	<p><span class="example2">|--------------------------------------------------------------------------------------------------------|<br>	|                     MON_NAME |                                  LAST_FAIL_REASON |          TIME_STAMP |<br>	|--------------------------------------------------------------------------------------------------------|<br>	| /Common/http_example_monitor | No successful responses received before deadline. | 2018-01-22 10:31:39 |<br>	|--------------------------------------------------------------------------------------------------------|</span></p>
+	</li><li>
+	<p>After httpd server gets back online, LAST_FAIL_REASON is updated with (latest) response code string &quot;200 OK&quot;.</p>
+
+	<p><span class="code">date ; guishell -c &quot;select MON_NAME,LAST_FAIL_REASON,TIME_STAMP from monitor_instance where MON_NAME=&#39;/Common/http_example_monitor&#39;&quot;</span></p>
+
+	<p><span class="example2">|-------------------------------------------------------------------------------|<br>	|                     MON_NAME |         LAST_FAIL_REASON |          TIME_STAMP |<br>	|-------------------------------------------------------------------------------|<br>	| /Common/http_example_monitor |  Response Code: 200 (OK) | 2018-01-22 10:33:49 |<br>	|-------------------------------------------------------------------------------|</span></p>
+	</li></ol>
+</article>
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K31591013: Packet flow | BIG-IP AFM operations guide</title>
+<meta name="description" content="Operations Guide: Packet flow | BIG-IP AFM operations guide — Unlike a firewall, which filters traffic based on internal versus external interfaces, the BIG-IP AFM system processes traffic through any non-management interface using the same ingress to egress…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K31591013">
+</head>
+<body>
+<header>
+<h1>K31591013: Packet flow | BIG-IP AFM operations guide</h1>
+<dl>
+<dt>Type</dt><dd>Operations Guide</dd>
+<dt>Published</dt><dd>2018-10-09</dd>
+<dt>Updated</dt><dd>2023-02-15</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP AFM: 17.X.X, 15.X.X, 14.X.X, 13.X.X, 17.0.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 17.0.0, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 13.1.0, 16.1.0, 13.0.1, 16.0.1, 13.0.0, 16.0.0, 12.1.6, 15.1.8, 12.1.5, 15.1.7, 12.1.4, 15.1.6, 12.1.3, 15.1.5, 12.1.2, 15.1.4, 16.X.X, 15.1.3, 12.1.0, 15.1.2, 15.1.1, 12.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K31591013">https://my.f5.com/manage/s/article/K31591013</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p style="text-align: center;"><strong>Chapter 2: Packet flow</strong></p>
+<p style="text-align: center;"><a href="https://my.f5.com/manage/s/article/K38201755" target="_blank">Table of contents</a> | <a href="https://my.f5.com/manage/s/article/K38201755" target="_blank">&lt;&lt; Previous chapter</a> | <a href="https://my.f5.com/manage/s/article/K10354610" target="_blank">Next chapter &gt;&gt;</a></p>
+<p>Unlike a firewall, which filters traffic based on internal versus external interfaces, the BIG-IP AFM system processes traffic through any non-management interface using the same ingress to egress packet flow method. This means the packet processing is handled the same way, regardless of the BIG-IP AFM interface being traversed.</p>
+<p><a href="#link_06">Figure 2.1</a> provides an overview of the packet processing path as it traverses the BIG-IP AFM system.</p>
+<p><span class="sectiontitle">Contents</span></p>
+<p><span class="subsectiontitle">Chapter sections</span></p>
+<ul><li><a href="#link_01">Packet flow in the BIG-IP system</a>
+<ul><li><a href="#link_02">Packet flow in BIG-IP hardware</a>
+<ul><li><a href="#link_02_01">Flow lookup</a></li><li><a href="#link_02_02">IP Intelligence hardware</a></li><li><a href="#link_02_03">DoS protection hardware</a></li></ul>
+</li><li><a href="#link_03">Packet flow in BIG-IP AFM software</a>
+<ul><li><a href="#link_03_01">Flow lookup</a></li><li><a href="#link_03_02">L2-L4 DoS protection</a></li><li><a href="#link_03_03" target="_self">Auto-blacklisting option</a></li><li><a href="#link_03_04" target="_self">Listener lookup</a></li><li><a href="#link_03_05" target="_self">IP Intelligence</a></li><li><a href="#link_03_06" target="_self">Network Firewall</a></li></ul>
+</li><li><a href="#link_04">Post-L4 processing</a>
+<ul><li><a href="#link_04_01">Flow accept</a></li><li><a href="#link_04_02">L7 DoS protection</a></li><li><a href="#link_04_03" target="_self">Dynamic Signatures</a></li><li><a href="#link_04_04" target="_self">Protocol security</a></li><li><a href="#link_04_05" target="_self">TMOS proxy</a></li><li><a href="#link_04_06" target="_self">Protocol Inspection</a></li></ul>
+</li></ul>
+</li></ul>
+<p><span class="subsectiontitle">Figures</span></p>
+<ul><li><a href="#link_07">Figure 2.1: BIG-IP AFM packet processing</a></li><li><a href="#link_08">Figure 2.2: DoS Device Protection processing order</a></li><li><a href="#link_09">Figure 2.3: Per-VS DoS Profile processing order</a></li><li><a href="#link_10">Figure 2.4: Hardware packet processing</a></li><li><a href="#link_11">Figure 2.5: Software packet processing</a></li></ul>
+<p><span class="sectiontitle"><a id="link_01" name="link_01"></a>Packet flow in the BIG-IP system</span> </p>
+<p>When a packet arrives at the ingress interface on a BIG-IP system, it is first processed by the embedded Packet Velocity Accelerator (ePVA). The ePVA chip is a hardware-acceleration field programmable gate array (FPGA) that delivers high-performance L4 IP throughput. The use of an FPGA allows the ePVA firmware to be updated, as required, for future upgrades and hotfixes.</p>
+<p>For more information about platforms, which include the ePVA chips, refer to <a href="https://my.f5.com/manage/s/article/K12837" target="_blank">K12837: Overview of the ePVA feature</a>.</p>
+<p>For packets that are not handled by BIG-IP hardware, BIG-IP AFM software examines them in a series of contexts. A context is the category of object to which a rule applies. Rules can be global, apply to all addresses on the BIG-IP system that match the rule, or they can be specific, applying only to a specific virtual server, self IP address, route domain, or the management port.</p>
+<p>The BIG-IP AFM system has two flow tables:</p>
+<ul><li>The hardware flow table, which is maintained in the ePVA</li><li>The software flow table, which is maintained by F5 TMOS</li></ul>
+<p><a id="link_07" name="link_07"></a><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000ZDyT&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000VwMWA" alt="Figure 2.1 BIG-IP AFM packet processing"></img> </p>
+<p><span class="figuretitle">Figure 2.1 BIG-IP AFM packet processing</span></p>
+<p><a id="link_08" name="link_08"></a><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000ZDyT&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000VwDW6" alt="Figure 2.2 DoS Device Protection processing order"></img> </p>
+<p><span class="figuretitle">Figure 2.2 DoS Device Protection processing order</span></p>
+<p><a id="link_09" name="link_09"></a><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000ZDyT&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000VwmTp" alt="Figure 2.3 Per-VS DoS Profile processing order"></img> </p>
+<p><span class="figuretitle">Figure 2.3 Per-VS DoS Profile processing order</span></p>
+<p><span class="note"><strong>Note</strong>: For easier viewing of these figures, you can right-click the image and open it in a new browser window.</span></p>
+<p><span class="sectiontitle"><a id="link_02" name="link_02"></a>Packet flow in BIG-IP hardware</span></p>
+<p><span class="subsectiontitle"><a id="link_02_01" name="link_02_01"></a>Flow lookup</span></p>
+<p>When a new packet is received, the BIG-IP system performs flow lookup by querying the hardware flow table.</p>
+<p>The packet process flows in the following sequence:</p>
+<ol><li>If the BIG-IP platform uses ePVA hardware acceleration and the flow matches the hardware flow table, then the packet is passed on to flow input for post-L4 processing, in the direction of egress.</li><li>If there is no match to an existing flow, the packet is processed for IP Intelligence and L2-L7 DoS protection before being passed on to TMOS flow lookup.</li></ol>
+<p><span class="subsectiontitle"><a id="link_02_02" name="link_02_02"></a>IP Intelligence hardware</span></p>
+<p>The ePVA is also used to process and implement IP Intelligence (IPI) rules to block malicious actors. If DoS sweep protection detects a bad actor or group of actors, it can set an auto-blacklist. It can also signal the ePVA to drop the offending IP addresses in hardware on some BIG-IP platforms so that they are not sent to software for further processing.</p>
+<p><span class="subsectiontitle"><a id="link_02_03" name="link_02_03"></a>DoS protection hardware</span></p>
+<p>DoS attacks can also be mitigated in hardware. Many attack vectors such as bad headers, floods, and fragmented packets are processed in hardware and mitigated using the ePVA chip. Mitigating these attacks using hardware rather than software improves performance of the BIG-IP device.</p>
+<p><a id="link_10" name="link_10"></a><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000ZDyT&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000VwmaH" alt="Figure 2.4 Hardware packet processing"></img> </p>
+<p><span class="figuretitle">Figure 2.4 Hardware packet processing</span></p>
+<p><span class="note"><strong>Note</strong>: For easier viewing of this figure, you can right-click the image and open it in a new browser window.</span></p>
+<p>For more information about hardware-processed attack vectors, refer to the <strong>Preventing Device DoS/DDoS Attacks</strong> section of the <em><strong>BIG-IP AFM: DoS/DDoS Protection Implementations</strong></em> manual. For BIG-IP versions prior to 15.0.0, refer to the <strong><em>BIG-IP Systems: DoS Protection and Protocol Firewall Implementations </em></strong>manual.</p>
+<p><span class="note"><strong>Note</strong>: For information about how to locate F5 product manuals, refer to <a href="https://my.f5.com/manage/s/article/K98133564" target="_self">K98133564: Tips for searching AskF5 and finding product documentation</a>.</span></p>
+<p><span class="sectiontitle"><a id="link_03" name="link_03"></a>Packet flow in BIG-IP AFM software</span></p>
+<p><span class="subsectiontitle"><a id="link_03_01" name="link_03_01"></a>Flow lookup</span></p>
+<p>During software flow lookup, the BIG-IP AFM system tries to match the packet to an entry in the software connection flow table. There are two possible results:</p>
+<ul><li>If the packet does not match an existing flow, it is considered a new connection. TMOS then tests the packet against L2-L4 DoS protection, listener lookup, IP Intelligence, and Network Firewall contexts.</li><li>If the packet matches a software flow connection table entry, TMOS sends it to flow input, bypassing the flow lookup tests.</li></ul>
+<p><span class="subsectiontitle"><a id="link_03_02" name="link_03_02"></a>L2-L4 DoS protection</span></p>
+<p>If an incoming packet exceeds the detection limit for that type of packet during L2-L4 DoS protection, the BIG-IP system logs an attack message.</p>
+<p>If an incoming packet exceeds the rate limit for that type of packet, the system drops it. DoS protection device configuration and DoS profiles provide different vector protections; however, applying DoS protection device configuration is essentially the same as applying a DoS protection profile at the global context.</p>
+<p><span class="subsubsectiontitle"><a id="link_03_03" name="link_03_03"></a>Auto-blacklisting option</span></p>
+<p>If you configure auto-blacklisting and packets exceed the rate limit, DoS protection triggers IP Intelligence to block the source whether a packet is legitimate or part of an attack. (In BIG-IP 12.0.0 through 12.1.x, auto-blacklisting is only available with the Single Endpoint Sweep vector.)</p>
+<p><span class="subsectiontitle"><a id="link_03_04" name="link_03_04"></a>Listener lookup</span></p>
+<p>Listener lookup checks to see if the packet&#39;s destination is valid.</p>
+<p>If there is no listener at the packet destination address, the system drops or rejects the packet, depending on your configuration.</p>
+<p><span class="subsectiontitle"><a id="link_03_05" name="link_03_05"></a>IP Intelligence</span></p>
+<p>IP Intelligence blocking can block requests from IP addresses that have questionable reputations.</p>
+<p>IP Intelligence is applied to packets in the global, route domain, and virtual server contexts. A set of IP Intelligence policies can be configured so that they can allow a packet to pass through at the global context and the route domain context, but drop the packet in a virtual server context.</p>
+<p><span class="subsectiontitle"><a id="link_03_06" name="link_03_06"></a>Network Firewall</span></p>
+<p>The BIG-IP AFM Network Firewall provides policy-based access control to and from address and port pairs, inside and outside of your network.</p>
+<p>The Network Firewall uses the same three context settings as IP Intelligence: global, route domain, and virtual server. In each context, the IP Intelligence packet handling occurs first, followed by the Network Firewall handling:</p>
+<ul><li>IP Intelligence global context, then Network Firewall global context.</li><li>IP Intelligence route domain context, then Network Firewall route domain context.</li><li>IP Intelligence virtual server context, then Network Firewall virtual server context.</li></ul>
+<p>For more information about the Network Firewall, refer to <a href="https://my.f5.com/manage/s/article/K10354610" target="_blank">Firewall rules</a>.</p>
+<p><span class="sectiontitle"><a id="link_04" name="link_04"></a>Post-L4 processing</span></p>
+<p>When the system routes packets to post-L4 processing, they arrive through flow input after passing through hardware processing or through flow accept after passing through both hardware and software processing.</p>
+<p><span class="subsectiontitle"><a id="link_04_01" name="link_04_01"></a>Flow accept</span></p>
+<p>After the system decisively accepts or simply accepts a packet at the virtual server/self IP context, it reaches flow accept, where it is recorded in the flow table and passes to the proxy for higher-level protocol processing.</p>
+<p><span class="subsectiontitle"><a id="link_04_02" name="link_04_02"></a>L7 DoS protection</span></p>
+<p>After the system accepts the flow, the BIG-IP AFM system evaluates any L7 DoS protection profiles applied to the virtual server.</p>
+<p>The BIG-IP AFM system includes L7 DoS profiles for DNS and SIP.</p>
+<p>BIG-IP AFM 12.1 and later allows you to specify the L7 protocol you want to use. HTTP traffic allowed through a firewall typically uses port 80, and malicious traffic often tunnels through this port. The L7 protocol option allows you to specify the port you want to use, which doesn&#39;t need to be the customary application port. You can restrict traffic to only that suited to that application to ensure that holes in the firewall are used only for intended applications.</p>
+<p>For more information about profiles, refer to <strong>Detecting and Preventing DNS DoS Attacks</strong> and <strong> Detecting SIP DoS Attacks</strong> in <strong><em>BIG-IP System: DoS Protection and Protocol Firewall Implementations</em></strong>.</p>
+<p><span class="note"><strong>Note</strong>: For information about how to locate F5 product manuals, refer to <a href="https://my.f5.com/manage/s/article/K98133564" target="_blank">K98133564: Tips for searching AskF5 and finding product documentation</a>.</span><br><br><a id="link_04_03" name="link_04_03"></a><span class="subsectiontitle">Dynamic Signatures</span><br><br>L2-L4 DoS protection uses DoS vectors that do not change over time. These are considered static signatures. In BIG-IP 13.0.0 and later, the Dynamic Signatures feature looks at traffic history and builds a statistical model tracking over 3,000 separate categories. When the device is under stress, the system generates signatures for significant deviations from historical norms and can alert and block traffic matching those signatures. Because dynamic signatures are generally composed of multiple characteristics, they have the potential to be more precise than static vectors, which look at only a single thing.</p>
+<p><span class="subsectiontitle"><a id="link_04_04" name="link_04_04"></a>Protocol security</span></p>
+<p>After L7 DoS protection profile processing, the system applies L7 protocol protection profiles, which are available for HTTP and DNS profiles.</p>
+<p>The protocol security profile for DNS determines which DNS queries are permitted.</p>
+<p>The protocol security profile for HTTP performs protocol checks, length checks, checks request types (for example GET and POST), and file types. The profile can also send a custom response page to any requests blocked by the policy.<br><br>Protocol security is increasingly replaced by Protocol Inspection.<br> </p>
+<p><span class="subsectiontitle"><a id="link_04_05" name="link_04_05"></a>TMOS proxy</span></p>
+<p>The system passes traffic to the proxy, where normal BIG-IP module processing occurs. This may include BIG-IP ASM DoS vectors to enhance the other layers of DoS protection covered by the BIG-IP AFM system.<br><br><span class="subsectiontitle"><a id="link_04_06" name="link_04_06"></a>Protocol Inspection</span><br><br>Protocol Inspection provides intrusion detection and intrusion prevention features to the BIG-IP system. You can invoke a Protocol Inspection profile as an action at the global and route domain context by matching Network Firewall rules or by attaching it to a virtual server. Protocol Inspection can look at L3 and L4 packet attributes but it does not add much to DoS Protection, IP Intelligence, and Network FIrewall. Protocol Inspection is much more useful at the application layer where its detailed protocol modeling provides a level of detail unavailable with the other features.</p>
+<p><a id="link_11" name="link_11"></a><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000ZDyT&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000VwTZH" alt="Figure 2.5 Software packet processing"></img> </p>
+<p><span class="figuretitle">Figure 2.5 Software packet processing</span></p>
+<p><span class="note"><strong>Note</strong>: For easier viewing of this figure, you can right-click the image and open it in a new browser window.</span></p>
+<p> </p>
+<p><span class="sectiontitle">BIG-IP AFM operations guide</span></p>
+<ul><li><a href="https://my.f5.com/manage/s/article/K38201755" target="_blank">Chapter 1: Guide introduction and contents</a></li><li><a href="https://my.f5.com/manage/s/article/K10354610" target="_blank">Chapter 3: Firewall rules</a></li><li><a href="https://my.f5.com/manage/s/article/K41572395" target="_blank">Chapter 4: Network Address Translation (NAT)</a></li><li><a href="https://my.f5.com/manage/s/article/K49869231" target="_blank">Chapter 5: Denial of Service</a></li><li><a href="https://my.f5.com/manage/s/article/K25265787" target="_blank">Chapter 6: Protocol Inspection</a></li><li><a href="https://my.f5.com/manage/s/article/K20548500" target="_blank">Chapter 7: External tools</a></li><li><a href="https://my.f5.com/manage/s/article/K03094407" target="_blank">Chapter 8: Monitoring and Logging BIG-IP AFM</a></li><li><a href="https://my.f5.com/manage/s/article/K13723376" target="_blank">Chapter 9: Troubleshooting</a></li></ul>
+</article>
+</body>
+</html>

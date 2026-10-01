@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000135539: Traffic routing between namespaces using external gateway</title>
+<meta name="description" content="Support Solution: Traffic routing between namespaces using external gateway — This article provides information with example configuration about how to route traffic between namespaces through external gateway; i.e. if routing traffic via external gateway between namespaces is…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000135539">
+</head>
+<body>
+<header>
+<h1>K000135539: Traffic routing between namespaces using external gateway</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-09-21</dd>
+<dt>Updated</dt><dd>2023-09-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.14, 1.11</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000135539">https://my.f5.com/manage/s/article/K000135539</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>This article provides information with example configuration about how to route traffic between namespaces through external gateway; i.e. if routing traffic via external gateway between namespaces is needed then this article provides an example. </p>
+
+<h2><strong>Environment</strong></h2>
+
+<p>AspenMesh 1.11.x , 1.14.x</p>
+
+<h2><strong>Cause</strong></h2>
+
+<p>None</p>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>Example, using custom domain name without &quot;.svc.cluster.local&quot;, you would need to make sure that name can be resolved to the correct service within the cluster. This typically involves updating your cluster&#39;s DNS settings. However, keep in mind that any custom DNS settings would need to be maintained separately from the rest of the Kubernetes configuration, which might complicate things.<br><br>Here&#39;s an example of how you might configure this scenario using Istio resources. Note that it is assumed the services are HTTP-based. If not, you would need to adjust these configurations accordingly. <br><br>First, you would create a Gateway and VirtualService for the external access: </p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: networking.istio<strong>.</strong>io/v1alpha3
+kind: Gateway
+metadata:
+  name: external-gateway
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - &quot;example<strong>.</strong>com&quot;
+---
+apiVersion: networking.istio<strong>.</strong>io/v1alpha3
+kind: VirtualService
+metadata:
+  name: appx-route
+spec:
+  hosts:
+  - &quot;example<strong>.</strong>com&quot;
+  gateways:
+  - external-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /path1
+    route:
+    - destination:
+        host: appx1<strong>.</strong>default.svc.cluster<strong>.</strong>local
+  - match:
+    - uri:
+        prefix: /path2
+    route:
+    - destination:
+        host: appx2<strong>.</strong>default.svc.cluster<strong>.</strong>local</pre>
+
+<p>This configuration would route http<strong>:</strong>//example<strong>.</strong>com/path1 to appx1 and http<strong>:</strong>//example<strong>.</strong>com/path2 to appx2.<br><br>To route internal traffic in the same way, you would create another VirtualService without a gateway. This VirtualService applies to traffic within the mesh:</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: networking.istio<strong>.</strong>io/v1alpha3
+kind: VirtualService
+metadata:
+  name: appx-internal-route
+spec:
+  hosts:
+  - &quot;appx<strong>.</strong>default.svc.cluster<strong>.</strong>local&quot;
+  http:
+  - match:
+    - uri:
+        prefix: /path1
+    route:
+    - destination:
+        host: appx1<strong>.</strong>default.svc.cluster<strong>.</strong>local
+  - match:
+    - uri:
+        prefix: /path2
+    route:
+    - destination:
+        host: appx2<strong>.</strong>default.svc.cluster<strong>.</strong>local</pre>
+
+<p>This configuration would route http<strong>:</strong>//appx<strong>.</strong>default.svc.cluster<strong>.</strong>local/path1 to appx1 and http<strong>:</strong>//appx<strong>.</strong>default.svc.cluster<strong>.</strong>local/path2 to appx2. Any pod within the cluster could access appx this way, and it would be routed based on the path in the same way as external traffic. <br><br>Note this is just a reference configuration require testing. You would need to adjust it to fit your environment and requirements. Specifically, you might need to change the names of the hosts, services, and paths. You may also need to adjust the namespace if your services are not in the default namespace. Lastly, if your services use a protocol other than HTTP, you would need to adjust the VirtualService configurations accordingly.<br> </p>
+
+<h2><strong>Additional Information</strong></h2>
+
+<p>Let&#39;s start first by discussing how hostname resolved within the Kubernetes cluster. The hostname should be resolvable within the Kubernetes cluster. By convention, it usually follows the &lt;service-name&gt;.&lt;namespace-name&gt;.svc.cluster.local pattern. However, the domain name itself doesn&#39;t strictly have to follow this pattern. You could use a custom domain name such as &quot;app1<strong>.</strong>int-endpoint.svc.cluster<strong>.</strong>local&quot; as long as it can be resolved to the correct service within the cluster.  <br><br>There is no strict constraint on internal hostnames apart from being DNS-resolvable within the cluster. You can define a common name for internal hosts across namespaces as long as the common name can be correctly resolved to the appropriate service in each namespace.<br><br>Keep in mind, however, that defining the same hostname for services in different namespaces might be confusing, and could potentially lead to naming conflicts or unexpected routing behavior. It would be more conventional to include the namespace in the hostname to keep things clear and avoid conflicts.</p>
+</article>
+</body>
+</html>

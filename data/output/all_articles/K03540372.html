@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K03540372: When the system rewrites the portal access content, the system selects the meta tag setting over the HTTP header setting</title>
+<meta name="description" content="Known Issue: When the system rewrites the portal access content, the system selects the meta tag setting over the HTTP header setting — When the system rewrites the portal access content, the system selects the meta tag setting over the HTTP header setting.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K03540372">
+</head>
+<body>
+<header>
+<h1>K03540372: When the system rewrites the portal access content, the system selects the meta tag setting over the HTTP header setting</h1>
+<dl>
+<dt>Type</dt><dd>Known Issue</dd>
+<dt>Published</dt><dd>2017-05-08</dd>
+<dt>Updated</dt><dd>2025-01-09</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 13.0.0, 12.1.2, 12.1.1, 12.1.3, 12.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K03540372">https://my.f5.com/manage/s/article/K03540372</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Known Issue</h3><p>When the system rewrites the portal access content, the system selects the <strong>meta tag</strong> setting over the <strong>HTTP header</strong> setting.</p>
+
+<p>This issue occurs when all of the following conditions are met:</p>
+
+<ul><li>Your BIG-IP APM system is configured with a portal access profile.</li><li>HTML content processed by the portal access profile contains conflicting <strong>meta tag</strong> and <strong>HTTP header</strong> character set statements.</li></ul>
+
+<p><span class="sectiontitle">Impact</span></p>
+
+<p>The system rewrites characters, using the <strong>meta tag</strong> character set statement.</p>
+
+<p><span class="sectiontitle">Symptoms</span></p>
+
+<p>As a result of this issue, you may encounter the following symptom:</p>
+
+<ul><li>The HTML content that depends on the HTTP header character set may appear garbled when the system rewrites the content and uses the meta tag character set.</li></ul>
+<h3>Resolution</h3><p><span class="sectiontitle">Status</span></p>
+
+<p>F5 Product Development has assigned ID 654003 to this issue. F5 has confirmed that this issue exists in the products listed in the <strong>Applies to (see versions)</strong> box, located in the upper-right corner of this article. For information about releases or hotfixes that resolve this issue, refer to the following table.</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1" style="width: 100%;"><tbody><tr><td colspan="1" rowspan="1">Type of fix</td><td colspan="1" rowspan="1">Fixes introduced in</td><td colspan="1" rowspan="1">Related articles</td></tr><tr><td colspan="1" rowspan="1">Release</td><td colspan="1" rowspan="1">13.1.0</td><td colspan="1" rowspan="1"><a href="https://my.f5.com/manage/s/article/K2200" target="_blank">K2200: Most recent versions of F5 software</a></td></tr><tr><td colspan="1" rowspan="1">Hotfix</td><td colspan="1" rowspan="1">None</td><td colspan="1" rowspan="1">None</td></tr></tbody></table>
+
+<p><span class="sectiontitle">Workaround</span></p>
+
+<p>To work around this issue, you can create a custom iRule and apply it to the affected virtual server. To do so, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of workaround</strong>: F5 recommends that you perform the workaround during a scheduled maintenance window.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Navigate to <strong>Local Traffic</strong> &gt; <strong>iRules</strong> &gt; <strong> Create</strong>.</li><li>In the <strong>Name</strong> box, type a name for the iRule.</li><li>In the <strong>Definition</strong> box, paste the following iRule example text:
+	<p><span class="example2">when HTTP_REQUEST {<br>	    if { [HTTP::path] ends_with &quot;<strong>&lt;content url&gt;</strong>&quot; } {<br>	        set SETCHARS &quot;text/html; charset=<strong>&lt;prefered character set&gt;</strong>&quot;<br>	        HTTP::header remove Accept-Encoding<br>	        if { [HTTP::version] eq &quot;1.1&quot; } {<br>	            if { [HTTP::header is_keepalive] } {<br>	                HTTP::header replace &quot;Connection&quot; &quot;Keep-Alive&quot;<br>	            }<br>	            HTTP::version &quot;1.0&quot;<br>	        }<br>	    } elseif { [info exists SETCHARS] } {<br>	        unset SETCHARS<br>	    }<br>	}<br>	when HTTP_RESPONSE {<br>	    if { [info exists SETCHARS] &amp;&amp; \<br>	            [HTTP::header Content-Type] contains &quot;text/html&quot; } {<br>	        # Collect no more than 1024 bytes.<br>	        if { [HTTP::header exists &quot;Content-Length&quot;] and \<br>	                [HTTP::header &quot;Content-Length&quot;] &gt; 0 and \<br>	                [HTTP::header &quot;Content-Length&quot;] &lt;= 1024 } {<br>	            HTTP::collect [HTTP::header Content-Length]<br>	        } else {<br>	            HTTP::collect 1024<br>	        }<br>	    } elseif { [info exists SETCHARS] } {<br>	        unset SETCHARS<br>	    }<br>	}<br>	when HTTP_RESPONSE_DATA {<br>	    if { [info exists SETCHARS] } {<br>	        set location [string first &quot; content=\&quot;$SETCHARS\&quot;&quot; [HTTP::payload]]<br>	        set location [expr {$location + 10}]<br>	        if { $location &gt; 10 &amp;&amp; \<br>	            $location &lt; [expr {[HTTP::payload length] - [string length $SETCHARS] - 1}]<br>	        } {<br>	            HTTP::payload replace $location [string length $SETCHARS] {text/html; charset=utf-8}<br>	        }<br>	        unset SETCHARS location<br>	    }<br>	}</span></p>
+	</li><li>Modify <strong>&lt;content url&gt;</strong> to match the path and content file of the affected content.</li><li>Modify <strong>&lt;prefered character set&gt;</strong> to match the character set of the content.</li><li>Click <strong>Finished</strong>.</li><li>Navigate to <strong>Local Traffic</strong> &gt; <strong>Virtual Servers</strong> &gt; <strong>Virtual Server Lists</strong>.</li><li>Click the name of the virtual server that is affected by this issue.</li><li>Click the <strong>Resources</strong> tab.</li><li>In the <strong>iRules</strong> section, click <strong>Manage</strong>.</li><li>From the <strong>Available</strong> column, select the iRule you previously created.</li><li>Click the <strong>&lt;&lt;</strong> button to move the iRule into the <strong>Enabled</strong> column.</li><li>Click <strong>Finished</strong>.</li></ol>
+</article>
+</body>
+</html>

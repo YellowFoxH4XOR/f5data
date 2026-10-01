@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000153105: Occasionally fail to poll the telemetry data with error 502</title>
+<meta name="description" content="Support Solution: Occasionally fail to poll the telemetry data with error 502 — The proxy server received an invalid response from an upstream server.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000153105">
+</head>
+<body>
+<header>
+<h1>K000153105: Occasionally fail to poll the telemetry data with error 502</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-08-21</dd>
+<dt>Updated</dt><dd>2025-08-21</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Automation and Orchestration</li><li>BIG-IP</li><li>BIG-IP LTM: 17.0.0, 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X</li><li>F5 BIG-IP Telemetry Streaming</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000153105">https://my.f5.com/manage/s/article/K000153105</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Occasional failures may occur when polling telemetry data from BIG-IP, resulting in a &quot;502 Proxy Error&quot; with the following message:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Proxy Error </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">The proxy server received an invalid response from an upstream server. </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">The proxy server could not handle the request </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Reason: Error reading from remote server</span><span style="font-family: &#39;courier new&#39;, courier, monospace;"></span></p>
+<p>If it is curl or command line, it could print:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">&lt;!DOCTYPE HTML PUBLIC &quot;-//IETF//DTD HTML 2.0//EN&quot;&gt;</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">&lt;html&gt;&lt;head&gt;</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">&lt;title&gt;502 Proxy Error&lt;/title&gt;</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">&lt;/head&gt;&lt;body&gt;</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">&lt;h1&gt;Proxy Error&lt;/h1&gt;</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">&lt;p&gt;The proxy server received an invalid</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">response from an upstream server.&lt;br /&gt;</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">The proxy server could not handle the request&lt;p&gt;Reason: &lt;strong&gt;Error reading from remote server&lt;/strong&gt;&lt;/p&gt;&lt;/p&gt;</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">&lt;/body&gt;&lt;/html&gt; </span></p>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP</li><li>Telemetry Streaming package: f5 telemetry 1.35 or newer</li></ul>
+<h2>Cause</h2>
+<p>This issue is caused by insufficient memory allocatoin, heavy load of configuration and telemetry objects, or insufficient socket timeout settings for the restnoded server end process. When having limited resources and larger configuration, without an extended server-side socket timeout, connections may be terminated prematurely during heavy load or complex telemetry operations, resulting in intermittent &quot;502 Proxy Error&quot; responses. </p>
+<h2>Recommended Actions</h2>
+<ol><li><strong>Increase Timeout Values<br></strong>Ensure these database keys are set to their maximum value (600):<br><span style="font-family: &#39;courier new&#39;, courier, monospace;"></span>
+<div>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh
+modify sys db restjavad.timeout value &quot;600&quot; 
+modify sys db restnoded.timeout value &quot;600&quot;
+modify sys db icrd.timeout value &quot;600&quot;
+save sys config</code></pre>
+</div>
+</li><li><strong>Extend restnoded Server-Side Socket Timeout<br></strong>- Backup the current startup script for restnoded:<br><div>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>cp /etc/bigstart/scripts/restnoded /var/tmp/restnoded-bigstart-backup</code></pre>
+</div>
+<p>- Edit the startup script <strong>/etc/bigstart/scripts/restnoded</strong> and add <strong>-k 600000</strong> (timeout in milliseconds) to the execution line for restnoded:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># Find the below line
+    exec /usr/bin/f5-rest-node /usr/share/rest/node/src/restnode.js -p 8105 --logLevel finest -i ${LOG_FILE} -s none &gt;&gt; /var/tmp/${service}.out 2&gt;&amp;1
+
+# Modify it to:
+    exec /usr/bin/f5-rest-node /usr/share/rest/node/src/restnode.js -p 8105 --logLevel finest -i ${LOG_FILE} -s none -k 600000 &gt;&gt; /var/tmp/${service}.out 2&gt;&amp;1
+</code></pre>
+<p><br>- Restart the services to apply changes:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>bigstart restart restjavad restnoded</code></pre>
+<p> </p>
+</li><li><strong>Review and follow the below best practice guide to further fine-tune your Telemetry setup<br></strong><span style="font-family: &#39;courier new&#39;, courier, monospace;"> </span>
+<div><a href="https://my.f5.com/manage/s/article/K000135911" target="_self">K000135911: BIG-IP Telemetry Streaming common issues and best practices</a></div>
+</li></ol>
+<ul></ul>
+</article>
+</body>
+</html>

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K72403825: BIG-IP AFM Protocol-Inspection profile settings reverted after upgrading the device</title>
+<meta name="description" content="Support Solution: BIG-IP AFM Protocol-Inspection profile settings reverted after upgrading the device — The action values for signatures and compliances in Protocol Inspection profiles change when a configuration is loaded.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K72403825">
+</head>
+<body>
+<header>
+<h1>K72403825: BIG-IP AFM Protocol-Inspection profile settings reverted after upgrading the device</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-07-19</dd>
+<dt>Updated</dt><dd>2023-09-19</dd>
+<dt>Applies to</dt><dd><ul><li>VIPRION Platforms</li><li>BIG-IP</li><li>Virtual Editions</li><li>BIG-IP Platforms</li><li>BIG-IP AFM: 16.0.X, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 15.0.X, 15.1.0, 15.1.1, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 17.1.X, 17.0.X, 14.0.0, 14.0.1, 14.0.X, 14.1.0, 14.1.2, 14.1.3, 14.1.4, 14.1.5, 14.1.X, 15.0.0, 15.0.1, 16.0.0, 16.0.1, 17.0.0, 17.1.0, 14.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K72403825">https://my.f5.com/manage/s/article/K72403825</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>The <strong>action</strong> values for signatures and compliances in Protocol Inspection profiles change when a configuration is loaded.</p>
+
+<p>In other words, when loading a configuration, the <strong>action</strong> value for some signatures and compliance checks changes from <strong>accept</strong> to <strong>reject</strong> or <strong>drop</strong>. The &quot;configuration load&quot; includes restoring configuration from UCS, loading a config using <strong>load sys config from-terminal merge</strong> tmsh command, and software upgrades.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP AFM Protocol Inspection is licensed</li><li>Loading configuration</li><li>BIG-IP software upgrade</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>The issue is due to a known issue <a href="https://cdn.f5.com/product/bugtracker/ID1122205.html" target="_blank">ID 1122205</a> .</p>
+
+<p>Configuration files that contain user configurations (like bigip_base.conf and bigip.conf) generally do not contain default parameters. When the system loads configuration, it merges the user configuration files with default configuration files to retrieve full configuration parameters.</p>
+
+<p>The issue occurs because signatures and compliances hide <strong>action accept</strong> parameter in the configuration file although some of them has the default <strong>action</strong> either <strong>reject</strong> or <strong>drop</strong>.</p>
+
+<p>For example, the compliance <strong>/Common/diameter_disallowed_apn</strong> has the default action <strong>reject</strong>, but the configuration file does not have <strong>action accept</strong> line in it. Therefore, when BIG-IP loads configuration from file, it loads the default <strong>action</strong> parameter, which is <strong>reject</strong>.</p>
+
+<pre>
+security protocol-inspection profile /Common/ips_profile1 {
+    ...snip...
+    services {
+        /Common/diameter {
+            compliance {
+                /Common/diameter_disallowed_apn { }   &lt;-- Empty curly bracket indicates default values.
+            }
+            ports {
+                3868 { }
+            }
+        }
+    }
+    ...snip...
+</pre>
+
+<p>When using <strong>all-properties</strong> argument when running <strong>tmsh list</strong> command, it shows <strong>action accept</strong>.</p>
+
+<pre>
+# tmsh list security protocol-inspection profile ips_profile1 all-properties
+    services {
+        diameter {
+            compliance {
+                diameter_disallowed_apn {
+                    action accept          &lt;-- This is the actual configuration in memory.
+                    log yes
+                    value &quot;&quot;
+                }
+            }
+            config none
+            ports {
+                diameter { }
+            }
+            signature none
+            status enabled
+        }
+    }
+</pre>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>List the affected signatures and compliances (with non-accept default action) using the commands below and check if you have those defined in your protocol inspection profiles. If you do, you may follow the workaround mentioned in <a href="https://cdn.f5.com/product/bugtracker/ID1122205.html" target="_blank">ID 1122205</a> .</p>
+
+<h3>Signarures</h3>
+
+<pre class="ckeditor_codeblock">
+tmsh list sec protocol-inspection signature all-properties | egrep &quot;protocol-inspection|^\s*action&quot; | awk &#39;{ if($2 == &quot;drop&quot; || $2 == &quot;reject&quot;) { print prev&quot;\n&quot;$0 } } { prev = $0 }&#39;
+</pre>
+
+<h3>Compliances</h3>
+
+<pre class="ckeditor_codeblock">
+tmsh list sec protocol-inspection compliance all-properties | egrep &quot;protocol-inspection|^\s*action&quot; | awk &#39;{ if($2 == &quot;drop&quot; || $2 == &quot;reject&quot;) { print prev&quot;\n&quot;$0 } } { prev = $0 }&#39;</pre>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

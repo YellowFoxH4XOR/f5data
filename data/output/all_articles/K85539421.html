@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K85539421: Configure Azure sentinel or other telemetry consumer integration with BIG-IP</title>
+<meta name="description" content="Support Solution: Configure Azure sentinel or other telemetry consumer integration with BIG-IP — You want to configure Telemetry Streaming with Azure Sentinel or another supported system as a data collector. For more information about supported Telemetry Streaming consumers refer to Using…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K85539421">
+</head>
+<body>
+<header>
+<h1>K85539421: Configure Azure sentinel or other telemetry consumer integration with BIG-IP</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-10-16</dd>
+<dt>Updated</dt><dd>2023-09-07</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K85539421">https://my.f5.com/manage/s/article/K85539421</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>You want to configure Telemetry Streaming with Azure Sentinel or another supported system as a data collector. For more information about supported Telemetry Streaming consumers refer to <a href="https://clouddocs.f5.com/products/extensions/f5-telemetry-streaming/latest/using-ts.html" target="_self">Using Telemetry Streaming</a>.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP version 14.x and higher.</li><li>Data collector system account. Azure account with running Sentinel can be found on marketplace.</li><li>Connectivity between BIG-IP and data collector on tcp/6514 is allowed.</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>None</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ul><li><a href="#Install_the_Telemetry_Streaming_iControl_LX_Extension">Install the Telemetry Streaming iControl LX Extension</a></li><li><a href="#Create_the_iRule"><span class="subsectiontitle">Create the iRule that sends traffic to the internal telemetry listener</span></a></li><li><a href="#Create_a_pool"><span class="subsectiontitle">Create a pool to handle telemetry traffic</span></a></li><li><a href="#Create_a_virtual_server"><span class="subsectiontitle">Create a virtual server to listen for Telemetry traffic</span></a></li><li><a href="#Create_a_request-log_profile"><span class="subsectiontitle">Create a request-log profile</span></a></li><li><a href="#Check_for_previous_telemetry_declarations"><span class="subsectiontitle">Check for previous or existing Telemetry Declarations</span></a></li><li><a href="#Create_the_Telemetry_Streaming_declaration"><span class="subsectiontitle">Create a Telemetry Streaming declaration</span></a></li><li><a href="#Deploy_the_declaration"><span class="subsectiontitle">Deploy the Telemetry declaration</span></a></li><li><a href="#Check_the_logs"><span class="subsectiontitle">Confirm the results via the logs</span></a></li></ul>
+
+<p><strong><a id="Install_the_Telemetry_Streaming_iControl_LX_Extension" name="Install_the_Telemetry_Streaming_iControl_LX_Extension"><span class="subsectiontitle">Install the Telemetry Streaming iControl LX Extension</span></a></strong><br><em><span class="subsectiontitle">Note: For devices in a HA cluster, this step needs to be done manually on each device.</span></em></p>
+
+<ol><li>Download the RPM from F5 GitHub: <a href="https://github.com/F5Networks/f5-telemetry-streaming/releases" target="_blank">https://github.com/F5Networks/f5-telemetry-streaming/releases</a></li><li>Log in to the BIG-IP GUI and remain logged in for the rest of the procedures.</li><li>Go to <strong>iApps</strong> &gt; <strong>Package Management LX</strong>.</li><li>Import and upload the RPM.</li><li>To verify if the Telemetry Streaming plugin was installed.</li></ol>
+
+<div style="margin-left: 40px;">
+<pre class="ckeditor_codeblock">
+curl -sku &lt;username&gt;:&lt;password&gt; https://&lt;BIG-IP mgmt address&gt;/mgmt/shared/telemetry/info
+or
+From Postman: GET  https://&lt;BIG-IP mgmt address&gt;/mgmt/shared/telemetry/info
+</pre>
+
+<p>Successful response: <br><br>200 OK {<br>    &quot;nodeVersion&quot;: &quot;v8.11.1&quot;,<br>    &quot;version&quot;: &quot;1.32.0&quot;,<br>    &quot;release&quot;: &quot;2&quot;,<br>    &quot;schemaCurrent&quot;: &quot;1.32.0&quot;,<br>    &quot;schemaMinimum&quot;: &quot;0.9.0&quot;<br>}</p>
+</div>
+
+<p><strong><a id="Create_the_iRule" name="Create_the_iRule"><span class="subsectiontitle">Create the iRule that sends traffic to the internal telemetry listener</span></a></strong><br><em><span class="subsectiontitle">Note: For devices in a HA cluster, this step will be done by Config Sync.</span></em></p>
+
+<ol><li>Go to <strong>Local Traffic</strong> &gt; <strong>iRules</strong> &gt; <strong>Create</strong>.</li><li>Create a rule named <strong>telemetry_local_rule</strong> with the following code:<br>	<span class="example2">when CLIENT_ACCEPTED {</span><span class="example2"> <br>	    node 127.0.0.1 6514</span><br>	<span class="example2">}</span></li></ol>
+
+<p><strong><a id="Create_a_pool" name="Create_a_pool"><span class="subsectiontitle">Create a pool to handle telemetry traffic</span></a></strong><br><em><span class="subsectiontitle">Note: For devices in a HA cluster, this step will be done by Config Sync.</span></em></p>
+
+<pre class="ckeditor_codeblock">
+tmsh create ltm pool telemetry monitor tcp members replace-all-with { 255.255.255.254:6514 }
+tmsh save sys config
+</pre>
+
+<p>Or from the Configuration Utility:</p>
+
+<ol><li>Go to <strong>Local Traffic</strong> &gt; <strong>Pools</strong> &gt; <strong>Create</strong>.</li><li>Create a pool named <strong>telemetry </strong>with 255.255.255.254:6514<strong> </strong>as the pool member<strong> </strong>and a tcp monitor<strong>.</strong><br>	The configuration output should appear similar to the following example:</li></ol>
+
+<p style="margin-left: 40px;"><span class="example2">ltm pool telemetry {<br>    members {<br>        255.255.255.254:syslog-tls {<br>            address 255.255.255.254<br>        }<br>    }<br>    monitor tcp<br>}</span></p>
+
+<p><strong><a id="Create_a_virtual_server" name="Create_a_virtual_server"><span class="subsectiontitle">Create a virtual server to listen for Telemetry traffic</span></a></strong><br><em><span class="subsectiontitle">Note: For devices in a HA cluster, this step will be done by Config Sync.</span></em><br>This virtual server will be the pool member in the telemetry pool from the previous step.</p>
+
+<pre class="ckeditor_codeblock">
+tmsh create ltm virtual telemetry_local destination 255.255.255.254:6514 rules { telemetry_local_rule } profiles replace-all-with { f5-tcp-progressive } source-address-translation { type automap } persist replace-all-with { source_addr { default yes }}
+tmsh save sys config
+</pre>
+
+<p>Or from the Configuration Utility:</p>
+
+<ol><li>Go to <strong>Local Traffic</strong> &gt; <strong>Virtual Servers</strong> &gt; <strong>Create</strong>.</li><li>Create a virtual server named <strong>telemetry_local</strong> with the destination address and port of 255.255.255.254:6514.</li><li>Also apply the <strong>telemetry_local_rule</strong> and enable <strong>SNAT Automap</strong> in the <strong>Source Address Translation</strong> setting.</li></ol>
+
+<p>Verify at this point that the pool, <strong>telemetry </strong>you created in the previous step is up. If not, test connectivity to it and/or create a network route with the following configuration so that the pool monitor traffic can reach the virtual server you just created.</p>
+
+<pre class="ckeditor_codeblock">
+traceroute <span class="example2">255.255.255.254</span>
+tmsh create net route telemetryRoute gw &lt;next hop IP&gt; network 255.255.255.254
+tmsh save sys config
+</pre>
+
+<p>The network route configures all traffic destined for 255.255.255.254/32 to use a VLAN that the virtual server is listening on. Since the virtual server is in this procedure is listening on all VLANs, you can use an existing VLAN, for example an internal VLAN in your environment.</p>
+
+<p><strong><a id="Create_a_request-log_profile" name="Create_a_request-log_profile"><span class="subsectiontitle">Create a request-log profile</span></a></strong><br><em><span class="subsectiontitle">Note: For devices in a HA cluster, this step will be done by Config Sync.</span></em></p>
+
+<pre class="ckeditor_codeblock">
+tmsh create ltm profile request-log telemetry_traffic_log_profile request-log-pool telemetry request-log-protocol mds-tcp request-log-template event_source=\&quot;request_logging\&quot;,hostname=\&quot;$BIGIP_HOSTNAME\&quot;,client_ip=\&quot;$CLIENT_IP\&quot;,server_ip=\&quot;$SERVER_IP\&quot;,http_method=\&quot;$HTTP_METHOD\&quot;,http_uri=\&quot;$HTTP_URI\&quot;,virtual_name=\&quot;$VIRTUAL_NAME\&quot;,event_timestamp=\&quot;$DATE_HTTP\&quot; request-logging enabled
+tmsh save sys config</pre>
+
+<p>Or from the Configuration Utility:</p>
+
+<ol><li>Go to <strong>Local Traffic</strong> &gt; <strong>Profiles</strong> &gt; <strong>Other</strong> &gt; <strong>Request Logging</strong> &gt; <strong>Create</strong>.</li><li>Create a request-log profile named <strong>telemetry_traffic_log_profile</strong>.</li><li>In <strong>Request Settings, </strong>enable<strong> Request Logging, </strong>set<strong> HSL Protocol </strong>to<strong> TCP</strong>, and the<strong> Pool Name</strong> to<strong> telemetry</strong>.</li><li>In the <strong>Template</strong> section enter a request log template. You can use the following example:<br>	<span class="example2">event_source=&quot;request_logging&quot;,hostname=&quot;$BIGIP_HOSTNAME&quot;,client_ip=&quot;$CLIENT_IP&quot;,server_ip=&quot;$SERVER_IP&quot;,http_method=&quot;$HTTP_METHOD&quot;,http_uri=&quot;$HTTP_URI&quot;,virtual_name=&quot;$VIRTUAL_NAME&quot;,event_timestamp=&quot;$DATE_HTTP&quot;</span><br>	<span class="note"><strong>Note</strong>: For more request logging parameters, refer to the <strong>Configuring Request Logging</strong> chapter of the <em><strong>External Monitoring of BIG-IP Systems: Implementations</strong></em> manual. For information about how to locate F5 product manuals, refer to <a href="https://my.f5.com/manage/s/article/K98133564" target="_self">K98133564: Tips for searching AskF5 and finding product documentation</a>.</span></li></ol>
+<strong><span class="note">Options for the request-logging profile:</span></strong>
+
+<ol><li>Go to <strong>Local Traffic</strong> &gt; <strong>Profiles</strong> &gt; <strong>Other</strong> &gt; <strong>Request Logging</strong> &gt; <strong>telemetry_traffic_log_profile &gt; edit</strong></li><li>In <strong>Response Settings</strong>, enable <strong>Response Logging</strong> and set <strong>HSL Protocol </strong>to<strong> TCP</strong>, and the<strong> Pool Name</strong> to<strong> telemetry</strong>.</li><li>In the <strong>Template</strong> section enter a response log template. You can use the following example:<br>	<span class="example2">event_source=&quot;response_logging&quot;,hostname=&quot;$BIGIP_HOSTNAME&quot;,client_ip=&quot;$CLIENT_IP&quot;,server_ip=&quot;$SERVER_IP&quot;,http_method=&quot;$HTTP_METHOD&quot;,http_uri=&quot;$HTTP_URI&quot;,virtual_name=&quot;$VIRTUAL_NAME&quot;,event_timestamp=&quot;$DATE_HTTP&quot;,http_statcode=&quot;$HTTP_STATCODE&quot;,http_status=&quot;$HTTP_STATUS&quot;,response_ms=&quot;$RESPONSE_MSECS&quot;</span></li></ol>
+
+<p><a id="Attach_the_request-logging_profile" name="Attach_the_request-logging_profile"><span class="subsectiontitle"><strong>Attach the request logging profile to the virtual server</strong></span></a><br><em><span class="subsectiontitle">Note: For devices in a HA cluster, this step will be done by Config Sync.</span></em><br><span class="subsectiontitle">This allows the virtual server to send statistics to the Telemetry Streaming consumer:</span></p>
+
+<pre class="ckeditor_codeblock">
+tmsh modify ltm virtual telemetry_local profiles add { telemetry_traffic_log_profile { context all } }
+tmsh save sys config
+</pre>
+
+<p>Or from the Configuration Utility:</p>
+
+<ol><li>Go to <strong>Local Traffic</strong> &gt; <strong>Virtual Servers</strong> and select the virtual server you want to update.</li><li>Change the configuration view from <strong>Basic</strong> to <strong>Advanced</strong> if necessary.</li><li>For <strong>Request Logging Profile</strong> select <strong>telemetry_traffic_log_profile</strong>.</li><li>Select <strong>Update</strong>.</li></ol>
+
+<p><strong><a id="Check_for_previous_telemetry_declarations" name="Check_for_previous_telemetry_declarations">Check for previous telemetry declarations</a></strong><br>This can only be performed from a qkview using the following command.<br><em><strong>Note:</strong> Copy and paste doesn&#39;t work. Manually type the command.</em></p>
+
+<pre class="ckeditor_codeblock">
+grep telemetry var/tmp/storage_text_dump.txt | grep _data_ | jq &#39;.|{last:.lastUpdateMicros,data:._data_}&#39; -c | sort | tail -n1| jq .data -r | jq .
+</pre>
+
+<p><strong><a id="Check_for_current_Telemetry_declarations" name="Check_for_current_Telemetry_declarations"><span class="subsectiontitle">Check for current Telemetry declarations</span></a></strong><br><span class="subsectiontitle">From Postman</span></p>
+
+<pre class="ckeditor_codeblock">
+GET https://&lt;BigIP-mgmt-IP&gt;/mgmt/shared/telemetry/declare</pre>
+
+<p><strong><a id="Create_the_Telemetry_Streaming_declaration" name="Create_the_Telemetry_Streaming_declaration"><span class="subsectiontitle">Create the Telemetry Streaming declaration</span></a></strong><br><em><span class="subsectiontitle">Note: For devices in a HA cluster, this step needs to be done manually on each device.</span></em><br>The declaration example and steps below are specific to Azure Sentinel; however, you can create a declaration and tailor it for any of the supported telemetry consumers. For more information refer to <a href="https://clouddocs.f5.com/products/extensions/f5-telemetry-streaming/latest/using-ts.html" target="_self">Using Telemetry Streaming</a>. This procedure creates the Telemetry Listener that the <strong>telemetry_local_rule </strong>points.</p>
+
+<ol><li>Use a text editor to create a declaration on your workstation.</li><li>With the <strong>Azure_Log_Analytics</strong> consumer, use your workspace ID for the <strong>workspaceId</strong> property and refer to <a href="https://docs.microsoft.com/en-us/azure/azure-monitor/agents/agent-windows" target="_self">Workspace ID and key</a> in Microsoft Docs if needed.</li><li>For <strong>cipherText</strong>, use your primary key. Refer to the aforementioned Microsoft guide if needed.</li><li>For <strong>region</strong> ensure you enter your region where LogAnalytics workspace resides.</li><li>Configure other properties as needed. <em><strong>Note: </strong><span class="example2">Only use &quot;debug&quot; for troubleshooting purpose; default value &quot;info&quot;.</span></em><br>	The declaration should appear similar to the following example:</li></ol>
+
+<p style="margin-left: 40px;"><span class="example2">{<br>  &quot;class&quot;: &quot;Telemetry&quot;,<br>  &quot;controls&quot;: {<br>    &quot;class&quot;: &quot;Controls&quot;,<br>    &quot;logLevel&quot;: &quot;info&quot;,   </span><br><span class="example2">    &quot;debug&quot;: true<br>  },<br>  &quot;My_System&quot;: {<br>    &quot;class&quot;: &quot;Telemetry_System&quot;,<br>    &quot;trace&quot;: &quot;/var/tmp/telemetry_trace.log&quot;,<br>    &quot;systemPoller&quot;: {<br>      &quot;interval&quot;: 60<br>    }<br>  },<br>  &quot;My_Listener&quot;: {<br>    &quot;class&quot;: &quot;Telemetry_Listener&quot;,<br>    &quot;port&quot;: 6514<br>  },<br>  &quot;My_Consumer&quot;: {<br>    &quot;class&quot;: &quot;Telemetry_Consumer&quot;,<br>    &quot;type&quot;: &quot;Azure_Log_Analytics&quot;,<br>    &quot;workspaceId&quot;: &quot;&lt;custom workspaceID here&gt;&quot;,   <br>    &quot;passphrase&quot;: {<br>      &quot;cipherText&quot;: &quot;&lt;custom Primary Key here&gt;&quot;  <br>    },<br>    &quot;useManagedIdentity&quot;: false,<br>    &quot;region&quot;: &quot;&lt;Region where LogAnalytics workspace resides&gt;&quot;  <br>  }<br>}</span></p>
+
+<p><strong><a id="Deploy_the_declaration" name="Deploy_the_declaration"><span class="subsectiontitle">Deploy the declaration</span></a></strong></p>
+
+<ol><li>Log in to the command line of your workstation or Postman and send a POST request with the declaration. If deploying with curl, use the following syntax:
+	<pre class="ckeditor_codeblock">
+curl -ku &lt;username&gt;:&lt;password&gt; -H &#39;Content-Type: application/json&#39; https://&lt;BIG-IP mgmt address&gt;/mgmt/shared/telemetry/declare --data-raw \
+&lt;declaration in JSON&gt;</pre>
+	<br>	For example:<br>	<span class="example2">curl -ku admin:admin -H &#39;Content-Type: application/json&#39; https://1.1.1.1/mgmt/shared/telemetry/declare --data-raw \ </span></li></ol>
+            <span class="example2">&#39;{</span>
+
+<p style="margin-left: 40px;"><span class="example2">  &quot;class&quot;: &quot;Telemetry&quot;,<br>  &quot;controls&quot;: {<br>    &quot;class&quot;: &quot;Controls&quot;,<br>    &quot;logLevel&quot;: &quot;debug&quot;,<br>    &quot;debug&quot;: true<br>  },<br>  &quot;My_System&quot;: {<br>    &quot;class&quot;: &quot;Telemetry_System&quot;,<br>    &quot;trace&quot;: &quot;/var/tmp/telemetry_trace.log&quot;,<br>    &quot;systemPoller&quot;: {<br>      &quot;interval&quot;: 60<br>    }<br>  },<br>  &quot;My_Listener&quot;: {<br>    &quot;class&quot;: &quot;Telemetry_Listener&quot;,<br>    &quot;port&quot;: 6514<br>  },<br>  &quot;My_Consumer&quot;: {<br>    &quot;class&quot;: &quot;Telemetry_Consumer&quot;,<br>    &quot;type&quot;: &quot;Azure_Log_Analytics&quot;,<br>    &quot;workspaceId&quot;: &quot;&lt;custom workspaceID here&gt;&quot;,<br>    &quot;passphrase&quot;: {<br>      &quot;cipherText&quot;: &quot;&lt;custom Primary Key here&gt;&quot;<br>    },<br>    &quot;useManagedIdentity&quot;: false,<br>    &quot;region&quot;: &quot;&lt;Region where LogAnalytics workspace resides&gt;&quot;<br>  }<br>}&#39;</span></p>
+
+<p><strong><a id="Check_the_logs" name="Check_the_logs"><span class="subsectiontitle">Check the logs to confirm results</span></a></strong></p>
+
+<ol><li>Log in to the command line of the BIG-IP and enter the following command:
+	<pre class="ckeditor_codeblock">
+grep -i success /var/log/restnoded/restnoded.log</pre>
+	A successful restnoded.log example:
+
+	<pre class="ckeditor_codeblock">
+Fri, 07 Aug 2022 14:07:20 GMT - finest: [telemetry.Azure_Log_Analytics.My_Consumer] success</pre>
+	</li><li>Generate traffic to your virtual server and check the data collector dashboard to view data sent from BIG-IP.<br>	The raw JSON content from the BIG-IP should appear similar to the following:<br>	<strong>Request log</strong>:<br>	<span class="example2">{&quot;event_source&quot;:&quot;request_logging&quot;,&quot;hostname&quot;:&quot;test-bigip.com&quot;,&quot;client_ip&quot;:&quot;10.126.127.226&quot;,&quot;server_ip&quot;:&quot;10.126.127.194&quot;,&quot;http_method&quot;:&quot;GET&quot;,&quot;http_uri&quot;:&quot;/&quot;,&quot;virtual_name&quot;:&quot;/Common/logging_vip&quot;,&quot;event_timestamp&quot;:&quot;2022-08-15T22:23:36.000Z&quot;,&quot;telemetryEventCategory&quot;:&quot;LTM&quot;,<br>	&quot;originalRawData&quot;:&quot;event_source=&quot;request_logging&quot;,hostname=&quot;test-bigip.com&quot;,client_ip=&quot;10.126.127.226&quot;,server_ip=&quot;10.126.127.194&quot;,http_method=&quot;GET&quot;,http_uri=&quot;/&quot;,virtual_name=&quot;/Common/logging_vip&quot;,event_timestamp=&quot;Mon, 15 Aug 2022 22:23:36 GMT&quot;&quot;,&quot;tenant&quot;:&quot;Common&quot;}</span><br>	<br>	<strong>Response log</strong>:<br>	<span class="example2">{&quot;event_source&quot;:&quot;response_logging&quot;,&quot;hostname&quot;:&quot;test-bigip.com&quot;,&quot;client_ip&quot;:&quot;10.126.127.226&quot;,&quot;server_ip&quot;:&quot;10.126.127.194&quot;,&quot;http_method&quot;:&quot;GET&quot;,&quot;http_uri&quot;:&quot;/&quot;,&quot;virtual_name&quot;:&quot;/Common/logging_vip&quot;,&quot;event_timestamp&quot;:&quot;2022-08-15T22:23:36.000Z&quot;,&quot;http_statcode&quot;:&quot;200&quot;,&quot;http_status&quot;:&quot;200 OK&quot;,&quot;response_ms&quot;:&quot;8&quot;,&quot;telemetryEventCategory&quot;:&quot;LTM&quot;,<br>	&quot;originalRawData&quot;:&quot;event_source=&quot;response_logging&quot;,hostname=&quot;test-bigip.com&quot;,client_ip=&quot;10.126.127.226&quot;,server_ip=&quot;10.126.127.194&quot;,http_method=&quot;GET&quot;,http_uri=&quot;/&quot;,virtual_name=&quot;/Common/logging_vip&quot;,event_timestamp=&quot;Mon, 15 Aug 2022 22:23:36 GMT&quot;,http_statcode=&quot;200&quot;,http_status=&quot;200 OK&quot;,response_ms=&quot;8&quot;&quot;,&quot;tenant&quot;:&quot;Common&quot;}</span></li></ol>
+
+<p><br><span class="sectiontitle">Additional Information</span></p>
+DevCentral: <a href="https://devcentral.f5.com/s/articles/Integrating-the-F5-BIGIP-with-Azure-Sentinel" target="_self">Integrating the F5 BIGIP with Azure Sentinel</a><br><br>For more information about setting up additional BIG-IP logging components refer to: <a href="https://clouddocs.f5.com/products/extensions/f5-telemetry-streaming/latest/event-listener.html#configuring-the-rest-of-the-logging-components" target="_self">Configuring the rest of the logging components</a><br><br>The Microsoft Sentinel logging destination (workspaceId.ods.opinsights.azure.com) is not currently configurable in Telemetry Streaming.  To manually send telemetry to a specific destination, consider using OpenTelemetry or Syslog telemetry consumers.
+</article>
+</body>
+</html>

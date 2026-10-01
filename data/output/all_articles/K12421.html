@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K12421: Executing a suspending iRules command within the &#x27;catch&#x27; command causes TMM to crash</title>
+<meta name="description" content="Known Issue: Executing a suspending iRules command within the &#x27;catch&#x27; command causes TMM to crash — If the BIG-IP system executes a suspending iRules command within the Tcl catch command, the system does not suspend iRule processing as expected. When this occurs, the iRule does not function as…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K12421">
+</head>
+<body>
+<header>
+<h1>K12421: Executing a suspending iRules command within the &#x27;catch&#x27; command causes TMM to crash</h1>
+<dl>
+<dt>Type</dt><dd>Known Issue</dd>
+<dt>Published</dt><dd>2012-11-26</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>BIG-IP</li><li>BIG-IP APM: 10.2.1, 10.2.0, 10.1.0, 10.2.2</li><li>BIG-IP ASM: 10.1.0, 10.0.1, 10.0.0, 10.2.2, 10.2.1, 10.2.0</li><li>BIG-IP Edge Gateway: 10.2.2, 10.2.1, 10.2.0, 10.1.0</li><li>BIG-IP GTM: 10.2.2, 10.2.1, 10.2.0, 10.1.0, 10.0.1, 10.0.0</li><li>BIG-IP Link Controller: 10.2.2, 10.2.1, 10.2.0, 10.1.0, 10.0.1, 10.0.0</li><li>BIG-IP LTM: 10.2.2, 10.2.1, 10.2.0, 10.1.0, 10.0.1, 10.0.0</li><li>BIG-IP PSM: 10.2.2, 10.2.1, 10.2.0, 10.1.0, 10.0.1, 10.0.0</li><li>BIG-IP WebAccelerator: 10.0.0, 10.2.2, 10.2.1, 10.2.0, 10.1.0, 10.0.1</li><li>BIG-IP WOM: 10.2.2, 10.2.1, 10.2.0, 10.1.0, 10.0.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K12421">https://my.f5.com/manage/s/article/K12421</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Known Issue</h3><p>If the BIG-IP system executes a suspending iRules command within the <strong>Tcl catch</strong> command, the system does not suspend iRule processing as expected. When this occurs, the iRule does not function as expected and TMM may crash.</p>
+
+<p>This issue occurs when the following condition is met:</p>
+
+<ul><li>An iRule executes a suspending iRules command within the<strong> Tcl catch</strong> command</li></ul>
+
+<p>The expected behavior is that the BIG-IP system suspends iRule processing on the connection when the suspending command is executed; then once the suspending command has completed, the BIG-IP system resumes iRule processing on the connection, beginning with the evaluation of the <strong>catch</strong> command that encloses the suspended command.</p>
+
+<p>The <strong>Tcl catch</strong> command is intended to evaluate the code block provided to it, and trap runtime errors and exceptions within the code block that would abnormally terminate execution. It can be useful for debugging iRule logic that is based on information that is extracted or derived from the traffic streams processed by the BIG-IP system or other dynamic data. For example, the following iRule is intended to log one comment or the other, then either select a pool or discard the connection, based upon the success of the <strong>RESOLV::lookup</strong> command:</p>
+
+<p><span class="example2">when HTTP_REQUEST {</span></p>
+
+<p><span class="example2">if { catch {[RESOLV::lookup @10.1.1.74 [HTTP::host]} err] }{<br>log local0. &quot;Error resolving requested host [HTTP::host]: $err&quot;</span></p>
+
+<p><span class="example2">discard<br>} else {<br>log local0. &quot;[HTTP::host] resolved successfully&quot;<br>pool myPoolA<br>}<br>}</span></p>
+
+<p>However, on BIG-IP versions affected by this issue, the iRule will not suspend iRule processing, and connections may be processed incorrectly as follows:</p>
+
+<ul><li>The <strong>RESOLV::lookup</strong> command begins to execute</li><li>Since iRule processing is not suspended, the <strong>catch</strong> command is executed immediately, without waiting for the resolution results, and returns a value of <strong>0 OK</strong>.</li><li>The if statement is evaluated as true, causing the first clause of the if statement to be evaluated.</li><li>The comment is logged, the connection is discarded, and the flow is removed from the connection table.</li><li>The <strong>RESOLV::lookup </strong>command completes successfully</li><li>iRule processing for the connection is resumed with the evaluation of the <strong>catch</strong> command, as if iRules processing had been suspended.</li><li>TMM crashes when iRules processing resumes because the connection no longer exists in the connection table.</li></ul>
+
+<p><span class="note"><strong>Note</strong>: If the connection had not yet closed, and the <strong>catch</strong> command returned the expected value, the if statement would evaluate this time as false, causing the second clause of the if statement to be evaluated, the comment to be logged, and the pool to be selected.</span></p>
+
+<p><span class="sectiontitle">Impact</span></p>
+
+<p>iRules affected by this issue may not process traffic as expected. In addition, traffic processing may be briefly interruped each time TMM crashes.</p>
+
+<p><span class="sectiontitle">Symptoms</span></p>
+
+<p>As a result of this issue, you may encounter the following symptoms:</p>
+
+<ul><li><a href="http://www.f5.com/support/support-tools/big-ip-ihealth/" target="_blank">BIG-IP iHealth</a> lists Heuristic H380423 on the <strong>Diagnostics</strong> &gt; <strong>Identified</strong> &gt; <strong>High</strong> screen.</li><li>Code blocks that are conditioned on a catch statement may be executed outside the expected conditions.</li><li>iRule logic following a catch statement may be executed twice with different results.</li><li>TMM may crash repeatedly with a SIGSEGV fault and produce a stack trace in the <strong>/var/log/tmm</strong> file.</li></ul>
+<h3>Resolution</h3><p><span class="sectiontitle">Status</span></p>
+
+<p>F5 Product Development has assigned ID 225540 to this issue, and has confirmed that this issue exists in the products listed in the <strong>Applies to (see versions)</strong> box. For information about releases or hotfixes that resolve this issue, refer to the following table:</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1" style="width: 100%;"><tbody><tr><td colspan="1" rowspan="1">Type of fix</td><td colspan="1" rowspan="1">Fixes introduced in</td><td colspan="1" rowspan="1">Related solutions</td></tr><tr><td colspan="1" rowspan="1">Release</td><td colspan="1" rowspan="1">11.0.0<br>			10.2.3</td><td colspan="1" rowspan="1"><a href="https://my.f5.com/manage/s/article/K2200" target="_blank">K2200: Most recent versions of F5 software</a></td></tr><tr><td colspan="1" rowspan="1">Hotfix</td><td colspan="1" rowspan="1">None</td><td colspan="1" rowspan="1">None</td></tr></tbody></table>
+
+<p><span class="sectiontitle">Workaround</span></p>
+
+<p>To work around this issue, you can remove the <strong>catch</strong> command from any affected iRules.</p>
+
+<p><span class="impact"><strong>Impact of workaround:</strong> Removing the <strong>catch</strong> command may result in connections being reset when runtime errors occur.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Click<strong> Local Traffic</strong>.</li><li>Click<strong> iRules</strong>.</li><li>Click on the name of the affected iRule.</li><li>Edit the iRule to remove the offending command.</li><li>Click <strong>Update</strong>.</li></ol>
+</article>
+</body>
+</html>

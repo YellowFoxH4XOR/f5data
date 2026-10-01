@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000134657: Aspen Mesh Metrics Collector POD in OOMKilled crash loop during startup</title>
+<meta name="description" content="Support Solution: Aspen Mesh Metrics Collector POD in OOMKilled crash loop during startup — The aspen-mesh-metrics-collector POD is being OOM killed by the cluster and &quot;metrics-collector&quot; container stays in not-healthy status. This behavior could indicate that Prometheus cannot allocate…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000134657">
+</head>
+<body>
+<header>
+<h1>K000134657: Aspen Mesh Metrics Collector POD in OOMKilled crash loop during startup</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-05-25</dd>
+<dt>Updated</dt><dd>2023-07-19</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.9, 1.11, 1.14</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000134657">https://my.f5.com/manage/s/article/K000134657</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>The aspen-mesh-metrics-collector POD is being OOM killed by the cluster and &quot;metrics-collector&quot; container stays in not-healthy status. This behavior could indicate that Prometheus cannot allocate enough memory to repeat WAL files.</p>
+
+<pre class="ckeditor_codeblock">
+&gt; kubectl get pods --selector app=aspen-mesh-metrics-collector -n istio-system
+NAME                                            READY   STATUS    RESTARTS   AGE
+aspen-mesh-metrics-collector-6cd99f6857-rs674   2/3     Running   0          6d21h
+</pre>
+
+<h2><br><strong>Environment</strong></h2>
+
+<p>Aspen Mesh 1.9.x, 1.11.x, 1.14.x,</p>
+
+<h2><br><strong>Cause</strong></h2>
+
+<p>In busy clusters, with many prometheus targets, the size and number of WAL files may consume gigabytes of data. Aspen Mesh Metrics Collector does not set any limit for size of WAL files.<br>WAL files are stored in metrics-collector on persistent volume mounted to the POD via persistent-volume-claim.<br>The filesystem is not cleaned up in case the POD is being restarted. Prometheus tries to repeat all existing WAL files, and load them into memory, during the startup to prevent data loss.<br>As a result of this process, the memory consumption of the POD might increase drastically, even to gigabytes in busy clusters, and this might result of reaching the memory limit for the POD.</p>
+
+<h2><br><strong>Recommended Actions</strong></h2>
+
+<p>The possible workarounds for the problem are:</p>
+
+<ol><li>Assign more memory to the POD</li><li>Remove existing WAL files from the persistent volume mounted to aspen-mesh-metrics-collector POD.</li></ol>
+NOTE: Removing WAL files will result in losing data from maximum 2 hours (by default, unless modified).
+
+<p>Depending on the number of metrics scraped by Prometheus and the number of PODs in Aspen Mesh, Prometheus might need even 10-20 GBs of memory assigned to the POD.<br><br>To remove existing WAL files from the storage the user may use a temporary toolbox POD with shell access to the container.<br>Below is an example POD spec that can be used for this purpose:</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod
+  namespace: istio-system
+  annotations:
+    sidecar.istio.io/inject: &quot;false&quot;
+spec:
+  containers:
+  - image: busybox:1.28
+    command:
+      - sleep
+      - &quot;3600&quot;
+    imagePullPolicy: IfNotPresent
+    name: multitool
+    volumeMounts:
+    - mountPath: /metrics-collector/tsdb
+      name: datastore
+  restartPolicy: Always
+  volumes:
+  - name: datastore
+    persistentVolumeClaim:
+      claimName: aspen-mesh-metrics-collector</pre>
+
+<p><br>The aspen-mesh-metrics-collector deployment has to be scaled to 0 instances before creating the toolbox POD because a persistent volume cannot be mounted to multiple PODs running at the same time.</p>
+
+<pre class="ckeditor_codeblock">
+&gt; kubectl scale deployment -n istio-system aspen-mesh-metrics-collector --replicas 0
+deployment.apps/aspen-mesh-metrics-collector scaled
+</pre>
+
+<p><br>The persistent volume is mounted under &quot;/metrics-collector/tsdb&quot; directory.<br>Once the POD is up and running the user can exec to the POD shell and remove WAL files from &quot;<em>/metrics-collector/tsdb/wal</em>&quot; directory.<br><br>All files need to be removed from the directory:</p>
+
+<pre class="ckeditor_codeblock">
+/multitool $cd /metrics-collector/tsdb/wal
+/multitool $ ls -ls /metrics-collector/tsdb/wal
+total 54008
+ 26976 -rw-r--r--    1 nobody   nogroup   27623424 Feb  6 11:00 00000551
+ 26976 -rw-r--r--    1 nobody   nogroup   27623424 Feb  6 13:00 00000552
+    52 -rw-r--r--    1 nobody   nogroup      49301 Feb  6 13:00 00000553
+     4 drwxr-sr-x    2 nobody   nogroup       4096 Feb  6 13:00 checkpoint.00000550
+ 
+/multitool $rm -f ./*
+</pre>
+
+<p><br>Once the WAL files are removed we can remove test-pod and scale metrics-collector deployment back to 1:</p>
+
+<pre class="ckeditor_codeblock">
+&gt; kubectl delete pod test-pod -n istio-system
+&gt; kubectl scale deployment -n istio-system aspen-mesh-metrics-collector --replicas 1
+deployment.apps/aspen-mesh-metrics-collector scaled
+</pre>
+
+<p><br>All containers should be healthy now:</p>
+
+<pre class="ckeditor_codeblock">
+&gt; kubectl get pods --selector app=aspen-mesh-metrics-collector -n istio-system
+NAME                                            READY   STATUS    RESTARTS   AGE
+aspen-mesh-metrics-collector-6cd99f6857-rs674   3/3     Running   0          6d21h
+</pre>
+
+<h2><br><strong>Additional Information</strong></h2>
+
+<p>The amount of data scraped and stored by aspen-mesh-metrics-collector (prometheus instance) might be significant for big clusters with many meshed workloads.<br>Aspen-mesh-metrics-collector is based on Prometheus 2.23.0 release.<br>&quot;<em>--storage.tsdb.retention.size</em>&quot; flag limiting the total size of storage is considered experimental in Prometheus 2.23.0.<br>Prometheus keeps the current block of incoming samples in memory and stores them in write-ahead log files, called WAL files, to protect data from loss in case of a crash or restart.<br>Write-ahead log files are stored in the &#39;wal&#39; directory in 128MB data segments. WAL files contain raw data that has not yet been compacted.<br>Wal directory is mounted in aspen-mesh-metrics-collector to &quot;/metrics-collector/tsdb/wal&quot; location.<br>Prometheus will retain a minimum of three write-ahead log file, or more, in order to keep at least two hours of raw data.<br>More information about WAL files can be found on Prometheus documentation.</p>
+</article>
+</body>
+</html>

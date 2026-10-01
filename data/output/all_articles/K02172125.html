@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K02172125: Troubleshooting the SASP monitor (13.x)</title>
+<meta name="description" content="Knowledge: Troubleshooting the SASP monitor (13.x) — You want to perform additional diagnostics or troubleshooting of the Server/Application State Protocol (SASP) monitor.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K02172125">
+</head>
+<body>
+<header>
+<h1>K02172125: Troubleshooting the SASP monitor (13.x)</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2017-03-27</dd>
+<dt>Updated</dt><dd>2024-11-22</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 13.X.X, 13.0.X, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.X, 13.0.1, 13.0.0, 13.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K02172125">https://my.f5.com/manage/s/article/K02172125</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Issue</h3><p>You should consider using this procedure under the following condition:</p><ul><li>You want to perform additional diagnostics or troubleshooting of the Server/Application State Protocol (SASP) monitor.</li></ul><p><span class="sectiontitle">Symptoms</span></p><p>When configuring or using an SASP monitor that is experiencing issues, you may encounter the following symptoms:</p><ul><li>Pool members are incorrectly marked down (instead of up).</li><li>Pool members are marked up and down repeatedly, in quick succession.</li><li>The SASP monitor cannot communicate with the Group Workload Manager (GWM) server.</li></ul><h3>Recommended Actions</h3><p>SASP provides a mechanism for load balancers and IBM workload management systems to communicate better ways of distributing the existing workload to the group members.</p>
+
+<p>Unlike standard BIG-IP monitors that monitor each individual resource directly, the BIG-IP SASP monitor is an external monitor that connects to an IBM GWM server or Enterprise Workload Manager (EWLM) server to indirectly obtain the up/down availability status and distribution ratio information for monitored pool members.</p>
+
+<p>The SASP monitor was originally introduced in BIG-IP 9.4.0. In BIG-IP 13.0.0, the SASP monitor was updated to address reliability and scalability concerns encountered with previous versions. The SASP monitor now meets IBM scaling requirements and scales to 1,000 pool members. The SASP monitor uses the same configuration as previous versions, so there are no configuration changes required when upgrading from an earlier version.</p>
+
+<p>When working with SASP monitors, you should consider the following:</p>
+
+<ul><li>To use the distribution ratios provided by the GWM server, you must configure the pool&#39;s load balancing method to use Ratio (node) or Ratio (member).</li><li>The pool member up/down status can be triggered by the GWM. You can also manually mark pool members up or down from the BIG-IP system, and the monitor will notify the GWM.</li><li>You can configure the SASP monitor in Push mode or Pull mode. By default, the monitor is set to Push mode.
+	<ul><li>In Push mode, the SASP monitor listens for the GWM server to send pool member status information to the monitor.</li><li>In Pull mode, the SASP monitor requests pool member status information from the GWM server at the interval specified by the GWM server (when the GWM <strong>Interval </strong>setting is set to <strong>Automatic</strong>) or as explicitly specified by the SASP monitor.</li></ul>
+	</li></ul>
+
+<p><span class="sectiontitle">Procedures</span></p>
+
+<p>When experiencing SASP monitor issues, you can use the following troubleshooting procedures to determine the root cause:</p>
+
+<ul><li><a href="#p1">Viewing the tmsh configuration for SASP monitors</a></li><li><a href="#p2">Displaying the monitored pool member status</a></li><li><a href="#p3">Configuring debug logging</a></li><li><a href="#p4">Configuring GWM server down delay</a></li><li><a href="#p5">Reviewing the troubleshooting matrix</a></li></ul>
+
+<p><span class="subsectiontitle"><a id="p1" name="p1"></a>Viewing the tmsh configuration for SASP monitors</span></p>
+
+<p><span class="note"><strong>Note</strong>: To view the <strong>tmsh</strong> syntax used for SASP monitors, enter the <strong>tmsh help ltm monitor sasp </strong>command at the command line.</span></p>
+
+<ol><li>Log in to the Traffic Management Shell (<strong>tmsh</strong>) by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>View the<strong> tmsh </strong>configuration for SASP monitors by typing the following command:
+	<p><span class="code">list /ltm monitor sasp all-properties</span></p>
+
+	<p>Output appears similar to the following example:</p>
+
+	<p><span class="example2">ltm monitor sasp my_sasp {<br>	    app-service none<br>	    defaults-from sasp<br>	    description none<br>	    interval auto<br>	    mode push<br>	    partition Common<br>	    primary-address 10.1.20.99<br>	    protocol tcp<br>	    secondary-address none<br>	    service 3860<br>	    time-until-up 0<br>	}</span></p>
+	</li></ol>
+
+<p><span class="note"><strong>Note</strong>: The <strong>interval</strong> value is used only for Pull mode and is ignored when the monitor is configured in Push mode. The <strong>time-until-up</strong> and <strong>app-service </strong>values are legacy values that are not used by the BIG-IP system. </span></p>
+
+<p><span class="subsectiontitle"><a id="p2" name="p2"></a>Displaying the monitored pool member status</span></p>
+
+<p>To display the up and down status of each of the pool members, as reported by the GWM server, you can view the pool member status from the command line by performing the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the <strong>tmsh </strong>utility by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>Display the monitor pool member status using the following command syntax:
+	<p><span class="code">show ltm monitor sasp &lt;monitor_name&gt;</span></p>
+
+	<p>Output appears similar to the following example:</p>
+
+	<p><span class="example2">show ltm monitor sasp my_sasp<br>	------------------------------<br>	 LTM::Monitor /Common/my_sasp <br>	------------------------------<br>	   Destination:  10.1.20.11:80<br>	   State time:   down for 0hr:9mins:20sec<br>	   |   Last error:   N/A @2016.09.27 15:35:32<br>	   Destination:  10.1.20.12:80<br>	   State time:   up for 0hr:16mins:22sec<br>	   |   Last error:   N/A @2016.09.27 15:28:30<br>	   Destination:  10.1.20.13:80<br>	   State time:   down for 0hr:9mins:20sec<br>	   |   Last error:   N/A @2016.09.27 15:35:32<br>	   Destination:  10.1.20.14:80<br>	   State time:   up for 0hr:16mins:22sec<br>	   |   Last error:   N/A @2016.09.27 15:28:30</span></p>
+	</li></ol>
+
+<p><span class="note"><strong>Note</strong>: You can also use the Configuration utility to view the pool member status.</span></p>
+
+<p><a id="p3" name="p3"></a><span class="subsectiontitle">Configuring debug logging</span></p>
+
+<p>The BIG-IP system logs SASP monitor messages to the<strong> /var/log/monitors/saspd.log</strong> file. The logging level for SASP monitor logging is controlled by the <strong>saspd.loglevel </strong>database variable. By default, the log level is set to <strong>error</strong>. If you want more verbose logging for SASP monitor functions, you can configure debug logging for SASP monitors. The following debug log levels are available:</p>
+
+<ul><li><strong>debug</strong>
+
+	<p>Logs additional information such as monitor messages with the GWM server, pool member ratio weight changes, and GWM failover messages.</p>
+	</li><li><strong>deep_debug</strong>
+	<p>Logs<strong> debug </strong>level logging with additional verbosity.</p>
+	</li><li><strong>debug_msg</strong>
+	<p>Logs <strong>deep_debug </strong>level messaging, additional MCP messages, and the contents of sent and received SASP messages.</p>
+	</li></ul>
+
+<p>To configure the SASP logging level, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: You should enable debug logging only when you are actively troubleshooting SASP monitor issues. Excessive debug logging may negatively impact system performance.</span></p>
+
+<ol><li>Log in to the <strong>tmsh</strong> utility by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>Enable debug logging by typing the following command:
+	<p><span class="code">modify sys db saspd.loglevel value &quot;debug&quot;</span></p>
+	</li></ol>
+
+<p><span class="note"><strong>Note</strong>: To revert to the default SASP logging level, use the <strong>tmsh modify sys db saspd.loglevel value &quot;error&quot;</strong> command.</span></p>
+
+<p><strong><a id="p4" name="p4"></a>Configuring GWM server down delay</strong></p>
+
+<p>If the SASP monitor fails to connect to the GWM server (or secondary GWM server) for 30 seconds, the BIG-IP system marks all pool members associated with the SASP monitor as down. The delay is controlled by the <strong>saspd.gwmdowndelay</strong> database variable, and the default value is 30 seconds.</p>
+
+<p>The following table describes the available<strong> saspd.gwmdowndelay</strong> database variable values.</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1"><tbody><tr><td colspan="1" rowspan="1">Value</td><td colspan="1" rowspan="1">Description</td></tr><tr><td colspan="1" rowspan="1"><strong>-1 </strong></td><td colspan="1" rowspan="1">Never marks pool members down</td></tr><tr><td colspan="1" rowspan="1"><strong>0 </strong></td><td colspan="1" rowspan="1">Marks pool members down immediately</td></tr><tr><td colspan="1" rowspan="1"><strong>1 </strong>~ <strong>86400</strong></td><td colspan="1" rowspan="1">Number of seconds to delay before marking pool members down</td></tr><tr><td colspan="1" rowspan="1"><strong>86401 </strong></td><td colspan="1" rowspan="1">Same as<strong> -1</strong></td></tr></tbody></table>
+
+<p>To configure the <strong>saspd.gwmdowndelay</strong> database variable, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Modifying the GWM down delay can impact traffic when the SASP monitor is unable to communicate with the GWM.</span></p>
+
+<ol><li>Log in to the <strong>tmsh </strong>utility by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>Change the GWM down delay using the following command syntax:
+	<p><span class="code">modify sys db saspd.gwmdowndelay value &quot;&lt;value&gt;&quot;</span></p>
+	</li></ol>
+
+<p><span class="note"><strong>Note</strong>: To revert to the default delay, use the <strong>tmsh modify sys db saspd.gwmdowndelay value &quot;30&quot;</strong> command.</span></p>
+
+<p><strong><a id="p5" name="p5"></a>Reviewing the troubleshooting matrix</strong></p>
+
+<p>The following troubleshooting matrix describes possible symptoms, causes, and actions you can perform to troubleshoot SASP monitor issues.</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1"><tbody><tr><td colspan="1" rowspan="1">Symptom</td><td colspan="1" rowspan="1">Possible Cause</td><td colspan="1" rowspan="1">Action</td></tr><tr><td colspan="1" rowspan="1">All members down</td><td colspan="1" rowspan="1">The <strong>SASPD_monitor</strong> process not running.</td><td colspan="1" rowspan="1">Use the<strong> pidof SASPD_monitor </strong>command to verify the <strong>SASPD_monitor </strong>process is running.
+			<p><span class="note"><strong>Note</strong>: If the <strong>SASPD_monitor</strong> process is running, the command output displays the process ID.</span></p>
+			</td></tr><tr><td colspan="1" rowspan="1">All members down</td><td colspan="1" rowspan="1">The GWM server is configured with incorrect pool members.</td><td colspan="1" rowspan="1">Review the GWM configuration to ensure the correct pool members are configured.</td></tr><tr><td colspan="1" rowspan="1">All members down</td><td colspan="1" rowspan="1">The BIG-IP system cannot reach the GWM IP address.</td><td colspan="1" rowspan="1">Ping the GWM address from the BIG-IP system.</td></tr><tr><td colspan="1" rowspan="1">Weights are not applied</td><td colspan="1" rowspan="1">The pool is not configured for ratio load balancing.</td><td colspan="1" rowspan="1">Edit the pool and set the load balancing method to <strong>Ratio</strong>.</td></tr><tr><td colspan="1" rowspan="1">No logs in the<strong> /var/log/monitors/saspd.log </strong>file</td><td colspan="1" rowspan="1">The log level is insufficient.</td><td colspan="1" rowspan="1">Enable debug level logging.</td></tr><tr><td colspan="1" rowspan="1">ICMP monitor indicates &quot;up,&quot; SASP monitor indicates &quot;down,&quot; and a pool member is marked down</td><td colspan="1" rowspan="1">The default requirement for &quot;up&quot; is &quot;all health monitors.&quot;</td><td colspan="1" rowspan="1">In the Advanced Pool properties, set the availability requirement to <strong>At Least...</strong> and set the value to <strong>1</strong>.</td></tr></tbody></table>
+</article>
+</body>
+</html>

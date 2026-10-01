@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162033: Generic Host Servers Health Monitor and DNS Response Behaviour when using Address Translation</title>
+<meta name="description" content="Support Solution: Generic Host Servers Health Monitor and DNS Response Behaviour when using Address Translation — DNS queries to a generic host server configured with a translation address might return the Internal IP address instead of the expected External IP address.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162033">
+</head>
+<body>
+<header>
+<h1>K000162033: Generic Host Servers Health Monitor and DNS Response Behaviour when using Address Translation</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-07-02</dd>
+<dt>Updated</dt><dd>2026-07-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 17.0.0, 17.1.0, 17.0.X, 17.X.X, 21.X.X, 21.1.X, 21.1.0, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162033">https://my.f5.com/manage/s/article/K000162033</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<ul><li>DNS queries to a generic host server configured with a translation address might return the Internal IP address instead of the expected External IP address. </li><li>Health monitors may probe the wrong address, resulting in health check failures.</li></ul>
+<h2>Environment</h2>
+<ul><li style="list-style-type: none;">
+<ul><li>GTM/DNS server object</li><li>Generic Host</li><li>translation-address configured</li><li>Health monitor</li><li>Prober pool (optional)</li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p>Most likely a misconfiguration. When using Address Translation, specific configuration requirements must be met for proper functionality.</p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li>Configure the address field with the external IP (returned to DNS queries and used by upstream NAT devices).</li><li>Configure the translation-address field with the internal/real IP (actual server or pool member IP).</li><li>Ensure address and translation-address fields are different; do not use 1:1 mapping.</li><li>If multiple addresses are configured for a server object, each must have a corresponding translation address.</li><li>Assign health monitors at the correct level:
+<ul><li>TCP-based monitors: virtual server level (port defined)</li><li>ICMP-based monitors: server level</li></ul>
+</li></ol>
+<p>Example configuration:</p>
+<pre>}
+gtm server /Common/GTMServerObject {
+    datacenter /Common/DC1
+    devices {
+        GTM_local {
+            addresses {
+                10.1.2.3 {
+                    translation 172.16.2.3
+                }
+                10.3.2.1 {
+                    translation 172.16.2.1
+                }
+            }
+        }
+    }
+    monitor /Common/bigip
+    product bigip
+    virtual-server-discovery enabled
+    virtual-servers {
+        /Common/listener {
+            destination 10.3.3.3:53
+        }
+    }
+}
+gtm server /Common/GenericHost {
+    datacenter /Common/DC1
+    devices {
+        genhost {
+            addresses {
+                172.16.33.34 {
+                    translation 192.168.33.34
+                }
+            }
+        }
+    }<br>    monitor /Common/custom_icmp_based
+    product generic-host
+    virtual-servers {
+        sample_server {
+            destination 172.16.33.34:80
+            monitor /Common/custom_tcp_based
+            translation-address 192.168.33.34
+            translation-port 80
+        }
+    }
+}</pre>
+<h2>Additional Information</h2>
+<ol><ul><li>Translation on the generic host server level is only required if monitoring the server object.</li><li>The real IP (self-IP) should be placed in the translation field; the address field should reflect the external IP.</li><li>It is recommended to use prober pools when working with generic hosts to limit probers only to those within the same DC or BIG-IPs that are able to reach the monitored objects.</li><li>Flapping or inconsistent health status occurs if not all addresses have translation or if multiple addresses are used without proper mapping.</li><li><span> If the probing address (GTM server object type bigip) is not configured with a translation address, it will probe the destination address instead of the translation-address</span></li></ul></ol>
+</article>
+</body>
+</html>

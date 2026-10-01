@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K38753397: Configure a CA-signed device certificate and CRL verification for iQuery communication</title>
+<meta name="description" content="Knowledge: Configure a CA-signed device certificate and CRL verification for iQuery communication — You want to configure a CA-signed device certificate and CRL verification for iQuery communication using OpenSSL.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K38753397">
+</head>
+<body>
+<header>
+<h1>K38753397: Configure a CA-signed device certificate and CRL verification for iQuery communication</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2021-10-05</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 16.X.X, 16.0.X, 16.1.3, 16.1.2, 16.1.1, 16.1.X, 16.0.1, 16.0.0, 16.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K38753397">https://my.f5.com/manage/s/article/K38753397</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>You should consider using this procedure under the following condition:</p>
+
+<ul><li>You want to configure a CA-signed device certificate and CRL verification for iQuery communication using OpenSSL.	
+<p><span class="note"><strong>Note</strong>: If you want to configure CRL verification for iQuery for existing CA-signed SSL device certificates, refer to <a href="https://my.f5.com/manage/s/article/K40156465" target="_self">K40156465: Configure CRL verification for iQuery communication for existing CA-signed SSL device certificates</a>.</span></p></li></ul>
+<h3>Description</h3><p>The BIG-IP DNS system uses the iQuery protocol to collect dynamic load-balancing and metrics information from remote BIG-IP DNS and other BIG-IP devices and distribute the information to remote BIG-IP DNS synchronization group members.</p>
+<p>By default, the BIG-IP system uses a self-signed SSL device certificate to secure iQuery communication and authenticate connections to the BIG-IP Configuration utility. The BIG-IP system also supports using a SSL device certificate that was signed by a certificate authority (CA). In addition, in BIG-IP version 16.0.0 and later, you can configure the certificate revocation list (CRL) revocation for iQuery communication for SSL device certificates that are signed by a CA. Doing so prevents an attacker who compromises the associated private key, from adding a rogue BIG-IP DNS system to the synch group.</p>
+<p>This article guides you through using OpenSSL to create a local Root CA, sign new SSL device certificates, and configure CRL revocation for iQuery communication. The procedures in this article create the following example files and directories:</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1"><tbody><tr><td colspan="1" rowspan="1">Example dir / files</td><td colspan="1" rowspan="1">Description</td></tr><tr><td colspan="1" rowspan="1">/var/tmp/ca</td><td colspan="1" rowspan="1">The parent directory for the Root CA certificate and key and related files and subdirectories.</td></tr><tr><td colspan="1" rowspan="1">/var/tmp/ca/bigip1.example.com</td><td colspan="1" rowspan="1">The directory for the BIG-IP CA-signed device certificate and key.</td></tr><tr><td colspan="1" rowspan="1">openssl.cnf</td><td colspan="1" rowspan="1">The OpenSSL configuration file.</td></tr><tr><td colspan="1" rowspan="1">serial</td><td colspan="1" rowspan="1">The serial file is the source of the SSL certificate serial number.</td></tr><tr><td colspan="1" rowspan="1">index.txt</td><td colspan="1" rowspan="1">The index.txt file contains the list of signed SSL certificates.</td></tr><tr><td colspan="1" rowspan="1">bigip_ca.crt<br>			bigip_ca.key</td><td colspan="1" rowspan="1">Root CA certificate and key. The CA key is used to sign the device certificates.</td></tr><tr><td colspan="1" rowspan="1">bigip1_device.crt<br>			bigip1_device.key</td><td colspan="1" rowspan="1">Device certificate and key to be installed on the BIG-IP system. Different sets of device certificates and keys should be created for each BIG-IP system.</td></tr><tr><td colspan="1" rowspan="1">crl.pem</td><td colspan="1" rowspan="1">The PEM-encoded CRL file.</td></tr><tr><td colspan="1" rowspan="1">crlnumber</td><td colspan="1" rowspan="1">The file containing the current CRL number.</td></tr></tbody></table>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisite to use this procedure:</p>
+
+<ul><li>You have administrative access to a workstation with the OpenSSL software library installed.</li><li>You have administrative access to the BIG-IP DNS systems.</li></ul>
+
+<p><span class="sectiontitle">Procedures</span></p>
+
+<p><span class="subsectiontitle">Create a Root CA and sign a new SSL device certificate using OpenSSL</span></p>
+
+<p>The following procedure uses the OpenSSL utility to create a local Root CA and sign SSL device certificates using the Root CA&#39;s private key. To create a Root CA and sign a new SSL device certificate using OpenSSL, perform the following steps:</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the workstation command line or BIG-IP Advanced Shell (<strong>bash</strong>).</li><li>To create a working directory to store the CA Root certificate and key, use the following command syntax:
+	<p><span class="code">mkdir &lt;directory_name&gt;</span></p>
+	<p>For example, to create a directory named <strong>/var/tmp/ca</strong>, enter the following command:</p>
+
+	<p><span class="example2">mkdir /var/tmp/ca</span></p>
+	</li><li>To change into the working directory, use the following command syntax:
+	<p><span class="code">cd &lt;directory_name&gt;</span></p>
+
+	<p>For example, to change into the <strong>/var/tmp/ca</strong> directory, enter the following command:</p>
+
+	<p><span class="example2">cd /var/tmp/ca</span></p>
+	</li><li>To determine the OpenSSL configuration directory, enter the following command:
+	<p><span class="code">openssl version -a</span></p>
+
+	<p>In the following example, the OpenSSL configuration directory is in the <strong>/etc/pki/tls</strong> directory:</p>
+
+	<p><span class="example2">OPENSSLDIR: &quot;/etc/pki/tls&quot;</span></p>
+	</li><li>To copy the OpenSSL configuration file, <strong>openssl.cnf</strong>, to the working CA directory, use the following command syntax:
+	<p><span class="code">cp &lt;/path&gt;/openssl.cnf .</span></p>
+
+	<p>For example, to copy the openssl.cnf file to your working directory using the path /etc/pki/tls, enter the following command:</p>
+
+	<p><span class="example2">cp /etc/pki/tls/openssl.cnf .</span></p>
+	</li><li>Using a text editor, edit the <strong>openssl.cnf</strong> file in the working CA directory and review the existing configuration directives in the following example information. At a minimum, make sure to include the below directives and change the values to suit your specific environment. For example, the below configuration specifies <strong>bigip_ca.crt</strong> and <strong>bigip_ca.key</strong> as the names of the Root CA certificate and key. Make sure the values in your <strong>openssl.cnf</strong> file are suitable for your environment.
+	<p><span class="example2">####################################################################<br>	[ ca ]<br>	default_ca      = CA_default            # The default ca section<br>	####################################################################<br>	<br>	[ CA_default ]<br>	dir             = .                                               <br>	certificate     = $dir/bigip_ca.crt                                                  <br>	private_key     = $dir/bigip_ca.key  <br>	new_certs_dir   = $dir<br>	crlnumber       = $dir/crlnumber<br>	crl             = $dir/crl.pem<br>	<br>	default_days = 3650<br>	default_md   = sha256<br>	default_crl_days = 30<br>	<br>	policy = policy_anything<br>	<br>	[ policy_anything ]<br>	countryName             = optional<br>	stateOrProvinceName     = optional<br>	organizationName        = optional<br>	organizationalUnitName  = optional<br>	commonName              = supplied<br>	emailAddress            = optional<br>	<br>	[ req ]<br>	default_bits            = 2048<br>	default_md              = sha256<br>	<br>	[ v3_req ]<br>	basicConstraints = CA:FALSE<br>	keyUsage = nonRepudiation, digitalSignature, keyEncipherment, keyCertSign, keyAgreement, dataEncipherment, cRLSign<br>	extendedKeyUsage = serverAuth, clientAuth, codeSigning, emailProtection<br>	<br>	[ v3_ca ]<br>	basicConstraints = CA:TRUE<br>	keyUsage = nonRepudiation, digitalSignature, keyEncipherment, keyCertSign, keyAgreement, dataEncipherment, cRLSign<br>	<br>	[ crl_ext ]<br>	# CRL extensions.<br>	# Only issuerAltName and authorityKeyIdentifier make any sense in a CRL.<br>	# issuerAltName=issuer:copy<br>	authorityKeyIdentifier=keyid:always,issuer:always</span></p></li><li><p>Save the file.</p></li><li>To create the necessary CA <strong>serial</strong> and <strong>index.txt</strong> files, enter the following commands:
+	<p><span class="note"><strong>Note</strong>: The <strong>index.txt</strong> file contains the list of signed SSL certificates, and the <strong>serial</strong> file is the source of the SSL certificate serial number.</span></p>
+
+	<p><span class="code">echo 100000 &gt; serial</span></p>
+
+	<p><span class="code">touch index.txt</span></p></li><li>To create the Root CA certificate and key, use the following command syntax:
+	<p><span class="code">openssl req -new -x509 -extensions v3_ca -newkey rsa:4096 -keyout &lt;key_name&gt;.key -out &lt;cert_name&gt;.crt -days 3650 -config ./openssl.cnf</span></p>
+
+	<p>For example, to create a Root CA certificate named <strong>bigip_ca.crt </strong>and a key named <strong>bigip_ca.key</strong>, enter the following command:</p>
+
+	<p><span class="example2">openssl req -new -x509 -extensions v3_ca -newkey rsa:4096 -keyout bigip_ca.key -out bigip_ca.crt -days 3650 -config ./openssl.cnf</span></p>
+
+	<p>Enter a challenge password for the Root CA certificate and complete the prompts for the certificate policy information, such as <strong>Common Name</strong>.</p></li><li>To create a directory to store the new signed SSL device certificate and key, use the following command syntax:
+	<p><span class="code">mkdir &lt;directory_name&gt;</span></p>
+
+	<p>For example, to create a directory that stores the SSL device certificate and key for a BIG-IP system named <strong>bigip1.example.com</strong>, enter the following command:</p>
+
+	<p><span class="example2">mkdir bigip1.example.com</span></p>
+	</li><li>To create a certificate signing request and key in the proper directory, use the following command syntax:
+
+	<p><span class="code">openssl req -new -nodes -out &lt;directory&gt;/&lt;request_name&gt;.req -keyout &lt;directory&gt;/&lt;key_name&gt;.key -config ./openssl.cnf</span></p>
+
+	<p>For example, to create a certificate request named bigip1_device.req and an SSL key named bigip1_device.key in the directory bigip1.example.com, enter the following command:</p>
+
+	<p><span class="warning"><strong>Important</strong>: The Common Name should match what you enter in the Web browser&#39;s URL field when accessing the Configuration utility.</span></p>
+
+	<p><span class="example2">openssl req -new -nodes -out bigip1.example.com/bigip1_device.req -keyout bigip1.example.com/bigip1_device.key -config ./openssl.cnf</span></p>
+
+	<p>When prompted for a challenge password, press <strong>Enter</strong> for no password and complete the remaining prompts for the certificate policy information, such as <strong>Common Name</strong>.</p>
+	</li><li>To sign the certificate request with the Root CA certificate, use the following command syntax:
+	<p><span class="code">openssl ca -out &lt;directory&gt;/&lt;cert_name&gt;.crt -config ./openssl.cnf -infiles &lt;directory&gt;/&lt;request_name&gt;.req</span></p>
+
+	<p>For example, to sign a request named <strong>bigip1_device.req</strong> in the <strong>bigip1.example.com</strong> directory, enter the following command:</p>
+
+	<p><span class="note"><strong>Note</strong>: Provide the CA private key passphrase. Enter <strong>Y</strong> to the questions that follow.</span></p>
+
+	<p><span class="example2">openssl ca -out bigip1.example.com/bigip1_device.crt -config ./openssl.cnf -infiles bigip1.example.com/bigip1_device.req</span></p>
+
+	<p>The command output appears similar to the following example:</p>
+
+	<p><span class="example2">Enter pass phrase for ./bigip_ca.key:</span></p>
+
+	<p><span class="example2">Certificate is to be certified until Jan 01 12:30:06 2030 GMT (3650 days)</span></p>
+
+	<p><span class="example2">Sign the certificate? [y/n]:y</span></p>
+
+	<p><span class="example2">1 out of 1 certificate requests certified, commit? [y/n]y</span></p>
+	</li><li>Repeat steps 10 through 12 for additional BIG-IP DNS systems. Make sure to create a separate directory and change the <strong>Common Name</strong> for each of the BIG-IP systems.</li></ol>
+<p><span class="subsectiontitle">Replace the BIG-IP self-signed device certificate with the CA-signed device certificate</span></p>
+<p>The BIG-IP device certificate is used to secure iQuery communication and connections to the BIG-IP Configuration utility. F5 recommends replacing the BIG-IP self-signed device certificate with the CA-signed device certificate during a maintenance window as iQuery connections are disrupted during the procedure. To replace the BIG-IP self-signed device certificate with the CA-signed device certificate, perform the following procedures:</p>
+<p><span class="subsubsectiontitle">Back up the existing self-signed device certificates</span><br></p><p>As a precautionary measure, F5 recommends that you back up the existing self-signed device certificates prior to installing the new CA-signed certificates. To back up the existing self-signed device certificates, perform the following steps:</p>
+<ol><li>Log into the BIG-IP advanced shell (<strong>bash</strong>).</li><li>Back up the existing device certificate by entering the following command:
+	<p><span class="code">cp /config/httpd/conf/ssl.crt/server.crt /config/httpd/conf/ssl.crt/server.crt.bak</span></p>
+	</li><li>Back up the existing device key by entering the following command:
+	<p><span class="code">cp /config/httpd/conf/ssl.key/server.key /config/httpd/conf/ssl.key/server.key.bak</span></p>
+	</li><li>Repeat the above steps for the other BIG-IP DNS sync group members.</li></ol>
+<p><span class="subsubsectiontitle"> Transfer the CA-signed device certificate and key to the BIG-IP DNS system</span></p>
+<p>If you created the CA-signed device certificates on a remote system, such as a Linux workstation, you must transfer the certificates to the BIG-IP DNS systems in the sync group. To overwrite the existing self-signed SSL device certificate and key with the new CA-signed SSL certificate and key, you must copy the new files to the following locations on the BIG-IP system:</p>
+<ul><li>Device certificate location: <strong>/config/httpd/conf/ssl.crt/server.crt</strong></li><li>Device key location: <strong>/config/httpd/conf/ssl.key/server.key</strong></li></ul>
+<p>To transfer the self-signed device certificate and key to the BIG-IP DNS system, perform the following steps:</p>
+<p><span class="note"><strong>Note</strong>: For information about transferring files to or from an F5 system, refer to <a href="https://my.f5.com/manage/s/article/K175" target="_self">K175: Transferring files to or from an F5 system</a>.</span></p>
+<p><span class="impact"><strong>Impact of procedure</strong>: Communication with other BIG-IP sync group members are  interrupted until the new certificate is exchanged. There is no impact to high availability (HA) features such as traffic groups and device groups.</span></p>
+
+<ol><li>Log in to the workstation or BIG-IP that contains your CA environment.</li><li>To change into the working directory, use the following command syntax:
+	<p><span class="code">cd &lt;directory_name&gt;</span></p>
+
+	<p>For example, to change into the <strong>/var/tmp/ca</strong> directory, enter the following command:</p>
+
+	<p><span class="example2">cd /var/tmp/ca</span></p>
+	</li><li>To allow for proper iQuery communication, use the following syntax to append the Root CA certificate to the BIG-IP CA-signed device certificate:
+	<p><span class="code">cat &lt;path_to_CA_cert_name&gt;.crt &gt;&gt; &lt;path_to_BIGIP_device_cert_name&gt;.crt</span></p>
+
+	<p>For example,</p>
+
+	<p><span class="example2">cat /var/tmp/ca/bigip_ca.crt &gt;&gt; /var/tmp/ca/bigip1.example.com/bigip1_device.crt</span></p>
+	</li><li>Use the following command syntax to copy the new CA-signed SSL device certificate and key to the BIG-IP DNS system:
+	<p><span class="code">scp &lt;cert_name&gt;.crt root@&lt;BIG-IP_IP_addr&gt;:/config/httpd/conf/ssl.crt/server.crt</span></p>
+
+	<p><span class="code">scp &lt;key_name&gt;.key root@&lt;BIG-IP_IP_addr&gt;:/config/httpd/conf/ssl.key/server.key</span></p>
+
+	<p>For example,</p>
+
+	<p><span class="example2">scp /var/tmp/ca/bigip1.example.com/bigip1_device.crt root@192.0.2.2:/config/httpd/conf/ssl.crt/server.crt</span></p>
+
+	<p><span class="example2">scp /var/tmp/ca/bigip1.example.com/bigip1_device.key root@192.0.2.2:/config/httpd/conf/ssl.key/server.key</span></p>
+	</li><li>Log into the BIG-IP advanced shell (<strong>bash</strong>).</li><li>Configure httpd to use the new combined certificate file to secure the management interface. To do so, enter the following command:
+	<p><span class="code">tmsh modify /sys httpd ssl-certchainfile /config/httpd/conf/ssl.crt/server.crt</span></p>
+	</li><li>Restart the httpd process by entering the following command:
+	<p><span class="code">tmsh restart /sys service httpd</span></p>
+	</li></ol>
+<p><span class="subsubsectiontitle"> Update the BIG-IP system Trusted Device Certificate and Trusted Server Certificate stores</span></p>
+<p>For successful iQuery communication, the Trusted Device Certificate and Trusted Server Certificate stores on each sync group peer must contain the following:</p>
+<ul><li>The device certificate of each sync group member</li><li>The third-party CA certificate used to sign device certificates</li></ul>
+
+<p>You must manually update the local Trusted Device Certificate and Trusted Server Certificate stores with the new device certificate. To do so, perform the following procedure:</p>
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to <strong>bash</strong>.</li><li>To copy the new device certificate to the Trusted Device Certificate store, enter the following command:
+	<p><span class="code">cat /config/httpd/conf/ssl.crt/server.crt &gt;&gt; /config/big3d/client.crt</span></p>
+
+	<p>Alternatively, you can add the new certificate to the trusted device certificate file and remove all old certificates by using the following command:</p>
+
+	<p><span class="code">cat /config/httpd/conf/ssl.crt/server.crt &gt; /config/big3d/client.crt</span></p>
+	</li><li>To copy the new device certificate to the Trusted Server Certificate store, enter the following command:
+	<p><span class="code">cat /config/httpd/conf/ssl.crt/server.crt &gt;&gt; /config/gtm/server.crt</span></p>
+
+	<p>Alternatively, you can add the new certificate to the trusted server certificate file and remove all old certificates by using the following command:</p>
+
+	<p><span class="code">cat /config/httpd/conf/ssl.crt/server.crt &gt; /config/gtm/server.crt</span></p>
+	</li><li>To update the trusted certificate stores on remote BIG-IP systems, enter the following command:
+	<p><span class="note"><strong>Note</strong>: The <strong>bigip_add</strong> utility prompts you for the root password of each BIG-IP system defined in the BIG-IP DNS configuration file.</span></p>
+
+	<p><span class="code">bigip_add</span></p>
+	</li><li>To restart the <strong>gtmd</strong> process, enter the following command:
+	<p><span class="code">bigstart restart gtmd</span></p>
+	</li><li>To restart the <strong>big3d</strong> process, enter the following command:
+	<p><span class="code">bigstart restart big3d</span></p>
+	</li></ol>
+<p><span class="subsectiontitle">Create the PEM-encoded CRL file</span></p>
+
+<p>After installing the CA-signed device certificates on the BIG-IP sync group members, use the OpenSSL utility to create the PEM-encoded CRL file. The CRL file allows the CA to communicate the revocation status of the BIG-IP device certificates that may have been compromised prior to their expiration date. The CRL file is signed by the Root CA you created in the previous procedure. To create the PEM-encoded CRL file, perform the following steps:</p>
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the workstation or BIG-IP that contains your CA environment.</li><li>To enter the working directory, use the following command syntax:
+	<p><span class="code">cd &lt;directory_name&gt;</span></p>
+
+	<p>For example, to enter the <strong>/var/tmp/ca</strong> directory, enter the following command:</p>
+
+	<p><span class="example2">cd /var/tmp/ca</span></p>
+	</li><li>Create the <strong>crlnumber</strong> file by entering the following command:
+	<p><span class="code">echo 00 &gt; crlnumber</span></p>
+	</li><li>Create the PEM-encoded CRL file by using the following syntax:
+	<p><span class="code">openssl ca -gencrl -keyfile &lt;CA_key&gt;.key -cert &lt;CA_cert&gt;.crt -out &lt;CRL_file&gt;.pem -config &lt;OpenSSL_config_file&gt;</span></p>
+
+	<p>For example,</p>
+
+	<p><span class="example2">openssl ca -gencrl -keyfile bigip_ca.key -cert bigip_ca.crt -out crl.pem -config openssl.cnf</span></p>	
+<p>When prompted enter the passphrase for the CA key.</p>
+	</li></ol>
+
+<p><span class="subsectiontitle">Upload the PEM-encoded CRL file to the BIG-IP DNS sync group members</span></p>
+
+<p>After you create the PEM-encoded CRL file, upload the file to the <strong>/config</strong> directory on the BIG-IP DNS synchronization group members and name the file as follows: <strong>/config/revoked_certs.crl</strong>.</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the workstation or BIG-IP that contains your CA environment.</li><li>To upload the CRL file to the remote BIG-IP systems using secure copy (SCP), use the following syntax:
+	<p><span class="code">scp &lt;CRL_filename&gt; root@&lt;BIG-IP_mgmt_IP&gt;:/config/revoked_certs.crl</span></p>
+
+	<p>For example:</p>
+
+	<p><span class="example2">scp crl.pem root@192.0.2.1:/config/revoked_certs.crl</span></p>
+	</li><li>Repeat the upload process for each BIG-IP sync group member.</li></ol>
+
+<p><span class="subsectiontitle">Confirm the CRL loaded properly</span></p>
+
+<p>When the CRL file is uploaded to the BIG-IP system, you can confirm that the file loaded properly by performing the following steps:</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the BIG-IP TMOS shell.</li><li>To view the global traffic logs, use the following syntax:
+	<p><span class="code">show /sys log gtm range &lt;date range&gt;</span></p>
+
+	<p>For example, to view ltm logs from two days ago until now, enter the following command:</p>
+
+	<p><span class="example2">show /sys log gtm range now-2d</span></p>
+
+	<p>The following message indicates that CRL validation is enabled on all remote iQuery connections:</p>
+
+	<p><span class="example2">012b3100:5: CRL file /config/revoked_certs.crl created, enabling CRL validation on all remote iQuery connections</span></p>
+	</li></ol>
+<p><span class="subsectiontitle">Revoke the CA-signed device certificate using OpenSSL</span></p>
+<p>If you think that the CA-signed device certificate has been compromised prior to its expiration date, you can revoke the certificate using OpenSSL. To do so, perform the following steps:</p>
+<p><span class="impact"><strong>Impact of procedure</strong>: After revoking the device certificate and uploading the updated CRL file to the sync group members, remote iQuery connections are terminated.</span></p>
+
+<ol><li>Log in to the workstation or BIG-IP that contains your CA environment.</li><li>To change into the working directory, use the following command syntax:
+	<p><span class="code">cd &lt;directory_name&gt;</span></p>
+
+	<p>For example, to enter the <strong>/var/tmp/ca</strong> directory, enter the following command:</p>
+
+	<p><span class="example2">cd /var/tmp/ca</span></p>
+	</li><li>To Revoke the CA-signed device certificate use the following syntax:
+	<p><span class="code">openssl ca -revoke &lt;Path_to_BIGIP_device_cert_name&gt;.crt -keyfile &lt;CA_key&gt;.key -cert &lt;CA_cert&gt;.crt -config &lt;OpenSSL_config_file&gt;</span></p>
+
+	<p>For example,</p>
+
+	<p><span class="example2">openssl ca -revoke bigip1.example.com/bigip1_device.crt -keyfile bigip_ca.key -cert bigip_ca.crt -config openssl.cnf</span></p>
+	
+	<p>Enter the passphrase for the CA key.</p>
+	</li><li>To regenerate CRL file use the following syntax:
+	<p><span class="code">openssl ca -gencrl -keyfile &lt;CA_key&gt;.key -cert &lt;CA_cert&gt;.crt -out &lt;CRL_file&gt;.pem -config &lt;OpenSSL_config_file&gt;</span></p>
+
+	<p>For example,</p>
+
+	<p><span class="example2">openssl ca -gencrl -keyfile bigip_ca.key -cert bigip_ca.crt -out crl.pem -config openssl.cnf</span></p>
+	<p>Enter the passphrase for the CA key.</p>
+	</li><li>To upload the CRL file to the remote BIG-IP systems using SCP, use the following syntax:
+	<p><span class="code">scp &lt;CRL_filename&gt; root@&lt;BIG-IP_mgmt_IP&gt;:/config/revoked_certs.crl</span></p>
+
+	<p>For example:</p>
+
+	<p><span class="example2">scp crl.pem root@192.0.2.1:/config/revoked_certs.crl</span></p>
+	</li><li>Repeat the upload process for each BIG-IP sync group member.
+	<p><span class="note"><strong>Note</strong>: To verify the device certificate is revoked, refer to <a href="https://my.f5.com/manage/s/article/K02877347" target="_self">K02877347: Error Message: &lt;daemon[pid]&gt; &lt;error_code&gt; Certificate with subject &lt;subject&gt; from issuer &lt;issuer&gt; is revoked</a>.</span></p></li></ol>
+</article>
+</body>
+</html>

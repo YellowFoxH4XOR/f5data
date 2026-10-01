@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K53205549: Error: Status 403 when pulling/pushing Aspen Mesh images to Harbor registry</title>
+<meta name="description" content="Support Solution: Error: Status 403 when pulling/pushing Aspen Mesh images to Harbor registry — You observe the scripts found in Store Aspen Mesh container images in a private image registry in the Aspen Mesh documentation don’t work with Harbor registry.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K53205549">
+</head>
+<body>
+<header>
+<h1>K53205549: Error: Status 403 when pulling/pushing Aspen Mesh images to Harbor registry</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-11-01</dd>
+<dt>Updated</dt><dd>2023-07-18</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.11, 1.14</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K53205549">https://my.f5.com/manage/s/article/K53205549</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><span class="sectiontitle">Description</span></h2>
+
+<ul><li>You observe the scripts found in <a href="https://clouddocs.f5.com/products/aspen-service-mesh/1.11/operations/store-aspen-mesh-container-images-in-a-private-image-registry.html" target="_blank">Store Aspen Mesh container images in a private image registry</a>  in the <strong>Aspen Mesh documentation</strong> don’t work with Harbor registry.</li><li>You observe the following error message when using an outdated version of Docker:<br>	<span class="code">Error: Status 403 trying to pull repository aspenmesh/carrier-grade-releases: &quot;{\&quot;error\&quot;: \&quot;Permission Denied\&quot;}&quot;</span></li><li>You are unable to pull/push images from/to Harbor registry</li></ul>
+
+<h2><span class="sectiontitle">Environment</span></h2>
+
+<ul><li>Kubernetes 1.20.x, 1.21.x.</li><li>Aspen Mesh 1.11.x</li><li>Docker 20.x</li><li>Harbor Registry</li></ul>
+
+<h2><span class="sectiontitle">Cause</span></h2>
+
+<p>The error message <strong>Status 403</strong> could be caused if an outdated version of Docker is being used (e.g., 1.13.x) which does not have <strong>--password-stdin</strong> flag used in the script to authenticate.</p>
+<a href="https://goharbor.io/docs/2.6.0/working-with-projects/working-with-images/pulling-pushing-images/" target="_self">Pulling/Pushing to Harbor Registry</a> needs a different syntax not considered in scripts found in the <a href="https://clouddocs.f5.com/products/aspen-service-mesh/1.11/operations/store-aspen-mesh-container-images-in-a-private-image-registry.html#push-the-pulled-images-to-the-private-image-repository" target="_blank">Aspen Mesh</a> documentation.
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ol><li>Make sure you are using a recent release of Docker, e.g., 20.x as the script uses the <strong>--password-stdin</strong> flag to authenticate to pull the images from Aspen Mesh registry.</li><li>Use the following scripts, after <a href="https://clouddocs.f5.com/products/aspen-service-mesh/1.11/operations/store-aspen-mesh-container-images-in-a-private-image-registry.html#log-in-to-the-aspen-mesh-image-registry" target="_blank">login into the Aspen Mesh registry</a> and <a href="https://clouddocs.f5.com/products/aspen-service-mesh/1.11/operations/store-aspen-mesh-container-images-in-a-private-image-registry.html#pull-the-images-from-the-aspen-mesh-image-registry" target="_blank">pulling the images</a>, when using Harbor registry to rename and push the images:
+	<ul><li><a href="#rename" target="_self">rename-images.sh</a></li><li><a href="#push" target="_self">push-images.sh</a>
+		<p><a id="rename" name="rename"></a></p>
+
+		<pre class="ckeditor_codeblock">
+++++++++++rename-images.sh++++++++++
+#!/bin/bash
+ 
+set -Eeuo pipefail
+ 
+TOOLS_DIR=&quot;$(cd &quot;$(dirname &quot;${BASH_SOURCE[0]}&quot;)&quot; &amp;&gt; /dev/null &amp;&amp; pwd)&quot;
+ 
+registry_repo=${registry_repo:-}
+if [ -z &quot;$registry_repo&quot; ]; then
+echo &quot;registry_repo must be defined&quot;
+    exit 1
+fi
+ 
+images_used=&quot;$TOOLS_DIR/../images-used&quot;
+repo_name=$(grep -v &quot;am-istio&quot; &quot;$images_used&quot; \
+    | cut -d &quot;/&quot; -f3 | cut -d &quot;:&quot; -f1 | head -1)
+ 
+awk -F: &#39;{print $2}&#39; &quot;$images_used&quot; | xargs -L1 -I{} \
+   docker tag &quot;quay.io/aspenmesh/${repo_name}:{}&quot; &quot;${registry_repo}/${repo_name}:{}&quot;
+grep proxyv2 &quot;$images_used&quot; | awk -F: &#39;{print $2}&#39; | xargs -L1 -I{} \
+   docker tag quay.io/aspenmesh/am-istio:{} &quot;${registry_repo}/am-istio:{}&quot;
+echo &quot;Done&quot;
+++++++++++rename-images.sh++++++++++
+</pre>
+		<strong><a id="push" name="push"></a></strong>
+
+		<pre class="ckeditor_codeblock">
+++++++++++push-images.sh++++++++++
+#!/bin/bash
+ 
+set -Eeuo pipefail
+ 
+TOOLS_DIR=&quot;$(cd &quot;$(dirname &quot;${BASH_SOURCE[0]}&quot;)&quot; &amp;&gt; /dev/null &amp;&amp; pwd)&quot;
+ 
+registry_repo=${registry_repo:-}
+if [ -z &quot;$registry_repo&quot; ]; then
+    echo &quot;registry_repo must be defined&quot;
+    exit 1
+fi
+ 
+images_used=&quot;$TOOLS_DIR/../images-used&quot;
+repo_name=$(grep -v &quot;am-istio&quot; &quot;$images_used&quot; \
+    | cut -d &quot;/&quot; -f3 | cut -d &quot;:&quot; -f1 | head -1)
+grep proxyv2 &quot;$images_used&quot; | awk -F: &#39;{print $2}&#39; | xargs -L1 -I{} \
+   docker push &quot;${registry_repo}/am-istio:{}&quot;
+awk -F: &#39;{print $2}&#39; &quot;$images_used&quot; | xargs -L1 -I{} \
+   docker push &quot;${registry_repo}/${repo_name}:{}&quot;
+echo &quot;Done&quot;
+++++++++++push-images.sh++++++++++</pre>
+		</li></ul>
+	</li></ol>
+
+<h2><br><span class="sectiontitle">Additional Information</span></h2>
+By default, Kubernetes pulls Aspen Mesh container images from the Aspen Mesh image registry, which is available over the public internet. However, you can store the Aspen Mesh container images in a private image registry and tell Kubernetes to use that registry when it needs an Aspen Mesh container image.
+</article>
+</body>
+</html>

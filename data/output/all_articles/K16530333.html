@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K16530333: Configure workload TLS certificates validity in Aspen Mesh</title>
+<meta name="description" content="Support Solution: Configure workload TLS certificates validity in Aspen Mesh — Mutual TLS enforces all workload pods, both client and server, to provide their identity while connecting to other services running inside the mesh cluster. Aspen Mesh enables mTLS by default in the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K16530333">
+</head>
+<body>
+<header>
+<h1>K16530333: Configure workload TLS certificates validity in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-06-25</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K16530333">https://my.f5.com/manage/s/article/K16530333</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<span class="sectiontitle">Description</span>
+
+<p>Mutual TLS enforces all workload pods, both client and server, to provide their identity while connecting to other services running inside the mesh cluster. Aspen Mesh enables mTLS by default in the whole mesh cluster. The identity is implemented with X.509 certificates. Each Envoy istio-proxy running alongside with the workload container is provisioned with the certificate managed the <strong>Istiod </strong>service. Beginning in Aspen Mesh 1.6, Envoy proxies use the SDS (Secret Discovery Service) interface to fetch the certificates from <strong>Istiod </strong>via the istio-agent service running in the istio-proxy container. The istio-agent forwards the request to <strong>Istiod </strong>where the certificate is created and signed by the CA certificate provisioned in the cluster. The istio-agent service monitors the expiration of the workload certificate and repeats the certificates creation process periodically before the certificates expire. For more information on the security concepts in Istio, refer to the <a href="https://istio.io/latest/docs/concepts/security/#pki" target="_self">Security </a>section of the <strong>Istio</strong> <strong>documentation</strong>.</p>
+
+<p>In this article we will focus on how to modify the workload TLS certificates’ validity period.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li><strong>Kubernetes: </strong>1.17x, 1.18.x, 1.19.x, 1.20.x  </li><li><strong>Aspen Mesh:</strong> 1.6.x, 1.9.x  </li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+None
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+None
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<ul><li><a href="#verify" target="_self">Verify workload certificate validity</a></li><li><a href="#modify_global" target="_self">Modify the validity of certificates globally for all workloads</a></li><li><a href="#modify_pod" target="_self">Modify the certificate validity for a pod overriding the global setting</a></li></ul>
+<a id="verify" name="verify"></a><span class="subsectiontitle">Verify workload certificate validity</span>
+
+<p>The default validity period for every workload certificate is set to 24 hours. You can verify the workload certificate validity by inspecting the certificate offered by the service that has mTLS enabled. You can create a pod without an istio-proxy sidecar with the <strong>openssl </strong>tool installed and use the following command to inspect the server certificate.</p>
+<span class="code">openssl s_client -connect &lt;pod-IP&gt;:8000 2&gt;/dev/null | openssl x509 -text | grep Validity -A2</span>
+
+<p>The following example shows the certificate is valid for 24 hours:</p>
+
+<p style="margin-left: 40px;"><span class="example2">Validity<br>            Not Before: Jun 21 11:27:59 2021 GMT<br>            Not After : Jun 22 11:27:59 2021 GMT</span></p>
+
+<p><span class="subsectiontitle"><a id="modify_global" name="modify_global"></a>Modify the validity of certificates globally for all workloads</span></p>
+You can modify the validity of TLS certificates globally, for all workloads by modifying the Helm values yaml file that was used to install the <strong>istiod </strong>Helm chart. To modify the TTL globally, perform the following procedure:
+
+<ol><li>Add the <strong>workloadCertTtl</strong> field in the <strong>global.certificateTTL</strong> section and configure the TTL to 48h for example:
+
+	<p><span class="code">global:<br>	  certificatesTTL:<br>	    workloadCertTtl: 48h</span></p>
+	</li><li>Upgrade the <strong>Istiod </strong>chart configuration by using the following command syntax:
+	<p><span class="code">helm upgrade istiod manifests/charts/istio-control/istio-discovery \<br>	   --namespace istio-system \<br>	   --value &lt;YOUR_VALUES_YAML_FILE&gt;</span></p>
+	</li><li>Restart the service pod to recreate certificate or wait until the certificate expires and istio-agent will provision a new certificate.</li><li>Verify the certificate is valid for the specified period with the following command syntax:
+	<p><span class="code">openssl s_client -connect &lt;pod-IP&gt;:8000 2&gt;/dev/null | openssl x509 -text | grep Validity -A2</span></p>
+	The following example shows the certificate is valid for 48 hours:
+
+	<p><span class="example2">Validity<br>	            Not Before: Jun 21 20:33:52 2021 GMT<br>	            Not After : Jun 23 20:33:52 2021 GMT</span></p>
+	</li></ol>
+<a id="modify_pod" name="modify_pod"></a><span class="subsectiontitle">Modify the certificate validity for a pod overriding the global setting</span>
+
+<p>To modify the TTL for a pod and override the global setting, perform the following procedure:</p>
+
+<ol><li>Add the following annotation to your pod or deployment yaml file and configure the TTL to 72h for example:
+	<p><span class="code">proxy.istio.io/config: |<br>	  proxyMetadata:<br>	    SECRET_TTL: 72h</span></p>
+	</li><li>Restart the pod or wait until the certificate expires and istio-agent will provision a new certificate.</li><li>Verify the certificate is valid for the specified period using the following command syntax:
+	<p><span class="code">openssl s_client -connect &lt;pod-IP&gt;:8000 2&gt;/dev/null | openssl x509 -text | grep Validity -A2</span></p>
+	The following example shows the certificate is valid for 72 hours:
+
+	<p><span class="example2">Validity<br>	            Not Before: Jun 21 20:36:58 2021 GMT<br>	            Not After : Jun 24 20:36:58 2021 GMT</span></p>
+	</li></ol>
+</article>
+</body>
+</html>

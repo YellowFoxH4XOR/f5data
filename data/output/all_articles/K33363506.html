@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K33363506: ASM doesn&#x27;t convert escaped string as a compliance JSON object</title>
+<meta name="description" content="Support Solution: ASM doesn&#x27;t convert escaped string as a compliance JSON object — ASM triggers false-positive attack signature violation on valid JSON payload similar to: &quot;{\&quot;Key\&quot;:\&quot;value\&quot;}&quot;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K33363506">
+</head>
+<body>
+<header>
+<h1>K33363506: ASM doesn&#x27;t convert escaped string as a compliance JSON object</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-04-15</dd>
+<dt>Updated</dt><dd>2025-12-29</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 17.X.X, 21.X.X, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.6, 16.1.5, 16.1.4, 15.1.10, 15.1.9, 11.3.X, 11.2.X, 11.1.X, 11.0.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 13.1.0, 16.1.0, 13.0.1, 16.0.1, 13.0.0, 16.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 11.6.5, 11.6.4, 11.6.3, 11.6.2, 16.X.X, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 11.5.1, 11.5.0, 11.4.1, 11.4.0, 11.3.0, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 11.6.1, 15.X.X, 14.X.X, 13.X.X, 12.X.X, 11.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 11.6.X, 11.5.X, 11.4.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K33363506">https://my.f5.com/manage/s/article/K33363506</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+<p>ASM triggers false-positive attack signature violation on valid JSON payload similar to: <span class="example2">&quot;{\&quot;Key\&quot;:\&quot;value\&quot;}&quot;</span></p>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>ASM Security Policy.</li><li>JSON Content Profile with Parse Parameters option enabled (v13.0.0 and UP).</li></ul>
+<p><span class="sectiontitle">Cause</span></p>
+<p>ASM treats the above JSON payloads as a valid JSON string, not an object. therefore, it cannot tokenize it into key and value.<br><br><span class="sectiontitle">Recommended Actions</span></p>
+<p><strong>Below iRule should convert JSON string to a compliance JSON object:</strong></p>
+<p><span class="note">Note. This iRule won&#39;t revert the payload to original state before passing it to backend server</span></p>
+<p><span class="note">Note. This iRule works on requests contains Content-Type HTTP Header.</span></p>
+<pre class="language-javascript" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when HTTP_REQUEST {
+    if {[HTTP::method] eq &quot;POST&quot; &amp;&amp; [HTTP::header value Content-Type] contains &quot;json&quot;} {
+        # Read the Content-Length
+        set content_length [HTTP::header Content-Length]
+
+        # Trigger the collection of the HTTP payload with the size from Content-Length
+        if {$content_length &gt; 0} {
+            HTTP::collect $content_length
+        }
+    }
+}
+
+when HTTP_REQUEST_DATA {
+    if {[info exists collected_payload]} {
+        # Save the current chunk to the payload
+        append collected_payload [HTTP::payload]
+    } else {
+        set collected_payload [HTTP::payload]
+    }
+
+    # Ensure full payload is received
+    if {[string length $collected_payload] == $content_length} {
+
+       set json_replaced_1 [string map -nocase [list \&quot;\{ \{ \\\&quot; \&quot; \\\\ &quot;&quot; \}\&quot; \} %22%7B %7B %5C%22 %22 %5C%5C &quot;&quot; %7D%22 %7D] $collected_payload]
+       set json_replaced_2 [string map -nocase [list \&quot;\{ \{ \}\&quot; \} %22%7B %7B %7D%22 %7D] $json_replaced_1]
+       unset json_replaced_1
+       set json_replaced_3 [string map -nocase [list \&quot;\[ \[ \]\&quot; \] %22%5B %5B %5D%22 %5D] $json_replaced_2]
+       unset json_replaced_2
+
+
+       # Update the HTTP payload and headers with the transformed JSON
+       HTTP::payload replace 0 [HTTP::payload length] $json_replaced_3
+       HTTP::header replace Content-Length [string length $json_replaced_3]
+
+       unset json_replaced_3
+    }
+}
+
+when HTTP_REQUEST_RELEASE {
+    if {0 &amp;&amp; [info exists collected_payload]} {
+        set x {clientside {HTTP::payload replace 0 [HTTP::payload length] $collected_payload}}
+        eval $x
+        unset collected_payload
+    }
+}
+
+</code></pre>
+<p><strong>Use below iRule if we need to repackage the JSON payload to its original state before passing it to backend server:</strong></p>
+<p><span class="note">Note. This iRule works on requests contains Content-Type HTTP Header.</span></p>
+<pre class="language-javascript" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when HTTP_REQUEST {
+    if {[HTTP::method] eq &quot;POST&quot; &amp;&amp; [HTTP::header value Content-Type] contains &quot;json&quot;} {
+        # Read the Content-Length
+        set content_length [HTTP::header Content-Length]
+
+        # Trigger the collection of the HTTP payload with the size from Content-Length
+        if {$content_length &gt; 0} {
+            HTTP::collect $content_length
+        }
+    }
+}
+
+when HTTP_REQUEST_DATA {
+    if {[info exists collected_payload]} {
+        # Save the current chunk to the payload
+        append collected_payload [HTTP::payload]
+    } else {
+        set collected_payload [HTTP::payload]
+    }
+
+    # Ensure full payload is received
+    if {[string length $collected_payload] == $content_length} {
+
+       set json_replaced_1 [string map -nocase [list \&quot;\{ \{ \\\&quot; \&quot; \\\\ &quot;&quot; \}\&quot; \} %22%7B %7B %5C%22 %22 %5C%5C &quot;&quot; %7D%22 %7D] $collected_payload]
+       set json_replaced_2 [string map -nocase [list \&quot;\{ \{ \}\&quot; \} %22%7B %7B %7D%22 %7D] $json_replaced_1]
+       unset json_replaced_1
+       set json_replaced_3 [string map -nocase [list \&quot;\[ \[ \]\&quot; \] %22%5B %5B %5D%22 %5D] $json_replaced_2]
+       unset json_replaced_2
+
+
+       # Update the HTTP payload and headers with the transformed JSON
+       HTTP::payload replace 0 [HTTP::payload length] $json_replaced_3
+       HTTP::header replace Content-Length [string length $json_replaced_3]
+
+       unset json_replaced_3
+    }
+}
+
+when ASM_REQUEST_DONE {
+    if {[info exists collected_payload]} {
+
+    #Will create a loop to add the original payload 10000 at a time.
+    #First we&#39;ll start by clearing the ASM::payload
+
+        ASM::payload replace 0 [ASM::payload length] &quot;&quot;
+
+    # Offset counter   
+        set offset 0
+        set chunk_size 10000
+    
+    # Loop through the payload 10000 bytes at a time
+
+        while { $offset &lt; $content_length } {
+            # Get a chunk of up to 10000 bytes
+            set chunk [string range $collected_payload $offset [expr {$offset + $chunk_size - 1}]]
+
+            # Replace at the correct offset
+            ASM::payload replace $offset 0 $chunk
+
+            # Move the offset forward
+            incr offset $chunk_size
+        }
+
+        HTTP::header replace content-length [ASM::payload length]
+
+        unset collected_payload
+    }
+}</code></pre>
+<p><span class="sectiontitle">Additional Information</span></p>
+<p>N/A</p>
+</article>
+</body>
+</html>

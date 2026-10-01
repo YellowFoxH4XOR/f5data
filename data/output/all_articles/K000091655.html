@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000091655: Setup APIKEY authorization for Nginx Ingress Controller</title>
+<meta name="description" content="Support Solution: Setup APIKEY authorization for Nginx Ingress Controller — Configuring NGINX Ingress Controller to perform API key authentication.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000091655">
+</head>
+<body>
+<header>
+<h1>K000091655: Setup APIKEY authorization for Nginx Ingress Controller</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-07-13</dd>
+<dt>Updated</dt><dd>2025-04-02</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Ingress Controller</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000091655">https://my.f5.com/manage/s/article/K000091655</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">jDescription</span></p>
+<p>Configuring NGINX Ingress Controller to perform API key authentication.</p>
+<p>The recommended actions below work well if you only need a few API keys configured statically. If you need more keys, or a dynamic authentication, you should consider looking into our JWT token examples which are linked below in the additional info section.</p>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>NGINX Ingress Controller</li><li>Kubernetes</li></ul>
+<p><span class="sectiontitle">Cause</span></p>
+<p>You would like to configure a virtual server CRD to perform API key authentication before routing traffic to the upstream server.</p>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<p>The following is an example configuration which performs API key authentication.</p>
+<ol><li>Apply http-snippets to the NGINX Ingress Controller config map. This will use the map directive to assign variables to a list of allowed apikeys. These keys are static values, and can only be changed manually. For example, refer to the following nginx-ingress configmap:
+<pre class="ckeditor_codeblock">apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: nginx-ingress
+data:
+  http-snippets: |
+    map_hash_bucket_size 128;
+    map $http_apikey $api_key_name {
+    default &quot;&quot;;
+
+    &quot;nny6NqCmvgVdAXKfEm2XhNhqlfhsUJKUTxwsxnKRTdAInX0TLNNKhv8HNfn0wJuv&quot; &quot;key_one&quot;;
+    &quot;sGemnyRwTPjP7zMav7kLjjUSW4fe6Jy24LGcgPTrueW4ME1Lg8saIVC07qzY4SBP&quot; &quot;key_two&quot;;
+    &quot;oCcuSIRzwQLW7bAkd74aD1OHiUwiopeahhzB6yqPxhpxE9DWQxYgPznHTwAdUQGw&quot; &quot;key_three&quot;;
+    &quot;A1CgrBQjTm4v5LJ4uiFM5GbzA3tlq8W7npnxFnZFfdLIZx9j6d7v4ybA2VVck5FA&quot; &quot;key_four&quot;;
+    &quot;b0hQZcFIxdmzvS0rfYVUKqa5kqssDZyWGFVJihLzYdLYzidUSOfUkht3gkAzjQ16&quot; &quot;key_five&quot;;
+    }</pre>
+</li><li>Apply the necessary server-snippets and location-snippets to the virtual server. We add the entire location block as a server-snippet to perform the apikey auth validation. And then we use the location-snippet to add the NGINX <strong>auth_request</strong> directive to any location that we want to enforce apikey validation. For example, refer to the following virtual server configuration:
+<pre class="ckeditor_codeblock">apiVersion: k8s.nginx.org/v1
+kind: VirtualServer
+metadata:
+  name: apikey-vs
+spec:
+  host: api.example.com
+  server-snippets: |
+    # API key validation
+    location = /_validate_apikey {
+        internal;
+
+        if ($http_apikey = &quot;&quot;) {
+            return 401; # Unauthorized
+        }
+        if ($api_key_name = &quot;&quot;) {
+            return 403; # Forbidden
+        }
+        return 204; # OK (no content)
+    }
+  upstreams:
+  - name: webapp-v1
+    service: webapp1-svc
+    port: 80
+  routes:
+  - path: /api/v1/
+    location-snippets: |
+      auth_request /_validate_apikey;
+    action:
+      pass: webapp-v1</pre>
+</li></ol>
+<p><span class="sectiontitle">Additional Information</span></p>
+<ol><ul><li>The <a href="https://www.f5.com/company/blog/nginx/deploying-nginx-plus-as-an-api-gateway-part-1" target="_blank">Deploying NGINX as an API Gateway, Part 1</a> NGINX Blog page.</li><li>The <a href="https://nginx.org/en/docs/http/ngx_http_auth_request_module.html#auth_request" target="_blank">auth_request</a> directive section of the <strong>ngx_http_auth_request_module</strong> page.</li><li>An <a href="https://github.com/nginxinc/kubernetes-ingress/tree/main/examples/custom-resources/jwt" target="_blank">example JWT deployment</a> from the <strong>nginxinc/kubernetes-ingress</strong> GitHub page.</li></ul></ol>
+</article>
+</body>
+</html>

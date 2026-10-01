@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K56563150: iRule may send traffic to a pool in a different partition</title>
+<meta name="description" content="Support Solution: iRule may send traffic to a pool in a different partition — In a specific environment, an iRule may incorrectly send traffic to a pool in a different partition.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K56563150">
+</head>
+<body>
+<header>
+<h1>K56563150: iRule may send traffic to a pool in a different partition</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-10-08</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Virtual Editions</li><li>BIG-IP Platforms</li><li>BIG-IP</li><li>BIG-IP LTM: 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 14.1.2, 13.1.0, 13.0.1, 13.0.0, 13.1.1, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.X.X, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 15.0.1, 14.X.X, 13.X.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 16.1.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K56563150">https://my.f5.com/manage/s/article/K56563150</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>In a specific environment, an iRule may incorrectly send traffic to a pool in a different partition.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>You are using multiple partitions</li><li>You have a Virtual Server on a specific partition and has an iRule from /Common/ partition</li><li>A pool has the same name from another pool in different partition</li><li>iRule&#39;s logic is to forward traffic to the pool</li></ul>
+
+<p><strong>Example:</strong></p>
+
+<pre>
+<span class="example2">/partition_1/my_vs
+/partition_1/my_pool
+/partition_2/my_pool
+/Common/my_irule</span></pre>
+
+<p><br><strong>iRule Config:</strong></p>
+
+<pre>
+<span class="example2">ltm rule /Common/my_irule {
+when HTTP_REQUEST {
+set part [virtual name]
+  log local0. &quot;Virtual Server Partition/Name: $part&quot;
+      pool my_pool
+      return
+}
+when LB_SELECTED {
+log local0. &quot;Pool Member Partition/Name: [LB::server pool]&quot;
+}
+}</span></pre>
+
+<p><strong>Virtual Server config:</strong></p>
+
+<pre>
+<span class="example2">ltm virtual /partition_1/my_vs {
+    destination /partition_1/10.108.124.230:http
+    ip-protocol tcp
+    mask 255.255.255.255
+    partition partition_1
+    profiles {
+        http { }
+        tcp { }
+    }
+    rules {
+        my_irule
+    }
+    source 0.0.0.0/0
+    source-address-translation {
+        type automap
+    }
+    translate-address enabled
+    translate-port enabled
+}</span></pre>
+
+<p><strong>Pool Config:</strong></p>
+
+<pre>
+<span class="example2">ltm pool /partition_1/my_pool {
+    members {
+        /partition_1/10.108.124.194:http {
+            address 10.108.124.194
+            session monitor-enabled
+            state up
+        }
+    }
+    monitor gateway_icmp
+    partition partition_1
+}</span>
+
+<span class="example2">ltm pool /partition_2/my_pool {
+    members {
+        /partition_2/10.108.124.195:http {
+            address 10.108.124.195
+            session monitor-enabled
+            state up
+        }
+    }
+    monitor gateway_icmp
+    partition partition_2
+}</span></pre>
+
+<p><strong>Logs:</strong></p>
+
+<pre>
+<span class="example2">Oct  2 21:07:11 bigip1 info tmm[17943]: Rule /Common/my_irule &lt;HTTP_REQUEST&gt;: Virtual Server Partition/Name: <strong>/partition_1/</strong>my_vs
+Oct  2 21:07:11 bigip1 info tmm[17943]: Rule /Common/my_irule &lt;LB_SELECTED&gt;: Pool Member Partition/Name: <strong>/partition_2/</strong>my_pool</span></pre>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>The partition is not defined in the iRule command statement</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>The iRule below will capture the current partition of the Virtual Server which the client connected to and will prepend it to the pool name. You can use it or modify it based on your requirement:</p>
+
+<pre>
+<span class="example2">when HTTP_REQUEST {
+    log local0. &quot;Virtual Server Partition/Name: [virtual name]&quot;
+    set part [lindex [split [virtual name] /] 1]
+    pool /${part}/my_pool
+    return
+}
+when LB_SELECTED {
+log local0. &quot;Pool Member Partition/Name: [LB::server pool]&quot;
+}</span>
+</pre>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>Once you applied the iRule above which includes the logging statement, you should see this on <strong><em>/var/log/ltm</em></strong></p>
+
+<pre>
+<span class="example2">Oct  2 21:22:42 bigip1 info tmm[17943]: Rule /Common/my_irule-fix &lt;HTTP_REQUEST&gt;: Virtual Server Partition/Name: <strong>/partition_1/</strong>my_vs
+Oct  2 21:22:42 bigip1 info tmm[17943]: Rule /Common/my_irule-fix &lt;LB_SELECTED&gt;: Pool Member Partition/Name: <strong>/partition_1/</strong>my_pool</span></pre>
+</article>
+</body>
+</html>

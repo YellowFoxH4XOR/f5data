@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K10151041: TCP Window Scaling on BIG-IP</title>
+<meta name="description" content="Support Solution: TCP Window Scaling on BIG-IP — TCP Window Scaling was introduced in RFC 1072 and refined in RFC 1323. Essentially, window scaling simply extends the 16-bit window field to 32 bits in length. However, engineers could not simply…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K10151041">
+</head>
+<body>
+<header>
+<h1>K10151041: TCP Window Scaling on BIG-IP</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-10-20</dd>
+<dt>Updated</dt><dd>2025-09-09</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K10151041">https://my.f5.com/manage/s/article/K10151041</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><br><span class="sectiontitle">Description</span><br><br>TCP Window Scaling was introduced in RFC 1072 and refined in RFC 1323. Essentially, window scaling simply extends the 16-bit window field to 32 bits in length. However, engineers could not simply insert an extra 16 bits into the TCP header as this will render it completely incompatible with existing implementations. The solution was to define a TCP option that specifies by how much the initial TCP Window field should be <a href="http://en.wikipedia.org/wiki/Bitwise_operation#Logical_shift" target="_self">bitwise shifted</a> to produce a larger value.<br><br>Beginning in BIG-IP 11.4.0, the window scale functionality is built into the TCP profile and cannot be manually disabled or enabled. The functionality will be negotiated if the send or receive buffer is larger than 65535 bytes. See <a href="https://my.f5.com/manage/s/article/K13924148" target="_self">K13924148: Overview of the TCP profile (11.x)</a> for more details on the TCP profile option.</p>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>All Big-IP versions from 11.4.0 onwards</li><li>Any Virtual Server that uses a TCP profile.</li></ul>
+<p><span class="sectiontitle">Cause</span></p>
+<p>None</p>
+<p><span class="sectiontitle">Recommended Actions</span><br><br>The following steps can be used to determine and adjust the <em>send</em> or <em>receive</em> buffer settings for custom TCP profiles for performance tuning.</p>
+<p>1. Determine the initial TCP window size sent by a client in the SYN packet.</p>
+<ul style="margin-left: 40px;"><li>Use tcpdump to capture client traffic to a binary file.</li><li>Open the packet capture in WireShark and filter for incoming SYN packets from clients. The filter in wireshark can be used: <span class="code"><span class="example2">tcp.flags.syn == 1</span></span></li><li>Expand the TCP section in WireShark and note the window size sent in by the client.</li></ul>
+<div style="margin-left: 120px;"><span class="example2">Window size value: 29200</span></div>
+<ul style="margin-left: 40px;"><li>Expand the TCP section in WireShark and then expand the options table. Locate the TCP window scale option and note the shift count.</li></ul>
+<div style="margin-left: 120px;"><br><span class="example2">TCP Option - Window scale: 7 (multiply by 128)</span><br><span class="example2">    Kind: Window Scale (3)<br>    Length: 3</span><br><span class="example2">    Shift count: 7</span></div>
+<div style="margin-left: 120px;"><span class="example2">    [Multiplier: 128]</span></div>
+<ul style="margin-left: 40px;"><li>A shift count of one shifts the binary value of the field to left by one bit, doubling it. A count of two shifts the value two places to the left, quadrupling it. A count of seven (as shown in the example above) multiplies the value by 128.</li><li>So we can now multiply the initial TCP window size by the window scale shift count to see the largest TCP window size that the client can support. In the example above this is 29200 * 128 = 3737600 bytes</li></ul>
+<ol start="2"><li>Once an appropriate value has been determine then update the relevant TCP profile with the calculated value. See <a href="https://my.f5.com/manage/s/article/K13924148" target="_self">K13924148: Overview of the TCP profile (11.x)</a> for further details.</li></ol>
+<p><br><span class="note">Note: It is very rare that a client&#39;s window size would actually go over 2 or 3 shift counts.  Shift counts of 1 or 2 would typically cover most scenarios.<br>Moreover, the initial window size may vary from client to client so multiple client connections should be checked to get a more wide ranging value.</span><br><br><span class="warning">Important: Increasing the send and receive buffers also increase the memory usage of individual TCP connections where that TCP profile applies, hence these values should not be set to extreme values, i.e setting to 3737600 for a production system is likely to cause memory constraints.</span></p>
+<p><span class="sectiontitle">Additional Information</span></p>
+<p>Table below is a theoretical limit of unacknowledged data on the wire by scale factor.</p>
+<table border="1" style="width: 34.0217%;height: 166.375px;"><tbody><tr style="height: 20.7969px;"><td colspan="1" rowspan="1" style="width: 17.1687%;height: 20.7969px;"><strong>Scale Facto</strong>r</td><td colspan="1" rowspan="1" style="width: 22.5904%;height: 20.7969px;"><strong>Multiplier</strong></td><td colspan="1" rowspan="1" style="width: 22.5904%;height: 20.7969px;"><strong>Max Bytes</strong></td><td colspan="1" rowspan="1" style="width: 37.6506%;height: 20.7969px;"><strong>Max Megabytes</strong></td></tr><tr style="height: 20.7969px;"><td colspan="1" rowspan="1" style="width: 17.1687%;height: 20.7969px;">0</td><td colspan="1" rowspan="1" style="width: 22.5904%;height: 20.7969px;">0</td><td colspan="1" rowspan="1" style="width: 22.5904%;height: 20.7969px;">65,535</td><td colspan="1" rowspan="1" style="width: 37.6506%;height: 20.7969px;">.0625</td></tr><tr style="height: 20.7969px;"><td colspan="1" rowspan="1" style="width: 17.1687%;height: 20.7969px;">1</td><td colspan="1" rowspan="1" style="width: 22.5904%;height: 20.7969px;">2</td><td colspan="1" rowspan="1" style="width: 22.5904%;height: 20.7969px;">131,070</td><td colspan="1" rowspan="1" style="width: 37.6506%;height: 20.7969px;">.125</td></tr><tr style="height: 20.7969px;"><td colspan="1" rowspan="1" style="width: 17.1687%;height: 20.7969px;">2</td><td colspan="1" rowspan="1" style="width: 22.5904%;height: 20.7969px;">4</td><td colspan="1" rowspan="1" style="width: 22.5904%;height: 20.7969px;">262,140</td><td colspan="1" rowspan="1" style="width: 37.6506%;height: 20.7969px;">.250</td></tr><tr style="height: 20.7969px;"><td colspan="1" rowspan="1" style="width: 17.1687%;height: 20.7969px;">3</td><td colspan="1" rowspan="1" style="width: 22.5904%;height: 20.7969px;">8</td><td colspan="1" rowspan="1" style="width: 22.5904%;height: 20.7969px;">524,280</td><td colspan="1" rowspan="1" style="width: 37.6506%;height: 20.7969px;">.500</td></tr><tr style="height: 20.7969px;"><td colspan="1" rowspan="1" style="width: 17.1687%;height: 20.7969px;">4</td><td colspan="1" rowspan="1" style="width: 22.5904%;height: 20.7969px;">16</td><td colspan="1" rowspan="1" style="width: 22.5904%;height: 20.7969px;">1,048,560</td><td colspan="1" rowspan="1" style="width: 37.6506%;height: 20.7969px;">1</td></tr><tr style="height: 20.7969px;"><td colspan="1" rowspan="1" style="width: 17.1687%;height: 20.7969px;">5</td><td colspan="1" rowspan="1" style="width: 22.5904%;height: 20.7969px;">32</td><td colspan="1" rowspan="1" style="width: 22.5904%;height: 20.7969px;">2,097,120</td><td colspan="1" rowspan="1" style="width: 37.6506%;height: 20.7969px;">2</td></tr><tr style="height: 20.7969px;"><td colspan="1" rowspan="1" style="width: 17.1687%;height: 20.7969px;">6</td><td colspan="1" rowspan="1" style="width: 22.5904%;height: 20.7969px;">64</td><td colspan="1" rowspan="1" style="width: 22.5904%;height: 20.7969px;">4,194,240</td><td colspan="1" rowspan="1" style="width: 37.6506%;height: 20.7969px;">4</td></tr><tr><td colspan="1" rowspan="1" style="width: 17.1687%;">7</td><td colspan="1" rowspan="1" style="width: 22.5904%;">128</td><td colspan="1" rowspan="1" style="width: 22.5904%;">8,388,480</td><td colspan="1" rowspan="1" style="width: 37.6506%;">8</td></tr><tr><td colspan="1" rowspan="1" style="width: 17.1687%;">8</td><td colspan="1" rowspan="1" style="width: 22.5904%;">256</td><td colspan="1" rowspan="1" style="width: 22.5904%;">16,776,960</td><td colspan="1" rowspan="1" style="width: 37.6506%;">
+<p>16</p>
+</td></tr><tr><td colspan="1" rowspan="1" style="width: 17.1687%;">9</td><td colspan="1" rowspan="1" style="width: 22.5904%;">512</td><td colspan="1" rowspan="1" style="width: 22.5904%;">33,553,920</td><td colspan="1" rowspan="1" style="width: 37.6506%;">
+<p>32</p>
+</td></tr><tr><td colspan="1" rowspan="1" style="width: 17.1687%;">10</td><td colspan="1" rowspan="1" style="width: 22.5904%;">1024</td><td colspan="1" rowspan="1" style="width: 22.5904%;">67,107,840</td><td colspan="1" rowspan="1" style="width: 37.6506%;">
+<p>64</p>
+</td></tr><tr><td colspan="1" rowspan="1" style="width: 17.1687%;">11</td><td colspan="1" rowspan="1" style="width: 22.5904%;">2048</td><td colspan="1" rowspan="1" style="width: 22.5904%;">134,215,680</td><td colspan="1" rowspan="1" style="width: 37.6506%;">
+<p>128</p>
+</td></tr><tr><td colspan="1" rowspan="1" style="width: 17.1687%;">12</td><td colspan="1" rowspan="1" style="width: 22.5904%;">4096</td><td colspan="1" rowspan="1" style="width: 22.5904%;">268,431,360</td><td colspan="1" rowspan="1" style="width: 37.6506%;">
+<p>256</p>
+</td></tr><tr><td colspan="1" rowspan="1" style="width: 17.1687%;">13</td><td colspan="1" rowspan="1" style="width: 22.5904%;">8096</td><td colspan="1" rowspan="1" style="width: 22.5904%;">536,862,720</td><td colspan="1" rowspan="1" style="width: 37.6506%;">
+<p>512</p>
+</td></tr><tr><td colspan="1" rowspan="1" style="width: 17.1687%;">14</td><td colspan="1" rowspan="1" style="width: 22.5904%;">16384</td><td colspan="1" rowspan="1" style="width: 22.5904%;">1,073,725,440</td><td colspan="1" rowspan="1" style="width: 37.6506%;">
+<p>1024</p>
+</td></tr></tbody></table>
+</article>
+</body>
+</html>

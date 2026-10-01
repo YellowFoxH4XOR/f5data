@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K74459324: BIG-IP DNS / GTM Persistence on WIP is causing DNS queries to not respond</title>
+<meta name="description" content="Support Solution: BIG-IP DNS / GTM Persistence on WIP is causing DNS queries to not respond — DNS requests are not responded to via the BIG-IP GTM / DNS for persistent Wide IPs">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K74459324">
+</head>
+<body>
+<header>
+<h1>K74459324: BIG-IP DNS / GTM Persistence on WIP is causing DNS queries to not respond</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-05-14</dd>
+<dt>Updated</dt><dd>2025-04-01</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 12.X.X, 13.X.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 14.X.X, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 13.1.3</li><li>BIG-IP GTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K74459324">https://my.f5.com/manage/s/article/K74459324</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<ul><li>DNS requests are not responded to via the BIG-IP GTM / DNS for persistent Wide IPs</li><li>tcpdump on the listener may see DNS requests for the persistent Wide IP come in, but no response is sent.  Other DNS requests are working properly</li><li>Error messages
+	<p>After enabling the logging you can see a following for our DNS drops due to persistence table updates.:</p>
+	<span class="example2">  011ae03f:7: resolve3D: current value of reqInitState = Waiting for LDNS sync<br>	  011ae025:5: UNRESOLVED rrtype = A, wip = help.f5.com, LDNS(x.x.x.x), Drop packet</span>
+
+	<p>The reason behind packet drops is due to the persistent record updates among GTMs. When one system is receiving updates from the peers system it goes into &quot;wait for sync&quot; state (NOT ready) and will not be resolving the incoming queries for the duration on update period and this is the default behavior.</p>
+	</li><li>
+	<p>This can be problematic if all devices in the GTM/DNS sync group are unable to communicate via iQuery with each other.</p>
+	</li></ul>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>GTM / DNS has Wide IPs configured with persistence</li><li>GTM / DNS iQuery mesh isn&#39;t fully &quot;connected&quot;</li><li><strong>gtm.maxpersistsyncspersecond</strong> value may be too low</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<ol><li>
+	<p>Issues can be observed due to the iQuery mesh not fully connected, working state.  When one system is receiving updates from the peers system it goes into &quot;wait for sync&quot; state (NOT ready) and will not be resolving the incoming queries for the duration on update period and this is the default behavior.  This can be problematic if any of the devices in the GTM/DNS sync group are unable to communicate via iQuery with each other.</p>
+	</li><li>
+	<p>This also could be because the <strong>gtm.maxpersistsyncspersecond</strong> value is too low.</p>
+
+	<p>BIG-IP DNS persistence information is synchronized to each member of the BIG-IP DNS synchronization group by the gtmd process using the iQuery protocol. A BIG-IP DNS system&#39;s gtmd process sends persistence updates to the remote big3d process of another sync group member. When the remote big3d receives persistence information, it forwards the persistence update to its local gtmd process. The receiving gtmd then creates the appropriate persistence entry in memory and eventually the ldns.gz file.  The default is 800 per second.</p>
+
+	<p>Another way you may experience this issue could be the <strong>gtm.maxpersistsyncspersecond</strong> database variable value is to low.</p>
+	</li></ol>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ol><li>
+	<p>Fix BIG-IP GTM/DNS iQuery mesh if they are not all connected and working properly.</p>
+	</li><li>
+	<p> Modify the &quot;<strong>gtm.maxpersistsyncspersecond</strong> database variable&quot;</p>
+
+	<p>A BIG-IP DNS synchronization group is a collection of multiple BIG-IP DNS systems that share and synchronize configuration settings, including persistence information.</p>
+
+	<p>BIG-IP DNS persistence information is synchronized to each member of the BIG-IP DNS synchronization group by the gtmd process using the iQuery protocol. A BIG-IP DNS system&#39;s gtmd process sends persistence updates to the remote big3d process of another sync group member. When the remote big3d receives persistence information, it forwards the persistence update to its local gtmd process. The receiving gtmd then creates the appropriate persistence entry in memory and eventually the ldns.gz file.</p>
+
+	<p>You can use the <strong>gtm.maxpersistsyncspersecond</strong> database variable to control the rate at which gtmd sends BIG-IP DNS persistence updates to big3d. The default is 800 per second.</p>
+
+	<p><span class="code"># tmsh modify sys db gtm.maxpersistsyncspersecond value &lt;value&gt;</span></p>
+
+	<p>This setting is based on two BIG-IP DNS systems in a sync group. An additional factor to the <strong>gtm.maxpersistsyncspersecond</strong> value is the number of BIG-IP DNS systems in the sync group. If there are more than two gtmd processes, the bandwidth allocated is automatically divided by N-1 (number of BIG-IP DNS systems in the sync group, minus one). For example, with three gtmd processes in a sync group, any one gtmd is allowed to send 400 persist updates per second (800 per second divided by 2 (3 members - 1) = 400 per second).</p>
+	</li><li>
+	<p>Disable persistence on the WIPS.<br>	<span class="code"># tmsh modify /gtm wideip &lt;record type&gt; &lt;wideip name&gt; persistence disabled<br>	# tmsh save sys config</span></p>
+	</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p><span class="subsectiontitle">Data Gathering</span></p>
+
+<p>Follow the steps below for each GTM/DNS devices within the GTM/DNS sync group</p>
+
+<p><span class="subsubsectiontitle">Enable HSL via GUI</span></p>
+
+<ol><li>Enable HSL DNS logging to local-syslog (i.e. /var/log/ltm)
+	<ol start="1" style="list-style-type: lower-alpha;"><li>There’s checkboxes in the Wide IP configuration in the gui to enable various decision logging levels</li><li>Create a log publisher that delivers messages to local syslog<br>		System &gt;&gt; LOGS &gt;&gt; Log Publisher</li><li>Create a DNS logging profile that sends to the Log Publisher created in step 2.<br>		Local Traffic &gt;&gt; Profiles&gt;&gt; Other &gt;&gt; DNS Logging</li><li>Create a custom DNS profile that uses the DNS Logging profile created in step 3.<br>		Local Traffic &gt;&gt; Profiles &gt;&gt; Services &gt;&gt; DNS</li><li>Modify the Listener(s) to use the new DNS Profile created in step 4.</li></ol>
+	</li><li>Proceed to <a href="#Enabling Debug" target="_self"><strong>Enabling Debug</strong></a></li></ol>
+<span class="subsubsectiontitle">Enable HSL via Merge</span>
+
+<ol><li>Modify WIP(s) to enable LB Decision Logging
+	<ol start="1" style="list-style-type: lower-alpha;"><li>Click into WIP</li><li>Set &#39;General Properties&quot; to &quot;Advanced&quot;</li><li>Select the &#39;Load-Balancing Decision Log&#39; items you want to see in the log</li><li>Click Update</li></ol>
+	</li><li>Merge the following config snippet into your bigip.conf config using TMSH load sys config merge file /config/dnslogging.inc
+	<ol start="1" style="list-style-type: lower-alpha;"><li>
+		<p>Using VI or Pico, copy-and-paste the following lines to file /config/dnslogging.inc on the BIG-IP.</p>
+		<span class="example2">ltm profile dns /Common/DNS-Logging-LocalSyslog {<br>		  app-service none<br>		  defaults-from /Common/dns<br>		  enable-logging yes<br>		  log-profile /Common/Prof-HSL-DNS-LSYSLOG<br>		}<br>		ltm profile dns-logging /Common/Prof-HSL-DNS-LSYSLOG {<br>		  enable-response-logging yes<br>		  include-query-id yes<br>		  log-publisher /Common/Publ-HSL-DNS-LSYSLOG<br>		}<br>		sys log-config publisher /Common/Publ-HSL-DNS-LSYSLOG {<br>		  destinations {<br>		   /Common/local-syslog<br>		  }<br>		}</span></li><li>
+		<p>Merge config into your bigip.conf config using TMSH load sys config merge file:</p>
+
+		<p><span class="code"># tmsh load sys config merge file /config/dnslogging.inc</span></p>
+		</li><li>Modify the Listener(s) to use the new DNS Profile &quot;DNS-Logging-LocalSyslog&quot;</li></ol>
+	</li><li>
+	<ol start="1" style="list-style-type: lower-alpha;"></ol>
+	Proceed to <a href="#Enabling Debug" target="_self"><strong>Enabling Debug</strong></a></li></ol>
+<a id="Enabling Debug" name="Enabling Debug"><span class="subsubsectiontitle"><span class="subsectiontitle">Enabling Debug</span></span></a>
+
+<ol><li>Enable debug GTM logging
+	<p><span class="code"># tmsh modify sys db gtm.debugprobelogging value enable</span></p>
+	</li><li>
+	<p>Enable gtm debug logging</p>
+	<span class="code"># tmsh modify sys db log.gtm.level value debug</span></li><li>
+	<p>Enable big3d debug logging</p>
+	<span class="code"># tmsh modify sys db log.big3d.level value debug</span></li><li>
+	<p>Enable gtm query logging</p>
+	  <span class="code"># tmsh modify sys db gtm.querylogging value enable</span></li></ol>
+<span class="subsubsectiontitle">Reproduce</span>
+
+<ol><li>
+	<p>Get tcpdump</p>
+
+	<p><span class="code"># tcpdump -nni 0.0:nnn -s0 -w /var/tmp/$HOSTNAME-DNS.pcap host &lt;listener.ip.address&gt; and port 53 -v</span></p>
+	</li><li>
+	<p>Reproduce the issue</p>
+
+	<p><span class="code"># dig @&lt;listener.anycast.ip.address&gt; &lt;wideip&gt;</span></p>
+	</li><li>
+	<p>Run script on GTM/DNS</p>
+
+	<p><span class="code"># while true; do date &gt;&gt; /var/tmp/$HOSTNAME-tmctl.txt;  tmctl -ai -c -d blade &gt;&gt; /var/tmp/$HOSTNAME-tmctl.txt; tmsh list sys db gtm.reqinitstate &gt;&gt; /var/tmp/$HOSTNAME-tmctl.txt; echo &quot;Collecting tmctl stats. Press ^c to stop&quot;; sleep 5; done</span></p>
+	<span class="note"><strong>Note:</strong> Above script collects tmctl stats every 5s. We need to run it to observe how different gtm relevant counters change.</span><br>	<br>	Keep the script and debug logging running for a few minutes whilst sending multiple queries to ALL GTMs&#39; WideIP with persistence enabled and no persistence records so we trigger the problem. After a few minutes, please stop the script and the debug logging.</li></ol>
+<span class="subsubsectiontitle">Disable Debugging and Collect Data</span>
+
+<ol><li>
+	<p>Run the following commands to disable debugging</p>
+
+	<p><span class="code"># tmsh modify sys db log.gtm.level value notice</span><br>	<span class="code"># tmsh modify sys db log.big3d.level value notice</span><br>	<span class="code"># tmsh modify sys db gtm.debugprobelogging value disable</span><br>	<span class="code"># tmsh modify sys db gtm.querylogging value disable</span></p>
+	</li><li>Stop scripts and tcpdumps</li><li>
+	<p>(Optional) Core gtmd</p>
+
+	<p><span class="code"># ps ax | grep gtmd</span><br>	<span class="code"># kill -6 &lt;pid of gtmd process&gt;</span></p>
+	</li><li>Gather all qkviews (and core file if gtmd is killed)</li></ol>
+</article>
+</body>
+</html>

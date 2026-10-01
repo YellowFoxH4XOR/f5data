@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000139155: Filter syslog messages for benign events, preventing them from reaching remote syslog servers</title>
+<meta name="description" content="Support Solution: Filter syslog messages for benign events, preventing them from reaching remote syslog servers — Create syslog configuration to filter noisy, recurring logs locally in /var/log/ltm and from being sent to a remote syslog server.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000139155">
+</head>
+<body>
+<header>
+<h1>K000139155: Filter syslog messages for benign events, preventing them from reaching remote syslog servers</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-04-02</dd>
+<dt>Updated</dt><dd>2024-05-16</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.X.X, 15.0.0, 15.0.1, 15.0.X, 15.1.0, 15.1.1, 15.1.2, 15.1.3, 15.1.4, 15.1.5, 15.1.6, 15.1.7, 15.1.8, 15.1.9, 15.1.10, 15.1.X, 16.0.0, 16.0.1, 16.0.X, 16.1.0, 16.1.1, 16.1.2, 16.1.3, 16.1.4, 16.1.X, 17.0.0, 17.0.X, 17.1.0, 17.1.1, 17.1.X, 15.X.X, 16.X.X</li><li>BIG-IP AFM</li><li>BIG-IP Cloud Edition</li><li>BIG-IP Distributed Cloud Services</li><li>BIG-IP PEM</li><li>BIG-IP Link Controller</li><li>BIG-IP GTM</li><li>BIG-IP FPS</li><li>BIG-IP DNS</li><li>BIG-IP ASM</li><li>BIG-IP APM</li><li>BIG-IP AAM</li><li>BIG-IP Analytics</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000139155">https://my.f5.com/manage/s/article/K000139155</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Create syslog configuration to filter noisy, recurring logs locally in /var/log/ltm and from being sent to a remote syslog server.</p>
+<p>As an example, the workaround for ID1228465 will be used to filter 3 recurring logs, which are causing /var/log/ltm to rollover and reduce visibility of other logged events.</p>
+<pre class="ckeditor_codeblock">warning chmand[4101]: 012a0004:4: getHostVWireNtiObjectConfigs vCmpShmIntf: Query segment error
+warning chmand[4101]: 012a0004:4: VcmpShmIntf::querySeg: err code -34<br>warning chmand[4101]: 012a0004:4: getHostVWireObjectConfigs vCmpShmIntf: Query segment error</pre>
+<h2>Environment</h2>
+<p>Confirmed log event is benign. In the case of ID1228465, due to a recent upgrade to an affected 15.1.x version, the 3 chmand warnings are repeatedly logged in /var/log/ltm.</p>
+<h2>Cause</h2>
+<p>Benign, recurring logs that decrease visibility of more important logs.</p>
+<h2>Recommended Actions</h2>
+<p>Use message filter prefaced with &quot;not&quot; in the filter statement to remote syslog server:</p>
+<pre class="ckeditor_codeblock">filter f_getHostVWireNtiObjectConfigs {not message(\\getHostVWireNtiObjectConfigs\\) and not message(\\getHostVWireObjectConfigs\\) and not message(\\VcmpShmIntf\\);};</pre>
+<p>To filter the logs from being written to /var/log/ltm:</p>
+<pre class="ckeditor_codeblock">filter f_local0 {<br>    (facility(local0) and not match (getHostVWireNtiObjectConfigs) and not match (getHostVWireObjectConfigs) and not match (VcmpShmIntf));
+};</pre>
+<p>As an example, here is the entirety of a syslog configuration that will filter any events that do not match the 3 strings from being sent to the syslog server 10.253.77.195.</p>
+<p>Typically, syslog uses port 514 over UDP. However, syslog can be used over TCP occasionally. F5 Support recommends verifying with your internal syslog administrator, as configuring with the incorrect protocol will result in no captured logs on the remote syslog server.</p>
+<pre class="ckeditor_codeblock">root@(localhost2)(cfg-sync In Sync)(Active)(/Common)(tmos)# root@(localhost2)(cfg-sync In Sync)(Active)(/Common)(tmos)# list sys syslog<br>sys syslog {<br>    include &quot;
+    destination d_remote_loghost {
+          udp(\&quot;10.253.77.195\&quot; port(514));
+ };
+    filter f_remote_loghost {level(warning..emerg) ;};
+    filter f_getHostVWireNtiObjectConfigs  {not message(\\getHostVWireNtiObjectConfigs\\) and not message(\\getHostVWireObjectConfigs\\) and not message(\\VcmpShmIntf\\);};
+      log {
+          source(s_syslog_pipe);
+          filter(f_getHostVWireNtiObjectConfigs);
+          filter(f_remote_loghost);
+          destination(d_remote_loghost);
+      };
+       filter f_local0 {
+           (facility(local0) and not match (getHostVWireNtiObjectConfigs) and not match (getHostVWireObjectConfigs) and not match (VcmpShmIntf));
+       };
+        &quot;
+}
+</pre>
+<p>Run a tcpdump to see the packets are filtered out. The log events that match any of the 3 strings will be filtered out: &quot;getHostVWireNtiObjectConfigs&quot;, &quot;getHostVWireObjectConfigs&quot;, &quot;VcmpShmIntf&quot;.</p>
+<p>Other log events can be observed in the tcpdump.</p>
+<pre class="ckeditor_codeblock">[root@localhost2:Active:In Sync] config # tcpdump -ni mgmt host 10.253.77.195<br>tcpdump: verbose output suppressed, use -v or -vv for full protocol decode<br>listening on mgmt, link-type EN10MB (Ethernet), capture size 65535 bytes<br>08:07:55.194365 IP 10.155.17.65.40620 &gt; 10.253.77.195.syslog: SYSLOG user.warning, length: 111<br><br>[root@localhost2:Active:In Sync] config # date +%H:%M:%S; logger -p warning chmand[5440]: 012a0004:4: getHostVWireNtiObjectConfigs<br>08:07:30<br>[root@localhost2:Active:In Sync] config # date +%H:%M:%S; logger -p warning chmand[5440]: 012a0004:4: getHostVWireObjectConfigs<br>08:07:39<br>[root@localhost2:Active:In Sync] config # date +%H:%M:%S; logger -p warning chmand[5440]: 012a0004:4: VcmpShmIntf<br>08:07:47<br>[root@localhost2:Active:In Sync] config # date +%H:%M:%S; logger -p warning chmand[5440]: 012a0004:4: no matching strings here<br>08:07:55</pre>
+<h2>Additional Information</h2>
+<p>Syslog-ng technical documentation provides further insight into syslog facilities, filters, and other recommendations.</p>
+<ul><li><a href="https://support.oneidentity.com/technical-documents/syslog-ng-open-source-edition/3.38/administration-guide/67" target="_blank">facility() filter and filter() value synopsis</a></li><li><a href="https://support.oneidentity.com/technical-documents/syslog-ng-open-source-edition/3.38/administration-guide/65#TOPIC-2026374" target="_blank">Using filters within syslog-ng and an example filter statement</a></li><li><a href="https://support.oneidentity.com/technical-documents/syslog-ng-open-source-edition/3.38/administration-guide/68" target="_blank">level() filter for priority matching and match() filter for regular expressions</a></li></ul>
+<p> </p>
+</article>
+</body>
+</html>

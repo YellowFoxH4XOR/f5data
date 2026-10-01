@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160870: GTM Monitor Receive Strings Do Not Support \d and \D Regex Escape Sequences</title>
+<meta name="description" content="Support Solution: GTM Monitor Receive Strings Do Not Support \d and \D Regex Escape Sequences — GTM (BIG-IP DNS) HTTPS monitors fail to match server responses when receive strings that use regular expression escape sequences such as \d (any decimal digit) and \D (any non-digit character). This…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160870">
+</head>
+<body>
+<header>
+<h1>K000160870: GTM Monitor Receive Strings Do Not Support \d and \D Regex Escape Sequences</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-18</dd>
+<dt>Updated</dt><dd>2026-06-18</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160870">https://my.f5.com/manage/s/article/K000160870</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>GTM (BIG-IP DNS) HTTPS monitors fail to match server responses when receive strings that use regular expression escape sequences such as <span style="background-color: #f1f1f1;">\d</span> (any decimal digit) and <span style="background-color: #f1f1f1;">\D</span> (any non-digit character). This results in pool members being marked as unavailable (red), even though the server is responding correctly.</p>
+<p>Observed behavior:</p>
+<table><thead><tr><th colspan="1" rowspan="1">Receive String</th><th colspan="1" rowspan="1">Pool Member State</th></tr></thead><tbody><tr><td colspan="1" rowspan="1">HTTP/1.1 200 OK</td><td colspan="1" rowspan="1">Green</td></tr><tr><td colspan="1" rowspan="1">HTTP/1\.1\ 200\ OK</td><td colspan="1" rowspan="1">Green</td></tr><tr><td colspan="1" rowspan="1">HTTP/1\.1\ 2[0-9][0-9]\ OK</td><td colspan="1" rowspan="1">Green</td></tr><tr><td colspan="1" rowspan="1">HTTP/1\.1\ 2[0-9][[:digit:]]\ OK</td><td colspan="1" rowspan="1">Green</td></tr><tr><td colspan="1" rowspan="1">HTTP/1\.1\ 2\d\d\ OK</td><td colspan="1" rowspan="1">Red (connect: success, search result: false)</td></tr><tr><td colspan="1" rowspan="1">HTT\D/1\.1\ 200</td><td colspan="1" rowspan="1">Red (connect: success, search result: false)</td></tr></tbody></table>
+<p>Log message example:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">alert gtmd[10099]: 011a4003:1: SNMP_TRAP: Pool /Common/&lt;pool_name&gt; member &lt;ip:port&gt; state change green --&gt; red ( Monitor /Common/&lt;monitor_name&gt; : connect: success, search result: false)</span></p>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP DNS (GTM)</li><li>Version: 17.5.1.x (and potentially other versions)</li><li>Monitor type: GTM HTTPS monitor</li><li>Configuration: Receive string using <span style="background-color: #f1f1f1;">\d</span> or <span style="background-color: #f1f1f1;">\D</span> Perl-compatible regex escape sequences</li><li>Monitor daemon: big3d</li></ul>
+<h2>Cause</h2>
+<p>GTM monitors use the <span style="background-color: #f1f1f1;">big3d</span> daemon for health checks, which only accepts <span style="background-color: #f1f1f1;">\r</span> and <span style="background-color: #f1f1f1;"> </span> as valid escape sequences in monitor receive strings. Other Perl-compatible regex escape sequences—including <span style="background-color: #f1f1f1;">\d</span>, <span style="background-color: #f1f1f1;">\D</span>, <span style="background-color: #f1f1f1;">\s</span>, <span style="background-color: #f1f1f1;">\S</span>, <span style="background-color: #f1f1f1;">\w</span>, and <span style="background-color: #f1f1f1;">\W</span>—are not supported in GTM monitor receive strings. This is a functional difference between LTM and GTM monitors.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>Replace unsupported PCRE escape sequences in GTM monitor receive strings with equivalent POSIX character classes or bracket expressions:</p>
+<ul><li>Replace <span style="background-color: #f1f1f1;">\d</span> (any digit) with <span style="background-color: #f1f1f1;">[0-9]</span> or <span style="background-color: #f1f1f1;">[[:digit:]]</span></li><li>Replace <span style="background-color: #f1f1f1;">\D</span> (any non-digit) with <span style="background-color: #f1f1f1;">[^0-9]</span> or <span style="background-color: #f1f1f1;">[^[:digit:]]</span></li></ul>
+<p><strong>Example — Before (not working):</strong></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">recv &quot;HTTP/1.1 \d\d\d OK&quot;</span></p>
+<p><strong>Example — After (working):</strong></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">recv &quot;HTTP/1.1 [0-9][0-9][0-9] OK&quot;</span></p>
+<p>To validate the monitor receive string against the actual server response:</p>
+<ol><li>Run a <span style="background-color: #f1f1f1;">curl</span> command from BIG-IP to retrieve the actual server response:<br><p><span style="font-family: &#39;courier new&#39;, courier, monospace;">curl -X GET &quot;https://&lt;server_ip&gt;/&lt;path&gt;&quot; -vk</span></p>
+</li><li>Review the response body and HTTP status line to confirm the exact string to match.</li><li>Update the GTM monitor receive string using only supported syntax (<span style="background-color: #f1f1f1;">[0-9]</span>, <span style="background-color: #f1f1f1;">[[:digit:]]</span>, <span style="background-color: #f1f1f1;">\r</span>, <span style="background-color: #f1f1f1;"> </span>).</li><li>Enable monitor logging on the pool member to verify monitor behavior.</li><li>If the issue persists after updating the receive string, enable GTM debug logging via <span style="background-color: #f1f1f1;">tmsh</span>:<br><p><span style="font-family: &#39;courier new&#39;, courier, monospace;">modify /sys db log.gtm.level value debug; modify /sys db gtm.debugprobelogging value enable</span></p>
+After capturing a monitor failure, disable debug logging:<br><p><span style="font-family: &#39;courier new&#39;, courier, monospace;">modify /sys db log.gtm.level value notice; modify /sys db gtm.debugprobelogging value disable</span></p>
+</li><li>Collect a new qkview for further analysis if needed.</li></ol>
+<h2>Additional Information</h2>
+<ul><li>This behavior is by design and represents a functional difference between LTM and GTM monitor implementations.</li><li>Only <span style="background-color: #f1f1f1;">\r</span> and <span style="background-color: #f1f1f1;"> </span> are accepted as escape sequences in GTM monitor receive strings.</li><li>POSIX character classes such as <span style="background-color: #f1f1f1;">[0-9]</span> and <span style="background-color: #f1f1f1;">[[:digit:]]</span> are fully supported alternatives.</li></ul>
+</article>
+</body>
+</html>

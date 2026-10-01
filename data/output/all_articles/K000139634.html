@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000139634: AWS NGINX Plus subscription, yum cannot access NGINX repos. Status 403 returned.</title>
+<meta name="description" content="Support Solution: AWS NGINX Plus subscription, yum cannot access NGINX repos. Status 403 returned. — Background information on the implementation of Repository Access. This will aid in resolving update issues. These typically manifest as Status 403 returns when using yum.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000139634">
+</head>
+<body>
+<header>
+<h1>K000139634: AWS NGINX Plus subscription, yum cannot access NGINX repos. Status 403 returned.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-05-15</dd>
+<dt>Updated</dt><dd>2024-05-15</dd>
+<dt>Applies to</dt><dd><ul><li>Public Cloud</li><li>NGINX Products</li><li>NGINX Plus: R13, R16, R15, R14, R30, R29, R28, R27, R26, R25, R24, R23, R22, R21, R20, R19, R18, R17, R31</li><li>Amazon Web Services</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000139634">https://my.f5.com/manage/s/article/K000139634</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Background information on the implementation of Repository Access. This will aid in resolving update issues. These typically manifest as Status 403 returns when using yum.</p>
+<p> </p>
+<h2>Environment</h2>
+<p>AWS, using NGINX Pus Subscription images from AMI marketplace.</p>
+<p>This is for the Amazon Linux 2 version. Similar functionality is implemented for other platforms.</p>
+<p> </p>
+<h2>Cause</h2>
+<p>NGINX Plus is licensed by subscription. Part of this subscription is access to the NGINX Plus repository.</p>
+<p>This enables updates and installation of additional modules, using yum.</p>
+<p> </p>
+<p>The yum plugin gets instance metadata from IMDS and then sends it to the NGINX Plus repository url through the headers.</p>
+<p>This needs a token to retrieve.</p>
+<p> </p>
+<p>On the actual VM it&#39;s /usr/lib/yum-plugins/ngx-amazon-id.py</p>
+<p> </p>
+<h3>Test the metadata connection with no token:</h3>
+<pre class="language-cpp"><code>curl http://169.254.169.254/latest/dynamic/instance-identity/document
+{
+  &quot;accountId&quot; : &quot;586601000000&quot;,
+  &quot;architecture&quot; : &quot;x86_64&quot;,
+  &quot;availabilityZone&quot; : &quot;us-west-2c&quot;,
+  &quot;billingProducts&quot; : null,
+  &quot;devpayProductCodes&quot; : null,
+  &quot;marketplaceProductCodes&quot; : [ &quot;cdbl6ly48gqtr6xorumhqvqtn&quot; ],
+  &quot;imageId&quot; : &quot;ami-0f40f091219a2e61f&quot;,
+  &quot;instanceId&quot; : &quot;i-0d54bdcc7b1facf2b&quot;,
+  &quot;instanceType&quot; : &quot;t2.medium&quot;,
+  &quot;kernelId&quot; : null,
+  &quot;pendingTime&quot; : &quot;2024-05-14T21:23:29Z&quot;,
+  &quot;privateIp&quot; : &quot;172.31.1.34&quot;,
+  &quot;ramdiskId&quot; : null,
+  &quot;region&quot; : &quot;us-west-2&quot;,
+  &quot;version&quot; : &quot;2017-09-30&quot; 
+}</code></pre>
+<p> </p>
+<h3>Test the yum process:</h3>
+<pre class="language-cpp"><code>URLGRABBER_DEBUG=1,debug.log LC_ALL=C yum --debuglevel=10 --disablerepo=\* --enablerepo=nginx-plus makecache --verbose
+</code></pre>
+<p>The debug.log file is created in the current directory.</p>
+<p>On a working instance it returns:</p>
+<pre class="language-cpp"><code>&gt; GET /plus/amzn2/2/x86_64/repodata/c88ec27c9d17d2697dc96c2b74bdd5e2886cecd2a7cc857e8a15ba40a0b30260-other.sqlite.bz2 HTTP/1.1
+Host: cloud-pkgs.nginx.com
+User-Agent: urlgrabber/3.10 yum/3.4.3
+Accept: */*
+X-NGX-REPO-ID:ewogICJhY2NvdW50SWQiIDogIjU4NjYwMTM3MjYwNCIsCiAgImFyY2hpdGVjdHVyZSIgOiAieDg2&lt;SNIP&gt;
+X-NGX-REPO-SIGNATURE:UzJoNHg1ME9HUWRJWTIzSCtxZjBIR3pQTnR1Z3ZIc2ovblUrdExBM0ZLYU02U29Nc0xZa&lt;SNIP&gt;
+
+* SSL connection using TLSv1.2 / ECDHE-RSA-AES256-GCM-SHA384
+* ALPN: server accepted http/1.1
+* Server certificate:
+*  subject: CN=*.nginx.com
+*  start date: May 13 14:35:42 2024 GMT
+*  expire date: Aug 11 14:35:41 2024 GMT
+*  subjectAltName: host &quot;cloud-pkgs.nginx.com&quot; matched cert&#39;s &quot;*.nginx.com&quot;
+*  issuer: C=US; O=Let&#39;s Encrypt; CN=R3
+*  SSL certificate verify ok.
+* using HTTP/1.1
+&gt; GET /plus/amzn2/2/x86_64/repodata/7e3c3c587c889b040d8007e4f0dd082d8ef74b5ad5d00ba569d95355038943c0-filelists.sqlite.bz2 HTTP/1.1
+Host: cloud-pkgs.nginx.com
+User-Agent: urlgrabber/3.10 yum/3.4.3
+Accept: */*
+ID:ewogICJhY2NvdW50SWQiIDogIjU4NjYwMTM3MjYwNCIsCiAgImFyY2hpdGVjdHVyZSIgOiAieDg2&lt;SNIP&gt;
+X-NGX-REPO-SIGNATURE:UzJoNHg1ME9HUWRJWTIzSCtxZjBIR3pQTnR1Z3ZIc2ovblUrdExBM0ZLYU02U29Nc0xZa&lt;SNIP&gt;
+
+&lt; HTTP/1.1 200 OK
+&lt; Server: nginx/1.25.3
+&lt; Date: Tue, 14 May 2024 21:35:41 GMT
+&lt; Content-Type: application/octet-stream
+&lt; Content-Length: 192130
+&lt; Last-Modified: Wed, 24 Jan 2024 01:31:11 GMT
+&lt; Connection: keep-alive
+&lt; ETag: &quot;65b0685f-2ee82&quot;
+&lt; Accept-Ranges: bytes
+&lt; 
+&lt; HTTP/1.1 200 OK/x86_64/other_db
+&lt; Server: nginx/1.25.3
+&lt; Date: Tue, 14 May 2024 21:35:41 GMT
+&lt; Content-Type: application/octet-stream
+&lt; Content-Length: 202290
+&lt; Last-Modified: Wed, 24 Jan 2024 01:31:12 GMT
+&lt; Connection: keep-alive
+&lt; ETag: &quot;65b06860-31632&quot;
+&lt; Accept-Ranges: bytes</code></pre>
+<p>Note the existence of the X-NGX-REPO-ID base64 encoded header.<br>To get this from the AWS metadata server requires presenting an authentication header which is acquired from the http://169.254.169.254/latest/api/token endpoint. This is what the yum plugin does.</p>
+<h2>Recommended Actions</h2>
+<p>This is informational.</p>
+<h2>Additional Information</h2>
+<p>The NGINX repository on a subscription instance is:</p>
+<pre class="language-markup"><code>cat nginx-plus.repo
+[nginx-plus]
+name=nginx-plus repo
+baseurl=https://cloud-pkgs.nginx.com/plus/amzn2/2/$basearch/
+gpgcheck=1
+enabled=1</code></pre>
+<p>The /usr/lib/yum-plugins/ngx-amazon-id.py code is:</p>
+<pre class="language-python"><code>#!/usr/bin/python
+#
+# Copyright (c) 2010 Red Hat, Inc.
+#
+# This software is licensed to you under the GNU General Public License,
+# version 2 (GPLv2). There is NO WARRANTY for this software, express or
+# implied, including the implied warranties of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE. You should have received a copy of GPLv2
+# along with this software; if not, see
+# http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt.
+#
+# Red Hat trademarks are not licensed under GPLv2. No permission is
+# granted to use or replicate Red Hat trademarks that are incorporated
+# in this software or its documentation.
+
+import base64
+import urllib2
+try:
+    import simplejson as json
+except:
+    import json
+
+from urllib2 import ProxyHandler
+from yum.plugins import TYPE_CORE
+
+requires_api_version = &#39;2.3&#39;
+plugin_type = (TYPE_CORE,)
+token = &#39;&#39;
+
+ID_DOC_HEADER = &quot;X-NGX-REPO-ID&quot;
+ID_SIG_HEADER = &quot;X-NGX-REPO-SIGNATURE&quot;
+TOKEN_TTL_HEADER = &quot;X-aws-ec2-metadata-token-ttl-seconds&quot;
+TOKEN_HEADER_ID = &quot;X-aws-ec2-metadata-token&quot;
+ID_DOC_URL = &quot;http://169.254.169.254/latest/dynamic/instance-identity/document&quot;
+ID_SIG_URL = &quot;http://169.254.169.254/latest/dynamic/instance-identity/signature&quot;
+TOKEN_URL = &quot;http://169.254.169.254/latest/api/token&quot;
+
+# We do not want to use a proxy to read the Amazon instance metadata, so bypass
+# any proxy that might be set, including by http{s}_proxy environment
+# variable(s).
+proxy_handler = ProxyHandler({})
+opener = urllib2.build_opener(proxy_handler)
+
+
+def init_hook(conduit):
+    &#39;&#39;&#39;
+    Plugin initialization hook. For each NGINX repo, replace yum&#39;s representation of the
+    repo with a subclass that adds in the necessary headers.
+    &#39;&#39;&#39;
+
+    # Only process nginx repos
+    repos = conduit.getRepos()
+    ngx_repos = repos.findRepos(&#39;nginx-*&#39;)
+
+    # Retrieve the Amazon metadata
+    global token
+    token = _get_token()
+    id_doc = _load_id()
+    id_sig = _load_signature()
+
+    if id_doc and id_sig:
+        # Encode it so it can be inserted as an HTTP header
+        # Signature does not need to be encoded, it already is.
+        id_doc = base64.urlsafe_b64encode(id_doc)
+        id_sig = base64.urlsafe_b64encode(id_sig)
+
+        # Add the headers to all NGINX repos
+        for repo in ngx_repos:
+            repo.http_headers[ID_DOC_HEADER] = id_doc
+            repo.http_headers[ID_SIG_HEADER] = id_sig
+
+
+def _read_aws_metadata(url):
+    req = urllib2.Request(url)
+    req.add_header(TOKEN_HEADER_ID, token)
+    try:
+        fp = opener.open(req)
+        data = fp.read()
+        fp.close()
+    except urllib2.URLError:
+        return None
+
+    return data
+
+
+def _get_token():
+    req = urllib2.Request(url=TOKEN_URL, data=b&#39;&#39;)
+    req.get_method = lambda: &#39;PUT&#39;
+    req.add_header(TOKEN_TTL_HEADER, &#39;120&#39;) # Time to live in seconds
+    try:
+        fp = opener.open(req)
+        token = fp.read()
+        fp.close()
+    except urllib2.URLError:
+        return &#39;&#39;
+
+    return token
+
+
+def _load_id():
+    &#39;&#39;&#39;
+    Loads and returns the Amazon metadata for identifying the instance.
+
+    @rtype: string
+    &#39;&#39;&#39;
+    return _read_aws_metadata(ID_DOC_URL)
+
+
+def _load_signature():
+    &#39;&#39;&#39;
+    Loads and returns the signature of hte Amazon identification metadata.
+
+    @rtype: string
+    &#39;&#39;&#39;
+    return _read_aws_metadata(ID_SIG_URL)</code></pre>
+</article>
+</body>
+</html>

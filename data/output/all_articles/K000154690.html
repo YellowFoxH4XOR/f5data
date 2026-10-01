@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000154690: &quot;Access encountered an error (Illegal argument)&quot; logged by BIG-IP when receiving SAML SLO LogoutResponse from AD FS acting as SAML IdP</title>
+<meta name="description" content="Support Solution: &quot;Access encountered an error (Illegal argument)&quot; logged by BIG-IP when receiving SAML SLO LogoutResponse from AD FS acting as SAML IdP — In a SAML SP initiated SLO flow, an AD FS server acting as SAML IdP, will redirect the browser back to a URL such as &quot;https://www.example.com/saml/sp/profile/redirect/slo?SAMLResponse=xxx&quot;.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000154690">
+</head>
+<body>
+<header>
+<h1>K000154690: &quot;Access encountered an error (Illegal argument)&quot; logged by BIG-IP when receiving SAML SLO LogoutResponse from AD FS acting as SAML IdP</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-09-15</dd>
+<dt>Updated</dt><dd>2025-09-15</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 16.X.X, 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000154690">https://my.f5.com/manage/s/article/K000154690</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>In a SAML SP initiated SLO flow, an AD FS server acting as SAML IdP, will redirect the browser back to a URL such as &quot;https<strong>:</strong>//www<strong>.</strong>example<strong>.</strong>com/saml/sp/profile/redirect/slo?SAMLResponse=xxx&quot;.<br>BIG-IP acting as SAML SP (handling www<strong>.</strong>example<strong>.</strong>com) will receive it and will send back a RST with &quot;Access encountered an error (Illegal argument)&quot;.<br>This happens because AD FS server may append certain parameters, like &quot;client-request-id&quot;.<br>This parameter is not part of the core SAML 2.0 specification; instead, it is an implementation-specific addition by AD FS to help with diagnostics and client troubleshooting</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP APM as SAML SP</li><li>ADFS as SAML IdP </li></ul>
+<h2>Cause</h2>
+<p> The &quot;client-request-id&quot; parameter is not expected here as per OASIS Standard so BIG-IP is acting properly.</p>
+<h2>Recommended Actions</h2>
+<p>You can use below workaround iRule to skip the &quot;client-request-id&quot; parameter from the request.  ​​​​​</p>
+<p>​​</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when HTTP_REQUEST {
+   if { [HTTP::has_responded] } { return }
+   if { [HTTP::method] eq &quot;GET&quot; } {
+      # Get the complete query string
+      set query_string [HTTP::query]
+      # Only proceed if a query string exists and it contains client-request-id
+      if { [info exists query_string] &amp;&amp; $query_string ne &quot;&quot; &amp;&amp; $query_string contains &quot;client-request-id&quot; } {
+         # Split the query string into a list of parameters
+         set param_list [split $query_string &quot;&amp;&quot;]
+         # Initialize a new list to hold updated parameters
+         set updated_params {}
+         # Loop through each parameter
+         foreach param $param_list {
+            # Add the parameter to updated_params only if it&#39;s NOT &quot;client-request-id&quot;
+            if {!([string tolower $param] starts_with &quot;client-request-id=&quot;)} {
+               lappend updated_params $param
+            }
+         }
+         # Reconstruct the updated query string without client-request-id
+         set updated_query [join $updated_params &quot;&amp;&quot;]
+         # Update the URI with the new query string (or just the path if no params are left)
+         if {$updated_query eq &quot;&quot;} {
+            HTTP::uri [HTTP::path]
+         } else {
+            HTTP::uri [HTTP::path]?$updated_query
+         }
+      }
+   }
+   # Optional: Log the modified HTTP URI (for debugging)
+   #log local0. &quot;Modified HTTP Request URI: [HTTP::uri]&quot;
+}</code></pre>
+<h2>Additional Information</h2>
+</article>
+</body>
+</html>

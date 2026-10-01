@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000130542: After upgrade, F5 VELOS Controller is &quot;In Progress&quot; status for a long time</title>
+<meta name="description" content="Support Solution: After upgrade, F5 VELOS Controller is &quot;In Progress&quot; status for a long time — The /var/log_controller/velos.log file shows the upgrade was completed on one of the controller. You may observe logs similar to the following on the working controller. On the affected controller…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000130542">
+</head>
+<body>
+<header>
+<h1>K000130542: After upgrade, F5 VELOS Controller is &quot;In Progress&quot; status for a long time</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-02-09</dd>
+<dt>Updated</dt><dd>2026-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS</li><li>F5OS-C: 1.5.1, 1.5.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000130542">https://my.f5.com/manage/s/article/K000130542</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><span style="font-size: 18pt;font-family: Arial, sans-serif;">Description</span></h2>
+<ul><li><span>The <strong>/var/log_controller/velos.log</strong> file shows the upgrade was completed on one of the controller. You may observe logs similar to the following on the working controller. On the affected controller however, you may observe the same logs, but without the <strong>BOOT MARKER</strong> entry indicating there are issues preventing it from rebooting and completing the upgrade.<br></span>
+<p><span class="example2">&lt;date_timestamp&gt; controller-1 /usr/libexec/sw-mgmt/sw-util.sh switch_agnostic_os 1.5.1-14085: priority=Info msgid=0x3501000000000027 msg=Update complete. Reboot required for changes to take effect.<br>&lt;date_timestamp&gt; controller-1 /usr/libexec/sw-mgmt/sw-util.sh switch_agnostic_services 1.5.1-14085 no_restart: priority=Info msgid=0x3501000000000026 msg=Update of controller platform services to version 1.5.1-14085 in progress.<br>&lt;date_timestamp&gt; controller-1 /usr/libexec/sw-mgmt/sw-util.sh switch_agnostic_services 1.5.1-14085 no_restart: priority=Info msgid=0x3501000000000028 msg=Update complete.<br>&lt;date_timestamp&gt; controller-1.chassis.local notice boot_marker: ---===[ BOOT-MARKER ]===---<br><br></span></p>
+</li><li>Based on the GUI, the upgrade was successful only on one of the system controllers (Active Controller)</li><li>The second controller (Standby) keeps &quot;<strong>In Progress</strong>&quot; status for a long (undetermined) time.</li><li>You observe logs similar to the following in <strong>/var/log/sw-mgmt.debug</strong>:<br><p><span class="example2">&lt;date_timestamp&gt; - ERROR: sw-mgmt: priority=error msgid=0x3501000000000102 msg=controller registry 2001 creation error: 409 Client Error: Conflict (&quot;You cannot remove a running container [...]. Stop the container before attempting removal or use -f&quot;)<br><br></span></p>
+</li><li>One controller is unable to join the cluster. When you run the<strong> show cluster</strong> command, you may observe an output similar to the following:<br><p><span class="example2">NAME          STATUS         TIME CREATED          ROLES         CPU  PODS  MEMORY      HUGEPAGES  USAGE   USAGE<br>------------------------------------------------------------------------------------------------------------------<br>blade-1       Ready          2022-11-30T04:17:17Z  compute       28   250   26112436Ki  102892Mi   14%     15%<br>[...]<br>controller-1  Ready          2022-04-22T22:08:31Z  infra,master  -    -     -           -          -       -<br><strong>controller-2  NotReady       2022-04-22T22:08:32Z  infra,master  -    -     -           -          -       -<br></strong>[...]<br>                                                               ABLE   ABLE<br>                                             IN       READY    TO     TO<br>INDEX  NAME                        INSERTED  CLUSTER  CLUSTER  PING   SSH    STATE<br>---------------------------------------------------------------------------------------------<br>1      controller-1.chassis.local  true      true     true     true   true   In Cluster<strong><br>2      controller-2.chassis.local  true      true     false    false  false  Not In Cluster<br></strong>[...]</span></p>
+</li></ul>
+<h2><span style="font-size: 18pt;font-family: Arial, sans-serif;">Environment</span></h2>
+<ul><li>Upgrade F5OS-C on VELOS Platform (system controller)</li><li>Most of the needed docker containers are not running on the (not-working) controller. To determine this, do both of the following:
+<ul><li>Run <strong>docker ps</strong> to list running containers on both controllers and compare the output.</li><li>Query <strong>/var/log/journal</strong> for any errors with <strong>platform-services-deployment</strong> using the following command:<br><span class="code">journalctl -D /var/log/journal -b -u platform-services-deployment --no-pager</span>
+<p>You may observe an output similar to the following indicating issues with <strong>platform-services-deployment</strong> when triggering docker-compose to start F5OS services.</p>
+<span class="example2">&lt;date_timestamp&gt; controller-2.chassis.local platform-deployment[13254]: Unexpected error encountered while starting platform services via docker-compose.<br>&lt;date_timestamp&gt; controller-2.chassis.local platform-deployment[13254]: Unable to successfully launch platform services after 3 attempts. Giving up.<br>&lt;date_timestamp&gt; controller-2.chassis.local platform-deployment[13254]: Try checking the active config under /var/docker/config for errors and rebooting?<br><br></span></li></ul>
+</li><li><strong>reboot</strong>&quot; or &quot;<strong>shutdown -r now</strong>&quot; commands failed to run. For example:
+<p><span class="example2"># systemctl reboot<br>Failed to start reboot.target: Connection timed out<br>See system logs and &#39;systemctl status reboot.target&#39; for details.<br><br></span></p>
+</li><li>Upgrade the F5OS-C (controller-level) to newer version (from &#39;<strong>v1.5.0</strong>&#39; to &#39;<strong>v1.5.1</strong>&#39;)</li></ul>
+<h2><span style="font-size: 18pt;font-family: Arial, sans-serif;">Cause</span></h2>
+<p>Some previously not-stopped containers prevented essential containers from starting properly on system controller, after upgrade to the newer version.</p>
+<h2><span style="font-size: 18pt;font-family: Arial, sans-serif;">Recommended Actions</span></h2>
+<p>Perform <strong>force Reboot</strong> on the (Standby) controller that&#39;s not working. Follow below steps:</p>
+<ol><li>Login as &quot;<strong>root</strong>&quot; to the working (Active) controller</li><li>Use &quot;<strong>SSH</strong>&quot; command to login to the other controller, using the &#39;<strong>ccpeer</strong>&#39; link. The default IP address for &#39;<strong>ccpeer</strong>&#39; link for system controller-1 is &quot;<strong>100.65.7.51</strong>&quot;, and for system controller-2 is &quot;<strong>100.65.7.52</strong>&quot;. In our example, we consider that the controller-1 is Active and working fine, and the controller-2 is Standby and has the issue. So, establish SSH connection from controller-1 to controller-2, as below.<br><br><span style="background-color: #dddddd;"># ssh 100.65.7.52</span></li><li>Since the normal reboot command might not work in such cases, force reboot using the &quot;<strong>sysrq</strong>&quot; command. Run the three below commands, in the same sequence and note that the third command performs the reboot.<br><strong>Tip:</strong> Make sure you are on the correct controller that has the issue, when running these commands. <br><ol><li>Sync all mounted filesystems: <br><br><span style="background-color: #dddddd;"># echo s &gt; /proc/sysrq-trigger</span></li><li>Remount all mounted filesystems in read-only mode: <br><br><span style="background-color: #dddddd;"># echo u &gt; /proc/sysrq-trigger</span></li><li>Immediately reboot the system: <br><br><span style="background-color: #dddddd;"># echo b &gt; /proc/sysrq-trigger</span></li></ol>
+</li><li>After &quot;10 Minutes&quot;, the controller is supposed to be up and running and upgraded to the newer version.</li></ol>
+<h2><span style="font-size: 18pt;font-family: Arial, sans-serif;">Additional </span><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Information</strong></h2>
+<p><span style="font-size: 10.5pt;font-family: Arial, sans-serif;">None</span></p>
+</article>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000150224: Cilium BGP v2 with Container Ingress Services</title>
+<meta name="description" content="Knowledge: Cilium BGP v2 with Container Ingress Services — You are attempting to use Cilium BGP with Container Ingress Services (CIS).">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000150224">
+</head>
+<body>
+<header>
+<h1>K000150224: Cilium BGP v2 with Container Ingress Services</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2025-03-04</dd>
+<dt>Updated</dt><dd>2025-08-31</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000150224">https://my.f5.com/manage/s/article/K000150224</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>You are  attempting to use Cilium BGP with <a href="https://clouddocs.f5.com/containers/latest/" target="_blank">Container Ingress Services (CIS)</a>.</p>
+<p>The results are unsatisfactory.</p>
+<p>Cilium has become the preeminent CNI solution for kubernetes due to its performance and flexibility.</p>
+<p>Cilium supports BGP natively.</p>
+<h2>Environment</h2>
+<p>F5 Networks&#39; Container Ingress Services can use BGP to connect to pods by their Cluster IP.</p>
+<p>This requires advertising the PodCIDR of all worker nodes to the BIG-IP. (Additionally advertising the PodCIDR on Control plane nodes does no harm.)</p>
+<p>You are using Cilium BGP  version cilium.io/v2   on version 1.18.1   (Latest at time of publication)<br>This supersedes CiliumBGPPeeringPolicy.</p>
+<pre id="codecell0"></pre>
+<h2>Cause</h2>
+<p>On following the Cilium documentation to advertise PodCIDR&#39;s you find that only the PodCIDR of the Nodes that match the CiliumBGPClusterConfig are advertised.<br>This is generally the  Control Plane as  CiliumBGPClusterConfig nodes specify neighbors (bgpInstances: -&gt; peers) <br><br>Thus they have to be manually configured on the BIG-IP  BGP configuration as neighbors . Doing this on a large number of worker nodes and nodes that can be added by autoscaling is infeasible</p>
+<h2>Recommended Actions</h2>
+<p>With Cilium 1.18  BGP prefix aggregation is available. This will advertise the Services back to the BIG-IP but will aggregate them to a larger CIDR.</p>
+<p>This gives the effect of advertising the PodCIDR block.</p>
+<p>Example</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>apiVersion: cilium.io/v2
+kind: CiliumBGPAdvertisement
+metadata:
+  name: services
+  labels:
+    advertise: bgp
+spec:
+  advertisements:
+
+    - advertisementType: &quot;Service&quot;
+      service:
+        addresses:          # &lt;-- specify the service types to advertise
+          - ClusterIP
+        aggregationLengthIPv4: 24    # Which is the subnet in the mode
+      selector:             # &lt;-- select all services
+        matchExpressions:
+         - {key: somekey, operator: NotIn, values: [&#39;never-used-value&#39;]}
+</code></pre>
+<p>In the BIG-IP, without aggregation, each service is advertised as a /32. This is from a 3 node cluster,</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh show net route
+10.2.39.182/32      10.2.39.182/32      gw         10.2.21.177              dynamic
+10.2.36.10/32       10.2.36.10/32       gw         10.2.21.177              dynamic
+10.2.37.238/32      10.2.37.238/32      gw         10.2.21.177              dynamic
+10.2.37.94/32       10.2.37.94/32       gw         10.2.21.177              dynamic
+10.2.39.142/32      10.2.39.142/32      gw         10.2.21.177              dynamic
+10.2.39.11/32       10.2.39.11/32       gw         10.2.21.177              dynamic
+10.2.36.1/32        10.2.36.1/32        gw         10.2.21.177              dynamic
+10.2.36.234/32      10.2.36.234/32      gw         10.2.21.177              dynamic
+10.2.37.140/32      10.2.37.140/32      gw         10.2.21.177              dynamic
+10.2.38.140/32      10.2.38.140/32      gw         10.2.21.177              dynamic
+10.2.37.252/32      10.2.37.252/32      gw         10.2.21.177              dynamic
+</code></pre>
+<p>With prefix aggregation,</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh show net route
+10.2.37.0/24        10.2.37.0/24        gw         10.2.21.177              dynamic
+10.2.38.0/24        10.2.38.0/24        gw         10.2.21.177              dynamic
+10.2.39.0/24        10.2.39.0/24        gw         10.2.21.177              dynamic
+10.2.36.0/24        10.2.36.0/24        gw         10.2.21.177              dynamic
+</code></pre>
+<p>Routing table bloat and churn is much reduced.</p>
+<p>Alternatively use <a href="https://clouddocs.f5.com/containers/latest/userguide/cilium-config.html" target="_blank">VXLAN tunneling </a></p>
+<h2>Additional Information</h2>
+<p>Cilium may implement this via selectors in CiliumBGPAdvertisement  in a later release.<br>This article may not apply to the current release as Cilium is continually refined.<br><br></p>
+</article>
+</body>
+</html>

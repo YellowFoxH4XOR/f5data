@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161515: F5 DNS resolver query refused</title>
+<meta name="description" content="Support Solution: F5 DNS resolver query refused — Packet capture analysis (filtering for dns.flags==0x8105) shows that REFUSED responses originate from the local BIND instance on the BIG-IP, even though a DNS Cache Resolver profile with forward…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161515">
+</head>
+<body>
+<header>
+<h1>K000161515: F5 DNS resolver query refused</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-02</dd>
+<dt>Updated</dt><dd>2026-06-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP GTM</li><li>BIG-IP DNS</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161515">https://my.f5.com/manage/s/article/K000161515</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>On BIG-IP DNS, intermittent DNS &quot;Query Refused&quot; (RCODE=5) responses are observed when a DNS Cache Resolver profile is configured on a virtual server. DNS queries to external domains sometimes succeed and sometimes fail. The nslookup or dig tests return:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">;; -&gt;&gt;HEADER&lt;&lt;- opcode: QUERY, status: REFUSED</span></p>
+<p>Packet capture analysis (filtering for dns.flags==0x8105) shows that REFUSED responses originate from the local BIND instance on the BIG-IP, even though a DNS Cache Resolver profile with forward zones and root hints is configured and enabled.</p>
+<h2>Environment</h2>
+<p>LTM DNS Cache Resolver (ltm dns cache resolver) configured with forward zones and root hints</p>
+<p>LTM DNS profile (ltm profile dns) with enable-cache yes</p>
+<p>use-local-bind enabled (default) in the DNS profile</p>
+<p>Virtual server using the DNS profile with the cache resolver attached</p>
+<p>DNS queries to external domains not covered by any configured forward zone</p>
+<h2>Cause</h2>
+<p><span style="font-size: 14px;font-family: &#39;Segoe UI&#39;, &#39;Microsoft YaHei&#39;, system-ui, -apple-system, BlinkMacSystemFont, Roboto, &#39;Helvetica Neue&#39;, Arial, sans-serif;">When a DNS Cache Resolver profile is configured on a BIG-IP DNS virtual server, the system follows a DNS resolution precedence order. If the DNS cache (resolver) fails to answer a query — for example, due to a cache miss and an inability to reach root hints servers, or a transient resolution failure — the system falls through the resolution chain and ultimately reaches the local BIND instance (when use-local-bind is enabled in the DNS profile). Since BIND on BIG-IP is not configured to perform recursive resolution for external domains, it returns a &quot;Query Refused&quot; response. This causes intermittent failures: queries succeed when resolved from cache or via root hints, and fail when they fall through to BIND.</span></p>
+<h2>Answer/Recommended Actions</h2>
+<p>To resolve the intermittent &quot;Query Refused&quot; behavior, perform the following steps:</p>
+<ol><li><strong>Disable the local BIND instance in the DNS profile</strong> to prevent DNS queries from falling back to BIND when the cache resolver cannot answer them:</li></ol>
+<ul><ul><li>Log in to the BIG-IP Configuration utility.</li><li>Navigate to <strong>Local Traffic</strong> &gt; <strong>Profiles</strong> &gt; <strong>Services</strong> &gt; <strong>DNS</strong>.</li><li>Select the DNS profile attached to the affected virtual server.</li><li>Set <strong>Use BIND Server on BIG-IP</strong> to <strong>Disabled</strong>.</li><li>Set <strong>Unhandled Query Action</strong> to <strong>Allow</strong> (if a DNS cache or pool is configured to handle remaining queries).</li><li>Click <strong>Finished</strong>.</li></ul></ul>
+<p>      Alternatively, using tmsh:</p>
+<p>          <span style="font-family: &#39;courier new&#39;, courier, monospace;"> <span style="background-color: #dddddd;">tmsh modify ltm profile dns &lt;profile_name&gt; use-local-bind disabled</span></span></p>
+<p><strong></strong>  2.<strong> Verify that the root hints configured in the DNS cache resolver are valid and reachable.</strong> Unreachable root hints cause cache misses that trigger fallback to BIND. Update root hints if needed:</p>
+<p>             <span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #dddddd;">tmsh modify ltm dns cache resolver &lt;cache_name&gt; root-hints replace-all-with { &lt;valid_root_hint_ip_1&gt; &lt;valid_root_hint_ip_2&gt; }</span></p>
+<p><strong></strong>  3. <strong>Verify and troubleshoot using the following commands:</strong></p>
+<ul><li>Capture DNS traffic to identify the source of REFUSED responses:</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      <span style="background-color: #dddddd;">tcpdump -nni 0.0:nnnp port 53 -s0 /var/tmp/resolverissue.pcap</span></span></p>
+<ul><li>Identify sources returning REFUSED responses (local BIND instance on BIG-IP can be identified by its IP in packet captures):</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      <span style="background-color: #dddddd;">tshark -r /var/tmp/resolverissue.pcap -Y dns.flags==0x8105 -T fields -e ip.src | sort | uniq</span></span></p>
+<ul><li>Inspect the DNS cache resolver state:</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">      <span style="background-color: #dddddd;">tmsh show ltm dns cache resolver &lt;cache_name&gt;</span><br>      <span style="background-color: #dddddd;">tmsh show ltm dns cache records msg cache &lt;cache_name&gt;</span><br>      <span style="background-color: #dddddd;">tmsh show ltm dns cache records rrset cache &lt;cache_name&gt;</span></span></p>
+<h2>Additional Information</h2>
+<p>This scenario is distinct from <a href="https://my.f5.com/manage/s/article/K22928504" target="_blank">K22928504: Local DNS bind server returns &#39;Query refused&#39; error when querying external domains</a>, which describes a &quot;Query Refused&quot; error caused by BIND misconfiguration (incorrect named.conf settings) when BIND is the sole DNS resolution method. In the scenario described here, a DNS Cache Resolver profile is the primary resolution method, and BIND acts as an unintended fallback due to the use-local-bind default setting being enabled. The intermittent nature of the failures — queries sometimes succeeding and sometimes failing — is a key differentiator, as it reflects cache hits succeeding while cache misses fall through to BIND.</p>
+<p><span style="color: #27ae60;"><strong><em>Note</em></strong><em>: F5 does not recommend using the local BIND instance as a resolver for external domains. For environments requiring resolver-based DNS caching on BIG-IP, configure the DNS cache resolver with valid forward zones and/or reachable root hints, and disable BIND fallback in the DNS profile.</em></span></p>
+</article>
+</body>
+</html>

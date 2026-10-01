@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K29272294: BIG-IQ is no longer able to authenticate to a managed device with &#x27;&#x27;SSO ON&#x27;&#x27; for Smart Card Authentication</title>
+<meta name="description" content="Support Solution: BIG-IQ is no longer able to authenticate to a managed device with &#x27;&#x27;SSO ON&#x27;&#x27; for Smart Card Authentication — You want to access the BIG-IP Configuration utility using passwordless SSL client certificate authentication.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K29272294">
+</head>
+<body>
+<header>
+<h1>K29272294: BIG-IQ is no longer able to authenticate to a managed device with &#x27;&#x27;SSO ON&#x27;&#x27; for Smart Card Authentication</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-04-07</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li><li>BIG-IP Platforms</li><li>BIG-IQ Centralized Management: 8.X.X, 7.X.X, 6.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K29272294">https://my.f5.com/manage/s/article/K29272294</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<ul><li>You want to access the BIG-IP Configuration utility using passwordless SSL client certificate authentication.<br>	<a href="https://my.f5.com/manage/s/article/K30030586" target="_self">K30030586: Accessing the Configuration utility using passwordless SSL client certificate authentication</a></li><li>Manage an existing BIG-IP or discover a new BIG-IP to be managed fails with the following message:<br>	<strong>/var/log/restjavad.0.log</strong><br>	<span class="example">[ERROR][&lt;TIMESTAMP&gt;][/cm/global/tasks/device-trust/&lt;device-trust-id&gt;/worker BigIPTrustTaskWorker]<strong>Could not verify IP address x.x.x.x</strong>.  Please see the logs for more information.</span></li></ul>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IQ</li><li>Discover or manage a BIG-IP configured to use passwordless SSL client certificate authentication</li><li>BIG-IP v14.x or newer</li></ul>
+How to tell if the managed device has SSO ON:<br><br><span class="code"># tmsh modify auth cert-ldap system-auth sso on</span><br><span class="example">sys db systemauth.source {<br>    default-value &quot;local&quot;<br>    scf-config &quot;false&quot;<br>    <strong>value &quot;cert-ldap&quot;</strong><br>    value-range &quot;activedirectory apm-auth cert-ldap ldap local radius tacacs&quot;<br>}</span><br><br><strong>/config/bigip.conf </strong><br><span class="example">auth cert-ldap /Common/system-auth {<br>    bind-dn CN=&lt;CertCommonName&gt;<br>    bind-pw ***scrubbed***<br>    login-attribute userPrincipalName<br>    login-filter [a-zA-Z0-9]\\\\w*(\\\?=@)<br>    login-name CN<br>    port 636<br>    search-base-dn &lt;Base DN to start search from&gt;<br>    servers { &lt;IP&gt; }<br>    ssl enabled<br>    ssl-ca-cert-file /Common/hp_bundle<br>    ssl-cname-field san-other<br>    ssl-cname-otheroid 1.3.6.1.4.1.311.20.2.3<br>    <strong>sso on</strong> <br>}</span>
+
+<ul></ul>
+
+<p><span class="sectiontitle">Cause</span><br><br>Known issue: ID1087749<br>This is a new identified issue at the time of writing, there is no publicly facing documentation at this time. <br><br>When Remote ClientCert LDAP is enabled on BIG-IP, SSO by default is enabled as well. When SSO is enabled, BIG-IP performs remote authentication on BIG-IQ provided &quot;admin&quot; credentials and when it fails, the discovery process halts.  This will be evident in a packet capture for the SSL handshake failing between the BIG-IQ and BIG-IP. The re-negotiation phase fails when BIG-IP was expecting a client cert.<br>========================================================================================<br>Example:<br><span class="example">httpd[xxx]: [ssl:error] [pid xxx] [client x.x.x.x:58666]: Re-negotiation handshake failed, <strong>referer: http://localhost:8100/cm/global/utility/bigip-device-check</strong><br>httpd[xxx]: [ssl:error] [pid xxx] SSL Library Error: <strong>error:140890C7:SSL routines:ssl3_get_client_certificate:peer did not return a certificate</strong></span><br>========================================================================================<br><br>In an older releases of BIG-IP (i.e. v13.1.x), the issue did not surface as the &quot;admin&quot; credentials were locally authenticated instead of remotely authenticated.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ol><li>Validate network communication on ports 22 and 443 is working bi-directionally, you can use telnet to test.</li><li>Validate if local admin account is configured on BIG-IP</li></ol>
+<br>Workaround: <br><br>1. Backup the /etc/httpd/conf.d/ssl.conf<br><span class="code"># cp /etc/httpd/conf.d/ssl.conf /etc/httpd/conf.d/ssl.conf_backup</span><br><br>2. Edit /etc/httpd/conf.d/ssl.conf<br><span class="code"># vi /etc/httpd/conf.d/ssl.conf</span><br><br>   Search for<strong> &#39;LocationMatch&#39;</strong>, then add the following content inside the LocationMatch tag.<br>   ================<br>   Default <br>   ================<br><span class="example">   &lt;LocationMatch &quot;^[/][^/]+[/]&quot;&gt;<br>       SSLVerifyClient require<br>   &lt;/LocationMatch&gt;</span><br><br>   ================================================================================<br>   New changes for a workaround to provide privilege to only the BIG-IQ IP Address<br>   ================================================================================<br><span class="example">   &lt;LocationMatch &quot;^[/][^/]+[/]&quot;&gt;<br>      &lt;If &quot;%{REMOTE_ADDR} == &#39;10.0.0.1&#39;&quot;&gt;<br>         SSLVerifyClient optional<br>      &lt;/If&gt;<br>      &lt;Else&gt;<br>         SSLVerifyClient require<br>      &lt;/Else&gt;<br>   &lt;/LocationMatch&gt;</span><br><br>   <span class="note">Note: 10.0.0.1 is an example of a BIG-IQ IP Address. Please modify accordingly.</span><br><br>3. Restart httpd for changes to take effect.<br>  <span class="code"> # bigstart restart httpd</span><br><br><span class="warning"><strong>Important: </strong>/etc/httpd/conf.d/ssl.conf will get overridden if modified with any of <strong>cert-ldap settings through GUI/TMSH</strong>. This means you will have to re-perform this workaround again.</span>
+
+<p><span class="sectiontitle">Additional Information</span><br> </p>
+</article>
+</body>
+</html>

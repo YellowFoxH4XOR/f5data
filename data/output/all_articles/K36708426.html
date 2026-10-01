@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K36708426: Configuring DNS refresh rate for sidecars in Aspen Mesh</title>
+<meta name="description" content="Support Solution: Configuring DNS refresh rate for sidecars in Aspen Mesh — Aspen Mesh envoy sidecars has many options on how it will resolve DNS depending on the cluster type.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K36708426">
+</head>
+<body>
+<header>
+<h1>K36708426: Configuring DNS refresh rate for sidecars in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-09-13</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K36708426">https://my.f5.com/manage/s/article/K36708426</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>Aspen Mesh envoy sidecars has many options on how it will resolve DNS depending on the cluster type.</p>
+
+<p>An envoy cluster is a group of logically similar upstream hosts that Envoy connects to. Envoy discovers the members of a cluster via service discovery.</p>
+
+<p>There are 5 types of clusters: STATIC, Strict DNS, Logical DNS, Original destination (DST) and EDS (endpoints discovery service).</p>
+
+<p>There are also many difference in the configuration in each cluster you can found more information <a href="https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/service_discovery#arch-overview-service-discovery-types" target="_self">here</a>.</p>
+
+<p>We will mainly focus on Strict DNS which is the preferred cluster type in Istio and Aspen Mesh when we create a Service Entry with resolution type: DNS.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li><strong>RedHat Openshift</strong>: 4.6.x, 4.7.x 4.8.x, 4.9.x, 4.10.x</li><li><strong>Kuberntes</strong>: 1.17x, 1.18.x, 1.19.x, 1.20.x, 1.21.x, 1.22.x, 1.23.x</li><li><strong>Aspen Mesh</strong>: 1.6.x, 1.9.x , 1.11.x, 1.14.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Service Entry is a definition for our sidecars to establish a connection with external services. If you want to know more about Service Entry best practices refer to the following article:<br><a href="https://my.f5.com/manage/s/article/K00612159" target="_self">K00612159: Aspen Mesh Service Entry best practices</a></p>
+
+<p>A Service Entry could have three different resolution types: NONE, STATIC (which will be translated to a STATIC cluster), and DNS (this is the Strict DNS cluster).</p>
+
+<p>The difference between the last two is:</p>
+
+<ul><li>STATIC you need to provide endpoints to resolve an FQDN, we are assuming those IP endpoints will resolve our host and won’t change, then allow the communication with the external service.</li><li>When the type is DNS, no endpoints are provided, but each sidecar will query our local DNS server to retrieve those IP addresses.</li></ul>
+
+<p>Imagine a scenario where we have more than 10 Service Entries and more than 50 sidecars running in a cluster, each sidecar will query those 10 external services that can be translated into a hundred or thousand queries.</p>
+
+<p>The behavior of envoy is to refresh the DNS endpoints every 5 seconds (5s is the default refresh rate) on a small cluster configuration this will not represent an issue, but as soon as your cluster grows maybe you will start seeing more and more queries. If this is the case, then you should think on increase the refresh rate.</p>
+
+<p><strong>Recommended Actions</strong></p>
+
+<ol><li><a href="#Increase" target="_self">Increase the dnsRefreshRate</a></li><li><a href="#About" target="_self">About dnsRefreshRate and respect_dns_ttl</a></li></ol>
+
+<p><span class="subsectiontitle"><a id="Increase" name="Increase"></a>Increase the dnsRefreshRate</span></p>
+
+<ol><li>
+	<p>To increase the dnsRefreshRate, we need to update our override values file as follows:</p>
+
+	<p><span class="example2">meshConfig:<br>	  dnsRefreshRate: 60s</span></p>
+	</li><li>
+	<p>Upgrade your Aspen Mesh installation:</p>
+
+	<p><span class="example2">helm upgrade -i istiod manifest/charts/istio-control/istio-discovery -n istio-system –values aspen-mesh-values.yaml</span></p>
+	</li><li>
+	<p>After upgrade the installation, there is no need to bounce your application/sidecars automatically will receive the new configuration. You can verify the change with the following command:</p>
+
+	<p><span class="example2">istioctl pc clusters &lt;your-pod&gt; --port 443 -o json<br>	{<br>	        &quot;name&quot;: &quot;outbound|443||api.dropboxapi.com&quot;,<br>	        &quot;type&quot;: &quot;STRICT_DNS&quot;,<br>	        &quot;connectTimeout&quot;: &quot;10s&quot;,<br>	        &quot;loadAssignment&quot;: {<br>	            &quot;clusterName&quot;: &quot;outbound|443||api.dropboxapi.com&quot;,<br>	            &quot;endpoints&quot;: [<br>	                {<br>	                    &quot;locality&quot;: {},<br>	                    &quot;lbEndpoints&quot;: [<br>	                        {<br>	                            &quot;endpoint&quot;: {<br>	                                &quot;address&quot;: {<br>	                                    &quot;socketAddress&quot;: {<br>	                                        &quot;address&quot;: &quot;api.dropboxapi.com&quot;,<br>	                                        &quot;portValue&quot;: 443<br>	              ........<br>	             [REDACTED]<br>	        &quot;dnsRefreshRate&quot;: &quot;60s&quot;,# refreshRate changed from 5 to 60s<br>	        &quot;respectDnsTtl&quot;: true,<br>	        &quot;dnsLookupFamily&quot;: &quot;V4_ONLY&quot;,<br>	        &quot;metadata&quot;: {<br>	            &quot;filterMetadata&quot;: {<br>	                &quot;istio&quot;: {<br>	                    &quot;default_original_port&quot;: 443,<br>	                    &quot;services&quot;: [<br>	                        {</span></p>
+
+	<p><span class="note"><strong>Note</strong>: Make sure you have a Service Entry with Resolution DNS, in this example we added the external service api.dropboxapi.com</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="About" name="About"></a>About dnsRefreshRate and respect_dns_ttl</span></p>
+
+<p>In our example above we increase the refreshRate but there is another field called <strong>respectDnsTtl</strong>.</p>
+
+<p>If respect_dns_ttl is enabled (this is default in Aspen Mesh), DNS record TTLs and dns_refresh_rate are used to control DNS refresh rate. </p>
+
+<p>For Strict DNS cluster, if the minimum of all record TTLs is 0, dns_refresh_rate will be used as the cluster’s DNS refresh rate. Otherwise, the sidecar will use the dns_ttl as refreshRate and will ignore the dnsRefreshRate configured.</p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

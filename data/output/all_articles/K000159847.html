@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000159847: Headers stripped between Client and Pool Member when using APM</title>
+<meta name="description" content="Support Solution: Headers stripped between Client and Pool Member when using APM — When using BIG-IP APM (Access Policy Manager), certain HTTP headers are reserved for APM internal state management and are automatically stripped from requests before being forwarded to pool members.…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000159847">
+</head>
+<body>
+<header>
+<h1>K000159847: Headers stripped between Client and Pool Member when using APM</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-02</dd>
+<dt>Updated</dt><dd>2026-02-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 21.X.X, 17.X.X, 16.X.X, 15.X.X, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000159847">https://my.f5.com/manage/s/article/K000159847</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When using BIG-IP APM (Access Policy Manager), certain HTTP headers are reserved for APM internal state management and are automatically stripped from requests before being forwarded to pool members. This can cause application communication failures when backend applications require these specific headers.</p>
+<p><strong>Symptoms:</strong></p>
+<ul><li>Backend applications report missing required HTTP headers</li><li>Application communication breaks after APM authentication</li><li>Users unable to connect to applications that were previously working</li><li>Specific headers like &quot;Session-ID&quot; not reaching pool servers despite being present in client requests</li></ul>
+<p><strong>Reserved APM Headers:</strong></p>
+<p>The following headers are blocked by APM and will not be forwarded to pool members:</p>
+<ul><li>partition-id</li><li>profile-id</li><li>traffic-id</li><li>session-key</li><li>session-id</li><li>client-session-id</li><li>snapshot-id</li><li>cmp-pu</li></ul>
+<h2>Environment</h2>
+<ul><li><strong>Product:</strong> BIG-IP APM</li><li><strong>Version:</strong> 17.1.3 (applicable to other versions)</li><li><strong>Configuration:</strong>
+<ul><li>Virtual server with APM access profile applied</li><li>Backend pool members requiring specific HTTP headers</li><li>Client requests containing APM-reserved header names</li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p>APM reserves specific HTTP header names for maintaining internal state and session management. These headers are intentionally stripped from requests before forwarding to pool members to prevent conflicts with APM&#39;s session handling mechanisms. This is by design.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>To forward APM-reserved headers to pool members, use an iRule that captures the header value on the client side and re-inserts it on the server side after APM processing:</p>
+<p><strong>Step 1:</strong> Create the following iRule (adjust the header name as needed):</p>
+<p><code>#F5 iRule to forward APM-reserved headers<br># Manually copy a client request header to the pool member<br># These headers are reserved for APM and are normally blocked<br><br>when RULE_INIT {<br>    set static::check &quot;session-id&quot;<br>}<br><br>when HTTP_REQUEST {<br>    if [ HTTP::header exists ${static::check} ] {<br>        set myheader [ HTTP::header value $static::check ]<br>        # log local0. &quot;Header $static::check found: $myheader&quot;<br>    }<br>}<br><br>when HTTP_REQUEST_RELEASE {<br>    if [ info exists myheader ] {<br>        # log local0. &quot;ServerSide myheader variable exists, $myheader, inserting as $static::check header.&quot;<br>        HTTP::header insert $static::check $myheader<br>    }<br>}</code></p>
+<p><strong>Step 2:</strong> Modify the <span style="background-color: #f1f1f1;">static::check</span> variable to match your required header name (e.g., &quot;session-id&quot;, &quot;partition-id&quot;, etc.)</p>
+<p><strong>Step 3:</strong> Apply the iRule to the virtual server with the APM profile</p>
+<p><strong>Step 4:</strong> Test the configuration:</p>
+<ul><li>Authenticate through APM</li><li>Verify the header is received by the backend application</li><li>Monitor for any APM functionality issues</li></ul>
+<p><strong>Step 5:</strong> (Optional) Enable logging by uncommenting the log statements for troubleshooting</p>
+<p><strong>Validation:</strong></p>
+<p>Use packet captures to confirm the header is present in server-side traffic:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tcpdump -nni &lt;interface&gt; -s0 host &lt;pool_member_IP&gt; -w /var/tmp/header_validation.pcap</span></p>
+<h2>Additional Information</h2>
+<p><strong>Important Considerations:</strong></p>
+<ul><li>This workaround may potentially interfere with APM functionality since these headers are reserved for APM state management</li><li>Thoroughly test in a non-production environment before implementing</li><li>Monitor APM session behavior after implementation</li><li>This approach differs from inserting APM session variables as custom headers, which is the standard method for passing APM session data to backend servers</li></ul>
+<p><strong>Alternative for APM Session Data:</strong></p>
+<p>If you need to pass APM session information (not client-provided headers), use the standard approach of inserting APM session variables as custom headers:</p>
+<p><code>when ACCESS_ACL_ALLOWED {<br>    HTTP::header insert &quot;X-APM-Session-ID&quot; [ACCESS::session data get &quot;session.user.sessionid&quot;]<br>}</code></p>
+<p><strong>Troubleshooting:</strong></p>
+<ul><li>Use <span style="background-color: #f1f1f1;">sessiondump -allkeys | grep session</span> to identify available APM session variables</li><li>Apply a logging iRule to verify all headers being sent/received</li><li>Coordinate with application teams to confirm exact header requirements</li></ul>
+</article>
+</body>
+</html>

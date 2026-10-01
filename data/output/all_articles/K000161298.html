@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161298: How to identify the backend server type using curl when troubleshooting BIG-IP HTTPS health monitors</title>
+<meta name="description" content="Support Solution: How to identify the backend server type using curl when troubleshooting BIG-IP HTTPS health monitors — This behavior occurs when the backend server strictly enforces a valid Host: header per the HTTP/1.1 specification, and the monitor send string contains an empty Host: header. This article describes…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161298">
+</head>
+<body>
+<header>
+<h1>K000161298: How to identify the backend server type using curl when troubleshooting BIG-IP HTTPS health monitors</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-05-16</dd>
+<dt>Updated</dt><dd>2026-05-16</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.0.0, 17.1.0, 17.0.X, 21.X.X, 17.X.X, 21.1.X, 21.1.0, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161298">https://my.f5.com/manage/s/article/K000161298</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When troubleshooting BIG-IP HTTPS health monitors, the BIG-IP HTTPS monitor may show the pool member as <strong>Up</strong> when recv none is configured, but show Down after adding <strong>recv &quot;200&quot;</strong>, even though a standard curl test against the backend returns <strong>HTTP/1.1 200 OK.</strong> The following error may be observed in the logs:</p>
+<p style="padding-left: 40px;"><strong>No successful responses received before deadline</strong></p>
+<p>This behavior occurs when the backend server strictly enforces a valid <strong>Host:</strong> header per the HTTP/1.1 specification, and the monitor send string contains an empty <strong>Host:</strong> header. This article describes how to identify the backend server type from the <strong>Server:</strong> response header using <strong>curl</strong>, and how to use this information to correctly configure the BIG-IP HTTPS health monitor send string.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>HTTPS health monitors</li><li>Backend servers with strict HTTP/1.1 compliance requirements (e.g., Oracle HTTP Server, Apache, Nginx, IIS)</li></ul>
+<h2>Cause</h2>
+<p>The BIG-IP HTTPS monitor default send string includes an empty <strong>Host:</strong> header:</p>
+<p style="padding-left: 40px;"><strong>GET / HTTP/1.1\r\nHost:\r\nConnection: close\r\n\r\n</strong></p>
+<p>Some backend web servers (such as Oracle HTTP Server) strictly enforce the HTTP/1.1 specification. As stated in <a href="https://www.rfc-editor.org/rfc/rfc2616#section-14.23" target="_blank">RFC 2616 Section 14.23</a>:</p>
+<p><strong><em>Note:</em></strong><em> This link takes you to resources outside of AskF5, and it is possible that the document may be removed without our knowledge.</em></p>
+<p><em>&quot;A client MUST send a Host header field in all HTTP/1.1 request messages. If the requested URI does not include an Internet host name for the service being requested, then the Host header field MUST be given with an empty value.&quot;</em></p>
+<p>However, many strict server implementations reject requests where the <strong>Host:</strong> header is present but empty, returning <strong>HTTP/1.1 400 Bad Request</strong> instead of the expected 200 OK.</p>
+<p>When <strong>recv none</strong> is configured, BIG-IP accepts any response including <strong>400 Bad Request</strong> and marks the member Up. When <strong>recv &quot;200&quot;</strong> is added, the monitor correctly fails because the actual response is <strong>400</strong>, not <strong>200</strong>, causing the member to be marked Down.</p>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>Step 1: Identify the backend server type</strong></p>
+<p class="ql-indent-1" style="padding-left: 40px;">Run the following <strong>curl </strong>command from the BIG-IP CLI, using an empty Host: header to simulate the exact request the monitor sends:</p>
+<p class="ql-indent-1" style="padding-left: 40px;"><strong>curl -vk --header &quot;Host:&quot; https://&lt;pool_member_IP&gt;:&lt;port&gt;/&lt;path&gt;</strong></p>
+<p class="ql-indent-1" style="padding-left: 40px;">Examine the <strong>Server:</strong> response header in the output. For example:</p>
+<p class="ql-indent-1" style="padding-left: 40px;">&lt; HTTP/1.1 400 Bad Request<br>&lt; Date: Thu, 01 Jan 2026 00:00:00 GMT<br>&lt; Server: <strong><em>&lt;backend_server_type&gt;</em></strong></p>
+<p class="ql-indent-1" style="padding-left: 40px;">The <strong>Server:</strong> header identifies the backend web server software (e.g., Oracle-HTTP-Server, Apache, nginx, Microsoft-IIS).</p>
+<p class="ql-indent-1" style="padding-left: 40px;">If the server returns <strong>HTTP/1.1 400 Bad Request</strong> with an empty <strong>Host:</strong> header, this confirms that the server requires a valid <strong>Host:</strong> header value in the monitor send string.</p>
+<p><strong>Step 2: Identify the correct Host header value from the SSL certificate</strong></p>
+<p class="ql-indent-1" style="padding-left: 40px;">Run a standard <strong>curl </strong>command (without the empty <strong>Host:</strong> override) to view the SSL certificate details:</p>
+<p class="ql-indent-1" style="padding-left: 40px;"><strong>curl -vk https://&lt;pool_member_IP&gt;:&lt;port&gt;/&lt;path&gt;</strong></p>
+<p class="ql-indent-1" style="padding-left: 40px;">Locate the <strong>CN=</strong> field in the server certificate section of the output. For example:</p>
+<p class="ql-indent-1" style="padding-left: 40px;">* Server certificate:<br>*    subject: C=XX; ST=State; O=Company Name; CN=<strong><em>&lt;application.example.com&gt;</em></strong></p>
+<p class="ql-indent-1" style="padding-left: 40px;">The <strong>CN=</strong> value is the hostname to use as the <strong>Host:</strong> header value in the monitor send string.</p>
+<p class="ql-indent-1" style="padding-left: 40px;">Note: If the backend server hosts multiple applications, the correct hostname may be a Subject Alternative Name (SAN) rather than the CN. Confirm the appropriate hostname with the application or server team if unsure.</p>
+<p><strong>Step 3: Update the monitor send string</strong></p>
+<p class="ql-indent-1" style="padding-left: 40px;">Update the HTTPS monitor send string to include the correct <strong>Host:</strong> header value identified in Step 2.</p>
+<p class="ql-indent-1" style="padding-left: 40px;">Via GUI:</p>
+<ol><li style="list-style-type: none;">
+<ol style="list-style-type: decimal;"><li>Navigate to <strong>Local Traffic</strong> &gt; <strong>Monitors </strong>&gt; select the affected monitor</li><li>In the Send String field, update the value to include the correct hostname: <strong>GET / HTTP/1.1\r\nHost: <em>&lt;application.example.com&gt;</em>\r\nConnection: close\r\n\r\n</strong></li><li>Click <strong>Update</strong></li></ol>
+</li></ol>
+<p class="ql-indent-1" style="padding-left: 40px;">Via tmsh:<br><strong>tmsh modify ltm monitor https /&lt;partition_name&gt;/&lt;monitor_name&gt; send &quot;GET / HTTP/1.1\r\nHost: &lt;<em>application.example.com&gt;</em>\r\nConnection: close\r\n\r\n&quot;<br></strong><strong>tmsh save /sys config partitions all</strong></p>
+<p><strong>Step 4: Verify the fix</strong></p>
+<p class="ql-indent-1" style="padding-left: 40px;">Run the <strong>curl </strong>command again with the correct Host: header to confirm the server now returns HTTP/1.1 200 OK:</p>
+<p class="ql-indent-1" style="padding-left: 40px;"><strong>curl -vk --header &quot;Host: <em>&lt;application.example.com&gt;</em>&quot; https://&lt;pool_member_IP&gt;:&lt;port&gt;/&lt;path&gt;</strong></p>
+<p class="ql-indent-1" style="padding-left: 40px;">Expected output:</p>
+<p class="ql-indent-1" style="padding-left: 40px;"><strong>&lt; HTTP/1.1 200 OK</strong></p>
+<p class="ql-indent-1" style="padding-left: 40px;">Once confirmed, the BIG-IP monitor should also reflect the pool member as <strong>Up</strong>.</p>
+<h2>Additional Information</h2>
+<ul><li>Not all web servers disclose their type via the <strong>Server:</strong> response header. Some servers are configured to suppress or obfuscate this header for security reasons. In such cases, the <strong>400 Bad Request</strong> response itself is still a strong indicator that the server requires a valid <strong>Host:</strong> header.</li><li>When using <strong>recv &quot;200&quot;</strong> as the monitor receive string, be aware that BIG-IP matches the receive string against the <strong>entire HTTP response</strong> including headers and body, not just the status line. Refer to <a href="https://my.f5.com/manage/s/article/K3618" target="_blank">K3618</a> for details on receive string matching behavior.</li><li>If the backend always returns <strong>HTTP 200 OK</strong> regardless of application health state (healthy or error), <strong>recv &quot;200&quot;</strong> alone is insufficient. Consider configuring a recv string matching a unique string from the healthy response body, and a <strong>recv-disable</strong> string matching the error page body to enable graceful session draining.</li></ul>
+</article>
+</body>
+</html>

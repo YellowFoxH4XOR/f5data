@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K43002582: Working with DNS Proxy in Aspen Mesh</title>
+<meta name="description" content="Support Solution: Working with DNS Proxy in Aspen Mesh — In this article we are going to describe how to enable DNS Proxy, how it is designed and how to debug the proxy.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K43002582">
+</head>
+<body>
+<header>
+<h1>K43002582: Working with DNS Proxy in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-06-28</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K43002582">https://my.f5.com/manage/s/article/K43002582</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<span class="sectiontitle">Description</span>
+
+<p>Applications running in a Kubernetes cluster use DNS resolution to discover services in the cluster. You usually configure your application to reach other services using the service’s DNS domain name instead of IP address. IP addresses assigned to pods and services in Kubernetes are dynamic and may change. A DNS server is running in every Kubernetes cluster and every pod is configured to use the internal DNS server for domain name resolution. DNS requests by default are not intercepted by istio-proxy sidecars and every application tries to resolve the DNS name before opening the connection to another service. DNS Proxy is a new feature added in the Aspen Mesh 1.9 release which may help to control DNS Resolution in pods running with istio-proxy sidecars within the Aspen Mesh service. There are pros and cons of using DNS Proxy in the service mesh. They are explained in the <a href="https://istio.io/latest/docs/ops/configuration/traffic-management/dns-proxy/" target="_self">DNS Proxy section</a> of the <strong>Istio documentation</strong> here:</p>
+In this article we are going to describe how to enable DNS Proxy, how it is designed and how to debug the proxy.
+
+<p><span class="note"><strong>Note</strong>: In Aspen Mesh 1.9.x DNS Proxy is not supported in clusters deployed in Istio CNI mode. Support for DNS Proxy in CNI clusters will be added in Aspen Mesh 1.10.</span></p>
+<span class="note"><strong>Note</strong>: DNS Proxy is an alpha feature and it may be changed, redesigned or removed in the next releases.</span>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li><strong>RedHat Openshift</strong>: 4.6.x, 4.7.x 4.8.x, 4.9.x, 4.10.x</li><li><strong>Kuberntes</strong>: 1.17x, 1.18.x, 1.19.x, 1.20.x, 1.21.x, 1.22.x, 1.23.x</li><li><strong>Aspen Mesh</strong>: 1.9.x , 1.11.x, 1.14.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+None
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+None
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<ul><li><a href="#enable_dnsproxy" target="_self">Enable DNS Proxy in Aspen Mesh</a></li><li><a href="#implement" target="_self">How DNS Proxy is implemented in Aspen Mesh</a></li><li><a href="#enable_debug" target="_self">Enable debug logs for DNS Proxy and pilot-agent</a></li></ul>
+
+<p><a id="enable_dnsproxy" name="enable_dnsproxy"></a><span class="subsectiontitle">Enable DNS Proxy in Aspen Mesh</span><br>You can enable DNS Proxy in Aspen Mesh globally or for only specific pods.<br>To enable DNS Proxy globally, for every pod in the service mesh, perform the following procedure:</p>
+
+<ol><li>Add the following DNS Proxy config to the <strong>meshConfig  </strong>section in your <strong>values.yaml</strong> Helm file.
+
+	<p><span class="code">meshConfig:<br>	  defaultConfig:<br>	    proxyMetadata:<br>	      # Enable basic DNS proxying<br>	      ISTIO_META_DNS_CAPTURE: &quot;true&quot;<br>	      # Enable automatic address allocation, optional<br>	      ISTIO_META_DNS_AUTO_ALLOCATE: &quot;true</span></p>
+	</li><li>Upgrade the Istiod chart configuration by running the following command:
+	<p><span class="code">helm upgrade istiod manifests/charts/istio-control/istio-discovery --namespace istio-system --values values.yaml</span></p>
+	</li></ol>
+
+<p>To enable or disable DNS Proxy for a specific pod in the service mesh you must add an annotation for your pod yaml manifest. You do not have to enable DNS Proxy globally to enable this feature for a specific pod. The pod level configuration will overwrite the global configuration.</p>
+
+<ol><li>Add the following annotations to your pod/deployment
+	<p><span class="code">annotations:<br>	  proxy.istio.io/config: |<br>	    proxyMetadata:<br>	      ISTIO_META_DNS_CAPTURE: &quot;true&quot;<br>	      # optional<br>	      ISTIO_META_DNS_AUTO_ALLOCATE: &quot;true&quot;</span></p>
+	</li><li>Restart the pod</li></ol>
+
+<p><a id="implement" name="implement"></a><span class="subsectiontitle">How DNS Proxy is implemented in Aspen Mesh</span></p>
+Istio-proxy intercepts all DNS queries from the application container. The interception is done in the same way istio-proxy intercepts other types of traffic, by iptables rules. Istio adds additional iptables rules to redirect all DNS packets on port 53 (TCP and UDP) that is sent to the Kubernetes DNS service (e.g. kube-dns), to port 15053 as follows:
+
+<p><span class="code"># 100.64.0.10/32 is k8s kube-dns service IP<br>-A OUTPUT -d 100.64.0.10/32 -p udp -m udp --dport 53 -j REDIRECT --to-ports 15053<br>-A ISTIO_OUTPUT -d 100.64.0.10/32 -p tcp -m tcp --dport 53 -j REDIRECT --to-ports 15053</span></p>
+
+<p>DNS queries are redirected to the pilot-agent process running in the istio-proxy container which is listening on port 15053 as shown in the following output:</p>
+<span class="code">$ oc debug node/worker-20 -- chroot /host nsenter -t 281039 -n sudo /usr/bin/nsenter --target 281039 -n netstat -anp | grep -i 15053<br>netstat -anp | grep -i 15053<br>tcp        0      0 127.0.0.1:15053         0.0.0.0:*               LISTEN      281039/pilot-agent<br>udp        0      0 127.0.0.1:15053         0.0.0.0:*                           281039/pilot-agent</span>
+
+<p>The pilot-agent process has local DNS server running on port 15053 and it stores DNS records for every Kubernetes service discovered by the Istio Name Discovery Service (NDS) and also DNS records for all dummy IPs assigned by Istio, e.g. to external ServiceEntries (without wildcard hosts) with DNS resolution set to DNS or STATIC. To assign dummy IP addresses to our external services, configured with the <strong>ServiceEntry </strong>object, you have to enable <strong>ISTIO_META_DNS_AUTO_ALLOCATE</strong> on our pod.</p>
+
+<p><span class="code"># dummy IPs assigned to external services:<br>? istioctl pc listener sleep-657956d474-kgm8b.ns2 --port 9080<br>ADDRESS     PORT MATCH DESTINATION<br>203.0.113.1 9080 ALL   Cluster: outbound|9080||test1.aspenmesh.local.com<br>203.0.113.2 9080 ALL   Cluster: outbound|9080||test2.aspenmesh.local.com</span></p>
+
+<p>DNS Proxy along with <strong>ISTIO_META_DNS_AUTO_ALLOCATE</strong> can solve the problem of TCP <strong>ServiceEntries </strong>configured with the same TCP Port and without <strong>address</strong> fields. Without DNS Proxy you could have only 1 TCP <strong>ServiceEntry </strong>in the namespace or you would have to configure the <strong>address </strong>field.</p>
+
+<p>The following is an example of TCP <strong>ServiceEntries </strong>using the same TCP port:</p>
+<span class="code">apiVersion: networking.istio.io/v1alpha3<br>kind: ServiceEntry<br>metadata:<br>  name: test1-servicentry<br>spec:<br>  hosts:<br>  - test1.aspenmesh.local.com<br>  ports:<br>  - number: 9080<br>    name: tcp<br>    protocol: TCP<br>  location: MESH_EXTERNAL<br>  resolution: DNS<br>---<br>apiVersion: networking.istio.io/v1alpha3<br>kind: ServiceEntry<br>metadata:<br>  name: test2-servicentry<br>spec:<br>  hosts:<br>  - test2.aspenmesh.local.com<br>  ports:<br>  - number: 9080<br>    name: tcp<br>    protocol: TCP<br>  location: MESH_EXTERNAL<br>  resolution: DNS</span>
+
+<p><a id="enable_debug" name="enable_debug"></a><span class="subsectiontitle">Enable debug logs for DNS Proxy and pilot-agent</span></p>
+
+<p>To enable debug logs for DNS Proxy and pilot-agent you have to add additional annotations in the pod yaml manifest as follows:</p>
+<span class="code">     annotations:<br>        sidecar.istio.io/agentLogLevel: &quot;dns:debug</span>
+
+<p>Once the debug is enabled you can see debug logs in the istio-proxy container with the following command:</p>
+
+<p><span class="code">? kubectl logs -n ns-dns nettools-deploy-8fd7f8b78-9tb77 -c istio-proxy | grep debug<br>2021-06-22T09:53:26.343904Z          info      FLAG: --log_output_level=&quot;dns:debug&quot;<br>2021-06-22T09:53:26.358748Z          debug  dns      initialized DNS           search=[ns-dns.svc.cluster.local svc.cluster.local cluster.local us-west-2.compute.internal] servers=[100.64.0.10:53]<br>2021-06-22T09:53:26.695351Z          debug  dns      updated lookup table with 146 hosts</span></p>
+Every DNS query from the application container will be logged by pilot-agent once the debug log is enabled. For example:<br><span class="note"><strong>Note</strong>: The <strong>(found=true)</strong> log message indicates that the domain name was found inside the local registry.</span>
+
+<p><span class="code">2021-06-22T10:22:49.023787Z          debug  dns      request ;; opcode: QUERY, status: NOERROR, id: 58285</span></p>
+
+<p><span class="code">;; flags: rd ad; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1<br> <br>;; QUESTION SECTION:<br>;999.aspenmesh.local.com.      IN        A<br> <br>;; ADDITIONAL SECTION:<br> <br>;; OPT PSEUDOSECTION:<br>; EDNS: version 0; flags: ; udp: 4096<br>; COOKIE: 10e68aabf17104b5<br>            protocol=udp id=67d9a3cd-f8bf-405d-9e17-f3e7f3d7061b<br>2021-06-22T10:22:49.023852Z          debug  dns      response for hostname &quot;999.aspenmeesh.local.com.&quot; (found=true): ;; opcode: QUERY, status: NOERROR, id: 58285<br>;; flags: qr rd; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0<br> <br>;; QUESTION SECTION:<br>;999.aspenmesh.local.com.      IN        A<br> <br>;; ANSWER SECTION:<br>999.aspenmesh.local.com.       30        IN        A         203.0.113.6<br>            protocol=udp id=67d9a3cd-f8bf-405d-9e17-f3e7f3d7061b</span></p>
+</article>
+</body>
+</html>

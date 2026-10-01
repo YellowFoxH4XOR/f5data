@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000149679: REST API calls are failing after upgrade to 17.1.2</title>
+<meta name="description" content="Support Solution: REST API calls are failing after upgrade to 17.1.2 — After upgrading to 17.1.2, users authenticating via iControlREST start to receive 400 responses with the message &quot;user &lt;username&gt; has reached maximum active login tokens&quot;, preventing them from…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000149679">
+</head>
+<body>
+<header>
+<h1>K000149679: REST API calls are failing after upgrade to 17.1.2</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-02-06</dd>
+<dt>Updated</dt><dd>2025-06-09</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.2</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000149679">https://my.f5.com/manage/s/article/K000149679</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p> </p>
+<p>After upgrading to 17.1.2, users authenticating via iControlREST start to receive 400 responses with the message &quot;user &lt;username&gt; has reached maximum active login tokens&quot;, preventing them from sending requests. This starts to happen after the user has requested 100+ tokens since the BIG-IP system booted up.</p>
+<h2>Environment</h2>
+<ul><li>Recently upgraded BIG-IP system to 17.1.2 or above</li><li>Affected user is getting 400 responses from iControlREST token endpoint</li><li>Response message is &quot;user &lt;username&gt; has reached maximum active login tokens&quot;</li></ul>
+<h2>Cause</h2>
+<p>This is due to ID1787517. iControlREST auth tokens are not getting deleted after they expire.</p>
+<p>Auth token expiration is set to 1200 seconds by default. This is controlled by the &quot;timeout&quot; value in the token response. The maximum timeout value allowed for a token is 36000 seconds (10 hours).</p>
+<p>After a token expires, the AuthTokenWorker should send a message to mcpd to delete the relevant token file located in /run/pamcache, and log the following message in the restjavad.0.log file:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">[I][425][06 Feb 2025 16:45:55 UTC][8100/shared/authz/tokens AuthTokenWorker] Message sent to mcpd to delete the token file.</span></p>
+<p>If you do not see the above log message written to the log file on a regular basis when using iControlREST tokens, you may be affected by ID1787517.</p>
+<p><em><span style="color: #15891f;"><strong>Note:</strong> Some actions may still trigger this log message in an affected version, such as a user clicking &#39;logout&#39; in the WEBUI after a rest token has been generated for the user&#39;s WEBUI session.</span></em></p>
+<p> </p>
+<p>Another way you can verify if this affects you is by checking the status of all the tokens in /var/pamcache for the affected user. Replace <strong>&lt;affecteduser&gt;</strong> in the following command with the user who is having the issue. This command will query iControlREST for each token assigned to this user, so its recommended to perform this while the system is not under heavy load and during a maintenance window.:</p>
+<p><span style="background-color: #f1f1f1;font-family: &#39;courier new&#39;, courier, monospace;">AFFECTEDUSER=&lt;affecteduser&gt;; for i in $(find /run/pamcache -regextype posix-extended -type f -regex &#39;/run/pamcache/[A-Z0-9]{26}&#39; -print); do if [ &quot;$AFFECTEDUSER&quot; == &quot;$(head -n1 $i)&quot; ]; then TOKEN=$(echo $i | awk -F/ &#39;{print $4}&#39;); echo -e &quot;Modified: $(date -r $i)\t\tAbs path: $i\t\tUser: $AFFECTEDUSER\t\tStatus: $(curl -sk https://localhost/mgmt/shared/authz/tokens/$TOKEN -H &quot;X-F5-Auth-Token: $TOKEN&quot; | jq -r &quot;.message&quot;)&quot;; fi; done</span></p>
+<p>This will print the last modified date of the token file, the absolute path to the token, the user its assigned to, and the status of the token. Example output:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>Modified: Thu Feb  6 07:07:15 PST 2025          Token file: /run/pamcache/5ZL6WPNEXLU2HWPBPFD3N7MGVD            User: new_admin         Status: X-F5-Auth-Token has expired.
+Modified: Thu Feb  6 07:07:14 PST 2025          Token file: /run/pamcache/GDB5DH4OJ3O2S2E2BIAHBV62DH            User: new_admin         Status: X-F5-Auth-Token has expired.
+Modified: Thu Feb  6 07:07:14 PST 2025          Token file: /run/pamcache/3PCJ7EAMKW6RMPNJ7OPRDUCAJU            User: new_admin         Status: X-F5-Auth-Token has expired.
+Modified: Thu Feb  6 07:07:14 PST 2025          Token file: /run/pamcache/6XBIY5SDAIMAFQCJW2QE7NVBCC            User: new_admin         Status: X-F5-Auth-Token has expired.
+Modified: Thu Feb  6 07:07:14 PST 2025          Token file: /run/pamcache/GITJCRJQUDD64VUHCNZHHCHPML            User: new_admin         Status: X-F5-Auth-Token has expired.</code></pre>
+<p>If the status is &#39;null&#39;, it means there was no message object in the json response, this is normal if the token is still valid.</p>
+<p>If the status is &#39;X-F5-Auth-Token has expired&#39;, then the token has expired. Review the modification date. If it is significantly past the token timeout value (1200s by default), then you are affected by ID1787517.</p>
+<h2>Recommended Actions</h2>
+<p>Upgrade to a version that contains a fix for ID1787517. If there is no version available that contains a fix, open a support case to request an EHF for ID1787517.</p>
+<h2>Additional Information</h2>
+<p>None.</p>
+</article>
+</body>
+</html>

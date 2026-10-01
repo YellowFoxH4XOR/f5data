@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K03263142: Troubleshooting NGINX Controller installation</title>
+<meta name="description" content="Knowledge: Troubleshooting NGINX Controller installation — kubectl -n nginx-controller logs -l app=controller-init --all-containers">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K03263142">
+</head>
+<body>
+<header>
+<h1>K03263142: Troubleshooting NGINX Controller installation</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2020-01-01</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Controller: 2.8.X, 2.9.0, 2.9.X, 2.8.0, 2.8.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K03263142">https://my.f5.com/manage/s/article/K03263142</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Issue</h3><p>You should consider using this procedure under the following condition:</p>
+
+<ul><li>You are unable to install NGINX Controller 2.8 and later.</li></ul>
+<h3>Recommended Actions</h3><p><span class="sectiontitle">Procedures</span></p>
+
+<p>When experiencing issues with installing NGINX Controller, you can use the following troubleshooting procedures:</p>
+
+<ul><li><a href="#M1" target="_self">Manually removing Kubernetes installation</a></li><li><a href="#M2" target="_self">Reviewing pods status and logs</a></li><li><a href="#M3" target="_self">Reviewing installation configuration parameters</a></li><li><a href="#M4" target="_self">Reviewing compute resource utilization</a></li><li><a href="#M5" target="_self">Manually downloading Docker images </a></li><li><a href="#M6" target="_self">Retrieving URLs for all packages and dependencies</a></li></ul>
+
+<p><span class="subsectiontitle"><a id="M1" name="M1"></a>Manually removing Kubernetes installation</span></p>
+
+<p>You can manually remove Kubernetes installation in the following failure scenarios:</p>
+
+<ul><li>NGINX Controller installation fails when initializing the database and displays an error message similar to the following:
+	<p><span class="example2">kubectl -n nginx-controller logs -l app=controller-init --all-containers<br>	Running database initialization task...<br>	error: unable to recognize &quot;/opt/nginx-controller/k8s-namespace.yaml&quot;: Get https://10.0.0.1:6443/api?timeout=32s: Forbidden<br>	unable to recognize &quot;/opt/nginx-controller/k8s-ctrl-init.yaml&quot;: Get https://10.0.0.1:6443/api?timeout=32s: Forbidden</span></p>
+	</li><li>Kubernetes components fail to install correctly.</li></ul>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the NGINX Controller command line interface.</li><li>Remove any existing Kubernetes cluster by entering the following command:
+	<p><span class="code">kubeadm reset -f</span></p>
+	</li><li>Remove Kubernetes client (<strong>kubectl</strong>) configuration by entering the following command:
+	<p><span class="code">rm -rf ~/.kube</span></p>
+	</li><li>Remove the installation directory by entering the following command:
+	<p><span class="code">sudo rm -rf /opt/nginx-controller</span></p>
+	</li></ol>
+
+<p>After you manually remove Kubernetes, attempt to reinstall the NGINX Controller.</p>
+
+<p><span class="subsectiontitle"><a id="M2" name="M2"></a>Reviewing pods status and logs</span></p>
+
+<p>You can review the status and logs of NGINX Controller pods in the following failure scenarios:</p>
+
+<ul><li>A pod or container fails to run or start after installation.</li><li><strong>api_gw</strong> fails to start after installation.</li></ul>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the NGINX Controller command line interface.</li><li>List all pods to view which ones are not ready by entering the following command:
+	<p><span class="code">kubectl -n nginx-controller get pods -l org=f5.com</span></p>
+	</li><li>Verify whether a pod is scheduled (that is, that there is a node where it can run) and is responding to readiness/liveness probes or has terminated by entering the following command:
+	<p><span class="code">kubectl -n nginx-controller describe pod pods &lt;pod_name&gt; </span></p>
+	</li><li>Review a pod log by entering the following command:
+	<p><span class="code">kubectl -n nginx-controller logs &lt;pod_name&gt; [--all-containers ]</span></p>
+	</li><li>You can customize the output of the logs. For example, to continuously display the last 100 lines with &#39;ERROR&#39; on pods <strong>apimgmt</strong> and <strong>coreapi</strong>, enter the following command:
+	<p><span class="example2">kubectl -n nginx-controller logs -l org=f5.com --all-containers --max-log-requests=30 --tail 100 -f | grep ERROR | grep apimgmt\|coreapi</span></p>
+	</li></ol>
+
+<p><span class="subsubsectiontitle">Modifying log levels</span></p>
+
+<p>You can modify the NGINX Controller pod log level logs by performing the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Excessive logging may affect NGINX Controller performance. </span></p>
+
+<ol><li>Log in to the NGINX Controller command line interface.</li><li>Retrieve the name for the ConfigMap by entering the following command:
+	<p><span class="code">kubectl -n nginx-controller get cm -o name | grep configmap/controller-config </span></p>
+	</li><li>Modify the log level for the ConfigMap previously retrieved. In the following example, the log level is modified to <strong>debug</strong> level:
+	<p><span class="example2">kubectl -n nginx-controller patch configmap/&lt;configmap_name&gt; -p &#39;{&quot;data&quot;:{&quot;LOG_LEVEL&quot;:&quot;debug&quot;}}&#39;</span></p>
+	</li><li>To list of all pods and identify the ones you want to restart in order for the log level changes to take effect, enter the following command:
+	<p><span class="code">kubectl -n nginx-controller get pods -l org=f5.com</span></p>
+	</li><li>Delete the pod so it can be recreated with modified log level as passed in the environment variables from the ConfigMap by entering the following command syntax:
+	<p><span class="code">kubectl -n nginx-controller delete pod &lt;pod_name&gt; </span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="M3" name="M3"></a>Reviewing installation configuration parameters</span></p>
+
+<p>NGINX Controller installation may fail when configurations settings are incorrectly passed during installation. You can verify the configuration settings by performing the following procedure:</p>
+
+<p><span class="note"><strong>Note</strong>: All settings are stored in Kubernetes ConfigMaps and Secrets. Internally, they are kept in the <strong>etcd</strong> database and are encrypted at rest. </span></p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the NGINX Controller command line interface.</li><li>Locate the ConfigMap name used for NGINX Controller installation by entering the following command:
+	<p><span class="code">kubectl -n nginx-controller get cm -o name | grep configmap/controller-config-</span></p>
+	</li><li>Review the ConfigMap parameters and assess their accuracy by entering the following command syntax:
+	<p><span class="code">kubectl -n nginx-controller get cm &lt;configmap_name&gt; -o json | jq &#39;.data&#39;</span></p>
+	</li><li>Locate the secret name used for NGINX Controller installation by entering the following command:
+	<p><span class="code">kubectl -n nginx-controller get secret -o name | grep secret/controller-secrets-</span></p>
+	</li><li>Review the secret parameters and assess their accuracy by entering the following command syntax:
+	<p><span class="code">kubectl -n nginx-controller get secret &lt;secret_name&gt; -o json | jq &#39;.data | map_values(@base64d)&#39;</span></p>
+	</li></ol>
+
+<p><span class="note"><strong>Note</strong>: Some user-provided input, such as the administrator username and password, are not stored after installation.</span></p>
+
+<p><span class="subsectiontitle"><a id="M4" name="M4"></a>Reviewing compute resource usage</span></p>
+
+<p>You can install Metrics Server to display nodes and pods CPU and memory usage when metrics are lagging or requests time out.</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the NGINX Controller command line interface.</li><li>Download Metrics Server 0.3.4 by entering the following command:
+	<p><span class="code">curl -LO https://github.com/kubernetes-incubator/metrics-server/archive/v0.3.4.tar.gz </span></p>
+	</li><li>Extract Metrics Server by entering the following command:
+	<p><span class="code">tar xf v0.3.4.tar.gz</span></p>
+	</li><li>Apply the Metrics Server manifest to your cluster by entering the following command:
+	<p><span class="code">kubectl apply -f metrics-server-$VERSION/deploy/1.8+/</span></p>
+	</li><li>Modify the Metrics Server deployment by entering the following command syntax:
+	<p><span class="code">kubectl -n kube-system patch deployment metrics-server --type json -p=&#39;[{&quot;op&quot;: &quot;replace&quot;, &quot;path&quot;: &quot;/spec/template/spec/containers/0/args&quot;, &quot;value&quot;: [&quot;--kubelet-insecure-tls&quot;, &quot;--kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname&quot;]}]&#39;</span></p>
+	</li><li>After you configure the Metrics Server, you can use the <strong>top</strong> command to view nodes and pods CPU and memory usage. To do so, use enter the following commands, respectively:
+	<p><span class="code">kubectl top nodes</span></p>
+
+	<p><span class="code">kubectl top pods -A --containers</span></p>
+	</li><li>You can also review the configured pods&#39; resource limits by entering the following command:
+	<p><span class="code">kubectl -n nginx-controller get pods -o jsonpath=&#39;{range .items[*]}{.metadata.labels.app}: {.spec.containers[*].resources.limits}{&quot;\n&quot;}{end}&#39;</span></p>
+	</li><li>You can also review the RabbitMQ queues by entering the following command:
+	<p><span class="code">kubectl -n nginx-controller exec -it $(kubectl -n nginx-controller get pod -l app=rabbitmq -o name) -- rabbitmqctl list_queues -p receiver</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="M5" name="M5"></a>Manually downloading Docker images </span></p>
+
+<p>Your NGINX Controller installation may fail when images are not properly loaded from public Docker registries. To pull all images required by Kubernetes and save them into a single file that can be moved to the target host and loaded manually, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<p><span class="note"><strong>Note</strong>: The following script is for NGINX Controller 2.8, which requires Kubernetes 1.15.3; for a different NGINX Controller version, verify the required Kubernetes version and modify the script accordingly.</span></p>
+
+<ol><li>Enter the following script:
+	<p><span class="code"># pull and save Docker images<br>	# list obtained by running:<br>	# kubeadm config images list --kubernetes-version 1.15.3<br>	# yq -r &#39;.spec.template.spec.containers, .spec.template.spec.initContainers | select( . != null) | .[].image&#39; files/k8s/kube-flannel.yml | sort -u | grep amd64<br>	images=(<br>	k8s.gcr.io/kube-proxy:v1.15.3<br>	k8s.gcr.io/kube-apiserver:v1.15.3<br>	k8s.gcr.io/kube-controller-manager:v1.15.3<br>	k8s.gcr.io/kube-scheduler:v1.15.3<br>	k8s.gcr.io/coredns:1.3.1<br>	k8s.gcr.io/etcd:3.3.10<br>	k8s.gcr.io/pause:3.1<br>	quay.io/coreos/flannel:v0.11.0-amd64<br>	)<br>	for i in &quot;${images[@]}&quot;; do<br>	docker pull &quot;$i&quot;<br>	done<br>	docker save &quot;${images[@]}&quot; | gzip &gt; k8s-images.tar.gz</span><br>	 </p>
+	</li><li>Enter the following command to load the Docker images:
+	<p><span class="code">gunzip -c k8s-images.tar.gz | docker load</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="M6" name="M6"></a>Retrieving URLs for all packages and dependencies</span></p>
+
+<p>Your NGINX Controller installation may fail to install packages from public repositories. To retrieve the list of URLs for all required packages and their dependencies, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ul><li>Enter the following script for Debian packages - Ubuntu/Debian:
+	<p><span class="code"><span class="code">#!/bin/bash<br>	<br>	# run this as (assuming script is saved as $HOME/tmp/k8s-deb.sh):<br>	# docker run --rm -it -v $HOME/tmp:/src ubuntu:18.04 /src/k8s-deb.sh<br>	<br>	KUBE_VERSION=1.15.3<br>	packages=(<br>	&quot;kubeadm=${KUBE_VERSION}-00&quot;<br>	&quot;kubelet=${KUBE_VERSION}-00&quot;<br>	&quot;kubectl=${KUBE_VERSION}-00&quot;<br>	)<br>	apt-get update -qq &amp;&amp; apt-get install -qq -y apt-transport-https curl gnupg2 &gt;/dev/null<br>	curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -<br>	echo &quot;deb http://apt.kubernetes.io<a href="http://apt.kubernetes.io/" target="_blank">/</a> kubernetes-xenial main&quot; | tee -a /etc/apt/sources.list.d/kubernetes.list &gt;/dev/null<br>	apt-get update -qq<br>	<br>	echo &quot;&quot;<br>	echo &quot;Fetch the following files:&quot;<br>	apt-get install --reinstall --print-uris -qq &quot;${packages[@]}&quot; | cut -d&quot;&#39;&quot; -f2<br>	<br>	echo &quot;&quot;<br>	echo &quot;Install packages:&quot;<br>	echo &quot;dpkg -i *.deb&quot;</span></span></p>
+	</li><li>Enter the following script for RPM Packages - RedHat/CentOS:
+	<p><span class="code">#!/bin/bash<br>	<br>	# run this as:<br>	# docker run --rm -it -v $HOME/tmp:/src centos:7 /src/k8s-rpm.sh<br>	<br>	KUBE_VERSION=1.15.3<br>	packages=(<br>	&quot;kubeadm-${KUBE_VERSION}-0.x86_64&quot;<br>	&quot;kubelet-${KUBE_VERSION}-0.x86_64&quot;<br>	&quot;kubectl-${KUBE_VERSION}-0.x86_64&quot;<br>	)<br>	tee -a /etc/yum.repos.d/kubernetes.repo &lt;&lt;EOF 1&gt;/dev/null<br>	[kubernetes]<br>	name=Kubernetes<br>	baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64<br>	enabled=1<br>	gpgcheck=1<br>	repo_gpgcheck=1<br>	gpgkey=https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg<br>	EOF<br>	yum install -y -q yum-utils 2&gt;/dev/null<br>	<br>	echo &quot;&quot;<br>	echo &quot;Fetch the following files:&quot;<br>	yumdownloader -y -q --resolve --urls &quot;${packages[@]}&quot; 2&gt;/dev/null<br>	<br>	echo &quot;&quot;<br>	echo &quot;Install packages:&quot;<br>	echo &quot;rpm -i *.rpm&quot;</span></p>
+	</li></ul>
+</article>
+</body>
+</html>

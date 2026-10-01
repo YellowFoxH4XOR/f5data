@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000092705: traffic-splitting with session-persistence on NGINX Ingress Controller</title>
+<meta name="description" content="Support Solution: traffic-splitting with session-persistence on NGINX Ingress Controller — As background information we are trying to get blue/green deployments working on AKS using Nginx+. We also require persistent sessions to be in place so that there is no interruption to someone using…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000092705">
+</head>
+<body>
+<header>
+<h1>K000092705: traffic-splitting with session-persistence on NGINX Ingress Controller</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-12-16</dd>
+<dt>Updated</dt><dd>2023-08-07</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000092705">https://my.f5.com/manage/s/article/K000092705</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+As background information we are trying to get blue/green deployments working on AKS using Nginx+. We also require persistent sessions to be in place so that there is no interruption to someone using the application during a deployment.
+
+<h2><strong>Environment</strong></h2>
+
+<ul><li>NGINX Ingress Controller</li><li>traffic-splitting</li><li>session-persistence</li></ul>
+
+<h2><strong>Cause</strong></h2>
+
+<p>Requires specific configuration to solve this</p>
+
+<h2><strong>Recommended Actions</strong></h2>
+Create Initial Deployment and Service
+
+<pre class="ckeditor_codeblock">
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tea
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tea
+  template:
+    metadata:
+      labels:
+        app: tea
+    spec:
+      containers:
+      - name: tea
+        image: nginxdemos/nginx-hello:plain-text
+        ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tea-svc
+spec:
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: tea
+</pre>
+Create Version 1 Deployment and Service
+
+<pre class="ckeditor_codeblock">
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tea-v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tea-v1
+  template:
+    metadata:
+      labels:
+        app: tea-v1
+    spec:
+      containers:
+      - name: tea-v1
+        image: nginxdemos/nginx-hello:plain-text
+        ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tea-v1-svc
+spec:
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: tea-v1
+</pre>
+Create Virtual Server Instance
+
+<pre class="ckeditor_codeblock">
+apiVersion: k8s<strong>.</strong>nginx<strong>.</strong>org/v1
+kind: VirtualServer
+metadata:
+  name: cafe
+spec:
+  host: cafe<strong>.</strong>example<strong>.</strong>com
+  upstreams:
+  - name: tea
+    service: tea-svc
+    port: 80
+    sessionCookie:
+      enable: true
+      name: srv_id
+      path: /tea
+      expires: 2h
+  - name: tea-v1
+    service: tea-v1-svc
+    port: 80
+    sessionCookie:
+      enable: true
+      name: srv_id_v1
+      path: /tea
+      expires: 2h
+  routes:
+  - path: /tea
+    matches:
+    - conditions:
+      - cookie: srv_id
+        value: ~*
+      action:
+        pass: tea
+    - conditions:
+      - cookie: srv_id_v1
+        value: ~*
+      action:
+        pass: tea-v1
+    splits:
+    - weight: 1
+      action:
+        pass: tea
+    - weight: 99
+      action:
+        pass: tea-v1
+</pre>
+
+<h2><strong>Additional Information</strong></h2>
+
+<p><a href="https://github.com/nginxinc/kubernetes-ingress/tree/main/examples/custom-resources/traffic-splitting" target="_blank">Traffic Splitting</a><br><a href="https://github.com/nginxinc/kubernetes-ingress/tree/main/examples/custom-resources/session-persistence" target="_blank">Session Persistence</a></p>
+</article>
+</body>
+</html>

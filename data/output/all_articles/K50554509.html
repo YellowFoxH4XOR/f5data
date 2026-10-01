@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K50554509: Basic troubleshooting commands for istio-proxy in Aspen Mesh</title>
+<meta name="description" content="Support Solution: Basic troubleshooting commands for istio-proxy in Aspen Mesh — Given any application inside the mesh, you can use a variety of tools and commands to troubleshoot your istio-proxy or retrieve information from logs, about its health, etc.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K50554509">
+</head>
+<body>
+<header>
+<h1>K50554509: Basic troubleshooting commands for istio-proxy in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-06-17</dd>
+<dt>Updated</dt><dd>2023-07-18</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.14, 1.11</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K50554509">https://my.f5.com/manage/s/article/K50554509</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+Given any application inside the mesh, you can use a variety of tools and commands to troubleshoot your istio-proxy or retrieve information from logs, about its health, etc.
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li><strong>Redhat Openshift</strong>: 4.6x, 4.7.x</li><li><strong>Kubernetes</strong>: 1.17x,1.18.x,1.19.x,1.20.x</li><li><strong>Aspen Mesh</strong>: 1.6.x, 1.9.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+None
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+Perform the following recommended actions:
+
+<ul><li><a href="#config" target="_self">Retrieve the config file from an istio-proxy</a></li><li><a href="#listener" target="_self">Retrieve listeners, clusters, routes, endpoints</a></li><li><a href="#status" target="_self">Check the status of your proxy</a></li><li><a href="#certs" target="_self">Retrieve certificates loaded into istio-proxy</a></li><li><a href="#debug" target="_self">Turn on debug on istio-proxy</a></li></ul>
+<span class="subsectiontitle"><a id="config" name="config"></a>Retrieve the config file from an istio-proxy</span>
+
+<p>Retrieving the configuration from the istio-proxy is useful when tracing and debugging the components of the proxy, such as listeners, routes, clusters, endpoints and all the flags used to configure the istio-proxy.</p>
+
+<ol><li>
+	<p>Identify the pod that you want to retrieve the istio-proxy configuration from.</p>
+	</li><li>If your app container has <strong>curl </strong>installed, use the following command syntax:
+	<p><span class="note"><strong>Note</strong>: Use oc or kubectl depending on your environment.</span></p>
+	<span class="code">kubectl exec &lt;pod-name&gt; -c &lt;container-name&gt; -- curl localhost:15000/config_dump &gt; istio-proxy-config.json</span></li></ol>
+
+<p style="margin-left: 40px;">You can use any indicative name for the output file instead of istio-proxy-config.</p>
+<span class="subsectiontitle"><a id="listener" name="listener"></a>Retrieve listeners, clusters, routes, endpoints</span><br>Sometimes, you do not need to retrieve the whole configuration, but just a little portion. If that is the case, you can use the istioctl command line to do so:
+<ol><li>To retrieve the configuration of any of the following components, use the following command syntax:
+	<p><span class="code">istioctl proxy-config &lt;component&gt; &lt;pod-name&gt;.&lt;namespace&gt;</span></p>
+	<strong>components</strong>:
+
+	<ul><li>Clusters</li><li>Endpoints</li><li>Listeners</li><li>Routes</li></ul>
+	</li></ol>
+
+<div style="margin-left: 40px;">For example, you can also output the component configuration in a json format and append to a file with the following command syntax:</div>
+
+<p style="margin-left: 40px;"><span class="code">istioctl proxy-config &lt;component&gt; &lt;pod-name&gt;.&lt;namespace&gt; -o json &gt; pod-routes.json</span></p>
+<span class="subsectiontitle"><a id="status" name="status"></a>Check the status of your proxy</span>
+
+<p>Retrieving the status of the istio-proxy would be useful to determine if pilot (<strong>istiod</strong>) is sending the correct configuration to your istio-proxy.</p>
+
+<ol><li>You can retrieve all the pods just with one command:
+	<p><span class="code">istioctl proxy-status</span></p>
+	</li><li>If you want to select one particular pod, use the following command syntax?
+	<p><span class="code">istioctl proxy-status &lt;pod-name&gt;.&lt;namespace&gt;</span></p>
+	</li></ol>
+<span class="subsectiontitle"><a id="certs" name="certs"></a>Retrieve certificates loaded into istio-proxy</span>
+
+<p>Retrieving the certificates used by the istio-proxy could be useful if you want to determine if those are active or valid. By default, you can only get the cert-chain and the ROOTCA, private keys are redacted for security purposes.</p>
+
+<ol><li>Verify integrity of the certificates with the following command syntax:
+	<p><span class="code">istioctl proxy-config secrets &lt;pod-name&gt;.&lt;namespace&gt;</span></p>
+	</li><li>You can output the secrets in json format
+	<p><span class="code">istioctl proxy-config secrets &lt;pod-name&gt;.&lt;namespace&gt; -o json</span></p>
+	</li><li>Secrets are encrypted in base64, you can pipe the output to other commands such as <strong>openssl </strong>to check the signing authority, expiration date, etc.
+	<ul><li>
+		<p><span class="code">istioctl proxy-config secret &lt;pod-name&gt;.&lt;namespace&gt; -o json | jq &#39;[.dynamicActiveSecrets[] | select(.name == &quot;default&quot;)][0].secret.tlsCertificate.certificateChain.inlineBytes&#39; -r | base64 -d | openssl x509 -noout -text</span></p>
+		</li><li>
+		<p><span class="code">istioctl proxy-config secret &lt;pod-name&gt;.&lt;namespace&gt; -o json | jq &#39;[.dynamicActiveSecrets[] | select(.name == &quot;ROOTCA&quot;)][0].secret.validationContext.trustedCa.inlineBytes&#39; -r | base64 -d | openssl x509 -noout -text</span></p>
+		</li></ul>
+	</li></ol>
+<span class="subsectiontitle"><a id="debug" name="debug"></a>Turn on debug on istio-proxy</span>
+
+<p>This is the last step in debugging your application using an istio-proxy. Turning on debug logging will increase the verbosity of the loggers inside the proxy.</p>
+<span class="warning"><strong>Important</strong>: Note that this is not recommended use, and you use it at your own risk.</span>
+
+<ol><li>Identify the pod that you want to retrieve the istio-proxy configuration.</li><li>Use the following <strong>istioctl </strong>command to enable debug:
+	<p><span class="note"><strong>Note</strong>: Once debugging completes, return the logger component to the default value <strong>warning</strong>.</span></p>
+
+	<p><span class="code">istioctl proxy-config log &lt;pod-name&gt;.&lt;namespace&gt; --level &lt;logger&gt;:debug</span></p>
+
+	<p><strong>loggers: default value</strong>:</p>
+
+	<ul><li>
+		<p>admin: warning</p>
+		</li><li>
+		<p>aws: warning</p>
+		</li><li>
+		<p>assert: warning</p>
+		</li><li>
+		<p>backtrace: warning</p>
+		</li><li>
+		<p>cache_filter: warning</p>
+		</li><li>
+		<p>client: warning</p>
+		</li><li>
+		<p>config: warning</p>
+		</li><li>
+		<p>connection: debug</p>
+		</li><li>
+		<p>conn_handler: warning</p>
+		</li><li>
+		<p>decompression: warning</p>
+		</li><li>
+		<p>dubbo: warning</p>
+		</li><li>
+		<p>envoy_bug: warning</p>
+		</li><li>
+		<p>ext_authz: warning</p>
+		</li><li>
+		<p>rocketmq: warning</p>
+		</li><li>
+		<p>file: warning</p>
+		</li><li>
+		<p>filter: warning</p>
+		</li><li>
+		<p>forward_proxy: warning</p>
+		</li><li>
+		<p>grpc: warning</p>
+		</li><li>
+		<p>hc: warning</p>
+		</li><li>
+		<p>health_checker: warning</p>
+		</li><li>
+		<p>http: warning</p>
+		</li><li>
+		<p>http2: warning</p>
+		</li><li>
+		<p>hystrix: warning</p>
+		</li><li>
+		<p>init: warning</p>
+		</li><li>
+		<p>io: warning</p>
+		</li><li>
+		<p>jwt: warning</p>
+		</li><li>
+		<p>kafka: warning</p>
+		</li><li>
+		<p>lua: warning</p>
+		</li><li>
+		<p>main: warning</p>
+		</li><li>
+		<p>matcher: warning</p>
+		</li><li>
+		<p>misc: error</p>
+		</li><li>
+		<p>mongo: warning</p>
+		</li><li>
+		<p>quic: warning</p>
+		</li><li>
+		<p>quic_stream: warning</p>
+		</li><li>
+		<p>pool: warning</p>
+		</li><li>
+		<p>rbac: warning</p>
+		</li><li>
+		<p>redis: warning</p>
+		</li><li>
+		<p>router: warning</p>
+		</li><li>
+		<p>runtime: warning</p>
+		</li><li>
+		<p>stats: warning</p>
+		</li><li>
+		<p>secret: warning</p>
+		</li><li>
+		<p>tap: warning</p>
+		</li><li>
+		<p>testing: warning</p>
+		</li><li>
+		<p>thrift: warning</p>
+		</li><li>
+		<p>tracing: warning</p>
+		</li><li>
+		<p>upstream: warning</p>
+		</li><li>
+		<p>udp: warning</p>
+		</li><li>
+		<p>wasm: warning</p>
+		</li></ul>
+	</li></ol>
+</article>
+</body>
+</html>

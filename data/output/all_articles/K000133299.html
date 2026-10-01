@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000133299: Clickhouse pod&#x27;s container is not coming up and corrupt nfs data is suspected</title>
+<meta name="description" content="Support Solution: Clickhouse pod&#x27;s container is not coming up and corrupt nfs data is suspected — Upon startup, the container for the clickhouse pod does not come up">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000133299">
+</head>
+<body>
+<header>
+<h1>K000133299: Clickhouse pod&#x27;s container is not coming up and corrupt nfs data is suspected</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-03-31</dd>
+<dt>Updated</dt><dd>2026-08-12</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Controller: 3.22.8</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000133299">https://my.f5.com/manage/s/article/K000133299</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>Upon startup, the container for the clickhouse pod does not come up</p>
+
+<h2><strong>Environment</strong></h2>
+
+<p>NGINX Controller</p>
+
+<h2><strong>Cause</strong></h2>
+
+<p>This could be a result of corrupt nfs data</p>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p><span style="font-size: 14px;">Backup and remove nfs data<br><br>1. Scale down clickhouse</span></p>
+
+<pre class="ckeditor_codeblock">
+kubectl scale sts clickhouse --replicas=0</pre>
+
+<p><span style="font-size: 14px;">2. Remove data from nfs shared folder</span></p>
+
+<ul><li><span style="font-size: 14px;">Confirm path of nfs data share directory</span></li><li><span style="font-size: 14px;">Backup nfs data share folder</span></li><li><span style="font-size: 14px;">Remove all data from nfs data shared folder</span></li><li><span style="font-size: 14px;">Example</span> 
+	<ul><li><span style="font-size: 14px;">From controller</span></li></ul>
+
+	<pre class="ckeditor_codeblock">
+$ kubectl get pv clickhouse -oyaml | grep &quot;nfs:&quot; -A1
+  nfs:
+    path: /mnt/nfs_share/nfs_tsdb</pre>
+
+	<ul><li><span style="font-size: 14px;">From nfs</span></li></ul>
+
+	<pre class="ckeditor_codeblock">
+[/mnt/nfs_share]$ sudo tar cvzf /tmp/nfs_tsdb_2.tar.gz nfs_tsdb
+[/mnt/nfs_share]$ sudo rm -rf nfs_tsdb/*</pre>
+	</li></ul>
+
+<p><span style="font-size: 14px;">3. Scale up clickhouse</span></p>
+
+<pre class="ckeditor_codeblock">
+kubectl scale sts clickhouse --replicas=1</pre>
+
+<p><span style="font-size: 14px;">Note: The Clickhouse pod will create the necessary folder and data structure within the empty nfs share folder</span></p>
+
+<p><span style="font-size: 14px;">4. If Clickhouse and other pod/services come up healthy, recreate the Clickhouse database and tables with these two commands:</span></p>
+
+<pre class="ckeditor_codeblock">
+kubectl set env sts clickhouse CH_PASS=$(kubectl get $(kubectl get secret -oname | grep clickhouse-secret) -o json | jq -r .data.CLICKHOUSE_PASS_writer | base64 -d) CH_USER=writer CH_HOST=$(kubectl get $(kubectl get svc -oname clickhouse) -o json | jq -r .spec.clusterIP) CH_PORT=9000 CH_DB=controller SKIP_DEFAULT_OPS=false
+kubectl exec -it clickhouse-0 -- sh -c &#39;/clickhouse-init/migrate.sh&#39;
+</pre>
+
+<h2><strong>Additional Information</strong></h2>
+</article>
+</body>
+</html>

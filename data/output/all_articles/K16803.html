@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K16803: The BIG-IP system may fail to send an SSL error alert to the client when resetting OCSP-authenticated connections</title>
+<meta name="description" content="Known Issue: The BIG-IP system may fail to send an SSL error alert to the client when resetting OCSP-authenticated connections — The BIG-IP system may fail to send a Secure Sockets Layer (SSL) error alert to the client when resetting connections that are authenticated by Online Certificate Status Protocol (OCSP).">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K16803">
+</head>
+<body>
+<header>
+<h1>K16803: The BIG-IP system may fail to send an SSL error alert to the client when resetting OCSP-authenticated connections</h1>
+<dl>
+<dt>Type</dt><dd>Known Issue</dd>
+<dt>Published</dt><dd>2015-06-26</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 14.1.5, 14.1.3, 14.1.2, 14.1.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 12.1.6, 12.1.5, 12.1.4, 14.1.4, 12.1.2, 12.1.1, 12.1.0, 11.6.5, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 12.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K16803">https://my.f5.com/manage/s/article/K16803</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Known Issue</h3><p>The BIG-IP system may fail to send a Secure Sockets Layer (SSL) error alert to the client when resetting connections that are authenticated by Online Certificate Status Protocol (OCSP).</p><p>This issue occurs when all of the following conditions are met:</p><ul><li>Your BIG-IP system is configured for OCSP authentication.</li><li>The OCSP server reports that a certificate has been revoked.</li></ul><p><span class="sectiontitle">Impact</span></p><p>OCSP-authenticated connections are reset without sending an SSL error alert to the client.</p><p><span class="sectiontitle">Symptoms</span></p><p>As a result of this issue, you may encounter the following symptom:</p><ul><li>When the OCSP server reports that a certificate has been revoked, the BIG-IP system resets the client connection without sending an SSL error alert before closing the connection.</li></ul><h3>Resolution</h3><p><span class="sectiontitle">Status</span></p>
+
+<p>F5 Product Development has assigned ID 517829 to this issue. F5 has confirmed that this issue exists in the products listed in the <strong>Applies To</strong> box, located in the upper-right corner of this article. For information about releases, point releases, or hotfixes that resolve this issue, refer to the following table.</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1" style="line-height: 18.9091px;width: 1141.82px;"><tbody><tr><td colspan="1" rowspan="1">Type of fix</td><td colspan="1" rowspan="1">Fixes introduced in</td><td colspan="1" rowspan="1">Related articles</td></tr><tr><td colspan="1" rowspan="1">Release</td><td colspan="1" rowspan="1">None</td><td colspan="1" rowspan="1">None</td></tr><tr><td colspan="1" rowspan="1">Point release/Hotfix</td><td colspan="1" rowspan="1">None</td><td colspan="1" rowspan="1">None</td></tr></tbody></table>
+
+<p><span class="sectiontitle">Workaround</span></p>
+
+<p>To work around this issue, you can use the following iRule for the OSCP authentication profile instead of the system-supplied iRule:</p>
+
+<p><span class="impact"><strong>Impact of workaround:</strong> The impact of the suggested workaround depends on the specific environment. F5 recommends testing any such changes during a maintenance window.</span><br><br><span class="code">when CLIENT_ACCEPTED {<br>set tmm_auth_ssl_ocsp_sid 0<br>set tmm_auth_ssl_ocsp_done 0<br>}<br><br><br>when CLIENTSSL_CLIENTCERT {<br>if {[SSL::cert count] == 0} {<br>return<br>}<br>set ssl_version [SSL::cipher version]<br>set tmm_auth_ssl_ocsp_done 0<br>if {$tmm_auth_ssl_ocsp_sid == 0} {<br>set tmm_auth_ssl_ocsp_sid [AUTH::start pam default_ssl_ocsp]<br>AUTH::subscribe $tmm_auth_ssl_ocsp_sid<br>}<br>AUTH::cert_credential $tmm_auth_ssl_ocsp_sid [SSL::cert 0]<br>AUTH::cert_issuer_credential $tmm_auth_ssl_ocsp_sid [SSL::cert issuer 0]<br>AUTH::authenticate $tmm_auth_ssl_ocsp_sid<br>SSL::handshake hold<br>}<br><br><br>when CLIENTSSL_HANDSHAKE {<br>set tmm_auth_ssl_ocsp_done 1<br>}<br><br><br>when AUTH_RESULT {<br>if {[info exists tmm_auth_ssl_ocsp_sid] &amp;&amp; ($tmm_auth_ssl_ocsp_sid == [AUTH::last_event_session_id])} {<br>set tmm_auth_status [AUTH::status]<br>array set tmm_auth_response_data [AUTH::response_data]<br>if {$tmm_auth_status == 0} {<br>set tmm_auth_ssl_ocsp_done 1<br>SSL::handshake resume<br>}<br>elseif {($tmm_auth_status == 1) &amp;&amp; ($tmm_auth_response_data(ocsp:response:status) eq &quot;revoked&quot;)} {<br>if { $ssl_version equals &quot;TLSv1.2&quot; } { set hex_version &quot;0303&quot; }<br>elseif { $ssl_version equals &quot;TLSv1.1&quot; } { set hex_version &quot;0302&quot; }<br>elseif { $ssl_version equals &quot;TLSv1.0&quot; } { set hex_version &quot;0301&quot; }<br>else { reject }<br>set hex_response &quot;15${hex_version}0002022C&quot;<br>set bin_response [binary format H* $hex_response]<br>TCP::respond &quot;$bin_response&quot;<br>TCP::close<br>} elseif {($tmm_auth_status != -1) || ($tmm_auth_ssl_ocsp_done == 0)} {<br>reject<br>}<br>}<br>}</span></p>
+</article>
+</body>
+</html>

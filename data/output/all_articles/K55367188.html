@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K55367188: Explaining virtual server, pool member &amp; node status collection on BIG-IQ</title>
+<meta name="description" content="Support Solution: Explaining virtual server, pool member &amp; node status collection on BIG-IQ — The purpose of this article is to help understand behaviour of how BIG-IQ collects object status state from BIG-IP device in BIG-IQ &gt; Configuration &gt; Local traffic &gt;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K55367188">
+</head>
+<body>
+<header>
+<h1>K55367188: Explaining virtual server, pool member &amp; node status collection on BIG-IQ</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-07-12</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Applies to</dt><dd><ul><li>Virtual Editions</li><li>BIG-IQ</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K55367188">https://my.f5.com/manage/s/article/K55367188</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+The purpose of this article is to help understand behaviour of how BIG-IQ collects object status state from BIG-IP device in<strong> BIG-IQ &gt; Configuration &gt; Local traffic &gt;</strong>
+
+<ul><li>Virtual Servers</li><li>Pool Members</li><li>Nodes</li></ul>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Explaining virtual servers, pool members, nodes status on BIG-IQ</li><li>Stats Collection enabled</li><li>BIG-IQ Centralized Manager with DCDs</li><li>Managed BIG-IP</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Based on information <a href="https://my.f5.com/manage/s/article/K91114310" target="_self">K91114310: Reducing the performance impact of BIG-IQ statistics gathering on managed BIG-IP systems</a> there are two options to collect information about  status of objects:</p>
+
+<ul><li><a href="#periodical_check_from_big_iq_cm" target="_self">Periodical check done from BIG-IQ CM by default done each 5 minutes</a></li><li><a href="#big_iq_data_collection_device" target="_self">BIG-IQ data collection device (DCD) is used to collect statistics</a></li></ul>
+ 
+
+<p><strong><a id="periodical_check_from_big_iq_cm" name="periodical_check_from_big_iq_cm"></a></strong><span class="subsectiontitle">Periodical check done from BIG-IQ CM</span> <br><br>A Periodical Check is used when <strong>&quot;useAppIqDcd&quot;: is set to false</strong>,<br><br>To view the BIG-IQ Stats API configuration, enter the following command:</p>
+
+<p style="margin-left: 40px;"><span class="code"><strong>restcurl /cm/adc-core/current-config/stats-refresh</strong></span></p>
+
+<p>The output looks similar to the following example:</p>
+
+<p style="margin-left: 40px;"><span class="example2">{<br>&quot;isMonitorRunning&quot;: true,<br>&quot;pollingIntervalSeconds&quot;: 300,<br>&quot;batchSize&quot;: 200,<br>&quot;waitingBetweenBatches&quot;: 0,<br>&quot;monitorItems&quot;: [<br>&quot;virtual_server&quot;,<br>&quot;pool&quot;,<br>&quot;node&quot;<br>],<br><strong>&quot;useAppIqDcd&quot;: false,</strong><br>&quot;generation&quot;: 1234,<br>&quot;lastUpdateMicros&quot;: 1581619002348484,<br>&quot;kind&quot;: &quot;cm:adc-core:current-config:stats-refresh:statsmonitorstate&quot;,<br>&quot;selfLink&quot;: &quot;https://localhost/mgmt/cm/adc-core/current-config/stats-refresh&quot;<br>}</span></p>
+
+<p><br>By default each 5 minutes BIG-IQ send set of REST API POST  requests to gather  statistics related to BIG-IP objects. We can view requests by collecting packet capture on loopback interface</p>
+
+<p style="margin-left: 40px;"><span class="code"><strong>tcpdump -i lo -s0 -w /var/tmp/rest.pcap port 8100 -v</strong></span></p>
+
+<p>HTTP request example for pool statistics:</p>
+
+<p style="margin-left: 40px;"><span class="example2">POST /mgmt/shared/inflate?em_server_ip=2.23.207.168&amp;em_server_auth_token=&lt;auth_token&gt; HTTP/1.1 , JavaScript Object Notation (application/json)</span></p>
+
+<p style="margin-left: 40px;"><span class="example2">JavaScript Object Notation: application/json<br>    Object<br>        Member Key: items<br>            Array<br>                String value: <strong>https://localhost/mgmt/tm/ltm/pool/stats?$top=1</strong><br>            Key: items</span></p>
+
+<p><br><span class="note"><strong>NOTE</strong>:  &#39;<strong>em_server_ip=2.23.207.168</strong>&#39; is just a method that BIG-IQ implements to hash device group names into IPv4 addresses. It is not an IP address and does not correspond to any real communication - it&#39;s just a numeric hash of a string. </span><br><br>As a response we are getting information about  pool members.  Example of response:</p>
+
+<p style="margin-left: 40px;"><span class="example2">JavaScript Object Notation: application/json<br>...<br>Member Key: kind<br>    String value: tm:ltm:pool:poolcollectionstats<br>    Key: kind<br>...<br>Object<br>    Member Key: nestedStats<br>        Object<br>            Member Key: kind<br>                String value: tm:ltm:pool:poolstats<br>                Key: kind<br>            Member Key: selfLink<br>                String value: https://localhost/mgmt/tm/ltm/pool/~Common~test_pool/stats?ver=14.1.4.6<br>                Key: selfLink<br>            Member Key: entries<br>                Object<br>                    Member Key: activeMemberCnt<br>                        Object<br>                            Member Key: value<br>                                Number value: 1<br>                                Key: value<br>                        Key: activeMemberCnt<br>                    Member Key: availableMemberCnt<br>                        Object<br>                            Member Key: value<br>                                Number value: 1<br>                                Key: value<br>                        Key: availableMemberCnt</span></p>
+
+<p><br><span class="note">   <strong>NOTE</strong>: Status is not provided in real-time. This can cause inconsistencies between BIG-IP and BIG-IQ state </span><br><br>BIG-IQ is updating state of object in database  /mgmt/cm/adc-core/working-config/ltm/pool/&lt;poolUUID&gt;/members/&lt;memberuuid&gt;/stats  ( In GUI:  <strong>Configuration&gt; Local Traffic &gt; Pool Members &gt; Selected pool member</strong>)</p>
+
+<p style="margin-left: 40px;"><span class="code">restcurl -u admin:a  /mgmt/cm/adc-core/working-config/ltm/pool/2666db34-627e-3d4a-bdf2-38c6d0f6c5f8/members/74f3c059-ebaf-3d6b-a57c-31a983b11e9e/stats<br><span class="example2">{</span></span><br><span class="example2">  &quot;entries&quot;: {<br>    &quot;status.statusReason&quot;: {<br>      &quot;description&quot;: &quot;Pool member is available&quot;,<br>      &quot;lastUpdateMicros&quot;: 1655898789090816<br>    },<br>    &quot;itemId&quot;: {<br>      &quot;value&quot;: 0.0,<br>      &quot;description&quot;: &quot;74f3c059-ebaf-3d6b-a57c-31a983b11e9e&quot;,<br>      &quot;lastUpdateMicros&quot;: 1655895994483579,<br>      &quot;updateType&quot;: &quot;BASIC&quot;<br>    },<br>    &quot;status.enabledState&quot;: {<br>      &quot;description&quot;: &quot;enabled&quot;,<br>      &quot;lastUpdateMicros&quot;: 1655896731264836<br>    },<br>    &quot;status.availabilityState&quot;: {<br>      &quot;description&quot;: &quot;available&quot;,<br>      &quot;lastUpdateMicros&quot;: 1655898789090817<br>    },<br>    &quot;lastRefreshMicros&quot;: {<br>      &quot;value&quot;: 1.655906023975133E15,<br>      &quot;lastUpdateMicros&quot;: 1655906023975532,<br>      &quot;updateType&quot;: &quot;BASIC&quot;<br>    }<br>  },<br>  &quot;generation&quot;: 80,<br>  &quot;lastUpdateMicros&quot;: 1655906023975533,<br>  &quot;kind&quot;: &quot;cm:adc-core:working-config:ltm:pool:2666db34-627e-3d4a-bdf2-38c6d0f6c5f8:members:74f3c059-ebaf-3d6b-a57c-31a983b11e9e:stats:restworkerstats&quot;,<br>  &quot;selfLink&quot;: &quot;https://localhost/mgmt/cm/adc-core/working-config/ltm/pool/2666db34-627e-3d4a-bdf2-38c6d0f6c5f8/members/74f3c059-ebaf-3d6b-a57c-31a983b11e9e/stats&quot;<br>}</span></p>
+
+<p><br><strong><a id="big_iq_data_collection_device" name="big_iq_data_collection_device"></a></strong><span class="subsectiontitle">BIG-IQ data collection device (DCD) is used to collect statistics</span><br><br>This is used when  <strong>&quot;useAppIqDcd&quot;: is set to true </strong><br><br>CONDITIONS</p>
+
+<ul><li>At least one DCD node added </li><li>AVR provisioned on BIG-IP</li><li>BIG-IP system must have Statistics collection enabled </li><li>TCP 443 port opened between DCD to BIG-IP permitted </li></ul>
+
+<p>Analytics iapp is installed and it is responsible for collecting status of objects  and storing them with other statistics locally in /var/local/ucs/f5.bigiq-analitics... .  BIG-IQ DCD is establishing connection to BIG-IP on 443 and collecting file then stores it in elasticsearch database  events_tl0* index<br><br>BIG-IQ Analytics iapp template part responsible for pushing status:</p>
+
+<p style="margin-left: 40px;"><span class="example2">....SNIP....<br># We want to push state of Node/Virtual/Pool/PoolMembers only once in every 2 minutes<br>        set timeToPushState &quot;0&quot;<br>        set lastTimePushedState &quot;&quot;<br>        catch {set lastTimePushedState [exec cat /var/tmp/lastTimePushedState.txt]}<br>        if {&quot;$lastTimePushedState&quot; == &quot;&quot;} {<br>            set timeToPushState &quot;1&quot;<br>            exec echo &quot;$date&quot; &gt; /var/tmp/lastTimePushedState.txt<br>        } else {<br>            set timePassed [expr {$date - $lastTimePushedState}]<br>            if {&quot;$timePassed&quot; &gt;= 120} {<br>               set timeToPushState &quot;1&quot;<br>               exec echo &quot;$date&quot; &gt; /var/tmp/lastTimePushedState.txt<br>            }<br>        }</span></p>
+
+<p><strong>/var/tmp/lastTimePushedState.txt</strong> contains push status time</p>
+
+<p>Status is stored in Elasticsearch database in index events_tl0*</p>
+
+<p style="margin-left: 40px;"><span class="code">curl -sk https://localhost:9200/events_tl0*/_search</span><br><span class="example2">{<br>  &quot;tenantId&quot;: &quot;default&quot;,<br>  &quot;sourceId&quot;: &quot;e2e5dcf6-b5e7-4abb-9b1a-87870127e0a4_10.10.2.96&quot;,<br>  &quot;type&quot;: &quot;node-status-update&quot;,<br>  &quot;category&quot;: &quot;system&quot;,<br>  &quot;subCategory&quot;: &quot;server-readiness&quot;,<br>  &quot;logLevel&quot;: &quot;notice&quot;,<br>  &quot;publish&quot;: &quot;true&quot;,<br>  &quot;module&quot;: &quot;mcpd&quot;,<br>  &quot;description&quot;: &quot;Node /Common/8.8.8.8 status updated. enabled state: enabled, availability state: unknown, reason: Node address does not have service checking enabled&quot;,<br>  &quot;title&quot;: &quot;Node /Common/8.8.8.8 status update&quot;,<br>  &quot;timestamp&quot;: 1655898276000,<br>  &quot;reportedObjectType&quot;: &quot;constantstring:virtual&quot;,<br>  &quot;timeWindow&quot;: {<br>    &quot;timeInterval&quot;: 0,<br>    &quot;end&quot;: 1655898276000<br>  },<br>  &quot;dimensions&quot;: {<br>    &quot;node&quot;: &quot;/Common/8.8.8.8&quot;,<br>    &quot;hostname&quot;: &quot;test.local&quot;<br>  },<br>  &quot;properties&quot;: {<br>    &quot;enabled-state&quot;: &quot;enabled&quot;,<br>    &quot;status-reason&quot;: &quot;Node address does not have service checking enabled&quot;,<br>    &quot;availability-state&quot;: &quot;unknown&quot;<br>  }</span><br> </p>
+
+<p>This should be also visible in Monitoring &gt; Local Traffic &gt; Pool Members &gt; Events and reflected in REST database under</p>
+
+<pre>
+/mgmt/cm/adc-core/working-config/ltm/pool/&lt;pool_uuid&gt;/members/&lt;pool_member_uuid&gt;/stats</pre>
+
+<p><br> </p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+None.<br><br><span class="sectiontitle">Additional Information</span><br><br>None
+</article>
+</body>
+</html>

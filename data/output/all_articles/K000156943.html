@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000156943: Controllers and blades in a VELOS chassis may become unreachable, partitions and tenants may disappear, and management access (SSH/GUI) may fail.</title>
+<meta name="description" content="Support Solution: Controllers and blades in a VELOS chassis may become unreachable, partitions and tenants may disappear, and management access (SSH/GUI) may fail. — Controllers and blades in a VELOS chassis may become unreachable, partitions and tenants may disappear, and management access (SSH/GUI) may fail. Error messages and logs can include &quot;no route to…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000156943">
+</head>
+<body>
+<header>
+<h1>K000156943: Controllers and blades in a VELOS chassis may become unreachable, partitions and tenants may disappear, and management access (SSH/GUI) may fail.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-10-08</dd>
+<dt>Updated</dt><dd>2026-07-28</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS Products</li><li>F5OS: 2.X.X, 2.0.X, 2.0.0</li><li>F5OS-C: 1.8.2, 1.6.4, 1.8.0, 1.6.X, 1.6.2, 1.6.1, 1.6.0, 1.5.X, 1.5.1, 1.5.0, 1.3.X, 1.3.2, 1.1.0, 1.3.0, 1.2.X, 1.2.2, 1.2.1, 1.2.0, 1.1.X, 1.1.4, 1.1.3, 1.3.1, 1.1.2, 1.1.1, 1.X.X, 1.8.X, 1.8.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000156943">https://my.f5.com/manage/s/article/K000156943</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Controllers and blades in a VELOS chassis may become unreachable, partitions and tenants may disappear, and management access (SSH/GUI) may fail. Error messages and logs can include &quot;no route to host,&quot; controller-manager pod restarts, unhealthy multus-status, and OpenShift cluster failures. Attempts to run commands such as <span style="background-color: #f1f1f1;">show cluster</span> or access the partition may result in communication errors or missing configuration.</p>
+<h2>Environment</h2>
+<ul><li>Product: F5OS - Chassis (VELOS)</li><li>Version: 1.8.1 or later</li><li>Platform: F5-VEL-LTM-CX410-AC, F101</li><li>Configuration: Internal chassis network prefix changed (e.g., from RFC6598 to RFC1918) without a full chassis powercycle.</li><li>Symptoms may appear after network configuration changes, controller or blade reboots, or OpenShift cluster reinstallation attempts.</li></ul>
+<h2>Cause</h2>
+<p>Changing the internal chassis network prefix (e.g., from RFC6598 to RFC1918 or vice versa) without performing a full chassis powercycle causes controllers and blades to use mismatched internal IP ranges. This results in loss of communication between controllers and blades, loss of configuration, and OpenShift cluster failures.</p>
+<h2>Recommended Actions</h2>
+<ol><li><strong>Verify Internal Network Configuration:</strong><br>On each controller, check the contents of the following files:<br><span style="background-color: #f1f1f1;">cat /etc/sysconfig/chassis_network_config.txt</span><br><span style="background-color: #f1f1f1;">cat /etc/sysconfig/chassis_network_active.txt</span><br>Ensure both files end with:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">network_range_type=RFC6598 </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">chassis_network_selection=0 </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">chassis_id=1 </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">network_prefix=100.65</span></p>
+<p>If a different network_range_type or prefix is present, update the configuration using:</p>
+<p><span style="background-color: #f1f1f1;">config</span></p>
+<p><span style="background-color: #f1f1f1;">system network config network-range-type RFC6598</span></p>
+<p><span style="background-color: #f1f1f1;">commit and-quit</span></p>
+</li><li><strong>Powercycle the Chassis:</strong><br>After confirming the correct network configuration on both controllers, perform a full chassis powercycle. This ensures all controllers and blades reboot and synchronize to the correct internal network settings.</li><li><strong>Verify Controller and Blade Communication:</strong><br>After powercycling, confirm both controllers are reachable.<br>From the active controller, verify blade connectivity:
+<p><span style="background-color: #f1f1f1;">ping blade-1.chassis.local</span></p>
+<p><span style="background-color: #f1f1f1;">ping blade-2.chassis.local</span></p>
+<p><span style="background-color: #f1f1f1;">ping blade-3.chassis.local</span></p>
+<p><span style="background-color: #f1f1f1;">ping blade-4.chassis.local</span></p>
+If blades are not reachable, collect a fresh Qkview for analysis.</li><li><strong>Restore Partition and Tenant Configuration:</strong><br>Assign blades to the default partition if necessary:
+<p><span style="background-color: #f1f1f1;">config</span></p>
+<p><span style="background-color: #f1f1f1;">slots slot range 1-8 partition default</span></p>
+<p><span style="background-color: #f1f1f1;">commit and-quit</span></p>
+Enable the default partition:
+<p><span style="background-color: #f1f1f1;">config</span></p>
+<p><span style="background-color: #f1f1f1;">partitions partition default config enabled</span></p>
+<p><span style="background-color: #f1f1f1;">commit and-quit</span></p>
+Wait for OpenShift cluster to rebuild and verify cluster health:
+<p><span style="background-color: #f1f1f1;">show cluster</span></p>
+If required, disable and re-enable the partition to ensure proper blade initialization.</li><li><strong>Configure Management IPs:</strong><br>If management IPs (controller-1, controller-2, floating) are missing from the running-config, set them using:
+<div>
+<div><span style="background-color: #f0f0f0;">config</span></div>
+<div><span style="background-color: #f0f0f0;">system mgmt-ip config ipv4 controller-1 address &lt;controller-1-IP&gt;</span></div>
+</div>
+<div><span style="background-color: #f0f0f0;">system mgmt-ip config ipv4 controller-2 address &lt;controller-2-IP&gt;</span></div>
+<div><span style="background-color: #f0f0f0;">system mgmt-ip config ipv4 floating address &lt;floating-IP&gt;</span></div>
+<div><span style="background-color: #f0f0f0;">system mgmt-ip config ipv4 prefix-length &lt;prefix&gt;</span></div>
+<div><span style="background-color: #f0f0f0;">system mgmt-ip config ipv4 gateway &lt;gateway-IP&gt;</span></div>
+<div><span style="background-color: #f0f0f0;">commit and-quit</span></div>
+</li><li><strong>Additional Configuration:</strong><br>Set partition management IP , hostname , DNS server , NTP server as needed .<br>If restoring from a ConfD backup file : Always verify &#39;system network&#39; settings before / after restore ; immediately revert any unintended changes to prevent recurrence of mismatched networking . <br><h2>Related Content</h2>
+None
+<ul></ul>
+</li></ol>
+</article>
+</body>
+</html>

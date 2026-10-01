@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000150299: Webtop link failing to launch from APM Webtop with CORS error in browser console.</title>
+<meta name="description" content="Support Solution: Webtop link failing to launch from APM Webtop with CORS error in browser console. — When configuring a webtop link to launch from the APM webtop, the new tab opened might not display the application or you might see an error.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000150299">
+</head>
+<body>
+<header>
+<h1>K000150299: Webtop link failing to launch from APM Webtop with CORS error in browser console.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-03-07</dd>
+<dt>Updated</dt><dd>2025-03-07</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 15.0.0, 15.0.X, 15.0.1, 17.X.X, 16.X.X, 15.X.X, 17.5.X, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000150299">https://my.f5.com/manage/s/article/K000150299</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When configuring a webtop link to launch from the APM webtop, the new tab opened might not display the application or you might see an error.</p>
+<p>The error would be similar to this:</p>
+<p class="ql-indent-1" style="padding-left: 40px;"><em style="font-family: Menlo, Consolas, &#39;DejaVu Sans Mono&#39;, &#39;Courier New&#39;, monospace;">Uncaught DOMException: Blocked a frame with origin &quot;&lt;website address&gt;&quot; from accessing a cross-origin frame.</em></p>
+<h2>Environment</h2>
+<ul><li>APM Configured</li><li>Webtop Link Configured</li></ul>
+<h2>Cause</h2>
+<p>The code for the webtop link uses window.open to launch the website in a new window. Using window.open you need to have &quot;noreferrer&quot; as an option to avoid the CORS error.</p>
+<p>See https://developer.mozilla.org/en-US/docs/Web/API/Window/open#noreferrer for more information on how window.open works.</p>
+<h2>Recommended Actions</h2>
+<p>To workaround this issue an iRule can be used.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when CLIENT_ACCEPTED {
+	ACCESS::restrict_irule_events disable
+}
+ 
+when HTTP_REQUEST {
+	if { [HTTP::path] ends_with &quot;/vdesk/webtop.eui&quot;} {
+		set match 1
+	} else {
+		set match 0
+	}
+}
+ 
+when HTTP_RESPONSE {
+	if {$match == 1} {
+		if { [HTTP::header exists &quot;Content-Length&quot;] and [HTTP::header &quot;Content-Length&quot;] &lt;= 1048576 } {
+			HTTP::collect [HTTP::header Content-Length]
+		} else {
+			HTTP::collect 2097152 ;# 2MB
+		}
+	}
+}
+ 
+ 
+when HTTP_RESPONSE_DATA {
+	if {$match == 1} {
+		set from1 {&quot;_blank&quot; , &quot;&quot;}
+		set to1 {&quot;_blank&quot; , &quot;noreferrer&quot;}
+		regsub -all $from1 [HTTP::payload] $to1 result
+		set content_len [string length [HTTP::payload]]
+		HTTP::payload replace 0 $content_len $result
+		HTTP::release
+	}
+}</code></pre>
+<h2>Additional Information</h2>
+</article>
+</body>
+</html>

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000092950: Aspen Mesh sidecar does not keep an existing TCP Connection Open when DNS TTL expires</title>
+<meta name="description" content="Support Solution: Aspen Mesh sidecar does not keep an existing TCP Connection Open when DNS TTL expires — When using Service Entries with “Resolution Type” of Static or DNS, if the record is updated with a new IP address and after the TTL expires for an upstream connection, the client Envoy or sidecar…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000092950">
+</head>
+<body>
+<header>
+<h1>K000092950: Aspen Mesh sidecar does not keep an existing TCP Connection Open when DNS TTL expires</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-12-02</dd>
+<dt>Updated</dt><dd>2022-12-02</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000092950">https://my.f5.com/manage/s/article/K000092950</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>When using Service Entries with “Resolution Type” of Static or DNS, if the record is updated with a new IP address and after the TTL expires for an upstream connection, the client Envoy or sidecar will begin to drain the TCP connections to the remote service in favor of the new IP address.   Envoy will close these connections and force a new connection to the remote endpoint.</p>
+
+<h2><strong>Environment</strong></h2>
+
+<ul><li>Kubernetes 1.17x,1.18.x,1.19.x,1.20.x ,1.21.x</li><li>Aspen Mesh 1.6.x, 1.9.x , 1.11.x </li></ul>
+
+<h2><strong>Cause</strong></h2>
+
+<p>This is due to the behavior described in the Strict DNS Section of the Service Discovery types within the  <a href="https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/service_discovery.html?highlight=service%20discovery" target="_blank">envoyproxy</a> documentation.  </p>
+
+<p>“When using strict DNS service discovery, Envoy will continuously and asynchronously resolve the specified DNS targets. Each returned IP address in the DNS result will be considered an explicit host in the upstream cluster. This means that if the query returns three IP addresses, Envoy will assume the cluster has three hosts, and all three should be load balanced to. If a host is removed from the result Envoy assumes it no longer exists and will drain traffic from any existing connection pools.”<br><br>For example:</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: networking.istio.io/v1alpha3 
+kind: ServiceEntry 
+metadata: 
+  name: external-svc-https 
+spec: 
+  hosts: 
+  - www.example.com 
+  location: MESH_EXTERNAL 
+  ports: 
+  - number: 31191 
+    name: http 
+    protocol: http 
+  resolution: DNS</pre>
+
+<pre class="ckeditor_codeblock">
+k exec -it client -- netstat -tna | grep 31191 
+
+tcp        0      0 10.244.1.196:45202      10.155.97.81:31191      ESTABLISHED 103627/telnet 
+tcp        0      0 10.244.1.196:45418      10.155.97.81:31191      ESTABLISHED - 
+ 
+# DNS Change from 10.155.97.81 to 10.155.97.83 for &#39;www.example.com&#39; 
+ 
+k exec -it client -- netstat -tna | grep 31191 
+tcp        0      0 10.244.1.196:38566      10.155.97.83:31191      ESTABLISHED - 
+tcp        0      0 10.244.1.196:45418      10.155.97.81:31191      TIME_WAIT   - 
+tcp        0      0 10.244.1.196:45202      10.155.97.81:31191      ESTABLISHED 103627/telnet
+</pre>
+
+<h2><br><strong>Recommended Actions</strong></h2>
+
+<p>This behavior can be mitigated in two ways:  </p>
+
+<ol start="1"><li>
+	<p>Beginning in Istio 1.14.x and Aspen Mesh 1.14.x a new Resolution Type of DNS Round Robin will utilize the envoy service discovery type Logical DNS. Per the <a href="https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/service_discovery.html?highlight=service%20discovery" target="_blank">envoyproxy</a> documentation for Logical DNS:  </p>
+	</li></ol>
+
+<p>“However, instead of strictly taking the results of the DNS query and assuming that they comprise the entire upstream cluster, a logical DNS cluster only uses the first IP address returned when a new connection needs to be initiated.”</p>
+
+<ol start="2"><li>
+	<p>If you are unable to upgrade to the latest version of Aspen Mesh or Istio you can use an envoy filter.  </p>
+	</li></ol>
+
+<p><strong>Note</strong>: Please use envoy filters with caution. Envoy Filters are not managed by Istio or Aspen Mesh and can have the potential to impact behavior.</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: networking.istio.io/v1alpha3 
+kind: EnvoyFilter 
+metadata: 
+  name: logicaldns-envoyfilter 
+  namespace: default 
+spec: 
+  configPatches: 
+  - applyTo: CLUSTER 
+    match: 
+      cluster: 
+        service: www.example.com 
+    patch: 
+      operation: MERGE 
+      value: 
+        type: LOGICAL_DNS</pre>
+
+<p> </p>
+
+<h2><strong>Additional Information</strong></h2>
+
+<ul><li><a href="https://istio.io/latest/docs/reference/config/networking/service-entry/#ServiceEntry-Resolution" target="_blank">Istio Service Entry</a></li><li><a href="https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/service_discovery.html?highlight=service%20discovery" target="_blank">Envoy Service Discovery</a></li><li><a href="https://istio.io/latest/news/releases/1.14.x/announcing-1.14/change-notes/" target="_blank">Istio change notes for 1.14</a> See Issue #35603</li><li><a href="https://my.aspenmesh.io/client/docs/1.14/dns-controller/" target="_blank">DNS Controller</a></li></ul>
+</article>
+</body>
+</html>

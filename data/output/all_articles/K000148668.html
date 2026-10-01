@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000148668: Troubleshooting connection to upstream timeout issues: [error] 8#8: *1111 upstream timed out (110: Connection timed out) while connecting to upstream</title>
+<meta name="description" content="Support Solution: Troubleshooting connection to upstream timeout issues: [error] 8#8: *1111 upstream timed out (110: Connection timed out) while connecting to upstream — The error message &quot;upstream timed out (110: Connection timed out) while connecting to upstream, &quot; means that nginx wasn’t able to establish connection with proxied server during the value of…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000148668">
+</head>
+<body>
+<header>
+<h1>K000148668: Troubleshooting connection to upstream timeout issues: [error] 8#8: *1111 upstream timed out (110: Connection timed out) while connecting to upstream</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-12-20</dd>
+<dt>Updated</dt><dd>2025-04-02</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Plus: R22</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000148668">https://my.f5.com/manage/s/article/K000148668</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description<span style="font-kerning: none;"></span><span style="font-kerning: none;"></span></h2>
+<p>Nginx error:</p>
+<ul style="list-style-type: disc;"><li>The error message &quot;upstream timed out (110: Connection timed out) while connecting to upstream, &quot; means that nginx wasn’t able to establish connection with proxied server during the value of “proxy_connect_timeout”</li></ul>
+<p>Status code recorded and returned to client:</p>
+<ul style="list-style-type: disc;"><li>504</li></ul>
+<h2>Environment</h2>
+<p>Nginx LB, the basic setup is</p>
+<p> &lt;Client&gt; &lt;-&gt; &lt;Nginx LB&gt; &lt;Upstream group&gt;</p>
+<h2>Cause</h2>
+<p>There are several possible reasons caused this error:</p>
+<p>Cause 1. Network issues </p>
+<p>Cause 2. Upstream servers are cloud instances, their IP addresses are changed from time to time but nginx is configured to resolve upstream fqdns statically, without &quot;resolver&quot; directive and “resolve” upstream server parameter</p>
+<p>Cause 3. The default &quot;proxy_connect_timeout&quot; value is 60 sec, or explicitely configured. Upstream servers are overloaded, respond slowly and it takes more than &quot;proxy_connect_timeout&quot; value</p>
+<h2>Answer/Recommended Actions</h2>
+<p>Cause 1. Nginx dashboard displays the upstream IPs in case of they are configured as domain names and nginx resolves them. Direct requesting the upstream app from nginx instance via “curl -v http://&lt;upstream_addr&gt;/&lt;request_uri&gt;” command will represent connection issue if it is permanent.</p>
+<p> </p>
+<p>Cause 2. Static resolving means that nginx resolves upstreams domain names into IP only while reload/restart. It uses system resolver or external DNS if it is configured by “resolver” directive. To get dynamic resolving, via external DNS and valid for TTL from response, the configuration should contain both of:</p>
+<ul><li>“resolver” directive</li><li>“upstream” group with “resolve” parameter for the servers and proxy_pass to this upstream group<br><br>——— configuration example ——— </li></ul>
+<pre><code>http {
+    resolver 10.0.0.1 valid=300s ipv6=off;<br>    # ...
+    server {
+        location / {
+            proxy_pass <a href="http://backend" target="_blank">http://backend</a>;
+        }
+    }
+    upstream backend {
+        zone backend 32k;
+        least_conn;
+        # ...
+        server backend1.example.com resolve;
+        server backend2.example.com resolve;
+    }
+}</code></pre>
+<p>Cause 3. If the test for Cause #1 represents intermittent connection issue and nginx access_log contains both successful (2xx/3xx) records and 504 for the same Uris, there may be the chance that “proxy_connect_timeout” is not enough and increasing this value can mitigate the issue, or at least reduce the number of such failures. Please note that the value should be reasonable. One of the way to understand this is to run the test with the access log extension uct=$upstream_connect_time, trace the statistics and get the optimal value. From our best practice the default 60 sec is pretty large.</p>
+<h2>Additional Information</h2>
+<p>Though the recommendations relate to &quot;http&quot; context directives and variables, the troubleshooting logic may be used for &quot;stream&quot; context also. For this case the directives and variables should be available in nginx stream modules</p>
+<p> </p>
+</article>
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000138424: Expose Live Activity Monitoring Dashboard using VirtualServers</title>
+<meta name="description" content="Support Solution: Expose Live Activity Monitoring Dashboard using VirtualServers — Configuration needed to expose Nginx Dashboard using VirtualServers and VirtualServerRoutes">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000138424">
+</head>
+<body>
+<header>
+<h1>K000138424: Expose Live Activity Monitoring Dashboard using VirtualServers</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-02-09</dd>
+<dt>Updated</dt><dd>2024-02-09</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Ingress Controller: 3.2.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000138424">https://my.f5.com/manage/s/article/K000138424</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+
+<p>Configuration needed to expose Nginx Dashboard using VirtualServers and VirtualServerRoutes</p>
+
+<h2>Environment</h2>
+
+<p>Nginx Ingress Controller 3.x</p>
+
+<h2>Cause</h2>
+
+<p>None</p>
+
+<h2>Recommended Actions</h2>
+
+<p>Nginx-Ingress deployment prerequisites:</p>
+
+<ul><li>The dashboard is enabled by default. Ensure that the <a href="https://docs.nginx.com/nginx-ingress-controller/configuration/global-configuration/command-line-arguments#-nginx-status" target="_blank"><strong>nginx-status</strong></a> argument is not set to false.</li><li>The dashboard is available on port 8080 by default. It is customizable by the <a href="https://docs.nginx.com/nginx-ingress-controller/configuration/global-configuration/command-line-arguments#-nginx-status-port-int" target="_blank"><strong>nginx-status-port</strong></a> <strong> </strong>command-line argument.</li><li>Configure the <a href="https://docs.nginx.com/nginx-ingress-controller/configuration/global-configuration/command-line-arguments#-nginx-status-allow-cidrs-string" target="_blank"><strong>nginx-status-allow-cidr<font face="Courier New, Courier, monospace">s</font></strong></a> command-line argument with IP/CIDR blocks for which you want to allow access to the dashboard. By default, access is allowed for 127<strong>.</strong>0<strong>.</strong>0<strong>.</strong>1, <strong>:</strong>:1</li></ul>
+1.- Create a service to target port 8080 from the Nginx-Ingress pods, make sure the selector label matches the ones from your nginx-ingress deployment:
+
+<pre class="ckeditor_codeblock">
+apiVersion: v1
+kind: Service
+metadata:
+  name: <strong>nginx-dash-svc</strong>
+  namespace: nginx-ingress
+spec:
+  ports:
+<strong>  - port: 8080
+    targetPort: 8080</strong>
+    protocol: TCP
+    name: http
+<strong>  selector:
+    app: nginx-ingress</strong></pre>
+2.- Create the following VirtualServer resource with /dashboard.html and /api paths:
+
+<pre class="ckeditor_codeblock">
+apiVersion: k8s.nginx<strong>.</strong>org/v1
+kind: VirtualServer
+metadata:
+  name: cafe
+  namespace: default
+spec:
+  host: cafe<strong>.</strong>example<strong>.</strong>com
+  routes:
+<strong>  - path: /dashboard</strong>.<strong>html
+    route: nginx-ingress/dash
+  - path: ~*^/api
+    route: nginx-ingress/api-dash</strong>
+  tls:
+    secret: my-tls-secret</pre>
+3.- Create the corresponding Virtualserverroutes:<br><strong>/dashboard.html path:</strong>
+
+<pre class="ckeditor_codeblock">
+apiVersion: k8s.nginx<strong>.</strong>org/v1
+kind: VirtualServerRoute
+metadata:
+    name: dash
+    namespace: nginx-ingress
+spec:
+    host: cafe.example<strong>.</strong>com
+    subroutes:
+    - action:
+        pass: dash
+      path: /dashboard<strong>.</strong>html
+    upstreams:
+    - name: dash
+      port: 8080
+      service: nginx-dash-svc</pre>
+<strong>/api path:</strong>
+
+<pre class="ckeditor_codeblock">
+apiVersion: k8s<strong>.</strong>nginx<strong>.</strong>org/v1
+kind: VirtualServerRoute
+metadata:
+  name: api-dash
+  namespace: nginx-ingress
+spec:
+  host: cafe<strong>.</strong>example<strong>.</strong>com
+  subroutes:
+  - action:
+      pass: dash
+    path: ~*^/api
+  upstreams:
+  - name: dash
+    port: 8080
+    service: nginx-dash-svc
+
+</pre>
+ 
+
+<h2>Additional Information</h2>
+After applying the resources above, you should be able to see the dashboard in the specified location, for this demo the url is https<strong>:</strong>//cafe<strong>.</strong>example<strong>.</strong>com/dashboard<strong>.</strong>html:<br><img alt="image.png" src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po0000006b6e&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007Kp7b"></img>
+<p> </p>
+</article>
+</body>
+</html>

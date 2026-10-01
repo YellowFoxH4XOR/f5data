@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161676: BIG-IP Upgrade Fails Silently: Configuration Objects Missing from GUI After Upgrade Due to Duplicate Client-SSL Profile SNI Conflict</title>
+<meta name="description" content="Support Solution: BIG-IP Upgrade Fails Silently: Configuration Objects Missing from GUI After Upgrade Due to Duplicate Client-SSL Profile SNI Conflict — After upgrading a BIG-IP system, the device may appear to upgrade successfully with no errors reported, yet configuration objects (virtual servers, profiles, etc.) are missing or not visible in the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161676">
+</head>
+<body>
+<header>
+<h1>K000161676: BIG-IP Upgrade Fails Silently: Configuration Objects Missing from GUI After Upgrade Due to Duplicate Client-SSL Profile SNI Conflict</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-12</dd>
+<dt>Updated</dt><dd>2026-06-12</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.3, 17.1.2</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161676">https://my.f5.com/manage/s/article/K000161676</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>After upgrading a BIG-IP system, the device may appear to upgrade successfully with no errors reported, yet configuration objects (virtual servers, profiles, etc.) are missing or not visible in the GUI. The device may also fail to pick up profiles as expected and may be placed into a &quot;<strong>Forced Offline</strong>&quot; state.</p>
+<p>Notably, running &quot;<strong>tmsh load sys config verify</strong>&quot; before the upgrade returns only warnings (no errors), giving a false sense of configuration validity. The underlying configuration error is only exposed during a full configuration load (e.g., post-upgrade boot), resulting in the following error:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>0107149e:3: Virtual server has more than one clientssl/serverssl profile with same server name</code></pre>
+<h2>Environment</h2>
+<ul><li><strong>Product:</strong> BIG-IP LTM</li><li><strong>Versions affected:</strong> 17.1.2.2 (pre-upgrade); 17.1.3.2 (post-upgrade)</li><li><strong>Configuration condition:</strong> One or more virtual servers with two Client-SSL profiles attached, where both profiles have a blank/empty server-name field</li><li><strong>Upgrade method:</strong> New software installed to a newly created boot location volume</li></ul>
+<h2>Cause</h2>
+<p>The root cause is an invalid configuration where two <strong>Client-SSL</strong> profiles attached to the same virtual server both have a blank <strong>server-name</strong> field. This creates a duplicate/default<strong> SNI</strong> conflict that BIG-IP cannot resolve during a full configuration load. The reason this is not caught pre-upgrade could be related and similar to the <a href="https://cdn.f5.com/product/bugtracker/ID1825241.html" title="Bug ID 1825241" target="_blank"><strong>Bug ID 1825241</strong></a>.</p>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>Pre-Upgrade Fix (Required — perform under a maintenance window before the upgrade):</strong></p>
+<p><strong>1.</strong> Identify all virtual servers with multiple Client-SSL profiles where more than one profile has a blank or identical <strong>server-name</strong> field.</p>
+<p><strong>2.</strong> Back up the relevant partition configuration file before making changes:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># cd /config/partitions/&lt;partition_name&gt;/
+# cp bigip.conf bigip.conf.backup</code></pre>
+<p><strong>3.</strong> Edit the configuration file to add a unique <strong>server-name</strong> value to the conflicting SSL profile. For example:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ltm profile client-ssl /&lt;partition_name&gt;/&lt;profile_name&gt; {
+    ...
+    server-name *.example.com    &lt;----------------- ADD THIS LINE
+}</code></pre>
+<p>Then, use <strong>vi</strong> to edit the file:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># vi /config/partitions/&lt;partition_name&gt;/bigip.conf</code></pre>
+<p><strong>4.</strong> Validate the configuration to confirm no errors:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># tmsh load sys config partitions all verify</code></pre>
+<p><strong>5.</strong> Reload the configuration and confirm no errors:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># tmsh load sys config partitions all</code></pre>
+<p><strong>6.</strong> Save the configuration and generate a fresh UCS backup:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># tmsh save sys config partitions all
+# tmsh save sys ucs &lt;filename&gt;.ucs</code></pre>
+<p> </p>
+<p><strong>Upgrade Best Practices (after the fix is applied):</strong><br>1. Re-run <strong>tmsh load sys config verify</strong> on both units after the fix to confirm no errors remain.<br>2. Generate a fresh <strong>UCS </strong>backup from both devices immediately before the upgrade.<br>3. Disable <strong>Automatic ConfigSync</strong> — set ConfigSync to <strong>Manual</strong> on both units during the upgrade window.<br>4. Place the <strong><span style="text-decoration: underline;">Standby</span></strong> device in &quot;<strong>Force Offline</strong>&quot; mode before booting into the new software volume to prevent unexpected active role takeover.<br>5. Upgrade the <strong><span style="text-decoration: underline;">Standby</span></strong> device first; validate all objects are visible in the GUI before proceeding.<br>6. Once the <strong><span style="text-decoration: underline;">Standby</span></strong> is confirmed healthy, perform a controlled failover and upgrade the <span style="text-decoration: underline;"><strong>Primary</strong></span> device.<br>7. After confirming the upgrade is successful, release the device from &quot;<strong>Force Offline</strong>&quot; mode.</p>
+<p><strong>If objects are missing post-upgrade (recovery):</strong><br>Roll back to the previous working boot location to restore the configuration and HA relationship while the root cause is addressed.</p>
+<h2>Additional Information</h2>
+<ul><li>&quot;<strong>tmsh load sys config verify&quot;</strong> does not fully replicate the commit/write path used during a real configuration load. Certain validators — including the SNI conflict check — are only invoked during a full load config or system boot. This is a known limitation documented in another similar <strong>Bug ID 1825241</strong>.</li><li>Although the conflicting SSL profiles may belong to a single partition, the config load failure can result in objects across all partitions being invisible in the GUI on the affected device.</li><li>When a client connects via HTTPS and sends an <strong>SNI </strong>hostname, BIG-IP selects the matching Client-SSL profile. If no SNI matches or the SNI is empty, BIG-IP falls back to the <strong>default SNI</strong> profile. When two profiles both claim the same (blank) <strong>server-name</strong>, BIG-IP cannot distinguish between them, causing the conflict.</li><li>Virtual servers with only one Client-SSL profile do not require a <strong>server-name</strong> to be set, as there is no ambiguity.</li><li>Virtual servers without any SSL profile (e.g., non-HTTPS services) are not affected by this issue.</li></ul>
+</article>
+</body>
+</html>

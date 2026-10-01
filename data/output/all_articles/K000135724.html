@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000135724: Inserting a Content Security Policy (CSP) header when using SAML</title>
+<meta name="description" content="Support Solution: Inserting a Content Security Policy (CSP) header when using SAML — How to insert a Content Security Policy (CSP) header for SAML Authentication.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000135724">
+</head>
+<body>
+<header>
+<h1>K000135724: Inserting a Content Security Policy (CSP) header when using SAML</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-08-03</dd>
+<dt>Updated</dt><dd>2024-11-14</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 14.X.X, 15.X.X, 16.X.X, 17.X.X, 17.1.X, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000135724">https://my.f5.com/manage/s/article/K000135724</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong style="font-family: &#39;Arial&#39;, sans-serif;font-size: 18pt;">Description</strong></h2>
+<ul><li>How to insert a Content Security Policy (CSP) header for SAML Authentication.</li></ul>
+<h2><strong style="font-family: &#39;Arial&#39;, sans-serif;font-size: 18pt;">Environment</strong></h2>
+<ul><li><span style="font-family: &#39;Arial&#39;, sans-serif;font-size: 10.5pt;">BIG-IP with APM and SAML (BIG-IP as SP), optionally also using a stream profile</span></li><li><span style="font-family: &#39;Arial&#39;, sans-serif;font-size: 10.5pt;">External IdP</span></li></ul>
+<h2><strong style="font-family: &#39;Arial&#39;, sans-serif;font-size: 18pt;">Cause</strong></h2>
+<p><span dir="ltr">implemented on the Service Provider (SP) includes a Content-Security-Policy (CSP) that restricts certain actions, which can interfere with the redirection process required for SAML authentication. <br></span><span dir="ltr">Specifically, the CSP directive form-action &#39;self&#39; limits form submissions to the same origin, preventing the browser from submitting forms to the Identity Provider (IdP) during the SAML authentication flow.<br></span><span dir="ltr">By setting form-action &#39;self&#39;, the CSP blocks these form submissions to external domains, disrupting the authentication process.</span></p>
+<h2><span style="font-family: &#39;Arial&#39;, sans-serif;font-size: 10.5pt;"> </span><strong style="font-family: &#39;Arial&#39;, sans-serif;font-size: 18pt;">Recommended Actions</strong></h2>
+<p>Apply the following iRule to the SP Virtual Server. <br><span style="color: #3498db;--darkreader-inline-color: #9f968a;"><em>Please update &quot;idp.delvechio.local&quot; to the actual domain of the IdP in use.</em></span></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>priority 100
+ 
+# Disable iRule events for access control on client acceptance
+when CLIENT_ACCEPTED {
+    ACCESS::restrict_irule_events disable
+    set internalURI false
+}
+ 
+# Check if server address starts with &quot;127.&quot; to determine if it&#39;s internal
+when SERVER_CONNECTED {
+    set internalURI false
+    if { [IP::server_addr] starts_with &quot;127.&quot; } {
+        set internalURI true
+    }
+}
+ 
+# Store the requested URI
+when HTTP_REQUEST {
+    set myURI [HTTP::uri]
+}
+ 
+# Apply security headers and CSP upon response release if not an internal URI
+when HTTP_RESPONSE_RELEASE {
+    if { not ($internalURI) } {
+        
+        # Insert a secure Content-Security-Policy header with unsafe-inline to allow inline event handlers
+        if { !([HTTP::header exists &quot;Content-Security-Policy&quot;]) } {
+            HTTP::header insert &quot;Content-Security-Policy&quot; &quot;object-src &#39;none&#39;; script-src &#39;self&#39; https://idp.delvechio.local &#39;unsafe-inline&#39;; style-src &#39;self&#39;; img-src &#39;self&#39;; base-uri &#39;self&#39;; form-action &#39;self&#39; https://idp.delvechio.local;&quot;
+        }
+        
+        # Add X-XSS-Protection header to enable XSS filtering in browsers
+        HTTP::header insert &quot;X-XSS-Protection&quot; &quot;1; mode=block&quot;
+        
+        # Add X-Content-Type-Options header to prevent MIME-type sniffing
+        HTTP::header insert &quot;X-Content-Type-Options&quot; &quot;nosniff&quot;
+        
+        # Add Strict-Transport-Security header to enforce HTTPS with a max-age of 180 days and include subdomains
+        HTTP::header replace &quot;Strict-Transport-Security&quot; &quot;max-age=15552000; includeSubDomains&quot;
+    }
+}</code></pre>
+<p><strong><span style="box-sizing: border-box;text-decoration: underline;"><span dir="ltr">Explanations:</span></span></strong></p>
+<p><span dir="ltr"><strong>form-action &#39;self&#39;</strong> </span><a target="_blank" title="" href="https://idp.delvechio.local/">https://idp.delvechio.local</a><span dir="ltr">;: This directive allows form submissions to both the SP&#39;s origin (&#39;self&#39;) and the specified IdP (</span><a target="_blank" title="" href="https://idp.delvechio.local/">https://idp.delvechio.local</a><span dir="ltr">). <br></span><span dir="ltr">By explicitly including the IdP&#39;s URL, you enable the necessary form submissions for SAML authentication without broadly relaxing the policy.</span></p>
+<p><strong><span dir="ltr">script-src &#39;self&#39; </span></strong><a target="_blank" title="" href="https://idp.delvechio.local/">https://idp.delvechio.local</a><span dir="ltr">;: Allows scripts from both the Service Provider’s origin (&#39;self&#39;) and the IdP (</span><a target="_blank" title="" href="https://idp.delvechio.local/">https://idp.delvechio.local</a><span dir="ltr">). <br></span><span dir="ltr">This supports any JavaScript required by the IdP during the authentication process.</span></p>
+<p>Additionally, if a &quot;stream&quot; profile is applied and &quot;STREAM&quot; commands are used in an iRule applied to the APM Virtual Server, these lines need to be added to that iRule, before the &quot;STREAM::...&quot; command (e.g. at the start of the &quot;HTTP_RESPONSE&quot; event section).</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>   if { [info exists internalURI] and ($internalURI)}{ return }
+   if { $myURI starts_with &quot;/renderer/agent_aaa_saml_form.eui&quot; } { return }</code></pre>
+<h2><strong style="font-family: &#39;Arial&#39;, sans-serif;font-size: 18pt;">Additional Information</strong></h2>
+</article>
+</body>
+</html>

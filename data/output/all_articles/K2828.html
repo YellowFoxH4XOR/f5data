@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K2828: BIG-IP SSL Proxy Capacity Planning</title>
+<meta name="description" content="Knowledge: BIG-IP SSL Proxy Capacity Planning — Note: The information contained in this Solution is intended to serve as a guide for designing SSL solutions and is not an indication of the BIG-IP system&#x27;s performance. Older BIG-IP hardware has TPS…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K2828">
+</head>
+<body>
+<header>
+<h1>K2828: BIG-IP SSL Proxy Capacity Planning</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2006-04-20</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>BIG-IP 4.X: 4.6.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K2828">https://my.f5.com/manage/s/article/K2828</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><div><a href="#1">Introduction</a><br><a href="#2">Summary of SSL termination and load balancing operation</a><br><a href="#3">Critical boundaries</a><br>             <a href="#4">Transactions per Second (TPS)</a><br>             <a href="#5">Bulk encryption/decryption (bulk crypto)</a><br>             <a href="#6">Concurrent Connections</a><br><a href="#7">Additional factors</a><br>             <a href="#8">SSL proxy daemon limits</a><br>             <a href="#9">Connection Duration</a><br>             <a href="#10">Session ID reuse</a><br>             <a href="#11">Bulk crypto and TPS</a><br>             <a href="#12">Certificate related considerations</a><br>             <a href="#13">system_check</a><br>             <a href="#14">Latency</a><br>             <a href="#15">Mirroring</a><br>             <a href="#16">Non-SSL traffic</a><br>             <a href="#17">Monitors</a><br>             <a href="#18">Number of SSl proxies required</a><br><a href="#19">Recommendations for Design</a><br><a href="#20">Design scenarios</a><br>             <a href="#21">Scenario 1</a><br>             <a href="#22">Scenario 2</a><br><a href="#23">Monitoring SSL variables</a><br>             <a href="#24">proxyd statistics</a><br>                          <a href="#25">per-proxy</a><br>                          <a href="#26">global</a><br>             <a href="#27">CPU utilization</a><br><a href="#28">Notes/other considerations</a><br>             <a href="#29">Performance gains in SSL processing</a></div>
+
+<p class="note"><strong>Note:</strong> The information contained in this Solution is intended to serve as a guide for designing SSL solutions and is not an indication of the BIG-IP system&#39;s performance. Older BIG-IP hardware has TPS limits of less than 800.</p>
+
+<h3><a name="1"></a>Introduction</h3>
+
+<p>F5 Networks currently offers the following two solutions to manage SSL connection termination and load balancing. When designing an SSL solution based on the BIG-IP system, it is important to understand the capacity for each option in order to select between these two solutions and scale designs appropriately.</p>
+
+<ul><li><strong>SSL operation</strong>
+
+    <p>A single BIG-IP system, optionally paired with a standby partner, handles all connections through an SSL Proxy for SSL traffic and virtual servers for non-SSL traffic.</p>
+
+    </li><li><strong>Load balancing to eCommerce Controllers</strong>
+
+    <p>An alternative solution for large deployments is to load balance SSL connections to a number of eCommerce Controllers that are dedicated to the task of SSL termination. This increases SSL capacity in a linear manner with each additional eCommerce Controller.</p>
+
+    </li></ul>
+
+<h3><a name="2"></a>Summary of SSL termination and load balancing operation</h3>
+
+<p>An SSL connection has two main phases, the handshake and data transfer. The handshake involves authenticating one or both parties and exchanging information to establish the keys required to encrypt and decrypt the subsequent data transfer. The handshake phase is computationally more expensive than the data transfer. Because of this, BIG-IP Server Appliances offload this process to a dedicated, optional SSL card, while Switch Appliances offload the process to a built-in chip on the Switch Appliance.</p>
+
+<h3><a name="3"></a>Critical boundaries</h3>
+
+<p>The following three parameters are of primary importance when sizing SSL solutions:</p>
+
+<ul><li>Transactions per Second (TPS)</li><li>Bulk encryption/decryption (bulk crypto)</li><li>Concurrent Connections</li></ul>
+
+<p><strong><a name="4"></a>Transactions per Second (TPS) </strong></p>
+
+<p>Although the term <strong>transaction</strong> includes both the handshake and the transfer phases, TPS is often used to describe only the handshake performance. For the BIG-IP, TPS is limited according to the license, allowing up to 800 TPS, and 1,200 TPS on the BIG-IP 5000 series Switch Appliance.</p>
+
+<p class="note"><strong>Note:</strong> If the BIG-IP system&#39;s license limit is exceeded, additional connections are deferred to the next second and a <strong>syslog</strong> message is generated. This allows you to upgrade the license without adversely affecting general performance, as long as the excess is reasonably small and the upgrade is outstanding. CPU load increases linearly with TPS.</p>
+
+<p><strong><a name="5"></a>Bulk encryption/decryption (bulk crypto)</strong></p>
+
+<p>This describes the total amount of client data, typically displayed in Mbps, handled by the SSL proxy, which usually requires encryption or decryption. This function is not offloaded and the performance is ultimately limited by the speed of the processor. The BIG-IP 5000 series has a maximum bulk crypto of 150Mbps, and all other system types have a maximum bulk crypto of 100Mbps. CPU load increases linearly with bulk crypto. TPS decreases linearly as bulk crypto increases, and TPS increases linearly as bulk crypto decreases.</p>
+
+<p class="note"><strong>Note:</strong> You may not reach these TPS levels. If you have small page sizes or high concurrent connections, the TPS are limited before attaining these rates. However, if you have a few connections that generate high bulk crypto, refer to the recommendations contained in the <a href="#19">Recommendations for Design</a> section of this document.</p>
+
+<p><strong><a name="6"></a>Concurrent Connections</strong></p>
+
+<p>Concurrent Connections are the number of connections associated with SSL proxies. These connections reside in the BIG-IP connection table. Concurrent connections are not closely related to TPS or to the number of users, since multiple connections can exist for each user operation. For additional information, refer to <strong>Latency</strong> in the <a href="#7">Additional Factors</a> section. As the number of active SSL connections increase, the CPU load also increases because the BIG-IP has more sockets to manage. Therefore, as the number of active SSL connections increase, exceeding recommended practical limits, TPS and bulk crypto will decrease.</p>
+
+<p>The relevance of these three parameters depends on the configuration. The parameters have a bearing on each other and with the factors listed in the following section.</p>
+
+<h3><a name="7"></a>Additional factors</h3>
+
+<p>Consider the following factors when estimating SSL performance:</p>
+
+<ul><li>SSL proxy daemon limits</li><li>Bulk encryption/decryption (bulk crypto)</li><li>Concurrent connections</li><li>Session ID reuse</li><li>Bulk crypto and TPS</li><li>Certificate related considerations</li><li>system_check</li><li>Latency</li><li>Mirroring</li><li>Non-SSL traffic</li><li>Monitors</li><li>Number of SSL proxies required</li><li>Performance gain in SSL processing</li></ul>
+
+<p><strong><a name="8"></a>SSL proxy daemon limits</strong></p>
+
+<p>The approximate limits for the SSL proxy daemon are as follows:</p>
+
+<ul><li><strong>BIG-IP version 4.5 PTF-04 - 4.6.4</strong>: 5,500 TPS for single processor systems and those running the Auxiliary Network Interface Processor (ANIP) kernel; 11,000 TPS for dual processor systems running the Symmetric Multi-Processor (SMP) kernel.</li><li><strong>BIG-IP version 4.2 through 4.5 PTF-03</strong>: 8,100 TPS</li></ul>
+
+<p class="note"><strong>Note:</strong> For more information about choosing a kernel, refer to <a href="https://my.f5.com/manage/s/article/K1691" target="_blank">K1691: Selecting the proper BIG-IP kernel</a>.</p>
+
+<p>These SSL proxy daemon limits assume that the majority of connections are idle and are affected by latency. A practical limit, under light to medium load, is 3,000 concurrent connections. If the average HTTP response (page) size exceeds 50KB, or if the bulk crypto across all proxies exceeds 50MB, then the following limits apply irrespective of TPS:</p>
+
+<ul><li>Single processor systems: 1,200 TPS</li><li>Dual processor systems: 1,700 TPS</li></ul>
+
+<p class="note"><strong>Note:</strong> At these limits, CPU utilization will likely be close to 100%.</p>
+
+<p><strong><a name="9"></a>Connection duration</strong></p>
+
+<p>SSL performance planning most often assumes a connection of short duration and, therefore, focuses on the handshake phase. However, some application designs are intended for a fixed user base where users perform an initial login and make intermittent requests on the same SSL session. In this case, TPS may be the less relevant factor compared to concurrent connection limits.</p>
+
+<p class="note"><strong>Note:</strong> Some browsers renegotiate an SSL session ID at regular intervals The resulting increase in TPS is normally irrelevant in fixed user base scenarios, but may become an issue when there is a mixture of long and short duration connections.</p>
+
+<p><strong><a name="10"></a>Session ID reuse</strong></p>
+
+<p>The ability to cache and reuse SSL Session IDs can increase the TPS considerably, depending on the duration of the connection. Although fresh keys are calculated, presentation of previously-used SSL Session IDs implies the authenticity of both parties and the possession of the correct keying material (Pre-Master Secret); thus the processor-intensive authentication and key exchange functions can be bypassed. Although reusing sessions is recommended, the accelerator card or chip only performs full handshake operations.</p>
+
+<p class="note"><strong>Note:</strong> For a small page size, such as 1KB, the BIG-IP 5000 series can achieve approximately 800 TPS; however, when Session IDs are reused, it is possible to reach up to 1,200 TPS. The F5 Networks SSL license only takes new sessions into account. Reused sessions are not factored into the calculation for license enforcement.</p>
+
+<p><strong><a name="11"></a>Bulk crypto and TPS</strong></p>
+
+<p>Bulk crypto has a direct impact on the completed TPS, which is a combination of SSL handshakes and data transfers. In the case of HTTP, bulk crypto is best described by the average page size of HTTP responses, unless other factors such as large client POST operations are significant. The handshake phase is relatively slow with small amounts of user data. As the data size increases, the time spent on encrypting or decrypting begins to outweigh the time taken for the initial handshake.</p>
+
+<p><strong><a name="12"></a>Certificate related considerations</strong></p>
+
+<p>Most of the computation involved in the handshake phase involves signing and verifying data using a public key algorithm such as RSA. BIG-IP authenticates itself to the client by supplying its certificate, then the client performs the verification workload. In the key exchange, the client uses the BIG-IP public key to encrypt the <strong>Pre-Master Secret</strong>, requiring that BIG-IP decrypt it using its private key. BIG-IP&#39;s handshake workload is further increased if BIG-IP is required to verify the certification presented by the client, and if ephemeral keys are used, rather than static.</p>
+
+<p>For Switch and Server Appliances with accelerator cards or chips, performance is not affected by the key types and lengths for the key exchange algorithm. For Switch and Server Appliances without accelerator cards or chips, the handshake must be performed on the main CPU. In this case, assume 512 bit keys perform two to three times faster than 1,024 bit keys, and 1,024 bit keys perform two to three times faster than 2,048 bit keys.</p>
+
+<p class="note"><strong>Note:</strong> The use and authentication of client certificates has a negligible effect on performance.</p>
+
+<p><strong><a name="13"></a>system_check</strong></p>
+
+<p>The <strong>system_check</strong> script, which runs in the <strong>cron</strong> system utility on BIG-IP Switch Appliances, gathers information about the system&#39;s health, including CPU state, fan speed and temperature. This script can decrease TPS, for a 10 second duration every two minutes, by up to 30% when it is executed.</p>
+
+<p><strong><a name="14"></a>Latency</strong></p>
+
+<p>As concurrent connections increase, latency affects those connections. If latency is considered an issue, F5 Networks recommends that you limit concurrent connections to approximately 3,000. This limit maintains a reasonably short latency per connection. As the number of connections increase, the work of maintaining connections starts to impact the ability of the processor(s) to perform bulk encryption or decryption for existing connections, and the processor(s) ability to accept new connections. Because of this effect, concurrent connections are limited under load.</p>
+
+<p class="note"><strong>Note:</strong> As latency increases, concurrent connections also increase since each connection takes longer to process. Therefore, the number of users and the offered load may not represent the actual number of concurrent connections.</p>
+
+<p><strong><a name="15"></a>Mirroring</strong></p>
+
+<p>Mirroring affects SSL performance according to system type and configuration:</p>
+
+<ul><li>Dual processor with BIG-IP in SMP mode - moderate impact</li><li>Dual processor with BIG-IP in ANIP mode - severe impact</li><li>Single processor BIG-IP - severe impact</li></ul>
+
+<p class="warning"><strong>Important:</strong> Do not enable mirroring on virtual servers that handle proxy traffic. Such connections will not fail over because SSL session keys are not mirrored between BIG-IP active/standby pairs.</p>
+
+<p><strong><a name="16"></a>Non-SSL traffic</strong></p>
+
+<p>Non-SSL traffic affects SSL performance according to system type and configuration:</p>
+
+<ul><li>Dual processor BIG-IP in ANIP mode - moderate impact</li><li>Dual processor with BIG-IP in SMP mode - severe impact</li><li>Single processor BIG-IP - severe impact</li></ul>
+
+<p>The effect of non-SSL traffic can require an e-Commerce Controller solution when the SSL load could otherwise be handled by a BIG-IP solution; however, certain functions affect TPS in particular, such as layer 7 operations like cookie insertion, use of iRules, and so on.</p>
+
+<p><strong><a name="17"></a>Monitors </strong></p>
+
+<p>TPS is adversely affected by the use of advanced monitor types, such as SSL monitors, that consume larger amounts of CPU time. You should remove the SSL monitors from the configuration if the BIG-IP system is terminating SSL traffic, rather than load balancing SSL traffic to nodes.</p>
+
+<p><strong><a name="18"></a>Number of SSL proxies required</strong></p>
+
+<p>The BIG-IP Configuration utility (<strong>bigapi</strong>) has a memory restriction, which limits the number of proxies to approximately 150. If you must view all proxies though the Configuration utility, you will need to deploy an eCommerce Controller solution.</p>
+
+<h3><a name="19"></a>Recommendations for Design</h3>
+
+<p class="note"><strong>Note:</strong> The following section does not account for performance gains that can be made by changing a BIG-IP dual processor from ANIP to SMP mode.</p>
+
+<p class="warning"><strong>Important:</strong> The choice of SMP or ANIP mode has opposite effects on mirroring and layer 7 operations, referenced in the <a href="#7">Additional Factors</a> section. You may also be able to increase performance for traffic that is eligible for hardware acceleration on the BIG-IP 2400 Switch Appliance, particularly where layer 7 operations are required.</p>
+
+<p>Perform the following design steps to account for the factors discussed in the <a href="#3">Critical Boundaries</a> section.</p>
+
+<p class="note"><strong>Note:</strong> These processes are based on scaling TPS per BIG-IP.</p>
+
+<p class="warning"><strong>Important:</strong> For scenarios that involve long-lived connections (where bulk crypto may be high and TPS low), follow steps 3(a) through 3(d) using bulk crypto values reduced by the percentages shown.</p>
+
+<ol><li>Profile your traffic (for example, if currently terminating SSL on servers, analyze server statistics) and obtain realistic estimates for the following:<br>    <ul><li>Peak TPS</li><li>Decrease the peak TPS by the percentage of connections that will be using a cached Session ID. This requires knowledge of the application and how it is used. You will also need to set an appropriate cache timeout.</li><li>Average page size for HTTP or bulk data, utilized for longer lived connections.</li><li>Concurrent connections across all servers being load balanced.</li></ul>
+
+    <p>You will need to consider the expected increase of the number of concurrent connections. If you are planning a new installation, remember to account for session renegotiation and to decrease the target TPS accordingly.</p>
+
+    </li><li>Check to see if any of the limits described in the <a href="#3">Critical boundaries</a> section would be exceeded on a single live BIG-IP. If so, implement an eCommerce Controller solution.
+
+    <p class="warning"><strong>Important:</strong> Due to the vulnerability of 512-bit certificate keys and the significant performance implications of handshaking in software, F5 Networks recommends that you use accelerator cards or chips. The remaining steps assume accelerator cards or chips are in use.</p>
+
+    </li><li>Estimate the maximum completed TPS per BIG-IP, noting that the number will most likely be higher on an eCommerce Controller dedicated to handling SSL traffic. Allow a margin for error in terms of BIG-IP performance and estimated load.
+
+    <p>a) Reduce the maximum TPS per BIG-IP to account for the average page and data size of each connection by the following:</p>
+
+    <table border="1" style="border-color: rgb(255, 255, 255);width: 150px;"><tbody><tr><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;font-weight: bold;font-size: 10pt;vertical-align: top;background-color: rgb(206, 206, 206);">Data size</td><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;font-weight: bold;font-size: 10pt;vertical-align: top;background-color: rgb(206, 206, 206);">TPS</td></tr><tr><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">1KB</td><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">685</td></tr><tr><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">8KB</td><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">530</td></tr><tr><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">32KB</td><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">300</td></tr><tr><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">64KB</td><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">200</td></tr><tr><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">256KB</td><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">70</td></tr><tr><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">512KB</td><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">28</td></tr></tbody></table>
+
+    <p class="note"><strong>Note:</strong> These numbers are based on BIG-IP version 4.5 PTF-07.</p>
+
+    <p>b) Reduce the maximum TPS by 50% if all connections will be re-encrypted using the BIG-IP system&#39;s <strong>SSL to Server</strong> option. If only a certain percentage of proxy instances require re-encryption, you can reduce the maximum TPS by the appropriate percentage.</p>
+
+    <p>c) Reduce the maximum TPS per BIG-IP as follows to account for the presence of non-SSL traffic and any Layer 7 operations, such as iRules and cookie insert:</p>
+
+    <table border="1" style="border-color: rgb(255, 255, 255);width: 400px;"><tbody><tr><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;font-weight: bold;font-size: 10pt;vertical-align: top;background-color: rgb(206, 206, 206);">Processor type</td><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;font-weight: bold;font-size: 10pt;vertical-align: top;background-color: rgb(206, 206, 206);">Traffic</td><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;font-weight: bold;font-size: 10pt;vertical-align: top;background-color: rgb(206, 206, 206);">Reduction</td></tr><tr><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">Dual Processor</td><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">light non-SSL load</td><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">15%</td></tr><tr><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">Dual processor</td><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">heavy non-SSL load</td><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">30%</td></tr><tr><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">Single Processor</td><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">light non-SSL load</td><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">20%</td></tr><tr><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">Single Processor</td><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">heavy non-SSL load</td><td colspan="1" rowspan="1" style="border-color: rgb(255, 255, 255);border-width: 1px;padding: 2px;vertical-align: top;background-color: rgb(221, 221, 221);">40%</td></tr></tbody></table>
+
+    <p>d) Reduce the maximum TPS per BIG-IP by 40% if mirroring is used.</p>
+
+    <p>e) Reduce the maximum TPS per BIG-IP by 10% if any SSL or intensive EAV monitors are used.</p>
+
+    </li><li>Divide the peak TPS value from step 1 by the per-BIG-IP number from step 3. If this is 0.7 or less, a single BIG-IP or redundant pair should suffice. Otherwise, design for an appropriate number of eCommerce Controllers.</li><li>Review the bulk crypto numbers using the percentages (shown in steps 3b and 3c) to check per-unit capacity.</li></ol>
+
+<h3><a name="20"></a>Design scenarios</h3>
+
+<p><strong><a name="21"></a>Scenario 1</strong></p>
+
+<ul><li>The site currently handles 3,000 peak TPS. </li><li>The average page size is 8KB, and each connection terminates upon retrieval of this page. </li><li>About 40% of SSL Session IDs are being reused. This is expected to increase by 20% over the next two years. At this stage, iRules are not required, but may be in the future.</li></ul>
+
+<p>An eCommerce Controller solution is required for this scenario, because the TPS exceeds 1,200.</p>
+
+<p>Each eCommerce Controller is limited as follows:</p>
+
+<ul><li>Total TPS to be designed for: 3,000 less 40% (SSL ID re-use) = 1,800</li><li>Bulk crypto is 3,000 x 8KB = 24MB</li></ul>
+
+<p>For each eCommerce Controller:</p>
+
+<ul><li>530 TPS (due to 8KB object size)</li></ul>
+
+<p>Solution:</p>
+
+<ul><li>1,800 / 530 = 4 eCommerce Controllers, each handling 6MB of bulk crypto.</li></ul>
+
+<p>A BIG-IP load balancer is used to balance the SSL traffic across the eCommerce Controllers and to balance the clear connections among servers. At this second stage, iRules are applied. Since iRules are configured on the BIG-IP, they do not affect the performance of the eCommerce Controllers. With total TPS scaling by 20% to 3,600. 2,160/530 = 4.07; therefore, one additional eCommerce Controller will be required within the next two years.</p>
+
+<p><strong><a name="22"></a>Scenario 2</strong></p>
+
+<ul><li>A new site requires a total of 230 peak TPS. </li><li>The average data size per connection is 32KB, with most connections terminating after four seconds. </li><li>No SSL Session IDs are being reused. </li><li>About 100MB of non-SSL traffic is to be load balanced and cookie insertion is required. The total TPS will increase by 30% throughout the next year and by an unknown factor thereafter.</li></ul>
+
+<p>Concurrent connections will be 230 x 4 = 920. Bulk crypto will be 230 x 32KB = 7.36Mbps. A single BIG-IP 5100 Switch Appliance can manage 300 TPS (at 32KB data size) less 15% (due to layer 7 operations at light load) = 255 TPS.</p>
+
+<p>This number indicates that the solution would be a single BIG-IP system; however, since it needs to scale by 30% to 300 TPS relatively quickly, a two-system eCommerce Controller solution is recommended.</p>
+
+<h3><a name="23"></a>Monitoring SSL variables</h3>
+
+<p>After you design and install a solution, you can monitor the following variables to measure SSL traffic load:</p>
+
+<ul><li><strong>proxyd</strong> statistics</li><li>CPU utilization</li></ul>
+
+<p><strong><a name="24"></a>proxyd statistics</strong></p>
+
+<p>To view the <strong>proxyd</strong> statistics, find the proxy daemon&#39;s Process ID and send it a <strong>SIGUSR1</strong> signal by typing the following command:</p>
+
+<p class="code">kill -SIGUSR1 &lt;PID&gt;</p>
+
+<p>This will send extended statistics to the <strong>/var/log/proxyd</strong> file.</p>
+
+<p>Starting in BIG-IP version 4.5 PTF-04, you can capture many of these statistics at a specified delay using the <strong>proxydstats</strong> utility. For specific instructions about using this tool, type <strong>proxydstats -h</strong> from the command line.</p>
+
+<p class="warning"><strong>Important:</strong> As well as generating statistics to standard output, <strong>proxydstats</strong> also logs to the <strong>syslog</strong>. This could quickly fill the <strong>/var</strong> directory on compact flash systems.</p>
+
+<p><strong><a name="25"></a></strong></p><p><strong><strong><a name="26"></a></strong></strong></p><p><strong><strong><strong><strong></strong></strong></strong></strong></p><strong><strong></strong></strong><ul></ul>
+
+    Per-proxy
+
+    <ul><li>Current entries in the SSL session cache.</li><li>Client cipher usage.</li><li>Details about bulk crypto (including number of connections at various object sizes).</li></ul>
+
+    Global
+
+    You can view the following proxyd details from the Global Statistics screen:
+
+    <ul><li>Concurrent connections.</li><li>Peak successful crypto hardware operations per second (for example, handshakes performed by the accelerator chip or card).</li><li>Client-side/ Server-side data (used for bulk crypto).</li></ul>
+
+
+
+<p><strong><a name="27"></a>CPU utilization</strong></p>
+
+<p>Prior to BIG-IP version 4.5 PTF-04, using the <strong>top</strong> utility to monitor CPU load on dual processor systems did not account for the second processor. Systems with dual processors can exhibit 70% CPU utilization at maximum load. Non-SSL traffic handled by the second processor can also cause the proxy daemon to report too high of a percentage for CPU usage, because <strong>proxyd</strong> reports this traffic running on the first processor. This means that the amount of CPU available for user daemons, such as the SSL proxy, appears to be less than the actual amount.</p>
+
+<p>Beginning with BIG-IP version 4.5 PTF-04, <strong>top</strong> correctly displays the CPU load for dual processor systems and provides an effective way to measure SSL proxy performance.</p>
+
+<p>Although <strong>proxyd</strong> is a user process, the work done by the kernel on behalf of <strong>proxyd</strong> also counts against <strong>proxyd</strong>. A high percentage of system usage can indicate a high number of idling concurrent connections. This situation would require little processing by <strong>proxyd</strong>, but a high workload for the kernel because it must perform connection state maintenance on behalf of <strong>proxyd</strong>.</p>
+
+<p>If connections are delayed due to rate-limiting based on the SSL Gateway Level (TPS), messages indicating this will appear in the <strong>/var/log/proxyd</strong> log (through the <strong>syslog local3</strong> facility in BIG-IP 4.2 and later). If you receive these log messages, contact <a href="http://www.f5.com/training-support/customer-support/contact/" target="_blank">F5 Networks Technical Support.</a></p>
+
+<h3><a name="28"></a>Notes/other considerations</h3>
+
+<p><strong><a name="29"></a>Performance gain in SSL processing</strong></p>
+
+<p>In releases prior to BIG-IP version 4.5.10, two-processor appliances had one processor dedicated to network I/O and one processor dedicated to other system processes that perform functions such as handling SSL traffic. In certain cases, you can switch to SMP mode and have both processors dedicated to SSL traffic. You can achieve a performance gain in SSL processing by using SMP mode, but only if your configuration meets the following requirements:</p>
+
+<ul><li>The system is a dual CPU platform.</li><li>The system is for processing SSL only.</li><li>The system is not handling significant quantities of L2 or L4 traffic.</li><li>You want an increase in the SSL proxy performance.</li></ul>
+
+<p class="warning"><strong>Important:</strong> F5 Networks recommends that you design configurations for the default mode and modify the kernel as a tuning option. For more information about the kernels and specific instructions about how to change the default kernel, refer to <a href="https://my.f5.com/manage/s/article/K1691" target="_blank">K1691: Selecting the proper BIG-IP kernel</a>.</p>
+
+<p>You should not modify the current configuration if BIG-IP is managing mixed network traffic. For example, if virtual IP addresses that only perform L2 traffic and virtual IP addresses that perform SSL traffic are processing on the same system, they would be considered mixed network traffic. SMP mode only improves the performance of systems that exclusively use the BIG-IP for SSL traffic.</p>
+</article>
+</body>
+</html>

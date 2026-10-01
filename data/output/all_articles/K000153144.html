@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000153144: How to extend Graceful Shutdown Time for NGINX worker Process during Configuration Reload</title>
+<meta name="description" content="Support Solution: How to extend Graceful Shutdown Time for NGINX worker Process during Configuration Reload — You now want to stress test your deployment using tools like wrk.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000153144">
+</head>
+<body>
+<header>
+<h1>K000153144: How to extend Graceful Shutdown Time for NGINX worker Process during Configuration Reload</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-08-23</dd>
+<dt>Updated</dt><dd>2025-08-27</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Plus: R35, R34</li><li>NGINX Gateway Fabric: 2.X.X, 2.1.X, 2.1.0, 2.0.X, 2.0.0, 2.0.1</li><li>NGINX Ingress Controller: 5.1.0, 5.0.X, 5.X.X, 5.1.X, 5.1.1, 5.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000153144">https://my.f5.com/manage/s/article/K000153144</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<ul><li>You deployed <em>NGINX Plus Ingress Controller </em>(NIC)</li><li>You now want to stress test your deployment using tools like <em>wrk</em>.</li><li>You perform, additional test while updating NIC configuration via VirtualServer or Ingress resources.</li><li>During the test, however, you noticed <strong><em>socket errors </em></strong>as shown below, implying impact to application traffic.<br><br></li><li>Given, socket errors occur during load test while editing existing resource, you want to know how to improve performance, even at heavy load.<br><br></li></ul>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>                wrk -t8 -c350 -d2m https: //load.example .com:30443/  --latency
+
+                    Running 2m test @ https: //load.example .com:30443/
+                      8 threads and 350 connections
+                      Thread Stats   Avg      Stdev     Max   +/- Stdev
+                        Latency    34.88ms   27.38ms 459.41ms   83.00%
+                        Req/Sec     1.35k   316.77     3.22k    80.76%
+                      Latency Distribution
+                         50%   28.47ms
+                         75%   44.97ms
+                         90%   65.83ms
+                         99%  138.80ms
+                      1288166 requests in 2.00m, 305.89MB read
+                      Socket errors: connect 0, read 154, write 0, timeout 0
+                    Requests/sec:  10726.55
+                    Transfer/sec:      2.55MB</code></pre>
+<ul><li>You want how to eliminate the effect of configuration update to application traffic. </li></ul>
+<h2>Environment</h2>
+<ul><li>NGINX Plus Ingress Controller (NIC)</li><li>Kubernetes</li><li>wrk</li><li>Ingress resource</li><li>VirtualServer resources</li><li>&quot;keepalive_min_timeout&quot; directive</li></ul>
+<h2>Cause</h2>
+<ul><li>When a configuration change is applied to the NGINX Ingress Controller, a reload is triggered that causes a new worker processes creation and the old worker processes gracefully terminated.</li><li>If keepalive directive is in use, NGINX would close these connections after notifying the client its intention to close.</li><li>However, in high load environment, the client may NOT receive the intention to close existing connection in time before it generates and sends a new request.</li><li>This in turn may results in mid-air mismatch between the state of a connection at the worker process and client.</li><li>This mismatch in state can result in Socket errors</li></ul>
+<h2>Recommended Actions</h2>
+<ul><li>To prevent socket errors during configuration reloads under load, extend the worker process termination time using the keepalive_min_timeout directive.</li><li>This allows existing keepalive connections to complete gracefully before old worker processes are terminated.</li></ul>
+<p><em><strong>Steps to implement:</strong></em></p>
+<ul><li><em>Enable NGINX configuration snippets:</em>
+<ul><li>Add the -enable-snippets command-line argument to your NGINX Ingress Controller deployment.</li><li>Reference: <a href="https://docs.nginx.com/nginx-ingress-controller/configuration/global-configuration/command-line-arguments/#-enable-snippets" target="_blank">NGINX Ingress Controller Command-Line Arguments</a></li></ul>
+</li><li><em>Add the <a href="https://nginx.org/en/docs/http/ngx_http_core_module.html#keepalive_min_timeout" target="_self">keepalive_min_timeout directive</a></em><a href="https://nginx.org/en/docs/http/ngx_http_core_module.html#keepalive_min_timeout" target="_self">:</a>
+<ul><li>Use the <a href="https://docs.nginx.com/nginx-ingress-controller/configuration/ingress-resources/advanced-configuration-with-annotations/#snippets-and-custom-templates" target="_self">nginx. org/server-snippets</a> annotation in your Ingress resource:</li></ul>
+</li></ul>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    nginx. org/server-snippets: |
+      keepalive_min_timeout 300;</code></pre>
+<ul><ul><li>This sets a minimum time (in seconds) that worker processes will wait before terminating, allowing active keepalive connections to close gracefully.</li></ul><li>Apply the updated Ingress resource:
+<ul><li>Deploy your changes and re-run your load tests to verify that socket errors no longer occur during configuration reloads.</li></ul>
+</li><li>Global application:
+<ul><li>To apply this setting globally across all resources, use an appropriate ConfigMap entry for your NGINX Ingress Controller deployment.</li></ul>
+</li></ul>
+<h2>Additional Information</h2>
+<ul><li>None</li></ul>
+</article>
+</body>
+</html>

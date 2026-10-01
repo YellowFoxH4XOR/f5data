@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K44102664: IPsec IKEv1 and IKEv2 tunnels must use a unique local IP</title>
+<meta name="description" content="Support Solution: IPsec IKEv1 and IKEv2 tunnels must use a unique local IP — IPsec tunnel negotiation problems occur often after reboot, when the BIG-IP is configured to terminate both IKEv1 and IKEv2 tunnels using the same local IP address.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K44102664">
+</head>
+<body>
+<header>
+<h1>K44102664: IPsec IKEv1 and IKEv2 tunnels must use a unique local IP</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2019-09-30</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP Platforms</li><li>Virtual Editions</li><li>BIG-IP LTM: 14.X.X, 13.X.X, 12.X.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 11.6.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 11.6.5, 11.6.4, 15.X.X, 11.6.2, 11.6.1, 11.6.0, 11.6.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K44102664">https://my.f5.com/manage/s/article/K44102664</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>IPsec tunnel negotiation problems occur often after reboot, when the BIG-IP is configured to terminate both IKEv1 and IKEv2 tunnels using the same local IP address.<br><br>Tunnels may sometimes work and sometimes fail particularly after a TMM or BIG-IP restart.<br><br>In such a situation, racoon.log <em>may </em>report errors in the ISAKMP payload when an IKEv2 packet is misdirected to the IKEv1 handler:</p>
+
+<pre>
+2018-03-11 02:04:23: ERROR: invalid flag 0x08.</pre>
+
+<div>At startup, the ltm log will contain the following message:<br> 
+<div><span class="example2">Sep 21 13:12:43 cli_50 err tmm2[25182]: 017c0003:3: Listener binding ERR=12 (DUPLICATE) v1 listener $_ike_2a3e6_in_10.1.1.10 10.1.1.10:500 FAIL<br>Sep 21 13:12:43 cli_50 notice tmm2[25182]: 017c0004:5: NOTE: Avoid common IPsec v1 and v2 tunnel local addr</span></div>
+
+<div><br><span class="warning">This ltm log message above can sometimes fire in false-positive circumstances. If the configuration is correct but this log message still occurs, then it can be safely disregarded. </span><br> </div>
+</div>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>The BIG-IP is configured with both IKEv1 and IKEv2 IPsec tunnels.</li><li>The same local IP is used on both an IKEv1 and an IKEv2 tunnel.</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>The listeners in TMM for catching ISAKMP are not able to distinguish the IKE version. The packet is then internally misdirected.<br>IKEv1 tunnels must use a different local address to the IKEv2 tunnels. IKEv1 and IKEv2 may separately use multiple or re-use local IPs for multiple tunnels, but there must be no re-use of the local IPs between the two IKE versions.<br> </p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+Use local IP address &quot;A&quot; for IKEv1 tunnels and IP address &quot;B&quot; for all IKEv2 tunnels.<br><br>In IPsec <em>tunnel</em> mode, the local IP is configured in the ipsec-policy configuration object. Note in the following example, tunnel-local-address is different:<br> 
+<div style="margin-left: 40px;"><span class="code">net ipsec ipsec-policy ipsec-8-0-7-1 {<br>    ike-phase2-auth-algorithm aes-gcm128<br>    ike-phase2-encrypt-algorithm aes-gcm128<br>    mode tunnel<br>    tunnel-local-address 172.16.8.1<br>    tunnel-remote-address 172.16.7.1<br>}<br>net ipsec ipsec-policy ipsec-8-0-7-2 {<br>    ike-phase2-auth-algorithm aes-gcm128<br>    ike-phase2-encrypt-algorithm aes-gcm128<br>    mode tunnel<br>    tunnel-local-address 172.16.8.2<br>    tunnel-remote-address 172.16.7.2<br>}</span></div>
+<br>In IPsec <em>interface</em> mode, the local IP is specified on the tunnel configuration object. Note in the following example, local-address is different:<br> 
+<div style="margin-left: 40px;"><span class="code">net tunnels tunnel ipsec-tunnel-3-0-6-1 {<br>    local-address 172.16.3.1<br>    profile ipsec-interface-3-0-6-1<br>    remote-address 172.16.6.1<br>}<br>net tunnels tunnel ipsec-tunnel-3-0-6-2 {<br>    local-address 172.16.3.2<br>    profile ipsec-interface-3-0-6-2<br>    remote-address 172.16.6.2<br>}</span></div>
+
+<p><span class="note">The IKE version itself is configured in the ike-peer configuration but has been omitted in these examples.</span><br> </p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<ul><li>IKEv2 was first introduced in 11.6.0 and this limitation has existed in all BIG-IP software versions since then.</li><li>The local IPs used by IKEv1 and IKEv2 must be existing self IPs on the BIG-IP.</li><li>The local IPs can be floating self IPs, but not Virtual Addresses.</li></ul>
+</article>
+</body>
+</html>

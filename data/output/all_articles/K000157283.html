@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000157283: OCSP Failure status &#x27;Error querying OCSP responsder host (server.lab.lan) path (/)&#x27;</title>
+<meta name="description" content="Support Solution: OCSP Failure status &#x27;Error querying OCSP responsder host (server.lab.lan) path (/)&#x27; — You have an OCSP agent in the access policy that verifies with the OCSP responder the real-time revocation status of a specific digital certificate.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000157283">
+</head>
+<body>
+<header>
+<h1>K000157283: OCSP Failure status &#x27;Error querying OCSP responsder host (server.lab.lan) path (/)&#x27;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-11-05</dd>
+<dt>Updated</dt><dd>2025-11-05</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000157283">https://my.f5.com/manage/s/article/K000157283</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>You have an OCSP agent in the access policy that verifies with the OCSP responder the real-time revocation status of a specific digital certificate.</p>
+<p>The following error comes up, which means OCSP agent did not receive the OCSP response although a tcpdump on BIGIP shows the OCSP response was received and it was good.</p>
+<p><code>OCSP Auth agent: Failure status &#39;Error querying OCSP responsder host (server.lab.lan) path (/)&#39;</code></p>
+<h2>Environment</h2>
+<p>Conditions</p>
+<ul><li>BIG-IP deployed with APM.</li><li>APM with an access policy that includes an OCSP agent</li><li>OCSP response from OCSP responder is chunk encoded.</li></ul>
+<h2>Cause</h2>
+<p>The version of OpenSSL library that BIGIP is running for OCSP API functions is v1.0.2za </p>
+<p>OCSP API functions in that OpenSSL release have limitations regarding advanced HTTP features like chunking.</p>
+<h2>Recommended Actions</h2>
+<p>There are two solutions</p>
+<p>1) OCSP responder not sending OCSP responses chunk encoded.</p>
+<p>It makes not sense OCSP responder to send the OCSP response chunk encoded because this is done for responses where the content length is not known in advance, that is not the case with OCSP.</p>
+<p>2) Adding a layered VS on BIGIP that catches OCSP requests to OCSP responder and &#39;un-chunks&#39; its OCSP responses.</p>
+<p>2.1) Replace OCSP url with an internal ip address (like 10.1.100.100)</p>
+<p><span style="background-color: #bdc3c7;">          apm aaa ocsp {</span><br><span style="background-color: #bdc3c7;">              url <a href="http://10.1.100.100" target="_blank" style="background-color: #bdc3c7;">http://10.1.100.100</a></span><br><span style="background-color: #bdc3c7;">              ignore-aia true</span></p>
+<p>2.2) Create a standard VS listening to 10.1.100.100:80 that has snat &#39;automap&#39; enabled.</p>
+<p>2.3) Add an http profile to layered VS that unchunks responses</p>
+<p><span style="background-color: #bdc3c7;">          ltm profile http {</span><br><span style="background-color: #bdc3c7;">              response-chunking unchunk</span></p>
+<p>2.4) Add an irule to layered VS that replaces Host header &quot;10.1.100.100&quot; with OCSP responder&#39;s fqdn (like &quot;server.lab.lan&quot;)</p>
+<p><span style="background-color: #bdc3c7;">          when HTTP_REQUEST {</span><br><span style="background-color: #bdc3c7;">              if { [HTTP::header exists Host] } {</span><br><span style="background-color: #bdc3c7;">                  HTTP::header replace Host server.lab.lan</span><br><span style="background-color: #bdc3c7;">              } else {</span><br><span style="background-color: #bdc3c7;">                HTTP::header insert Host server.lab.lan</span><br><span style="background-color: #bdc3c7;">              }</span><br><span style="background-color: #bdc3c7;">          }</span></p>
+<p>2.5) Add a pool to layered VS with OCSP responder&#39;s ip address as pool member. Pool&#39;s port is 80</p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

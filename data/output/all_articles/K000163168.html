@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163168: BIG-IP REST API endpoint /mgmt/tm/sys/ucs can fail with a 502 Proxy Error during UCS backup</title>
+<meta name="description" content="Support Solution: BIG-IP REST API endpoint /mgmt/tm/sys/ucs can fail with a 502 Proxy Error during UCS backup — A UCS backup initiated through the BIG-IP REST API endpoint /mgmt/tm/sys/ucs can fail with a 502 Proxy Error when the UCS save operation takes longer than the Apache httpd reverse-proxy timeout. the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163168">
+</head>
+<body>
+<header>
+<h1>K000163168: BIG-IP REST API endpoint /mgmt/tm/sys/ucs can fail with a 502 Proxy Error during UCS backup</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-09-02</dd>
+<dt>Updated</dt><dd>2026-09-02</dd>
+<dt>Status</dt><dd>Final</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163168">https://my.f5.com/manage/s/article/K000163168</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>A UCS backup initiated through the BIG-IP REST API endpoint <span style="background-color: #f1f1f1;">/mgmt/tm/sys/ucs</span> can fail with a <span style="font-family: &#39;courier new&#39;, courier, monospace;">502 Proxy Error</span> when the UCS save operation takes longer than the Apache httpd reverse-proxy timeout. the actual ucs backup could be successful, but user may still observe the error logs in API client end.</p>
+<p>Relevant errors can be found in <span style="font-family: &#39;courier new&#39;, courier, monospace;">/var/log/httpd.error </span>include:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">err httpd[845]: [proxy_http:error] [pid 845] (70007)The timeout specified has expired: [client 192.168.1.1:12345] AH01102: error reading status line from remote server localhost:8100<br>err httpd[845]: [proxy:error] [pid 845] [client 192.168.1.1:12345] AH00898: Error reading from remote server returned by /mgmt/tm/sys/ucs<br></span><span style="font-family: &#39;courier new&#39;, courier, monospace;"></span></p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>AS3 iAppLX packages installed</li><li>UCS backups initiated through the BIG-IP REST API</li><li>REST-related timeout database variables configured for long-running operations</li><li>Apache httpd reverse-proxy timeout configured independently from the REST service timeouts</li></ul>
+<h2>Cause</h2>
+<p>During UCS creation, the <span style="font-family: &#39;courier new&#39;, courier, monospace;">iAppsLX_save_pre</span> process rebuilds the RPM package for each installed iAppLX application. When the combined rebuild operation exceeds the Apache httpd timeout, the local management proxy stops waiting for the REST service on port 8100 and returns a 502 response.</p>
+<p>Increasing the REST service timeout values alone does not increase Apache httpd’s independent reverse-proxy timeout.</p>
+<h2>Recommended Actions</h2>
+<p>Increase the Apache httpd timeout by using the supported BIG-IP configuration command:</p>
+<p><span style="background-color: #f1f1f1;">tmsh modify /sys httpd include &#39;Timeout 600&#39;</span></p>
+<p>Ensure the REST-related timeout values also accommodate the duration of the UCS operation:</p>
+<p><span style="background-color: #f1f1f1;">tmsh modify sys db icrd.timeout value 300</span><br><span style="background-color: #f1f1f1;">tmsh modify sys db restjavad.timeout value 300</span><br><span style="background-color: #f1f1f1;">tmsh modify sys db restnoded.timeout value 300</span><br><span style="background-color: #f1f1f1;">tmsh modify sys db iapplxrpm.timeout value 300</span></p>
+<p>Save the configuration and restart the relevant REST services:</p>
+<p><span style="background-color: #f1f1f1;">tmsh save sys config</span><br><span style="background-color: #f1f1f1;">bigstart restart restjavad &amp;&amp; sleep 20 &amp;&amp; bigstart restart restnoded</span></p>
+<p>Retry the UCS backup through:</p>
+<p><span style="background-color: #f1f1f1;">/mgmt/tm/sys/ucs</span></p>
+<h2>Additional Information</h2>
+<ul><li>The <span style="font-family: &#39;courier new&#39;, courier, monospace;">iAppsLX_save_pre</span> package rebuild is performed during each UCS save operation.</li><li>The package rebuild behavior is independent of whether AS3 was upgraded or downgraded.</li><li>The Apache httpd timeout and the REST-related database timeout values are separate controls. Both must allow sufficient time for the complete UCS operation.</li><li>Removing unused iAppLX packages may reduce the total RPM rebuild time during UCS creation.</li><li>A UCS file created locally does not by itself confirm that the REST API request completed successfully. The REST client can still receive a 502 response if the management proxy timeout is reached.</li></ul>
+</article>
+</body>
+</html>

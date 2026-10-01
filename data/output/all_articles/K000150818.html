@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000150818: SNMP authentication may not work upon restoring F5OS backup</title>
+<meta name="description" content="Support Solution: SNMP authentication may not work upon restoring F5OS backup — &lt;usmUserEngineID&gt;80:00:2f:f4:03:14:a9:d0:67:eb:02&lt;/usmUserEngineID&gt;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000150818">
+</head>
+<body>
+<header>
+<h1>K000150818: SNMP authentication may not work upon restoring F5OS backup</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-04-11</dd>
+<dt>Updated</dt><dd>2025-04-11</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS</li><li>F5OS-A: 1.8.0, 1.7.0, 1.5.0, 1.5.1, 1.5.2, 1.5.3</li><li>F5OS-C: 1.8.0, 1.6.0, 1.6.1, 1.6.2</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000150818">https://my.f5.com/manage/s/article/K000150818</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Restoring a backup with an SNMP user on a system with a different SNMP engine ID will duplicate the SNMP user but without authentication and privacy keys. However, this is only seen when the database is later backed up. Here is an example upon examining the XML database backup:</p>
+<p>&lt;usmUserTable&gt;<br>&lt;usmUserEntry&gt;<br>&lt;usmUserEngineID&gt;80:00:2f:f4:03:14:a9:d0:67:eb:02&lt;/usmUserEngineID&gt;<br>&lt;usmUserName&gt;rcard&lt;/usmUserName&gt;<br>&lt;usmUserSecurityName&gt;rcard&lt;/usmUserSecurityName&gt;<br>&lt;usmUserAuthProtocol&gt;1.3.6.1.6.3.10.1.1.3&lt;/usmUserAuthProtocol&gt;<br>&lt;usmUserPrivProtocol&gt;1.3.6.1.6.3.10.1.2.4&lt;/usmUserPrivProtocol&gt;<br>&lt;/usmUserEntry&gt;<br>&lt;usmUserEntry&gt;<br>&lt;usmUserEngineID&gt;80:00:2f:f4:03:14:a9:d0:77:c9:82&lt;/usmUserEngineID&gt;<br>&lt;usmUserName&gt;rcard&lt;/usmUserName&gt;<br>&lt;usmUserSecurityName&gt;rcard&lt;/usmUserSecurityName&gt;<br>&lt;usmUserAuthProtocol&gt;1.3.6.1.6.3.10.1.1.3&lt;/usmUserAuthProtocol&gt;<br>&lt;usmUserPrivProtocol&gt;1.3.6.1.6.3.10.1.2.4&lt;/usmUserPrivProtocol&gt;<br>&lt;usmUserAuthKey&gt;2d:5d:05:86:c4:9f:78:78:dd:9a:7d:d1:45:3f:16:91:54:1d:e6:29&lt;/usmUserAuthKey&gt;<br>&lt;usmUserPrivKey&gt;2d:5d:05:86:c4:9f:78:78:dd:9a:7d:d1:45:3f:16:91&lt;/usmUserPrivKey&gt;<br>&lt;/usmUserEntry&gt;<br>&lt;/usmUserTable&gt;</p>
+<p>This is the crucial part:</p>
+<p>&lt;usmUserEntry&gt;<br>&lt;usmUserEngineID&gt;80:00:2f:f4:03:14:a9:d0:67:eb:02&lt;/usmUserEngineID&gt;<br>&lt;usmUserName&gt;rcard&lt;/usmUserName&gt;<br>&lt;usmUserSecurityName&gt;rcard&lt;/usmUserSecurityName&gt;<br>&lt;usmUserAuthProtocol&gt;1.3.6.1.6.3.10.1.1.3&lt;/usmUserAuthProtocol&gt;<br>&lt;usmUserPrivProtocol&gt;1.3.6.1.6.3.10.1.2.4&lt;/usmUserPrivProtocol&gt;<br>&lt;/usmUserEntry&gt;</p>
+<p>No usmUserAuthKey and usmUserPrivKey.</p>
+<p>Furthermore, /var/F5/system/log/snmp.log on F5OS does not indicate there is something wrong with SNMP user keys, even when receiving SNMP requests. The problem can be seen on the SNMP client, which report authentication failure.</p>
+<p>root@snmp-client:~# date; snmpwalk -v3 -u snmp-client -l authPriv -a SHA -A test1234 -x AES -X test1234 10.154.84.35 .1.3.6.1.4.1.12276.1.3.1.2<br>Thu Apr 10 13:43:11 UTC 2025<br>snmpwalk: Authentication failure (incorrect password, community or key)</p>
+<p>[root@appliance-1(R10900-R84-S35):Active] ~ # tail -f /var/F5/system/log/snmp.log<br>&lt;...&gt;<br>&lt;INFO&gt; 10-Apr-2025::13:43:11.855 R10900-R84-S35 confd[158]: snmp get-request reqid=1946931591 10.155.104.147:41112<br>&lt;INFO&gt; 10-Apr-2025::13:43:11.855 R10900-R84-S35 confd[158]: snmp report reqid=1946931591 10.155.104.147:41112 (1.3.6.1.6.3.15.1.1.4.0=0)<br>&lt;INFO&gt; 10-Apr-2025::13:43:11.866 R10900-R84-S35 confd[158]: snmp report reqid=0 10.155.104.147:41112 (1.3.6.1.6.3.15.1.1.5.0=2)</p>
+<h2>Environment</h2>
+<ul><li>Restoring a database backup that contains an SNMP user.</li><li>Doing the restore on a system with a different SNMP Engine ID.</li></ul>
+<h2>Cause</h2>
+<p>ID1812497.</p>
+<h2>Recommended Actions</h2>
+<ol><li>Once backup is restored, enter SNMP user passwords manually via F5OS GUI or CLI.</li><li><span>Change SNMP engine ID on the target device:<br><br>appliance-1(config)# system snmp engine-id config value<br>Possible completions:<br>&lt;string, min: 5 chars, max: 27 chars&gt; ipv4 ipv6 mac <br><br>Note: this would require an administrator to compare SNMP engine ID in confd and in the backup, before loading the backup.</span></li></ol>
+<h2>Additional Information</h2>
+<p>None.</p>
+</article>
+</body>
+</html>

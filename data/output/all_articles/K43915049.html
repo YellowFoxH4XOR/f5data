@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K43915049: BIG-IQ not able to send utility report to F5 &#x27;&#x27;Report submission failed: curl: (56) SSL read: error:00000000:lib(0):func(0):reason(0), errno 104.&#x27;&#x27;</title>
+<meta name="description" content="Support Solution: BIG-IQ not able to send utility report to F5 &#x27;&#x27;Report submission failed: curl: (56) SSL read: error:00000000:lib(0):func(0):reason(0), errno 104.&#x27;&#x27; — In GUI Devices &gt; License Management &gt; Reports you see &quot;Report submission failed (yellow triangle)&quot;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K43915049">
+</head>
+<body>
+<header>
+<h1>K43915049: BIG-IQ not able to send utility report to F5 &#x27;&#x27;Report submission failed: curl: (56) SSL read: error:00000000:lib(0):func(0):reason(0), errno 104.&#x27;&#x27;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-09-01</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K43915049">https://my.f5.com/manage/s/article/K43915049</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<span class="sectiontitle">Description</span>
+
+<p>BIQ-IQ not able to send utility report to F5<br>In GUI <strong>Devices &gt; License Management &gt; Reports</strong> you see &quot;Report submission failed (yellow triangle)&quot;<br>Click on more detail and see the full error message &quot;<span class="example2">Report submission failed: curl: (56) SSL read: error:00000000:lib(0):func(0):reason(0), errno 104.</span>&quot;</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>ELA / FCP (load / cat license report)</li><li>BIG-IQ v7.x and 8.x</li></ul>
+<span class="sectiontitle">Cause</span>
+
+<p>You have scheduled a utility billing report to run and get the errno 104 message on the GUI<br>Due to a known bug <a href="https://cdn.f5.com/product/bugtracker/ID1087253.html" target="_self">ID1087253</a><br>when you schedule a utility report to run, the actual time is set to PST and not local time as expected.<br>As such the majority of reports will be run on the first of each month at 00:00 PST.<br>The result is that the F5 API gateway gets overwhelmed and BIG-IQ clients timeout before the report is sent.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+Please set your scheduled utility reports to a different day (2-5) and a different time (based off of + or - local compared to PST)
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>In the BIG-IQ GUI <strong>Devices &gt; License Management &gt; Reports &gt; Schedule</strong><br>Notice the day / time (and the time zone)</p>
+
+<p style="margin-left: 40px;">Day of the Month: 1  Start time: 0 hour : 0 minute (British Summer Time)</p>
+
+<p><br>As admin user on the BIG-IQ command line run the following command:<br><span class="code">restcurl shared/task-scheduler/scheduler/ | jq &#39;.items[]|{name,hourToRunOn,nextRunTime}&#39; | grep -A2 licensing</span><br><br>Output of restcurl:<br><span class="example2">&quot;hourToRunOn&quot;: 0,<br>&quot;nextRunTime&quot;: &quot;2022-10-01T08:00:00.000+01:00&quot;</span><br><span class="note">Note in the example (BST) is 8 hours in front of PST, so next run time is 08:00 BST (00:00 PST)</span><br><br>In log file <strong>/var/log/restjavad.(x).log</strong> you will see an error similar to:<br><br><span class="example2">[ERROR][01 Aug 2022 09:00:06 CEST][BillingReportTask] Report generated but submission failed for xxxx-xxxx-xxxx-xxxx-xxxx (task 6cb3642c-57f1-4b25-ace9-0bc80d0f4cbe): Report submission failed: curl: (56) SSL read: error:00000000:lib(0):func(0):reason(0), errno 104. : com.f5.rest.workers.device.license.utility.billing.CurlReportSender$ReportSubmissionException: Report submission failed: curl: (56) SSL read: error:00000000:lib(0):func(0):reason(0), errno 104.<br>    at com.f5.rest.workers.device.license.utility.billing.CurlReportSender.executeCurlCmd(CurlReportSender.java:324)<br>    at com.f5.rest.workers.device.license.utility.billing.CurlReportSender.sendCurl(CurlReportSender.java:158)<br>    at com.f5.rest.workers.device.license.utility.billing.CurlReportSender.access$000(CurlReportSender.java:42)<br>    at com.f5.rest.workers.device.license.utility.billing.CurlReportSender$1.run(CurlReportSender.java:97)<br>    at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:511)<br>    at java.util.concurrent.FutureTask.run(FutureTask.java:266)<br>    at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.access$201(ScheduledThreadPoolExecutor.java:180)<br>    at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:293)<br>    at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1149)<br>    at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)<br>    at java.lang.Thread.run(Thread.java:748)<br>Caused by: com.f5.rest.common.SystemShellHelper$ProgramExecutionException: Command failed: /usr/bin/curl --location --header &#39;Content-MD5: xxxyyyzzzaaabbbccc&#39; -X POST --header Content-Type: --cert /tmp/cert7681909543108272774.cer --key /tmp/key123456789.key --upload-file /var/config/rest/license-reports/xxx-yyy-zzzz.json --insecure --silent --show-error https://api.f5.com/clpurl/product/report/<br>Exit code: 56<br>Stderr: curl: (56) SSL read: error:00000000:lib(0):func(0):reason(0), errno 104<br> <br>    at com.f5.rest.common.SystemShellHelper.checkResult(SystemShellHelper.java:258)<br>    at com.f5.rest.workers.device.license.utility.billing.CurlReportSender.executeCurlCmd(CurlReportSender.java:319)</span></p>
+</article>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000152426: Connectivity issues after loading UCS backup from different platform to Velos tenant running on multiple slots</title>
+<meta name="description" content="Support Solution: Connectivity issues after loading UCS backup from different platform to Velos tenant running on multiple slots — Loading UCS backup on multi-blade Velos tenant may produce connectivity issues, exhibiting as unresolved MAC addresses or ICMP failures. This is typically observed in migrations from old platforms.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000152426">
+</head>
+<body>
+<header>
+<h1>K000152426: Connectivity issues after loading UCS backup from different platform to Velos tenant running on multiple slots</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-07-04</dd>
+<dt>Updated</dt><dd>2025-07-04</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS</li><li>BIG-IP</li><li>BIG-IP LTM: 17.1.X, 17.1.0, 17.1.2, 17.1.1</li><li>F5OS-C: 1.8.X, 1.8.1, 1.6.2, 1.6.1, 1.6.0, 1.8.0, 1.6.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000152426">https://my.f5.com/manage/s/article/K000152426</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Loading UCS backup on multi-blade Velos tenant may produce connectivity issues, exhibiting as unresolved MAC addresses or ICMP failures. This is typically observed in migrations from old platforms.</p>
+<p>As an example, tenant is deployed on slots 1 and 2, and in &#39;tmsh show sys cluster&#39; TMM state is not ready on slot2:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>[root@localhost.localdomain:/S1-green-P::Active:Standalone] config # tmsh show sys cluster
+-----------------------------------------
+Sys::Cluster: default
+-----------------------------------------
+Address                 10.154.82.211/24
+Alt-Address             ::
+Availability            available
+State                   enabled
+Reason                  Cluster Enabled
+Primary Slot ID         1
+Primary Selection Time  05/13/25 11:27:56
+
+  ---------------------------------------------------------------------------------------------------------------
+  | Sys::Cluster Members
+  | ID  Address        Alt-Address  Availability  State    Licensed  HA       Clusterd  Reason
+  ---------------------------------------------------------------------------------------------------------------
+  | 1   10.154.82.212  ::           available     enabled  true      active   running   Run
+  | 2   10.154.82.213  ::           unavailable   enabled  true      active   running   TMM not ready
+  | 3   ::             ::           unknown       enabled  false     unknown  shutdown  Slot powered off or empty
+  | 4   ::             ::           unknown       enabled  false     unknown  shutdown  Slot powered off or empty
+  | 5   ::             ::           unknown       enabled  false     unknown  shutdown  Slot powered off or empty
+  | 6   ::             ::           unknown       enabled  false     unknown  shutdown  Slot powered off or empty
+  | 7   ::             ::           unknown       enabled  false     unknown  shutdown  Slot powered off or empty
+  | 8   ::             ::           unknown       enabled  false     unknown  shutdown  Slot powered off or empty</code></pre>
+<p>Both TMM threads are ready for world on the primary slot, but on the secondary slot, TMM threads are not ready with a state of shared_random:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>[root@localhost.localdomain:/S2-yellow-S::Active:Standalone] config # tmctl -d blade tmm/ready_for_world_stat
+tmid ready                                              not_ready
+---- -------------------------------------------------- --------------
+   1 cmp_mpi,platform_msg,dag_transition,               shared_random,
+   0 shared_random,cmp_mpi,platform_msg,dag_transition,</code></pre>
+<p>The following logs can also be observed in particular log files:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>/var/log/tmm
+May 13 11:27:35 slot1/localhost.localdomain notice MPI stream: connection to node 127.20.2.2 expired for reason: TCP retransmit timeout (tcp.c:14678)
+May 13 11:27:39 slot1/localhost.localdomain notice MPI stream: connection to node 127.20.2.2 expired for reason: TCP retransmit timeout (tcp.c:14678)
+May 13 11:27:43 slot1/localhost.localdomain notice MPI stream: connection to node 127.20.2.2 expired for reason: TCP retransmit timeout (tcp.c:14678)
+May 13 11:27:47 slot1/localhost.localdomain notice MPI stream: connection to node 127.20.2.2 expired for reason: TCP retransmit timeout (tcp.c:14678)
+May 13 11:27:51 slot1/localhost.localdomain notice MPI stream: connection to node 127.20.2.2 expired for reason: TCP retransmit timeout (tcp.c:14678)</code></pre>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>/var/log/ltm
+May 13 11:27:50 slot1/localhost.localdomain crit tmm1[16774]: 01010201:2: Inet port exhaustion on 10.0.24.101 to 10.0.24.91:8 (proto 1)
+May 13 11:27:51 slot1/localhost.localdomain crit tmm1[16774]: 01010201:2: Inet port exhaustion on 10.0.24.101 to 10.0.24.91:8 (proto 1)
+May 13 11:27:52 slot1/localhost.localdomain crit tmm1[16774]: 01010201:2: Inet port exhaustion on 10.0.24.101 to 10.0.24.91:8 (proto 1)</code></pre>
+<p>Note: 10.0.24.101 and 10.0.24.98 are self-IPs. During a ping from one IP to another, port exhaustion logs pop out.</p>
+<h2>Environment</h2>
+<ul><li>F5OS-C 1.6.X, 1.8.X</li><li>TMOS 17.1.X</li><li>Multi-blade Velos tenant</li><li>UCS backup from different platform loaded on the tenant</li></ul>
+<h2>Cause</h2>
+<p>The reason for the communication issue is due to the tenant system db &#39;scheduler.splitplanes.ltm&#39; being set to false, coming over from the old platform config by way of a UCS load.<br>In the example above, the tenant is given two cores per slot, so with split planes enabled (the default), it is 1 TMM per slot.<br>But since the config has the system variable set to false, TMM started without split planes and had double (2) the TMMs running per slot.</p>
+<h2>Recommended Actions</h2>
+<p>To work around the issue, set tenant system db &#39;scheduler.splitplanes.ltm&#39; to true, and for good measure reset-to-default, and then reboot all slots.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify sys db scheduler.splitplanes.ltm value true
+tmsh modify sys db scheduler.splitplanes.ltm reset-to-default
+clsh reboot</code></pre>
+<h2>Additional Information</h2>
+<p>None.</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161547: BNK/CNF: Dynamically Updating ZebOS Configuration Using a Custom ConfigMap</title>
+<meta name="description" content="Support Solution: BNK/CNF: Dynamically Updating ZebOS Configuration Using a Custom ConfigMap — &quot;The CNFs Controller detects modifications made to the ConfigMap file, and applies the updates to the running f5-tmm-routing container.&quot;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161547">
+</head>
+<body>
+<header>
+<h1>K000161547: BNK/CNF: Dynamically Updating ZebOS Configuration Using a Custom ConfigMap</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-07</dd>
+<dt>Updated</dt><dd>2026-06-07</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP Next</li><li>BIG-IP Next CNF</li><li>BIG-IP Next for Kubernetes</li><li>BIG-IP Next SPK</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161547">https://my.f5.com/manage/s/article/K000161547</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>The BNK/CNF <strong>`f5-tmm-routing`</strong> container uses ZebOS for dynamic routing like BGP. ZebOS can load configuration from a ConfigMap mounted into the pod. The official documentation states:</p>
+<p><strong><em>&quot;The CNFs Controller detects modifications made to the ConfigMap file, and applies the updates to the running f5-tmm-routing container.&quot;</em></strong></p>
+<p>However, this dynamic update capability applies <strong>only</strong> when using a <strong>custom </strong>(user-created) ConfigMap referenced via the<strong> `configMapName` </strong>Helm value. There is an important behavioral distinction between two ConfigMap types:</p>
+<ul><li><strong>Auto-generated</strong> (by Helm) -  <strong>`f5-tmm-dynamic-routing-template`</strong> -  Changes are <strong>NOT</strong> dynamically applied — pod restart required</li><li><strong>Custom</strong> (user-created) -  User-defined (e.g., `spk-bgp`, `cnf-bgp`) - Changes <strong>ARE</strong> dynamically detected and applied by the Controller </li></ul>
+<p>Additionally, ZebOS uses a <strong>non-declarative</strong> (additive) configuration model. This means:</p>
+<ul><li>Adding a configuration line: works with dynamic updates.</li><li><strong>Removing</strong> a configuration line: simply deleting it from the ConfigMap will <strong>not</strong> remove it from the running config. You must explicitly use the<strong> `no &lt;command&gt;`</strong> form (e.g., <strong>`no neighbor &lt;IP&gt;`</strong>).</li></ul>
+<h2>Environment</h2>
+<ul><li><strong>Product</strong>:  F5 SPK (Service Proxy for Kubernetes) / BIG-IP Next for Kubernetes (Host) / CNF (Cloud-Native Network Functions)</li><li><strong>Versions</strong>: SPK 1.7.x, BNK/CNF 2.x and later</li><li><strong>Component</strong>: `f5-tmm` pod / `f5-tmm-routing` container / ZebOS BGP daemon</li></ul>
+<h2>Cause</h2>
+<h3>Editing the Auto-Generated ConfigMap</h3>
+<p>Editing the auto-generated ConfigMap (<strong>`f5-tmm-dynamic-routing-template`</strong>) does <strong>not</strong> trigger dynamic updates. The Controller only monitors <strong>custom</strong> ConfigMaps referenced via the `<strong>configMapName</strong>` Helm value. This is Functions As Designed (FAD) per Bug ID 1612521.</p>
+<h3>ZebOS Non-Declarative Configuration Model</h3>
+<p>ZebOS does not support declarative (diff-based) configuration. When a ConfigMap change is applied, ZebOS processes the updated file as <strong>additive</strong> — new lines are added, but deleted lines are <strong>not</strong> automatically removed from the running config. To remove a configuration element, the <strong>`no &lt;command&gt;`</strong> equivalent must be explicitly present in the ConfigMap.</p>
+<h2>Recommended Actions</h2>
+<h3>Use a Custom ConfigMap for Dynamic Updates to enable live configuration updates without a pod restart</h3>
+<p>1. Create a custom `ZebOS`  ConfigMap - <strong>spk-bgp</strong></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>kubectl apply -f spk-bgp-configmap.yaml</code></pre>
+<p>2. Reference the custom ConfigMap in your Helm values file <strong>before</strong> installing the Controller:  </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code> tmm:
+     dynamicRouting:
+       enabled: true
+       configMapName: &quot;spk-bgp&quot;   </code></pre>
+<p>3. Deploy SPK.</p>
+<p> </p>
+<h3>Removing a Configuration Element (Using &quot;no&quot; Commands)</h3>
+<p>Because ZebOS is non-declarative, to **<strong>remove</strong>** an existing configuration element, you must explicitly add a <strong>`no &lt;command&gt;</strong>` line to the ConfigMap rather than simply deleting the line.</p>
+<p><strong>Example — Removing a BGP neighbor:</strong></p>
+<p>Instead of deleting the neighbor line, add the `no` equivalent:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>no neighbor &lt;OLD_NEIGHBOR_IP&gt;</code></pre>
+<p>Before:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># kubectl exec -it deploy/f5-tmm -c f5-tmm-routing  -- imish -e &#39;show running-config&#39; 
+
+...
+router bgp 2202
+ bgp router-id 10.244.99.76
+ no bgp default ipv4-unicast
+ bgp log-neighbor-changes
+ bgp graceful-restart restart-time 120
+ network 22.22.22.222/32
+ network 22.25.22.222/32
+ redistribute kernel
+ neighbor 2002::22:22:22:101 remote-as 2201
+ neighbor 2002::22:22:22:101 fall-over bfd
+ no neighbor 2002::22:22:22:101 capability graceful-restart
+ neighbor 22.22.22.101 remote-as 2201 &lt;----------------------------- delete this peer
+ neighbor 22.22.22.101 fall-over bfd
+ neighbor 22.22.22.101 activate
+ neighbor 22.22.22.101 soft-reconfiguration inbound
+ no neighbor 22.22.22.101 capability graceful-restart
+ address-family ipv6 unicast
+ network 2002::22:25:22:222/128
+ network 2002::22:26:22:222/128
+ redistribute kernel
+ neighbor 2002::22:22:22:101 activate
+ neighbor 2002::22:22:22:101 soft-reconfiguration inbound
+ no neighbor 2002::22:22:22:101 capability graceful-restart
+ exit-address-family
+!
+</code></pre>
+<p>Edit ConfigMap , add <strong>no</strong> </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># kubectl edit cm spk-bgp
+
+    router bgp 2202
+      !
+      bgp router-id %%POD_IP%%
+      bgp log-neighbor-changes
+      bgp graceful-restart restart-time 120
+      bgp max-paths 4
+      no bgp default ipv4-unicast
+      no network 22.26.22.222/32
+      redistribute kernel
+      !
+      no neighbor 22.22.22.101 remote-as 2201 &lt;======= type no 
+</code></pre>
+<p> </p>
+<p>After applying a ConfigMap change dynamically, verify the updated configuration was applied to the running ZebOS instance</p>
+<p> </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>root@sidk0601-cnf:~# kubectl exec -it f5-tmm-6c46b578f7-7xcks -c f5-tmm-routing -- imish
+f5-tmm-6c46b578f7-7xcks[0]&gt;en
+f5-tmm-6c46b578f7-7xcks[0]#show running-config
+!
+service password-encryption
+!
+log file /var/log/zebos.log
+!
+...
+router bgp 2202
+ bgp router-id 10.244.99.76
+ no bgp default ipv4-unicast
+ bgp log-neighbor-changes
+ bgp graceful-restart restart-time 120
+ network 22.22.22.222/32
+ network 22.25.22.222/32
+ redistribute kernel
+ neighbor 2002::22:22:22:101 remote-as 2201
+ neighbor 2002::22:22:22:101 fall-over bfd
+ no neighbor 2002::22:22:22:101 capability graceful-restart
+ address-family ipv6 unicast
+ network 2002::22:25:22:222/128
+ network 2002::22:26:22:222/128
+ redistribute kernel
+ neighbor 2002::22:22:22:101 activate
+ neighbor 2002::22:22:22:101 soft-reconfiguration inbound
+ no neighbor 2002::22:22:22:101 capability graceful-restart
+ exit-address-family
+!
+</code></pre>
+<h2>Additional Information</h2>
+<ul><li>Bug ID <strong>1612521</strong> (&quot;Editing ZebOS config map requires reboot of TMM pod to take new changes&quot;) is resolved as **Functions As Designed** for the auto-generated ConfigMap. The custom ConfigMap workflow is the supported dynamic-update path.</li><li><a href="https://clouddocs.f5.com/bigip-next-for-kubernetes/latest/how-tos/spk-zebos-config.html?highlight=zebos#set-up-dynamic-routing-with-bgp" target="_blank">https://clouddocs.f5.com/bigip-next-for-kubernetes/latest/how-tos/spk-zebos-config.html?highlight=zebos#set-up-dynamic-routing-with-bgp</a></li><li><a href="https://clouddocs.f5.com/cnfs/robin/latest/cnf-zebos-config.html#zebos-configmaps" target="_blank">https://clouddocs.f5.com/cnfs/robin/latest/cnf-zebos-config.html#zebos-configmaps</a></li></ul>
+</article>
+</body>
+</html>

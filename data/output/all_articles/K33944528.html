@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K33944528: Workload certificate generation for Aspen Mesh</title>
+<meta name="description" content="Support Solution: Workload certificate generation for Aspen Mesh — without-sidecar-injection Active 138d ca.istio.io/override=true">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K33944528">
+</head>
+<body>
+<header>
+<h1>K33944528: Workload certificate generation for Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-10-04</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K33944528">https://my.f5.com/manage/s/article/K33944528</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>In the following example, there are 2 namespaces. One is with label <strong>istio-injection=enabled</strong>, which injects a sidecar for pod spun in that namespace and another one is without any label. Below are the high-level information on cert generation and accessibility for above mentioned namespaces:</p>
+
+<p><span class="example2">$ kubectl get namespace –show-labels<br>with-sidecar-injection      Active   138d   istio-injection=enabled<br>without-sidecar-injection   Active   138d   ca.istio.io/override=true</span></p>
+
+<p><span class="example2">$ kubectl get pods -n without-sidecar-injection<br>NAME         READY    STATUS      RESTARTS     AGE<br>sleep-5f5f494757-vmvzk  1/1    Running   0       39m </span></p>
+
+<p><span class="example2">$ kubectl get secrets -n without-sidecar-injection<br>NAME                      TYPE                        DATA AGE<br>default-token-9s8qn   kubernetes.io/service-account-token   3   8d<br>istio.default       istio.io/key-and-cert               6   7d23h<br>istio.sleep         istio.io/key-and-cert               6   7d23h<br>sleep-token-wfv68   kubernetes.io/service-account-token   3   8d</span></p>
+
+<p><span class="example2">$ kubectl get sa -n without-sidecar-injection<br>NAME   SECRETS   AGE<br>default   1     10d<br>sleep     1     10d</span></p>
+
+<p>As you can see in the output above, we do create a <strong>istio.io/key-and-cert</strong> type secret for pods without a side car which consists of CA cert, Root cert, Chain-cert and Key. This is only accessible by the respective service account created in the namespace and is created by the citadel agent. For legacy applications, Aspen Mesh generates the Secrets with TLS credentials and automatically manages the licycle of these credentials by either mounting them as volume or by directly from the Kubernetes API server. For more information, please consult <a href="https://my.aspenmesh.io/client/docs/1.6/operations/security/consuming_aspen_mesh_certificates_via_kubernetes_secrets_api/" target="_self">this</a>. </p>
+
+<p><span class="example2">$ kubectl get pods -n with-sidecar-injection<br>NAME                   READY    STATUS    RESTARTS    AGE<br>httpbin-74fb669cc6-wn2ch  2/2     Running     0       7d22h</span></p>
+
+<p><span class="example2">$ kubectl get secrets -n with-sidecar-injection<br>NAME                    TYPE                           DATA  AGE<br>default-token-46g4r   kubernetes.io/service-account-token   3   11d<br>httpbin-token-qx2n2   kubernetes.io/service-account-token   3   11d</span></p>
+
+<p><span class="example2">$ kubectl get sa -n with-sidecar-injection<br>NAME    SECRETS   AGE<br>default    1      11d<br>httpbin    1      11d</span></p>
+
+<p>Whereas in the with-sidecar-injection, we create a <strong>kubernetes.io/service-account-token</strong> secret for the pod as the certificates are generated automatically by the SDS (Secret Discovery Service) generation process which is default in Aspen Mesh. The certificate is only accessible by the istio-proxy of the application pod and since it lives in memory, the private key never leaves the node. Please read <a href="https://istio.io/latest/docs/concepts/security/" target="_self">this</a> for more information. You can check the certificate at:</p>
+
+<p><span class="example2">$ istioctl proxy-config secret httpbin-74fb669cc6-wn2ch.with-sidecar-injection -o json | jq &#39;.dynamicActiveSecrets[0].secret.tlsCertificate.certificateChain.inlineBytes&#39; | sed &#39;s/&quot;//g&#39; | base64 --decode | openssl x509 -noout -text</span></p>
+
+<p>For SDS mode, all the certs and Keys live in memory of istio-proxy. To view that you can port-forward the httpbin pod with sidecar and check for secretsconfigdump at <strong>http://localhost:15000/config_dump </strong>in configdump of envoy proxy. For example:</p>
+<span class="example2">$ kubectl port-forward httpbin-74fb669cc6-wn2ch -n with-sidecar-injection 15000:15000</span>
+
+<p><span class="example2">&quot;@type&quot;: &quot;type.googleapis.com/envoy.admin.v3.SecretsConfigDump&quot;,<br>   &quot;dynamic_active_secrets&quot;: [<br>    {<br>     &quot;name&quot;: &quot;default&quot;,<br>     &quot;version_info&quot;: &quot;0&quot;,<br>     &quot;last_updated&quot;: &quot;2021-06-02T17:34:32.508Z&quot;,<br>     &quot;secret&quot;: {<br>      &quot;@type&quot;: &quot;type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret&quot;,<br>      &quot;name&quot;: &quot;default&quot;,<br>      &quot;tls_certificate&quot;: {<br>       &quot;certificate_chain&quot;: {<br>        &quot;inline_bytes&quot;: &quot;LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUVyekNDQXBlZ0F3SUJBZ0lRS3FEY1FBNnVDcDhMUE82ZDBNQkR3VEFOQmdrcWhraUc5dzBCQVFzRkFEQkcKTVJNd0VRWURWUVFLREFwQmMzQmxiaUJOWlhOb01Sd3dHZ1lEVl &lt;TRUNCATED&gt;3QjFsOHFLenJhTGtQeTMzRjEKWnJxUXhQSTZEWFFFZ1V5bCtpZGYrVW9OQlBzMWhrVjRuZ2FUWDdVNzFsN29LNnpUblFCUXRnTkNlR1NwCi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K&quot;<br>       },<br>       &quot;private_key&quot;: {<br>        &quot;inline_bytes&quot;: &quot;W3JlZGFjdGVkXQ==&quot;<br>       }<br>      }<br>     }<br>    },<br>    {<br>     &quot;name&quot;: &quot;ROOTCA&quot;,<br>     &quot;version_info&quot;: &quot;0&quot;,<br>     &quot;last_updated&quot;: &quot;2021-05-18T17:34:36.701Z&quot;,<br>     &quot;secret&quot;: {<br>      &quot;@type&quot;: &quot;type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret&quot;,<br>      &quot;name&quot;: &quot;ROOTCA&quot;,<br>      &quot;validation_context&quot;: {<br>       &quot;trusted_ca&quot;: {<br>        &quot;inline_bytes&quot;: &quot;LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUZDVENDQXZHZ0F3SUJBZ0lKQU8vemFzNGR4TzZhTUEwR0NTcUdTSWIzRFFFQkJRVUFNQ0l4RGpBTUJnTlYKQkFvTUJVbHpkR2x2TVJBd0RnWURWUVFEREF &lt;TRUNCATED&gt; 5MMWJuNUl1elVNK0oKeHZwdWU2SEdaZDV4bXovcVBuUlpobUNiZkJoVS81SGp1SWV2RFY0UEpMWVJiNHdCMWw4cUt6cmFMa1B5MzNGMQpacnFReFBJNkRYUUVnVXlsK2lkZitVb05CUHMxaGtWNG5nYVRYN1U3MWw3b0s2elRuUUJRdGdOQ2VHU3AKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=&quot;<br>       }<br>      }<br>     }<br>    }</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Aspen Mesh:  1.6.x and later</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+N/A
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>None</p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>With the citadel case, the private key is created in the secret (which is a namespace wide object). It is better to define the necessary RBAC rules and Authorization in such a way that only authorized user gets to the pod. With SDS, Since the key is only retrieved by localhost via querying on envoy proxy on port 15000 and not via external host. Here is the basic <a href="https://fossies.org/linux/istio/pkg/istio-agent/README.md" target="_self">workflow</a> of CSR and Cert generation: The exchange of key and certs are done via communication between SDS and envoy which happens through unix socket and are done in memory. Therefore this should suffice for integrity and confidentiality. With 1.6 and above, we have distroless istio-proxy so we cannot have a shell to look inside but if you have an old 1.5 environment, you can see that the directory <strong>/etc/istio/proxy/sds</strong> has all the files open by pilot-agent over unix socket.</p>
+</article>
+</body>
+</html>

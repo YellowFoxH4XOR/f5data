@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K33748791: SELinux configuration troubleshooting for NGINX Controller</title>
+<meta name="description" content="Knowledge: SELinux configuration troubleshooting for NGINX Controller — It is normal for the audit2allow executable to log a compile error message and subsequently create a Type Enforcement (TE) file containing only a module header when there are no denials present in an…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K33748791">
+</head>
+<body>
+<header>
+<h1>K33748791: SELinux configuration troubleshooting for NGINX Controller</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2021-07-12</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Controller: 3.15.X, 3.14.X, 3.13.X, 3.12.X, 3.10.X, 3.9.X, 3.8.X, 3.7.X, 3.6.X, 3.5.X, 3.4.X, 3.3.X, 3.2.X, 3.1.X, 3.0.X, 3.22.X, 3.21.X, 3.20.X, 3.19.X, 3.18.X, 3.17.X, 3.16.X, 3.21.0, 3.20.1, 3.20.0, 3.19.4-APIM, 3.19.3-APIM, 3.19.2-APIM, 3.19.1-APIM, 3.19.0-APIM, 3.18.3, 3.18.2, 3.18.1-APIM, 3.18.1, 3.18.0-APIM, 3.18.0, 3.17.0, 3.16.1, 3.15.0, 3.14.0, 3.13.0, 3.12.1, 3.22.5, 3.12.0, 3.22.4, 3.10.0, 3.22.3, 3.9.0, 3.22.2, 3.8.0, 3.22.1, 3.7.0, 3.22.0, 3.6.0, 3.X.X, 3.4.0, 3.3.0, 3.2.0, 3.1.0, 3.0.0, 3.5.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K33748791">https://my.f5.com/manage/s/article/K33748791</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Issue</h3><p>It is normal for the <strong>audit2allow</strong> executable to log a compile error message and subsequently create a Type Enforcement (TE) file containing only a module header when there are no denials present in an <strong>auditd</strong> log file.</p>
+
+<p>It is helpful to always probe the system, before committing, to see if SELinux is the cause of any system or application issues. To determine this, ask the following questions:</p>
+
+<ol><li>Is the problem there when I temporarily set SELinux mode to permissive?
+	<p><span class="code"># sudo setenforce 0</span></p>
+	</li><li>Is the problem there when Enforcing is on?
+	<p><span class="code"># sudo setenforce 1</span></p>
+	</li></ol>
+
+<p>If the answer to 1) is <strong>Yes</strong>, then it’s unlikely to be an SELinux issue.</p>
+
+<p>If the answer to 1) is <strong>No</strong> and the answer to 2) is <strong>Yes</strong>, then the issue is caused by SELinux. In this case, you need to go through the procedure again to find the corresponding denial and create a policy to allow it. Because of this, when starting, you should not modify <strong>auditd</strong> logs but rather leave them as they are because it is very easy to miss a denial event.</p>
+
+<p>Furthermore, SELinux does not search for issues. Rather, it reacts to events and decides whether they should proceed. This means that you may have missed an earlier denial, possibly because the event had not occurred earlier, so there was no message logged from which a policy could be created. Therefore, it is important that you perform as much work in permissive mode as possible and only commit to the permanent change of enforcing when you are absolutely certain it is safe to do so because a mistake could permanently lock up your Linux host if, for example, SELinux is blocking a service like <strong>sshd</strong> from starting up and it may be your only access point in to the Linux host.</p>
+
+<p>There are precautions that you can take to prevent the loss of the Linux host in case of a mistake.</p>
+
+<p>As long as SELinux is in permissive mode or you&#39;ve only temporarily set enforcing, the Linux host at worst needs only to be restarted to revert back to permissive mode to recover the system. However, when the change is made permanent by editing the file <strong>/etc/selinux/config</strong>, it is often best to take precautions to avoid the loss of the Linux host because mistakes may be made.</p>
+
+<p>There are several ways to recover the Linux host, but the most straightforward is to boot into console (tty) mode, edit the<strong> /etc/selinux/config</strong> file, and restart again. Another option is to take a snapshot of your Linux host before you enable enforcing. If, however, you don&#39;t have access to console mode or can&#39;t take snapshots, the following method is a simple approach that you can adopt in your policy development lifecycle and will prevent loss of the Linux host. However, this approach does not cover all possible scenarios.</p>
+
+<ol><li>Create the following script in your SElinux administrator’s home directory and call it <strong>check-selinux.sh</strong>. In this example, the directory is <strong>/home/ubuntu/bin</strong>.
+
+	<p><span class="code">#!/bin/bash<br>	date_str=$(date)<br>	echo &quot;Selinux restore service: ${date_str}&quot; &gt; /home/ubuntu/bin/selinux_restore_service.log<br>	CONF=/etc/selinux/config<br>	selinux_mode=$(sudo getenforce 2&gt; /dev/null)<br>	if [ &quot;${selinux_mode}&quot; = &quot;Enforcing&quot; ] || [ &quot;${selinux_mode}&quot; = &quot;Permissive&quot; ]; then<br>	                sudo chmod -R a+w /etc/selinux/<br>	                sudo sed -e &quot;s/^SELINUX=.*$/SELINUX=permissive/&quot; &lt; $CONF &gt; $CONF.new<br>	                sudo mv $CONF.new $CONF<br>	                sudo chown root /etc/selinux/config<br>	                sudo chgrp root /etc/selinux/config<br>	fi<br>	<br>	while true<br>	do<br>	        sleep 5<br>	done</span></p>
+	</li><li>Make it executable:
+	<p><span class="code">sudo chmod a+x check-selinux.sh</span></p>
+	</li><li>Create a service file called <strong>/etc/systemd/system/check-selinux.service</strong>:
+	<p><span class="code">[Unit]<br>	Description=Selinux Monitor service<br>	After=network.target<br>	StartLimitIntervalSec=0<br>	[Service]<br>	Type=simple<br>	Restart=always<br>	RestartSec=1<br>	User=ubuntu<br>	ExecStart=/home/ubuntu/bin/check-selinux.sh<br>	<br>	[Install]<br>	WantedBy=multi-user.target</span></p>
+	</li><li>Install and start the new service
+	<p><span class="code">sudo systemctl enable check-selinux<br>	sudo service check-selinux start</span></p>
+	</li></ol>
+
+<p>This service is simple and on each restart sets the SELinux mode to permissive in the <strong>/atc/selinux/config</strong> file. It does not take effect until the second restart. This allows you to continue working without risking the Linux host.</p>
+
+<p>On Rhel7.x, there is a bug in the default docker which prevents <strong>etcd</strong> and Flannel resource directories from being labelled correctly for SELinux. This issue shows as a “permission denied” message in the startup logs of the corresponding docker containers.</p>
+
+<p>For <strong>etcd</strong>, perform the following (<strong>-a</strong> option ensures the process is listed even if it has exited):</p>
+
+<p><span class="code"># docker ps -a | grep etcd<br>fc04cbf0ed40        2c4adeb21b4f            &quot;etcd --advertise-...&quot;   9 minutes ago        Up 9 minutes                                                                                       k8s_etcd_etcd-ip-192-0-2-2.us-west-2.compute.internal_kube-system_3208211c427f97d8806ebd529e98ea80_29<br>30825d5bd7ad        k8s.gcr.io/pause:3.1    &quot;/pause&quot;                 9 minutes ago       Exited (0) 10 minutes ago                                                                          k8s_POD_etcd-ip-192-0-2-2.us-west-2.compute.internal_kube-system_3208211c427f97d8806ebd529e98ea80_5</span></p>
+
+<p>Next get the <strong>etcd</strong> container, here it is <strong>fc04cbf0ed40</strong>, and execute the following at the terminal:</p>
+
+<p><span class="code">docker logs fc04cbf0ed40<br>...<br>2021-06-15 11:10:32.849276 C | mvcc/backend: cannot open database at /var/lib/etcd/member/snap/db (stat /var/lib/etcd/member/snap/db: permission denied)<br>panic: cannot open database at /var/lib/etcd/member/snap/db (stat /var/lib/etcd/member/snap/db: permission denied)<br>...</span></p>
+
+<p>If the logs contain the previously indicated message or similar, this is an indicator that the corresponding directory<strong> /var/lib/etcd</strong> has not been labelled correctly and that SELinux is blocking the docker container runtime from accessing it. The domain of the docker container runtime is <strong>container_t</strong>, so, in principle, the directory needs to have its SELinux context updated to allow docker to access it. You can do this by entering the following command:</p>
+
+<p><span class="code">sudo chcon -R -t container_file_t /var/lib/etcd</span></p>
+
+<p>For Flannel, the process is very similar. In this case, the error message is similar to the following:</p>
+
+<p><span class="code">cp: can&#39;t create &#39;/etc/cni/net.d/10-flannel.conflist&#39;: File exists</span></p>
+
+<p>To fix the issue, enter the following command at the terminal:</p>
+
+<p><span class="code">sudo chcon -R -t container_file_t /etc/cni</span></p>
+
+<p>On Ubuntu 18.04, there is a known bug in the default <strong>systemd</strong> process v236, which prevents SELinux and docker working together. The issue has been resolved in <strong>systemd</strong> v239+. In this case, the only solution is to upgrade <strong>systemd</strong>.</p>
+</article>
+</body>
+</html>

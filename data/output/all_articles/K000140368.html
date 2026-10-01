@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000140368: TLS 1.3 PSK resumption and &quot;Cache Size&quot; / &quot;Cache Timeout&quot; parameters</title>
+<meta name="description" content="Support Solution: TLS 1.3 PSK resumption and &quot;Cache Size&quot; / &quot;Cache Timeout&quot; parameters — Client-ssl profile &quot;Cache Size&quot; and &quot;Cache Timeout&quot; parameters are used to control TLS session resumption.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000140368">
+</head>
+<body>
+<header>
+<h1>K000140368: TLS 1.3 PSK resumption and &quot;Cache Size&quot; / &quot;Cache Timeout&quot; parameters</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-07-18</dd>
+<dt>Updated</dt><dd>2024-07-18</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.5.X, 17.5.1, 17.5.0, 17.1.2, 16.1.6, 16.1.5, 17.1.0, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 15.1.10, 15.1.9, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.1.8, 17.1.X, 16.1.X, 15.1.X, 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000140368">https://my.f5.com/manage/s/article/K000140368</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Client-ssl profile &quot;Cache Size&quot; and &quot;Cache Timeout&quot; parameters are used to control TLS session resumption.</p>
+<p>Given the protocol specification change in TLS 1.3 (<span style="text-decoration: underline;"><a href="https://datatracker.ietf.org/doc/html/rfc8446#section-2.2" target="_blank">RFC8446 section 2.2</a></span>), now client-ssl profile &quot;Cache Size&quot; parameter has no effect on TLS 1.3 PSK resumption, as BIG-IP does not cache and use &quot;Session ID&quot; for TLS 1.3 resumption.</p>
+<p><em>  &gt; 2.2. Resumption and Pre-Shared Key (PSK)</em><br><em>  &gt; ...</em><br><em>  &gt; In TLS 1.2 and below, this functionality was provided by &quot;session IDs&quot; and &quot;session tickets&quot; [RFC5077]. Both mechanisms are obsoleted in TLS 1.3.</em></p>
+<p>Meanwhile, client-ssl profile &quot;Cache Timeout&quot; parameter is still indirectly used in conjunction with &quot;Session Ticket Timeout&quot; parameter. When &quot;Session Ticket Timeout&quot; parameter is 0 (default), BIG-IP uses &quot;Cache Timeout&quot; parameter value (default 3600) as ticket_lifetime value in &quot;New Session Ticket&quot; message to the client. <span style="text-decoration: underline;"><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_profile_client-ssl.html" target="_blank">Clouddocs</a></span> explains &quot;Session Ticket Timeout&quot; as follows.</p>
+<p>  &gt; <em>session-ticket-timeout</em><br>  &gt; <em>     Specifies the session ticket timeout. The default value is 0 which means cache timeout is used.</em></p>
+<p><span style="color: rgb(24, 24, 24);">In lieu of &quot;Cache Size&quot; and &quot;Cache Timeout&quot; parameters, &quot;Session Ticket&quot; parameter and &quot;Session Ticket Timeout&quot; parameters are used to control TLS 1.3 PSK resumption.</span></p>
+<p><em><span style="color: rgb(21, 137, 31);"><strong>Note:</strong> In order to use TLS 1.3 PSK resumption, &quot;Session Ticket&quot; parameter needs to be enabled on client-ssl profile (default disabled). Refer to <span style="text-decoration: underline;"><a href="https://my.f5.com/manage/s/article/K000138324" target="_blank">K000138324</a></span>.</span></em></p>
+<p> </p>
+<p> </p>
+<p>Here is demonstration of how TLS 1.3 PSK resumption works. Following example configuration is used to confirm TLS 1.3 PSK resumption.</p>
+<pre class="language-markup"><code>ltm virtual /Common/clientssl_tls13_vs {
+    destination /Common/10.1.1.202:443
+    ip-protocol tcp
+    mask 255.255.255.255
+    pool /Common/http_pool
+    profiles {
+        /Common/my_clientssl_tls13 {
+            context clientside
+        }
+        /Common/tcp { }
+    }
+    serverssl-use-sni disabled
+    source 0.0.0.0/0
+    source-address-translation {
+        pool /Common/my_snatpool
+        type snat
+    }
+    translate-address enabled
+    translate-port enabled
+}
+ltm profile client-ssl /Common/my_clientssl_tls13 {
+    app-service none
+    cert-key-chain {
+        web001.f5ss_ubuntu2204server1ca.f5ss_0 {
+            cert /Common/web001.f5ss.local
+            chain /Common/ubuntu2204server1ca.f5ss.local
+            key /Common/web001.f5ss.local
+        }
+    }
+    cipher-group /Common/my_cipher_group
+    ciphers none
+    defaults-from /Common/clientssl
+    inherit-ca-certkeychain true
+    inherit-certkeychain false
+    options { dont-insert-empty-fragments no-dtlsv1.2 }
+    session-ticket enabled
+    session-ticket-timeout 123
+}
+ltm cipher group /Common/my_cipher_group {
+    allow {
+        /Common/my_cipher_rule { }
+    }
+}
+ltm cipher rule /Common/my_cipher_rule {
+    cipher DEFAULT
+}</code></pre>
+<p> </p>
+<p>Here is packet capture of 2 client side TLS connections. On the first TLS connection, virtual server sends &quot;Certificate&quot; TLS message to the client and full TLS handshake is performed. On the second TLS connection, PSK resumption is performed.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000U9c9&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007lUy5" alt="overview.png" style="display: block;margin-left: auto;margin-right: auto;"></img></p>
+<p style="text-align: center;"><span style="color: rgb(102, 102, 102);">Figure: TLS 1.3 resumption overview</span></p>
+<p> </p>
+<p><em><span style="color: rgb(21, 137, 31);"><strong>Note:</strong> Packet capture is taken on BIG-IP with &quot;--f5 ssl&quot; tcpdump option and packet capture is decrypted by pre-master secret log file. Without decryption, you may not see whole TLS handshake messages. Refer to <span style="text-decoration: underline;"><a href="https://my.f5.com/manage/s/article/K31793632" target="_blank">K31793632</a></span> for more in detail.</span></em></p>
+<p> </p>
+<p>On the first TLS connection, after TLS handshake completed, BIG-IP sends frame-17 &quot;New Session Ticket&quot; TLS message to the client. On this &quot;New Session Ticket&quot; TLS message, you will see &quot;session-ticket-timeout 123&quot; is used. If &quot;Session Ticket Timeout&quot; is left as default &quot;0&quot;, ticket_lifetime here will be 3600 seconds (default &quot;Cache Timeout&quot; value is used).</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000U9c9&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007lUy0" alt="send-session-ticket-to-client.png" style="display: block;margin-left: auto;margin-right: auto;"></img></p>
+<p style="text-align: center;"><span style="color: rgb(102, 102, 102);">Figure: &quot;New Session Ticket&quot; TLS message to the client</span></p>
+<p> </p>
+<p>Next, on the second TLS connection, the client set &quot;key_share&quot; extension and &quot;pre_shared_key&quot; extension in &quot;Client Hello&quot; TLS message. The client also set previously received &quot;Session Ticket&quot; value as &quot;PSK Identity&quot; on &quot;pre_shared_key&quot; extension.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000U9c9&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007lUxq" alt="2nd-client-hello.png" style="display: block;margin-left: auto;margin-right: auto;"></img></p>
+<p style="text-align: center;"><span style="color: rgb(102, 102, 102);">Figure: &quot;Client Hello&quot; TLS message on second connection</span></p>
+<p> </p>
+<p>BIG-IP virtual server received this &quot;Client Hello&quot; message, accepted it, and resumed connection without performing full TLS handshake.</p>
+<p> </p>
+<h2>Environment</h2>
+<ul><li>TLS 1.3</li><li>PSK resumption</li></ul>
+<p> </p>
+<h2>Cause</h2>
+<p>None</p>
+<p> </p>
+<h2>Recommended Actions</h2>
+<p>None</p>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

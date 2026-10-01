@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000139370: CLIENTSSL_SERVERHELLO_SEND event does not fire on client-ssl virtual server.</title>
+<meta name="description" content="Support Solution: CLIENTSSL_SERVERHELLO_SEND event does not fire on client-ssl virtual server. — CLIENTSSL_SERVERHELLO_SEND event does not fire even though an iRule is attached to client-ssl virtual server. Here is sample iRule.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000139370">
+</head>
+<body>
+<header>
+<h1>K000139370: CLIENTSSL_SERVERHELLO_SEND event does not fire on client-ssl virtual server.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-04-23</dd>
+<dt>Updated</dt><dd>2024-04-23</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.X.X, 17.X.X, 15.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000139370">https://my.f5.com/manage/s/article/K000139370</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>CLIENTSSL_SERVERHELLO_SEND event does not fire even though an iRule is attached to client-ssl virtual server. Here is sample iRule.</p>
+<pre class="language-markup"><code>ltm rule ssl-test-rule {
+   when CLIENTSSL_SERVERHELLO_SEND {
+      log local0. &quot;MYDEBUG: CONNECTION: [IP::client_addr]:[TCP::client_port] to [IP::local_addr]:[TCP::local_port]&quot;
+      log local0. &quot;MYDEBUG: TMM: TMM is [TMM::cmp_unit]&quot;
+   }
+}</code></pre>
+<p> </p>
+<h2>Environment</h2>
+<ul><li>SSL virtual server.</li><li>An iRule with CLIENTSSL_SERVERHELLO_SEND event.</li></ul>
+<p> </p>
+<ul></ul>
+<h2>Cause</h2>
+<p>As explained on <a href="https://clouddocs.f5.com/api/irules/CLIENTSSL_SERVERHELLO_SEND.html" title="CLIENTSSL_SERVERHELLO_SEND" target="_blank">clouddocs iRule document</a>, SSL Forward Proxy Bypass configuration is required for CLIENTSSL_SERVERHELLO_SEND event to fire. </p>
+<p><em>  &gt; Triggered when the system is about to send its SSL ServerHello message on the clientside connection. This event is triggered only when in Forward Proxy Bypass mode and the bypass decision is still unknown</em></p>
+<p>Here is sample configuration with which CLIENTSSL_SERVERHELLO_SEND event can fire.</p>
+<pre class="language-markup"><code>ltm virtual fwdp_vs {
+    destination 0.0.0.0:https
+    ip-protocol tcp
+    mask any
+    pool nexthop_pool
+    profiles {
+        my_clientssl_fwdp {
+            context clientside
+        }
+        my_serverssl_fwdp {
+            context serverside
+        }
+        tcp { }
+    }
+    rules {
+        ssl-test-rule
+    }
+    serverssl-use-sni disabled
+    source 0.0.0.0/0
+    source-address-translation {
+        pool my_snatpool2
+        type snat
+    }
+    translate-address enabled
+    translate-port enabled
+}
+ltm profile client-ssl my_clientssl_fwdp {
+    app-service none
+    cert-key-chain {
+        default {
+            cert default.crt
+            key default.key
+        }
+        ubuntu2004server1ca.f5ss_1 {
+            cert ubuntu2004server1ca.f5ss.local
+            key ubuntu2004server1ca.f5ss.local
+            usage CA
+        }
+    }
+    defaults-from clientssl
+    inherit-ca-certkeychain false
+    inherit-certkeychain true
+    ssl-forward-proxy enabled
+    ssl-forward-proxy-bypass enabled
+}
+ltm profile server-ssl my_serverssl_fwdp {
+    app-service none
+    defaults-from serverssl
+    revoked-cert-status-response-control ignore
+    ssl-forward-proxy enabled
+    ssl-forward-proxy-bypass enabled
+}
+ltm rule ssl-test-rule {
+   when CLIENTSSL_SERVERHELLO_SEND {
+      log local0. &quot;MYDEBUG: CONNECTION: [IP::client_addr]:[TCP::client_port] to [IP::local_addr]:[TCP::local_port]&quot;
+      log local0. &quot;MYDEBUG: TMM: TMM is [TMM::cmp_unit]&quot;
+   }
+}</code></pre>
+<p> </p>
+<p>Here are generated iRule logs.</p>
+<p> </p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Apr 23 17:22:08 bigip.local info tmm6[9977]: Rule /Common/ssl-test-rule &lt;CLIENTSSL_SERVERHELLO_SEND&gt;: MYDEBUG: CONNECTION: 10.1.1.60:50328 to 192.168.10.51:443</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">Apr 23 17:22:08 bigip.local info tmm6[9977]: Rule /Common/ssl-test-rule &lt;CLIENTSSL_SERVERHELLO_SEND&gt;: MYDEBUG: TMM: TMM is 6</span></p>
+<p> </p>
+<h2>Recommended Actions</h2>
+<p>Make sure SSL Forward Proxy Bypass is enabled on client-ssl profile and server-ssl profile.</p>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None</p>
+<p> </p>
+</article>
+</body>
+</html>

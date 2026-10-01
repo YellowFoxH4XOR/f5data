@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000137661: Allow TMM to use the BGP learned route for default gateway</title>
+<meta name="description" content="Support Solution: Allow TMM to use the BGP learned route for default gateway — Mapres building TMM&#x27;s initial configuration , where discovering cluster gateway and setup as default. In most BIG-IP Next CNF deployments that connect external BGP router requires TMM to use the BGP…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000137661">
+</head>
+<body>
+<header>
+<h1>K000137661: Allow TMM to use the BGP learned route for default gateway</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-11-29</dd>
+<dt>Updated</dt><dd>2025-02-07</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP Next</li><li>BIG-IP Next CNF</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000137661">https://my.f5.com/manage/s/article/K000137661</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+
+<p>Mapres building TMM&#39;s initial configuration , where discovering cluster gateway and setup as default. In most BIG-IP Next CNF deployments that connect external BGP router requires TMM to use the BGP learned route for default gateway. To allow configuration, TMM_IGNORE_GATEWAYS environment has to be set to true in helm values.</p>
+
+<h2>Environment</h2>
+
+<ul><li>OpenShift 4.12</li><li>BIG-IP Next CNF </li></ul>
+
+<h2>Cause</h2>
+
+<p> Removing the default gateway from the TMM routing table</p>
+
+<h2>Recommended Actions</h2>
+
+<div style="margin-left: 40px;">1. Check current configuration in TMM container and route via bdt_cli from debug container
+<pre class="ckeditor_codeblock">
+<strong>#  oc exec -it deploy/f5-tmm -c f5-tmm -- cat tmm_init.tcl | grep -i gateway</strong>
+gateway 169.254.1.1
+gateway6 fe80::ecee:eeff:feee:eeee</pre>
+
+<pre class="ckeditor_codeblock">
+<strong># oc exec -it deploy/f5-tmm -c debug -- bdt_cli -u -s tmm0:8850 route</strong>
+routeType:1 isIpv6:false destNet:{ip:{addr:10.1.30.0, rd:0} pl:24} gw:{ip:{addr:10.1.10.52, rd:0}} gwType:1 interface:clientside
+routeType:0 isIpv6:false destNet:{ip:{addr:&lt;none&gt;, rd:0} pl:0} gw:{ip:{addr:169.254.1.1, rd:0}} gwType:1 interface:eth0 --&gt;&gt; going towards calico defined gw
+routeType:1 isIpv6:false destNet:{ip:{addr:10.1.10.0, rd:0} pl:24} gw:{ip:{addr:&lt;none&gt;, rd:0}} gwType:0 interface:clientside
+routeType:1 isIpv6:false destNet:{ip:{addr:10.1.20.0, rd:0} pl:24} gw:{ip:{addr:&lt;none&gt;, rd:0}} gwType:0 interface:serverside
+routeType:1 isIpv6:false destNet:{ip:{addr:127.20.0.0, rd:0} pl:16} gw:{ip:{addr:&lt;none&gt;, rd:0}} gwType:0 interface:tmm_bp
+routeType:0 isIpv6:false destNet:{ip:{addr:169.254.1.1, rd:0} pl:32} gw:{ip:{addr:&lt;none&gt;, rd:0}} gwType:0 interface:eth0
+routeType:1 isIpv6:false destNet:{ip:{addr:10.1.215.204, rd:0} pl:32} gw:{ip:{addr:&lt;none&gt;, rd:0}} gwType:0 interface:eth0</pre>
+2 . Setup TMM_IGNORE_GATEWAYS and TMM_CALICO_ROUTER , which can be done edit TMM deployment or  by redeploy CNF<br> 
+<div style="margin-left: 40px;">2.1. Edit TMM deployment </div>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+<strong># oc edit deploy/f5-tmm</strong>
+
+spec:
+  template:
+    spec:
+        env:
+		- name: TMM_CALICO_ROUTER
+		  value: default
+		- name: TMM_IGNORE_GATEWAYS
+		  value: &quot;true&quot;</pre>
+
+<div style="margin-left: 40px;">2.2 . Redeploy CNF via helm using values.yaml, where added such environments - refer to <a href="https://clouddocs.f5.com/cnfs/robin/latest/cnf-deploy-robin.html#big-ip-controller" target="_blank">BIG-IP Controller installation</a>  
+
+<pre class="ckeditor_codeblock">
+tmm:
+  customEnvVars:
+   - name: TMM_CALICO_ROUTER
+   value: &quot;default&quot;
+   - name: TMM_IGNORE_GATEWAYS
+   value: &quot;TRUE&quot;
+</pre>
+</div>
+</div>
+
+<h2> </h2>
+
+<p style="margin-left: 40px;">3. Check if TMM configured with BGP default gateway and gateway was removed from<strong> tmm_init.tcl </strong>in f5-tmm container of TMM pod, <br> </p>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+<strong>#  oc exec -it deploy/f5-tmm -c f5-tmm -- cat tmm_init.tcl | grep -i gateway </strong>
+</pre>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+<strong># oc exec -it deploy/f5-tmm -c debug -- bdt_cli -u -s tmm0:8850 route</strong>
+routeType:1 isIpv6:false destNet:{ip:{addr:&lt;none&gt;, rd:0} pl:0} gw:{ip:{addr:10.1.20.52, rd:0}} gwType:1 interface:serverside --&gt;&gt; the default BGP route 
+</pre>
+
+<p style="margin-left: 40px;"><br>4. When enabling the BIG-IP Contoller TMM_IGNORE_GATEWAYS Helm parameter or edit TMM deployement, cluster (Pod-to-Pod) traffic may fail. Use the steps below to manually create routes for cluster traffic - <a href="https://clouddocs.f5.com/cnfs/openshift/latest/cnf-static-route-crd.html?highlight=tmm_ignore_gateways#cluster-traffic" target="_blank">static route documentation </a></p>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+<strong># vi cnf_static_route.yaml</strong>
+apiVersion: &quot;k8s.f5net.com/v1&quot;
+kind: F5BigNetStaticroute
+metadata:
+ name: &quot;cni-static-route-pod&quot;
+ namespace: &quot;cnf-gateway&quot;
+spec:
+ destination: 10.1.0.0
+ dynamic: false
+ prefixLen: 16
+ type: gateway
+ gateway: 169.254.1.1
+---
+apiVersion: &quot;k8s.f5net.com/v1&quot;
+kind: F5BigNetStaticroute
+metadata:
+ name: &quot;cni-static-route-service&quot;
+ namespace: &quot;cnf-gateway&quot;
+spec:
+ destination: 10.152.183.0
+ dynamic: false
+ prefixLen: 24
+ type: gateway
+ gateway: 169.254.1.1
+
+<strong># oc apply -f cnf_static_route.yaml</strong>
+
+<strong># oc exec -it deploy/f5-tmm -c debug -- bdt_cli -u -s tmm0:8850 route</strong>
+routeType:1 isIpv6:false destNet:{ip:{addr:&lt;none&gt;, rd:0} pl:0} gw:{ip:{addr:10.1.20.52, rd:0}} gwType:1 interface:serverside
+routeType:0 isIpv6:false destNet:{ip:{addr:10.152.183.0, rd:0} pl:24} gw:{ip:{addr:169.254.1.1, rd:0}} gwType:1 interface:eth0  --&gt;&gt;
+routeType:0 isIpv6:false destNet:{ip:{addr:10.1.0.0, rd:0} pl:16} gw:{ip:{addr:169.254.1.1, rd:0}} gwType:1 interface:eth0      --&gt;&gt;</pre>
+
+<p style="margin-left: 40px;"> </p>
+
+<h2><br>Additional Information</h2>
+
+<p><br>None</p>
+</article>
+</body>
+</html>

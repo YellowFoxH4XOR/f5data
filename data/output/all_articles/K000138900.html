@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000138900: Failover does not work after changing the management ip addresses of tenants</title>
+<meta name="description" content="Support Solution: Failover does not work after changing the management ip addresses of tenants — After changing the management IP address of a tenant hosted on rSeries, failover does not work.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000138900">
+</head>
+<body>
+<header>
+<h1>K000138900: Failover does not work after changing the management ip addresses of tenants</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-03-28</dd>
+<dt>Updated</dt><dd>2026-07-30</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.X.X, 15.0.0, 15.0.1, 15.0.X, 15.1.0, 15.1.1, 15.1.2, 15.1.3, 15.1.4, 15.1.5, 15.1.6, 15.1.7, 15.1.8, 15.1.9, 15.1.10, 15.1.X, 17.0.0, 17.0.X, 17.1.0, 17.1.1, 17.1.X, 17.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000138900">https://my.f5.com/manage/s/article/K000138900</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>After changing the management IP address of a tenant hosted on rSeries, failover does not work.</p>
+<p>A rebuild of device trust is performed but still, failover does not work.</p>
+<p>In <strong>/var/log/ltm</strong> log, it is showing high availability heartbeat is lost after the tenant management IP address change. For example,</p>
+<div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">Jul 10 00:00:53 example.tenant notice mcpd[0000]: 010713bc:5: Propose change to management IP address (192.168.1.1/255.255.255.0).</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">Jul 10 00:00:53 example.tenant notice chmand[0000]: 012a0005:5: mgmtIpDel: deleting IP (192.168.9.9/25), interface (mgmt)</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">Jul 10 00:00:53 example.tenant notice chmand[0000]: 012a0005:5: mgmtIpAdd: adding IP (192.168.1.1/24), interface (mgmt)</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">Jul 10 00:00:14 example.tenant warning sod[0000]: 010c0083:4: No failover status messages received for 3.100 seconds, from device example.tenant (192.168.1.1) (unicast: -&gt; 192.168.9.9).</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">Jul 10 00:00:30 Jul 10 00:00:14 err sod[0000]: 010c003b:3: bind fails on recv_sock_fd addr 192.168.9.9 port 1026 error Cannot assign requested address.</span></div>
+</div>
+<p>The old IP address is still present after changing the management IP address on a tenant and failover is not working. You may observe Active/Active situation for the same traffic group on different devices.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP HA</li><li>Management IP addresses of tenants are changed</li><li>rSeries</li></ul>
+<h2>Cause</h2>
+<p>The sod (failover) process still holds onto the old management IP address thus causing failover not to work.</p>
+<h2>Recommended Actions</h2>
+<p>To identify whether an outdated management-ip address is used, you can find the information by following one or more steps below:</p>
+<p>Run the below &#39;netstat&#39; command from cli and verify if the sod process holds the correct management IP address.</p>
+<p><span style="background-color: #f1f1f1;">netstat -pan | grep &#39;1026&#39;</span></p>
+<p>The sodlog under the <strong>/var/log/sodlog</strong> could also indicate the management IP address used when the sod started up, for example:</p>
+<div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">-- Mgmt --</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">IP: 192.168.1.2 slot_id: 0 self dev: true</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">-- Unicast Recv --</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">L fd=5 on 1.1.1.1:1026</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">open_fail: 0 udp_ready: true recv_ts: 0</span></div>
+</div>
+<p>In addition, you may also take traffic capture of the unicast IP address to inspect which management-ip address is used for the HA heartbeat. You may follow the tcpdump similar to the below one:</p>
+<p><span style="background-color: #f1f1f1;">tcpdump -s0 -ni 0.0:nnn -vw /shared/tmp/place-to-store-the-packet.pcap host &lt;unicast-ip-1&gt; or &lt;unicast-ip-2&gt;</span></p>
+<p>The management IP in the heartbeat packet can be found in the section below:</p>
+<div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">Frame 000: 334 bytes on wire (2672 bits), 334 bytes captured (2672 bits)</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">Ethernet II, Src: F5Networ_12:34:56 (14:a9:d0:12:34:56), Dst: F5Networ_54:32:01 (14:a9:d0:54:32:01)</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">802.1Q Virtual LAN, PRI: 0, DEI: 0, ID: 4094</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">Internet Protocol Version 4, Src: 192.168.1.1, Dst: 192.168.1.2</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">User Datagram Protocol, Src Port: 12340, Dst Port: 1026</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">F5 HA Heartbeat</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">    Message length: 203 (0x000000cb)</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">    Sequence number: 54321 (0x0000xxxx)</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">    Message request ID: 0 (0x00000000)</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">    Message flags: 0 (0x00000000)</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">    HA message</span></div>
+<div><strong><span style="font-family: &#39;courier new&#39;, courier, monospace;">        Management address: ::ffff:192.168.9.9</span></strong></div>
+<div><strong><span style="font-family: &#39;courier new&#39;, courier, monospace;">        Management address: 192.168.9.9</span></strong></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">        Slot ID: 0x0000</span></div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">--snipped--</span></div>
+</div>
+<p>If an old management IP address is seen, restart the sod daemon by:</p>
+<p>via TMSH:</p>
+<p><span style="background-color: #f1f1f1;">tmsh restart sys service sod</span></p>
+<p>or via the Bash shell:</p>
+<p><span style="background-color: #f1f1f1;">bigstart restart sod</span></p>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

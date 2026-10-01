@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000159720: Unable to update NS record</title>
+<meta name="description" content="Support Solution: Unable to update NS record — This issue occurs even when a corresponding A record (glue record) exists for the nameserver. The problem is related to BIND nameserver requirements for exact format consistency between NS records…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000159720">
+</head>
+<body>
+<header>
+<h1>K000159720: Unable to update NS record</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-01-27</dd>
+<dt>Updated</dt><dd>2026-01-27</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 17.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000159720">https://my.f5.com/manage/s/article/K000159720</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>1. Description</h2>
+<p>When attempting to update or create an NS (nameserver) record for a DNS zone in BIG-IP DNS ZoneRunner, the operation fails with the following error:</p>
+<p><strong>Error Message:</strong></p>
+<pre><code>01150406:3: Operation failed: Update operation refused
+</code></pre>
+<p>This issue occurs even when a corresponding A record (glue record) exists for the nameserver. The problem is related to BIND nameserver requirements for exact format consistency between NS records and their corresponding glue records.</p>
+<p><strong>Symptoms:</strong></p>
+<ul><li>Unable to modify existing NS records in ZoneRunner</li><li>NS record update operations are rejected by BIND</li><li>Error message displayed in the ZoneRunner GUI when attempting to save changes</li><li>Zone serial number may remain unchanged after attempted updates</li></ul>
+<h2>2. Environment</h2>
+<ul><li>BIG-IP DNS (formerly GTM)</li><li>Version: 17.1.3 and other versions</li><li>ZoneRunner feature enabled</li><li>DNS zones configured with type: master</li><li>Zone files using $ORIGIN directive</li><li>NS records defined as fully qualified domain names (FQDNs) with trailing periods</li><li>A records defined as short names under $ORIGIN</li></ul>
+<h2>3. Cause</h2>
+<p>BIND requires an exact format match between the NS record target and the corresponding A record (glue record) within the same zone during dynamic updates. When the NS record is specified as a fully qualified domain name (e.g., <code>example.ex.gov.</code>) while the A record is defined using a short name (e.g., example) under <code>$ORIGIN ex.gov.</code>, BIND&#39;s validation mechanism rejects the update operation.</p>
+<p>Although BIND automatically expands the short name to the FQDN based on the $ORIGIN directive during zone processing, its validation during dynamic updates (such as those performed via ZoneRunner) requires exact format matching. This format inconsistency causes BIND to fail to recognize the glue record as valid for the NS record.</p>
+<h2>4. Answer/Recommended Actions</h2>
+<p>To resolve this issue, ensure format consistency between the NS record and its corresponding A (glue) record. Choose one of the following approaches:</p>
+<p><strong>Option 1: Use Short Name Format for Both Records (Recommended)</strong></p>
+<ol><li>Navigate to <strong>DNS &gt; Zones &gt; ZoneRunner &gt; Resource Record List</strong></li><li>Select the affected DNS zone</li><li>Modify the NS record to use the short name format instead of the FQDN
+<ul><li>Change from: <code>NS example.ex.gov.</code></li><li>Change to: <code>NS example</code></li></ul>
+</li><li>Save and apply the changes</li><li>Verify the update by running: <code>dig @localhost &lt;zone-name&gt; NS</code></li><li>Confirm the SOA serial number has incremented</li></ol>
+<p><strong>Option 2: Use FQDN Format for Both Records</strong></p>
+<ol><li>Navigate to <strong>DNS &gt; Zones &gt; ZoneRunner &gt; Resource Record List</strong></li><li>Select the affected DNS zone</li><li>Modify the A record to use the FQDN format with trailing period
+<ul><li>Change from: <code>example A &lt;IP_ADDRESS&gt;</code></li><li>Change to: <code>example.ex.gov. A &lt;IP_ADDRESS&gt;</code></li></ul>
+</li><li>Ensure the NS record also uses the FQDN format: <code>NS example.ex.gov.</code></li><li>Save and apply the changes</li><li>Verify the update and confirm serial number increment</li></ol>
+<p><strong>Option 3: Create Additional Glue Records</strong></p>
+<p>If the nameserver needs to be referenced across multiple zone levels:</p>
+<ol><li>Create glue records for the nameserver in all relevant zones</li><li>Add A records in parent zones (.ex, .example.ex.gov) as needed</li><li>Create a separate zone for the nameserver FQDN if required</li><li>Ensure all NS records can resolve to their corresponding A records</li></ol>
+<p><strong>Verification Steps:</strong></p>
+<p>After making changes:</p>
+<ul><li>Verify the NS record update: <code>dig @localhost &lt;zone-name&gt; NS</code></li><li>Check the SOA serial number has incremented</li><li>Test zone transfers if applicable</li><li>Monitor BIND logs for any related errors</li></ul>
+<h2>5. Additional Information</h2>
+<p><strong>Understanding $ORIGIN Directive:</strong></p>
+<p>The <code>$ORIGIN</code> directive in BIND zone files sets the default domain suffix for relative names (names without a trailing period). When <code>$ORIGIN ex.gov.</code> is set:</p>
+<ul><li>A short name like <code>example</code> expands to example.ex.<code>gov.</code></li><li>An FQDN like example.ex.<code>gov</code><code>.</code> remains unchanged</li></ul>
+<p><strong>Format Matching Requirements:</strong></p>
+<p>BIND&#39;s strict validation during dynamic updates requires:</p>
+<ul><li>If NS record uses FQDN format (example.ex.<code>gov.</code>), the A record must also use FQDN format</li><li>If NS record uses short name format (<code>example</code>), the A record must also use short name format</li><li>Mixing formats, even though they resolve to the same name, will cause validation failures</li></ul>
+<p><strong>Best Practice:</strong></p>
+<p>Using consistent short name format for both NS and A records within the same zone is the recommended approach, as it:</p>
+<ul><li>Simplifies zone file management</li><li>Reduces format mismatch errors</li><li>Leverages the $ORIGIN directive effectively</li><li>Maintains compatibility with ZoneRunner dynamic updates</li></ul>
+</article>
+</body>
+</html>

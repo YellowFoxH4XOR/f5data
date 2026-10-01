@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K13217575: Session data may be exposed when using a proxy to multiplex connections to the BIG-IP APM system</title>
+<meta name="description" content="Security Advisory: Session data may be exposed when using a proxy to multiplex connections to the BIG-IP APM system — The BIG-IP APM system is configured to perform NTLM SSO authentication to back-end servers.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K13217575">
+</head>
+<body>
+<header>
+<h1>K13217575: Session data may be exposed when using a proxy to multiplex connections to the BIG-IP APM system</h1>
+<dl>
+<dt>Type</dt><dd>Security Advisory</dd>
+<dt>Published</dt><dd>2018-10-17</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 14.0.0, 11.5.1, 11.5.2, 11.5.3, 11.5.4, 11.5.5, 11.5.6, 11.5.7, 11.6.1, 11.6.2, 11.6.3, 12.1.0, 12.1.1, 12.1.2, 12.1.3, 13.0.0, 13.0.1, 13.1.0, 13.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K13217575">https://my.f5.com/manage/s/article/K13217575</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Security Advisory Description</h3><p>This issue occurs when all of the following conditions are met:</p>
+
+<ul><li>The BIG-IP APM system is configured to perform NTLM SSO authentication to back-end servers.</li><li>A proxy in front of the BIG-IP APM system multiplexes connections from different users.</li></ul>
+
+<p><span class="sectiontitle">Impact</span></p>
+
+<p>Users may be exposed to session data from other user connections.</p>
+
+<p><span class="sectiontitle">Symptoms</span></p>
+
+<p>As a result of this issue, you may encounter the following symptom:</p>
+
+<ul><li>Users connecting to the BIG-IP APM system see other user&#39;s session data or application data.</li></ul>
+<h3>Security Advisory Status</h3><p>F5 Product Development has assigned ID 710984 to this issue. F5 has confirmed that this issue exists in the products listed in the<strong> Applies to (see versions)</strong> box, located in the upper-right corner of this article. For information about releases, point releases, or hotfixes that resolve this issue, refer to the following table.</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1" style="width: 100%;"><tbody><tr><td colspan="1" rowspan="1">Type of fix</td><td colspan="1" rowspan="1">Fixes introduced in</td><td colspan="1" rowspan="1">Related articles</td></tr><tr><td colspan="1" rowspan="1">Release</td><td colspan="1" rowspan="1">None</td><td colspan="1" rowspan="1">None</td></tr><tr><td colspan="1" rowspan="1">Point release/hotfix</td><td colspan="1" rowspan="1">None</td><td colspan="1" rowspan="1">None</td></tr></tbody></table>
+<h3>Security Advisory Recommended Actions</h3><p><span class="sectiontitle">Workaround</span></p>
+
+<p>To work around this issue when using IIS servers on the back end, you can configure the <strong>authPersistSingleRequest=TRUE</strong> metabase property on the IIS server.<strong> </strong> To work around this issue using an iRule, you can create an iRule using the following code and associate it with the virtual server. To do so, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of workaround:</strong> The impact of the suggested workaround depends on the specific environment. F5 recommends that you test any such changes during a maintenance window and consider the possible impact to your environment.</span></p>
+
+<ol><li>Log in to the BIG-IP Configuration utility.</li><li>Navigate to <strong>Local Traffic</strong> &gt; <strong>iRules</strong>.</li><li>Click <strong>Create</strong>.</li><li>Type a name in the <strong>Name</strong> field.</li><li>Enter the following code in the <strong>Definition</strong> field:
+	<p><span class="code">when HTTP_REQUEST {<br>	  if { not ([HTTP::cookie exists &quot;MRHSession&quot;]) } {<br>	    return<br>	  }<br>	  set sid [HTTP::cookie &quot;MRHSession&quot;]<br>	  if { not ([ACCESS::session exists -state_allow -sid $sid]) } {<br>	    return<br>	  }<br>	  set laddr [IP::local_addr]<br>	  set lport [TCP::local_port]<br>	  set raddr [IP::remote_addr]<br>	  set rport [TCP::remote_port]<br>	  set tuple_hash [sha256 &quot;$laddr:$lport,$raddr:$rport&quot;]<br>	  set key &quot;access_session.for.flow.$tuple_hash&quot;<br>	  set result [table add $key $sid]<br>	  if { $result eq $sid } {<br>	    # letting request go<br>	    return<br>	  }<br>	  # this request requires detaching serverside flow, then re-attaching<br>	  set selected [LB::select]<br>	  LB::detach<br>	  eval $selected<br>	  table set $key $sid<br>	}<br>	<br>	# clean-up iRule for when the connection closes<br>	when CLIENT_CLOSED {<br>	  set laddr [IP::local_addr]<br>	  set lport [TCP::local_port]<br>	  set raddr [IP::remote_addr]<br>	  set rport [TCP::remote_port]<br>	  set tuple_hash [sha256 &quot;$laddr:$lport,$raddr:$rport&quot;]<br>	  set key &quot;access_session.for.flow.$tuple_hash&quot;<br>	  table delete $key<br>	}</span></p>
+	</li><li>Click <strong>Finished</strong>.</li><li>Navigate to <strong>Local Traffic</strong> &gt; <strong>Virtual Servers</strong>.</li><li>Click <strong>Edit</strong> in the <strong>Resources </strong>column for the affected virtual server.</li><li>Under iRules, click <strong>Manage</strong>.</li><li>Click the name of the newly created iRule and click <strong>&lt;&lt;</strong> to move it to the <strong>Enabled</strong> box.</li><li>Click <strong>Finished</strong>.</li></ol>
+</article>
+</body>
+</html>

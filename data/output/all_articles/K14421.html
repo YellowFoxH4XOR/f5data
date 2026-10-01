@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K14421: Achieving split DNS behavior through BIG-IP DNS wide IPs</title>
+<meta name="description" content="Knowledge: Achieving split DNS behavior through BIG-IP DNS wide IPs — This article describes split DNS, deployment scenarios, and how to obtain split DNS behavior with the BIG-IP DNS system through wide IPs and topology load balancing.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K14421">
+</head>
+<body>
+<header>
+<h1>K14421: Achieving split DNS behavior through BIG-IP DNS wide IPs</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2015-08-31</dd>
+<dt>Updated</dt><dd>2024-11-01</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP GTM: 9.4.8, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 10.2.4, 10.2.3, 10.2.2, 10.2.1, 10.2.0, 11.6.2, 10.1.0, 11.6.1, 10.0.1, 11.6.0, 10.0.0, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 11.5.1, 11.5.0, 11.4.1, 11.4.0, 11.3.0</li><li>BIG-IP DNS: 12.1.1, 12.1.0, 12.0.0, 13.0.0, 12.1.2</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K14421">https://my.f5.com/manage/s/article/K14421</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>This article describes split DNS, deployment scenarios, and how to obtain split DNS behavior with the BIG-IP DNS system through wide IPs and topology load balancing.</p><h3>Description</h3><p>Split DNS refers to setting up different DNS views for the same domain. This configuration involves creating one zone to resolve names for the internal network and another zone to resolve names for the external network.</p>
+
+<p><span class="note"><strong>Note</strong>: For more information about resolving names for internal networks, refer to the <a href="http://www.ietf.org/rfc/rfc1918.txt" target="_blank">Internet Engineering Task Force (RFC 1918)</a>. This link takes you to a resource outside of AskF5, and it is possible that the document may be removed without our knowledge.</span></p>
+
+<p><span class="subsectiontitle">Split DNS implementation using standard DNS serve<strong>rs</strong></span></p>
+
+<p>Split DNS is a configuration in which the resolution IP address of a name is dependent on the location of the requesting client, or the Local Domain Name System (LDNS) is being requested on behalf of a client. For example, a site may have several web applications that have both internal network addresses and external addresses. Clients on the internal network may have access to both sets of applications. The external applications are accessible using a Network Address Translation (NAT). The intent of split DNS is to have internal clients resolve fully-qualified domain names (FQDN) for the applications to internal addresses on the corporate LAN, rather than accessing the resource through the advertised public address for that resource. Split DNS also ensures that external requests for the resource resolve to the public Internet addresses.</p>
+
+<p>In some cases, accomplishing split view DNS resolution using standard DNS servers (non-BIG-IP GTM), may involve configuring two DNS servers: an internal DNS server for the private class IP address networks, and an external DNS server for both the internal and external clients for DNS. The internal DNS server is configured to send queries to the external DNS server, excluding the FQDNs intended to resolve to the local RFC 1918 addresses. The FQDNs for internal resolution are configured on the internal DNS server. Only internal clients can query the internal DNS server, while both internal and external clients can query the external DNS server. The external-facing DNS server is configured to resolve all queries to public Internet IP addresses. This configuration allows the internal DNS server to resolve queries from internal clients with local RFC 1918 network addresses. The internal DNS server will forward any queries that it cannot resolve to the external DNS server.</p>
+
+<p>With tiered DNS servers, internal clients querying for DNS resolution:</p>
+
+<ul><li>Resolve queries for FQDNs that reside on both the RFC 1918 and external networks.</li><li>Resolve queries for configured internal FQDNs to local private network RFC 1918 addresses.</li><li>Resolve queries for FQDNs that are not configured on the internal DNS, with RFC 1918 addresses with external public (Internet) addresses.</li></ul>
+
+<p>External DNS queries:</p>
+
+<ul><li>Resolve FQDNs to public (Internet) addresses only, and are unaware of the RFC 1918 addressing used by internal DNS and clients</li></ul>
+
+<p><span class="subsectiontitle">Split DNS implementation using BIG-IP GTM wide IPs</span></p>
+
+<p>Using BIG-IP GTM wide IPs to implement split DNS is similar to using standard DNS. To do so, you can allow DNS queries for wide IP domain names to resolve differently depending on the topological placement of the requesting LDNS. For example, internal DNS queries will resolve to internal IP addresses, while external queries will resolve to external IP addresses when querying the same FQDN. Deploying split DNS using BIG-IP GTM wide IPs has the following benefits:</p>
+
+<ul><li>The BIG-IP GTM wide IP DNS resolution differentiates between internal/RFC 1918 and external LDNS requests.</li><li>Optimized internal access to resources and enhanced security for internal clients accessing DNS resources with their public FQDN.</li><li>Ensured resource availability for DNS resolutions.</li></ul>
+
+<p><span class="subsectiontitle">Split DNS deployment scenarios using wide IPs</span></p>
+
+<p>Given the combination of internal/RFC 1918 (local private network) and external Internet addressing configuring the BIG-IP GTM system&#39;s virtual server references is a manual process. A single RFC 1918 address is represented in the BIG-IP GTM configuration as two separate virtual servers. The first virtual server references the RFC 1918 (local private network) address directly as the virtual address. The second virtual server is configured with the same RFC 1918 (local private network) address as the translation-address for the virtual server and the address of the virtual server is configured with a public Internet address.</p>
+
+<p><span class="subsubsectiontitle">Wide IP split DNS for multiple pools with multiple virtual servers</span></p>
+
+<p>Create individual wide IPs for split DNS responses. Wide IP resolution addresses are obtained from two separate pools of virtual servers. When creating two BIG-IP GTM pools of virtual servers, each pool includes virtual server addresses in the range to fulfill resolution based on the IP address of the requesting LDNS. For example, a pool that will fulfill resolutions for clients for local RFC 1918 networks will have virtual server addresses that are on the same local RFC 1918 network ranges. A pool that is created for external resolutions will contain virtual servers with IP addresses that are Internet routable and accessible by external clients.</p>
+
+<p>Each pool represents the virtual server addresses for resolution based on the topology placement of the requesting LDNS. Topology should be configured to map out all local RFC 1918 network ranges. When a client request matches any of these predefined internal/local private network ranges, topology will select the resolution address from the assigned pool for internal RFC 1918 virtual servers. Queries that do not reside in the mapped local private networks are considered external network requests. Topology will then select a resolution address from the second pool of virtual server addresses configured specifically for use when sending external responses.</p>
+
+<p><span class="note"><strong>Note</strong>: For multiple RFC 1918 network ranges, you can create a Topology Region to contain all of these networks.</span></p>
+
+<p>Configure the following objects on a BIG-IP GTM system that has already been populated with servers and virtual servers for both public and private class networks.</p>
+
+<ol><li>Create an external facing (Internet) BIG-IP GTM pool of publicly accessible network virtual addresses, selecting a desired load balancing algorithm.</li><li>Create an internal (RFC 1918) BIG-IP GTM pool of local private network virtual addresses used for resolution, selecting a desired load balancing algorithm.</li><li>If you want a fallback IP address, F5 recommends that you use the public Internet IP address.</li><li>Create a new Topology record where <strong>Request Source IP Subnet</strong> (is) <strong>&lt;ip addresses range of your local private network&gt;</strong> and <strong>Destination </strong>is the pool of RFC 1918 (local private network) addresses that you created in step 2.</li><li>Repeat the previous step if there are multiple internal/local private network ranges that cannot be spanned by widening the network subnet mask.</li><li>Create a new Topology record where <strong>Request Source IP Subnet </strong>(is not) <strong>&lt;ip addresses range of your local private network&gt; </strong>and <strong>Destination </strong>is the pool of non-RFC 1918 (local private network) addresses that you created in step 1.</li><li>Repeat the previous step if there are multiple non-internal/local private network ranges that cannot be spanned by widening the network subnet mask.</li><li>Create a wide IP that references both pools, setting the <strong>Load Balancing Method</strong> pool to <strong>Topology</strong>.</li><li>Repeat these steps for each wide IP that you want to have Topology select the destination pool based on the LDNS network.</li></ol>
+
+<p><span class="subsubsectiontitle">Wide IP split DNS single pool with one virtual server per view</span></p>
+
+<p>To create a global BIG-IP GTM topology that implements split DNS across multiple wide IPs with each using a single pool configuration, perform the following steps:</p>
+
+<ol><li>Create Topology records that are specific to local RFC 1918 networks:
+	<p><strong>Request Source</strong> = <strong>IP Subnet</strong> is <strong>&lt;your local private network ip address range&gt;</strong> and <strong>Destination</strong> = <strong>IP Subnet</strong> is <strong>&lt;local private network RFC 1918 address range&gt;</strong>.</p>
+	</li><li>Repeat the previous step if there are multiple local private network ranges that cannot be spanned by widening the network subnet mask.</li><li>Create a Topology record that negates use of the local private network for address resolution when the source DNS is not of a local private network:
+	<p><strong>Request Source</strong> =<strong> IP Subnet</strong> is not<strong> &lt;your local private network ip address range&gt; </strong>and <strong>Destination</strong> = <strong>IP Subnet</strong> is not <strong>&lt;local private network RFC 1918 address range&gt;</strong>.</p>
+	</li><li>Repeat the previous step if there are multiple local private network ranges that cannot be spanned by widening the network subnet mask.</li><li>Create a BIG-IP GTM pool that contains only one local private network virtual address and only one public facing virtual address that support the same application, setting the <strong>Load Balancing Method</strong> to <strong>Topology</strong>.</li><li>If you want a fallback IP address, F5 recommends that you use the public Internet IP address.</li><li>Create a wide IP that references the newly created pool.</li><li>Repeat these steps for each wide IP for which you want Topology to select the destination pool member based on the LDNS network.</li></ol>
+
+<p><span class="sectiontitle">Recommendations</span></p>
+
+<p>When configuring the BIG-IP GTM wide IP for split DNS resolution, you should consider the following:</p>
+
+<ul><li>You need administrative access to the BIG-IP GTM system.</li><li>You must be familiar with configuring BIG-IP GTM wide IPs to aid in building out wide IPs with topology.</li><li>You must configure the BIG-IP GTM system with servers that represent the same resource as a virtual server for both public Internet and private RFC 1918 addresses.</li><li>You must configure the BIG-IP GTM system with access to the required network resources. The BIG-IP GTM system ensures availability of a configured resource (virtual server) by probing that resource. Typically, a firewall NAT translates an external request to the internal RFC 1918 address of a public resource. Therefore, the BIG-IP GTM system must be able to access that resource on both the RFC 1918 and the firewall NAT public address. For additional details regarding BIG-IP GTM and BIG-IP configurations with firewall NAT rules, refer to <a href="https://my.f5.com/manage/s/article/K14707" target="_blank">K14707: Configuring BIG-IP DNS server objects for BIG-IP devices that reside behind a firewall NAT</a>.</li></ul>
+</article>
+</body>
+</html>

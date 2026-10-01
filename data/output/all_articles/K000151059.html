@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000151059: BIG-IP ASM device is offline and not returning to online</title>
+<meta name="description" content="Support Solution: BIG-IP ASM device is offline and not returning to online — BIG-IP ASM device is offline and not returning to online for long time">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000151059">
+</head>
+<body>
+<header>
+<h1>K000151059: BIG-IP ASM device is offline and not returning to online</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-05-22</dd>
+<dt>Updated</dt><dd>2026-03-29</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 17.1.X, 17.1.2, 17.1.1, 17.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000151059">https://my.f5.com/manage/s/article/K000151059</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>BIG-IP ASM device is offline and not returning to online for long time</p>
+<p>Following logs are noted in /var/log/ts/bd.log contains events reporting PCRE compilation failure.</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">ECARD|ERR   |Jan 23 10:16:59.036|14826|regexp_table_management.cpp:0057|key crc xxxxxxxx PCRE compilation failed at offset 3: PCRE does not support \L, \l, \N{name}, \U, or \u</span></p>
+<h2>Environment</h2>
+<ul><li>BIG-IP ASM device is offline and not returning to online</li><li>BIG-IP ASM device upgraded to version 17.1.2/17.1.2.1</li><li>BIG-IP ASM device is went to offline after applying ASM policy</li><li>Above logs noted in  /var/log/ts/bd.log when BIG-IP ASM device is offline</li></ul>
+<h2>Cause</h2>
+<p><a href="https://cdn.f5.com/product/bugtracker/ID1848541.html" target="_self">Bug ID 1848541</a></p>
+<h2>Recommended Actions</h2>
+<p>1. Login into BIG-IP ASM device using root</p>
+<p>2. Check /var/log/ts/bd.log messages to get the decimal CRC value of the problem regex:<br><code># printf &quot;%d\n&quot; 0x`zgrep &#39;ECARD|ERR&#39; /var/log/ts/bd.log* | grep -B 3 -A 3 regex | grep crc | awk &#39;{print $7}&#39; | uniq` </code></p>
+<p>3. Identify the actual string:<br><code>#  mysql -u root -p$(perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw) -e &#39;select * from  DCC.GLOBAL_PARAM_REG_EXPS where reg_exp_crc = value_from_step2;&#39;</code></p>
+<p>(replace value_from_step2 with the actual values returned in step #2, one at a time)</p>
+<p>4. Clear the problem regex entries<br><code>#  mysql -u root -p$(perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw) -e &#39;delete from  DCC.GLOBAL_PARAM_REG_EXPS where reg_exp_crc = value_from_step2;&#39;<br></code><code>#  mysql -u root -p$(perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw) -e &#39;delete from  DCC.ACCOUNT_PARAM_REG_EXPS where reg_exp_crc = value_from_step2;&#39;</code></p>
+<p>(replace value_from_step2 with the actual values returned in step #2, one at a time)</p>
+<p>5. Restart ASM<br><code># bigstart restart asm</code></p>
+<p><span style="background-color: #ffffff;">6. Allow some time for device to come online. If there are still issues, repeat the steps until all problem regex are removed.<br><br></span></p>
+<h2>Additional Information</h2>
+<p>To fix the regex without deleting it completely, first boot back to the previous version and then run the command below to find in which ASM policy object the regex is used. After modifying the regex via the GUI, boot back to the new software versions with &quot;Install Configuration&quot; checked.</p>
+<p><br><code># mysql -u root -p$(perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw) -e &#39;set @CRC=&quot;value_from_step2&quot;; select T3.name policy_name, PARAMG.name parameter_name, T3.regexpr_values from (select id, name, regexpr_values from (select PARAM.id, POL.name, PARAM.regexpr_values from PLC.PL_PARAM_ATTRIBUTES PARAM INNER JOIN PLC.PL_POLICIES POL ON PARAM.policy_id=POL.id) AS T2 where regexpr_values in ( select reg_exp from DCC.ACCOUNT_PARAM_REG_EXPS where reg_exp_crc = @CRC )) AS T3 INNER JOIN PLC.PL_GLOBAL_PARAMS PARAMG ON T3.id=PARAMG.param_attrib_id;select T4.policy_name, T4.name parameter_name, OBJS.uri, T4.regexpr_values from ( select T3.name policy_name, PARAMO.name, PARAMO.obj_id, T3.regexpr_values from (select T2.id, T2.name, T2.regexpr_values from (select PARAM.id, POL.name, PARAM.regexpr_values from PLC.PL_PARAM_ATTRIBUTES PARAM INNER JOIN PLC.PL_POLICIES POL ON PARAM.policy_id=POL.id) AS T2 where regexpr_values in ( select reg_exp from DCC.ACCOUNT_PARAM_REG_EXPS where reg_exp_crc = @CRC )) AS T3 INNER JOIN PLC.PL_OBJECT_PARAMS PARAMO ON T3.id=PARAMO.param_attrib_id) AS T4 INNER JOIN PLC.PL_OBJECTS OBJS ON T4.obj_id=OBJS.id;&#39;</code></p>
+<p>(replace value_from_step2 with the actual values returned in step #2, one at a time)</p>
+<p> </p>
+</article>
+</body>
+</html>

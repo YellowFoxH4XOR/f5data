@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000152765: Traffic group status is inconsistent in HA cluster</title>
+<meta name="description" content="Support Solution: Traffic group status is inconsistent in HA cluster — In BIG-IP high-availability (HA) clusters with three or more devices, traffic-group status may become inconsistent if HA order changes are made on a device which is standby for that particular…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000152765">
+</head>
+<body>
+<header>
+<h1>K000152765: Traffic group status is inconsistent in HA cluster</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-07-27</dd>
+<dt>Updated</dt><dd>2025-07-27</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.0.0, 17.1.0, 17.0.X, 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.2, 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000152765">https://my.f5.com/manage/s/article/K000152765</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>In BIG-IP high-availability (HA) clusters with three or more devices, traffic-group status may become inconsistent if HA order changes are made on a device which is standby for that particular traffic-group and configuration is not synced before the auto-failback-time expires. This can result in a traffic-group appearing as &quot;active&quot; on multiple devices, or as &quot;standby&quot; on other devices.</p>
+<p>For example where auto-failback-time is set as 5 seconds:</p>
+<p>Shorten output of <span style="background-color: #f1f1f1;">tmsh list cm traffic-group</span> from BIG-IP-A.</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">cm traffic-group /Common/traffic-group-1 {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    auto-failback-enabled true</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    auto-failback-time 5</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    ha-order {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        /Common/BIG-IP-A.bigip    ---&gt; Current Active</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        /Common/BIG-IP-B.bigip</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        /Common/BIG-IP-C.bigip</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    }</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></p>
+<p><span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;">From BIG-IP-B, HA order change as been made.</span></p>
+<p><span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">cm traffic-group /Common/traffic-group-1 {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    auto-failback-enabled true</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    auto-failback-time 5</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    ha-order {</span></span></p>
+<p><span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">        /Common/BIG-IP-B.bigip    ---&gt; New Active</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        /Common/BIG-IP-A.bigip</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        /Common/BIG-IP-C.bigip</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    }</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></span></p>
+<p><span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;">You are syncing the configuration changes after 5 seconds, BIG-IP-B goes active and BIG-IP-A staying standby will assert it wants to be active. You end up with multiple device showing active for same traffic-group (<span style="background-color: #f1f1f1;">tmsh show cm traffic-group</span>). </span><span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;">You will also see below log message in ltm logs.</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">010c006b:5: Configuration CRC values agree amongst peers. </span></p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>Multi-device HA clusters (three or more devices)</li><li>Traffic-groups configured with ha-order and auto-failback enabled</li><li>Configuration changes to traffic-group HA order</li></ul>
+<h2>Cause</h2>
+<p>Changing the HA order for a traffic-group from a device that is not currently active for that traffic-group and not syncing the configuration before the auto-failback-time expires, can trigger a known issue ID1971973. This causes multiple devices to advertise themselves as &quot;active&quot; for the same traffic-group. Further configuration changes after the initial incorrect change can worsen the inconsistency.</p>
+<h2>Recommended Actions</h2>
+<ul><li>Perform HA order changes from device that is currently active for that traffic-group and/or sync changes before the auto-failback-timer expires.</li><li>If an inconsistent state occurs (multiple actives), restart the &#39;sod&#39; process on affected cluster members or all cluster members to bring it a clean slate. <br><span style="color: #15891f;"><em><strong>Note</strong>: Perform this action during a maintenance window, as it may cause temporary service disruption.</em></span><br><span style="background-color: #f1f1f1;">bigstart restart sod</span></li><li>After recovery, verify each traffic-group is active on only one device and that all BIG-IPs are in sync.</li></ul>
+<h2>Additional Information</h2>
+<p>You can use below commands to check the HA order and status of traffic-group in each BIG-IPs in cluster.</p>
+<p><span style="background-color: #f1f1f1;">tmsh list cm traffic-group all-properties</span><br><span style="background-color: #f1f1f1;">tmsh show cm traffic-group </span><br><span style="background-color: #f1f1f1;">tmsh show cm failover-status</span></p>
+</article>
+</body>
+</html>

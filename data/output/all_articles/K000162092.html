@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162092: How to Add Virtual Servers to an Existing GSLB_Server Using AS3 Without Overwriting Existing Configuration</title>
+<meta name="description" content="Support Solution: How to Add Virtual Servers to an Existing GSLB_Server Using AS3 Without Overwriting Existing Configuration — This article explains how to add new virtual servers to an existing GSLB_Server object in a BIG-IP DNS (GTM-only) environment using F5 AS3, without overwriting or deleting the current virtual…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162092">
+</head>
+<body>
+<header>
+<h1>K000162092: How to Add Virtual Servers to an Existing GSLB_Server Using AS3 Without Overwriting Existing Configuration</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-07-06</dd>
+<dt>Updated</dt><dd>2026-08-24</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 17.0.0, 17.1.0, 17.0.X, 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162092">https://my.f5.com/manage/s/article/K000162092</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>This article explains how to add new virtual servers to an existing GSLB_Server object in a BIG-IP DNS (GTM-only) environment using F5 AS3, without overwriting or deleting the current virtual servers. It addresses the scenario where users want to incrementally add virtual servers to a GSLB_Server managed by AS3, and clarifies the supported methods for doing so.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP DNS (GTM) module, version 17.5.1</li><li>AS3 version 3.56.0 or later</li><li>Configuration managed via AS3 declarations (API or Terraform)</li><li>GSLB_Server object in /Common/Shared referencing an existing Data Center</li></ul>
+<h2>Cause</h2>
+<p>AS3 is a declarative API. Traditionally, when updating a GSLB_Server object, the declaration must include the full desired state of all virtual servers; otherwise, any virtual servers not listed are removed. However, in AS3 version 3.56.0 and later, the PATCH method is supported for GSLB_Server objects, allowing users to append new virtual servers without removing existing ones.</p>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>Option 1: Add Virtual Servers Using PATCH (AS3 3.56.0+)</strong></p>
+<p>You can use the PATCH method to append a new virtual server to an existing GSLB_Server object without affecting the current configuration.</p>
+<p><strong>Example PATCH Request:</strong></p>
+<pre><code>{
+  &quot;class&quot;: &quot;AS3&quot;,
+  &quot;action&quot;: &quot;patch&quot;,
+  &quot;patchBody&quot;: [
+    {
+      &quot;op&quot;: &quot;add&quot;,
+      &quot;path&quot;: &quot;/Common/Shared/myGSLBServer/virtualServers/-&quot;,
+      &quot;value&quot;: {
+        &quot;address&quot;: &quot;192.168.1.103&quot;,
+        &quot;port&quot;: 8080,
+        &quot;name&quot;: &quot;web-vs-3&quot;
+      }
+    }
+  ]
+}
+&quot;,
+</code></pre>
+<p><strong>Example curl command:</strong></p>
+<pre><code>curl -sk -u admin:&lt;password&gt; \
+  -H &quot;Content-Type: application/json&quot; \
+  -X POST \
+  https://&lt;BIG-IP-MGMT-IP&gt;/mgmt/shared/appsvcs/declare \
+  -d &#39;{&quot;class&quot;:&quot;AS3&quot;,&quot;action&quot;:&quot;patch&quot;,&quot;patchBody&quot;:[{&quot;op&quot;:&quot;add&quot;,&quot;path&quot;:&quot;/Common/Shared/myGSLBServer/virtualServers/-&quot;,&quot;value&quot;:{&quot;address&quot;:&quot;192.168.1.103&quot;,&quot;port&quot;:8080,&quot;name&quot;:&quot;web-vs-3&quot;}}]}&#39;
+</code></pre>
+<ul><li>Submit this PATCH request to:<br><span style="background-color: #f1f1f1;">https://&lt;BIG-IP-MGMT-IP&gt;/mgmt/shared/appsvcs/declare</span></li><li>The new virtual server will be appended to the existing list, and all previous virtual servers will remain intact.</li></ul>
+<p><strong>Option 2: Full-State Declaration (All AS3 Versions)</strong></p>
+<p>If PATCH is not supported in your AS3 version, you must submit a full declaration that includes all existing and new virtual servers. Any virtual server not included in the declaration will be removed.</p>
+<p><strong>Example Declaration:</strong></p>
+<pre><code>{
+  &quot;class&quot;: &quot;AS3&quot;,
+  &quot;action&quot;: &quot;deploy&quot;,
+  &quot;persist&quot;: true,
+  &quot;declaration&quot;: {
+    &quot;class&quot;: &quot;ADC&quot;,
+    &quot;schemaVersion&quot;: &quot;3.56.0&quot;,
+    &quot;Common&quot;: {
+      &quot;class&quot;: &quot;Tenant&quot;,
+      &quot;Shared&quot;: {
+        &quot;class&quot;: &quot;Application&quot;,
+        &quot;template&quot;: &quot;shared&quot;,
+        &quot;myGSLBServer&quot;: {
+          &quot;class&quot;: &quot;GSLB_Server&quot;,
+          &quot;dataCenter&quot;: {
+            &quot;bigip&quot;: &quot;/Common/DC1&quot;
+          },
+          &quot;devices&quot;: [
+            {
+              &quot;address&quot;: &quot;10.1.1.10&quot;
+            }
+          ],
+          &quot;virtualServerDiscoveryMode&quot;: &quot;disabled&quot;,
+          &quot;virtualServers&quot;: [
+            {
+              &quot;address&quot;:&quot;
+ &quot;192.168.1.101&quot;,
+              &quot;port&quot;: 80,
+              &quot;name&quot;: &quot;web-vs-1&quot;
+            },
+            {
+              &quot;address&quot;:&quot;,
+ &quot;192.168.1.102&quot;,
+              &quot;port&quot;: 443,
+              &quot;name&quot;: &quot;web-vs-2&quot;
+            },
+            {
+              &quot;address&quot;:&quot;,
+ &quot;192.168.1.103&quot;,
+              &quot;port&quot;: 8080,
+              &quot;name&quot;: &quot;web-vs-3&quot;
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+&quot;,
+</code></pre>
+<h2>Additional Information</h2>
+<ul><li>Always validate changes in a test environment before applying to production.</li><li>PATCH support for GSLB_Server objects was confirmed in AS3 version 3.56.0. Behavior may differ in earlier versions.</li><li>If you need to assign monitors or modify other properties, include the full updated object in your declaration.</li></ul>
+</article>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000159990: TMM Pods Fail to Start Due to CNI Version Mismatch with SR-IOV Operator 4.18 in SPK Environments</title>
+<meta name="description" content="Support Solution: TMM Pods Fail to Start Due to CNI Version Mismatch with SR-IOV Operator 4.18 in SPK Environments — Failed to create pod sandbox: rpc error: code = Unknown desc = failed to create pod network sandbox ... error adding container to network &quot;net0-spk-core-dns&quot;: unsupported CNI result version &quot;1.0.0&quot;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000159990">
+</head>
+<body>
+<header>
+<h1>K000159990: TMM Pods Fail to Start Due to CNI Version Mismatch with SR-IOV Operator 4.18 in SPK Environments</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-12</dd>
+<dt>Updated</dt><dd>2026-02-12</dd>
+<dt>Status</dt><dd>Final</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP Next</li><li>BIG-IP Next SPK: 1.3.1, 1.5.0, 1.3.X, 2.X.X, 1.X.X, 2.0.X, 2.0.3, 2.0.2, 2.0.1, 2.0.0, 1.9.X, 1.9.2, 1.9.1, 1.9.0, 1.8.X, 1.8.2, 1.8.0, 1.7.X, 1.7.16, 1.7.15, 1.7.14, 1.7.13, 1.7.12, 1.7.11, 1.7.10, 1.7.9, 1.7.8, 1.7.7, 1.7.6, 1.7.5, 1.7.4, 1.7.3, 1.7.2, 1.7.1, 1.7.0, 1.6.X, 1.6.0, 1.5.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000159990">https://my.f5.com/manage/s/article/K000159990</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<p>In F5 SPK (Service Proxy for Kubernetes) environments, TMM pods may fail to start with errors similar to the following:</p>
+<p> </p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Failed to create pod sandbox: rpc error: code = Unknown desc = failed to create pod network sandbox ... error adding container to network &quot;net0-spk-core-dns&quot;: unsupported CNI result version &quot;1.0.0&quot;</span><strong></strong></p>
+<p> </p>
+<p><strong>Symptoms:</strong></p>
+<p> </p>
+<ul><li>TMM pods remain in a crash-loop or fail to start</li><li>Pod events show <span style="background-color: #f1f1f1;">FailedCreatePodSandBox</span> errors</li><li>NetworkAttachmentDefinition (NAD) configuration shows <span style="background-color: #f1f1f1;">cniVersion: &quot;1.0.0&quot;</span></li><li>Manual attempts to update the NAD to <span style="background-color: #f1f1f1;">cniVersion: &quot;0.3.1&quot;</span> are automatically reverted to <span style="background-color: #f1f1f1;">&quot;1.0.0&quot;</span></li><li>The issue affects all SPK-related NADs but not other network attachment definitions in the cluster</li></ul>
+<h2></h2>
+<p> </p>
+<h2><strong>Environment</strong></h2>
+<ul><li>F5 SPK (Service Proxy for Kubernetes) version 1.7.14 or similar releases</li><li>BIG-IP Product Group</li><li>OpenShift Container Platform with OVN-Kubernetes CNI</li><li>SR-IOV Network Operator version 4.18 (upgraded from version 4.12 or earlier)</li><li>NetworkAttachmentDefinitions with annotations:
+<ul><li><span style="background-color: #f1f1f1;">k8s.v1.cni.cncf.io/resourceName: openshift.io/internalNetPolicy</span></li><li><span style="background-color: #f1f1f1;">k8s.v1.cni.cncf.io/resourceName: openshift.io/externalNetPolicy</span></li></ul>
+</li><li>Multus CNI configuration file: <span style="background-color: #f1f1f1;">/etc/kubernetes/cni/net.d/00-multus.conf`</span></li><li>SriovNetwork custom resources managing NADs</li></ul>
+<h2></h2>
+<p> </p>
+<h2><strong>Cause</strong></h2>
+<p>SR-IOV Network Operator version 4.18 automatically overwrites the <span style="background-color: #f1f1f1;">cniVersion</span> field in NetworkAttachmentDefinitions to <span style="background-color: #f1f1f1;">&quot;1.0.0&quot;</span> when managing SR-IOV networks. This version is incompatible with F5 SPK releases, which require <span style="background-color: #f1f1f1;">cniVersion: &quot;0.3.1&quot;</span> for successful TMM pod network attachment and operation.</p>
+<p>The SR-IOV operator manages NADs through SriovNetwork custom resources, and any manual edits to the NAD are overwritten by the operator&#39;s reconciliation process, making it impossible to persist the correct CNI version while the 4.18 operator is active.</p>
+<p> </p>
+<h2><strong></strong></h2>
+<h2><strong>Answer/Recommended Actions</strong></h2>
+<p>To resolve this issue and allow TMM pods to start successfully:</p>
+<ol><li><strong>Downgrade the SR-IOV Network Operator:</strong>
+<ul><li>Follow your platform vendor&#39;s documented procedure to downgrade the SR-IOV Network Operator from version 4.18 to version 4.12</li><li>For Red Hat OpenShift, consult Red Hat documentation for the downgrade procedure</li></ul>
+</li><li><strong>Reinstall or Reapply SPK Application:</strong>
+<ul><li>After downgrading the SR-IOV operator, reinstall the SPK application or reapply the TMM deployment:</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">helm uninstall &lt;release-name&gt; -n &lt;namespace&gt;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">helm install &lt;release-name&gt; tar/f5ingress-&lt;version&gt;.tgz -f &lt;values&gt;.yaml</span></p>
+</li><li><strong>Verify NAD Configuration:</strong>
+<ul><li>Confirm that NetworkAttachmentDefinitions now show the correct CNI version:</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">oc get network-attachment-definitions -n &lt;namespace&gt; -o yaml | grep cniVersion</span></p>
+<ul><li>Expected output should show: <span style="background-color: #f1f1f1;">&quot;cniVersion&quot;: &quot;0.3.1&quot;</span></li></ul>
+</li><li><strong>Verify SriovNetwork Resources:</strong>
+<ul><li>Check that SriovNetwork custom resources are properly configured:</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">oc get sriovnetwork -A</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">oc get sriovnetwork -n openshift-sriov-network-operator &lt;name&gt; -o yaml</span></p>
+</li><li><strong>Restart TMM Pods:</strong>
+<ul><li>Delete existing TMM pods to allow recreation with correct network configuration:</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">oc delete pod -n &lt;spk-namespace&gt; -l app=f5-tmm</span></p>
+</li><li><strong>Monitor Pod Startup:</strong>
+<ul><li>Verify TMM pods start successfully and attach to the network:</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">oc get pods -n &lt;spk-namespace&gt;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">oc describe pod -n &lt;spk-namespace&gt; &lt;tmm-pod-name&gt;</span></p>
+</li></ol>
+<p><span style="color: #c20025;"><span style="background-color: #f1f1f1;"><em><strong>Important</strong>: Do not attempt to manually edit the NAD or SriovNetwork resources to change the CNI version while SR-IOV Operator 4.18 is installed, as changes will be automatically reverted.</em></span></span></p>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: Ensure the Multus CNI configuration on worker nodes shows <span style="background-color: #f1f1f1;">&quot;cniVersion&quot;: &quot;0.3.1&quot;</span> by checking: <span style="background-color: #f1f1f1;">cat /etc/kubernetes/cni/net.d/00-multus.conf`</span></em></span></p>
+<h2></h2>
+<h2><strong></strong></h2>
+<h2><strong>Additional Information</strong></h2>
+<p> </p>
+<p><strong>Compatibility Information:</strong></p>
+<p> </p>
+<ul><li>Current SPK releases (including 1.7.14) require CNI version 0.3.1 for successful operation</li><li>SR-IOV Network Operator version 4.12 is compatible with SPK and uses CNI version 0.3.1</li><li>SR-IOV Network Operator version 4.18 enforces CNI version 1.0.0, which is incompatible with current SPK releases</li></ul>
+<p> </p>
+<p><strong>Future Support:</strong></p>
+<p> </p>
+<ul><li>F5 Engineering is working on compatibility with SR-IOV Operator 4.18+ in future SPK releases</li><li>A bug has been filed to track this incompatibility</li><li>F5 documentation will be updated to include:
+<ul><li>Warning that SR-IOV Operator 4.18+ is not compatible with current SPK releases</li><li>Specification that CNI version 0.3.1 is required for successful TMM pod operation</li><li>Updated compatibility matrix showing supported SR-IOV operator versions</li></ul>
+</li></ul>
+<p> </p>
+<p><strong>Verification Steps:</strong></p>
+<p>To confirm your environment is affected by this issue, check:</p>
+<p> </p>
+<ol><li>SR-IOV operator version: <span style="background-color: #f1f1f1;">oc get csv -n openshift-sriov-network-operator</span></li><li>NAD CNI version: <span style="background-color: #f1f1f1;">oc get net-attach-def -A -o yaml | grep cniVersion</span></li><li>TMM pod events: <span style="background-color: #f1f1f1;">oc describe pod -n &lt;namespace&gt; &lt;tmm-pod-name&gt;</span></li></ol>
+</article>
+</body>
+</html>

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K19823081: Mitigating UDP flood using the BIG-IP packet filter</title>
+<meta name="description" content="Knowledge: Mitigating UDP flood using the BIG-IP packet filter — You want to mitigate User Datagram Protocol (UDP) flood traffic through the BIG-IP system.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K19823081">
+</head>
+<body>
+<header>
+<h1>K19823081: Mitigating UDP flood using the BIG-IP packet filter</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2019-08-06</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP Platforms</li><li>Virtual Editions</li><li>BIG-IP LTM: 11.4.1, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 11.5.1, 11.5.0, 11.4.0, 11.3.0, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 13.0.X, 12.1.X, 12.0.X, 11.6.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 11.6.5, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 13.X.X, 12.X.X, 11.X.X, 11.5.X, 11.4.X, 11.3.X, 11.2.X, 11.1.X, 11.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 15.X.X, 14.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K19823081">https://my.f5.com/manage/s/article/K19823081</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>You should consider using this procedure under the following condition:</p>
+<ul><li>You want to mitigate User Datagram Protocol (UDP) flood traffic through the BIG-IP system.</li></ul>
+<h3>Description</h3><p>UDP is a standard protocol for communication across IP networks, but, as UDP packets are stateless, they have less error checking and validation compared to TCP. A UDP flood attack attempts to overload a server with requests by saturating the connection tables on every accessible port on a server.</p>
+
+<p>Filling the connection table with these requests prevents valid requests from being served, and the server can become inaccessible to valid clients.</p>
+
+<p>The BIG-IP system has a packet filter feature to prevent UDP floods from reaching a virtual server, virtual address, or a self-IP at the VLAN level.</p>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisites to use this procedure:</p>
+
+<ul><li>You have administrator access to the BIG-IP Configuration utility.</li><li>You have access to the Advanced Shell (<strong>bash</strong>).</li></ul>
+
+<p><span class="sectiontitle">Procedures</span></p>
+
+<p>To achieve this mitigation, perform the procedures:</p>
+
+<ul><li><a href="#proc1">Determining the source of UDP flood traffic using a packet capture</a></li><li><a href="#proc2">Creating a packet filter rule</a></li><li><a href="#proc3">Reviewing packet filter files</a></li></ul>
+
+<p><span class="subsectiontitle"><a id="proc1" name="proc1"></a>Determining the source of UDP flood traffic</span></p>
+
+<p>You can determine the source of the UDP flood traffic using several methods. For example, you can determine the source externally using a report from an external monitoring tool or a packet capture. You may also be able to determine this using the BIG-IP system during an actual UDP flood traffic event in which a packet capture may be beneficial to understand the type of payload and datagram size of the UCP traffic being flooded to the BIG-IP system.</p>
+
+<ol><li>Log in to <strong>bash</strong>.</li><li>Run a packet capture using <strong>tcpdump</strong> utility by typing the following command.
+	<p><span class="code">tcpdump -nni 0.0:nnn udp -s0 -w /var/tmp/udp_flood.pcap -C 5 -W 2 -vv</span></p>
+
+	<p>The following notes from <strong>tcpdump man</strong> page may help explain the previous command options:</p>
+
+	<p><strong>-n, nn, or nnn</strong>: Capture with increasing amounts of internal debugging information, appended to the end of each packet. This requires the use of <strong>-s0</strong> to actually acquire and display the information.</p>
+
+	<p><strong>-C</strong>: Before writing a raw packet to a savefile, check whether the file is currently larger than <strong>file_size</strong> and, if so, close the current savefile and open a new one. Savefiles after the first savefile have the name specified with the <strong>-w</strong> flag, with a number after it, starting at 1 and continuing upward. The <strong>units of file_size</strong> are millions of bytes (1,000,000 bytes, not 1,048,576 bytes).</p>
+
+	<p><strong>-W</strong>: Used in conjunction with the <strong>-C</strong> option, this limits the number of files created to the specified number and begins overwriting files from the beginning, thus creating a rotating buffer. In addition, it names the files with enough leading 0s to support the maximum number of files, allowing them to sort correctly.</p>
+
+	<p><strong>-s</strong> Snarf snaplen bytes of data from each packet rather than the default of 65535 bytes. Setting snaplen to 0 sets it to the default of 65535 for backwards compatibility with recent older versions of <strong>tcpdump</strong>.</p>
+	</li><li>Use the <strong>tshark</strong> command to determine the top source IP addresses sending the UDP traffic and which VLAN is sending the traffic. Type the following command:
+	<p><span class="code">tshark -nnnr /var/tmp/udp_flood.pcap1 -T fields -e ip.src -e vlan.id | sort -rn | uniq -c | sort -rnk 1</span></p>
+
+	<p><span class="note"><strong>Note</strong>: You can also use Wireshark to review the packet capture and determine the top source IP addresses and VLAN.</span></p>
+
+	<p>Output appears similar to the following:</p>
+
+	<p><span class="example2">[root@F5] config # tshark -nnnr /var/tmp/udp_flood.pcap1 -T fields -e ip.src -e vlan.id | sort -rn | uniq -c | sort -rnk 1 | head -10<br>	1 192.0.2.231 653<br>	1 198.100.51.181 653<br>	1 203.0.113.16 653<br>	1 203.0.113.226 653<br>	1 198.100.51.227 653<br>	1 192.0.2.25 653<br>	1 198.100.51.112 653<br>	1 203.0.113.245 653<br>	1 192.0.2.102 653<br>	1 192.0.2.227 653</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="proc2" name="proc2"></a>Creating a packet filter rule</span></p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> Configuring packet filter rules that are inappropriate for your environment may result in traffic disruption.</span></p>
+
+<p><span class="note"><strong>Note</strong>: Changing the default value of the <strong>Unhandled Packet Action</strong> property can produce unwanted consequences. Before changing this value to Discard or <strong>Reject</strong>, make sure that any traffic that you want the BIG-IP system to accept meets the criteria specified in your packet filter rules.</span></p>
+
+<p>Packet filters enhance network security by specifying whether a BIG-IP system interface should accept or reject certain packets based on criteria that you specify. Packet filters enforce an access policy on incoming traffic. They apply to incoming traffic only. This complements the BIG-IP default deny, in which an additional layer of protection to is available to BIG-IP listeners.</p>
+
+<p>Packet filter rules require the protocols, source hosts and networks, destination hosts and networks and destination port information in order to create the rule.</p>
+
+<p><span class="subsubsectiontitle">Creating a packet filter using the Configuration utility</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Navigate to <strong>Network</strong> &gt; <strong>Packet Filters</strong> &gt; <strong>General</strong>.</li><li>Set <strong>Packet Filtering</strong> to <strong>Enabled</strong>.</li><li>Click <strong>Update</strong>.</li><li>Navigate to <strong>Network </strong> &gt; <strong>Packet Filters</strong> &gt; <strong>Rules</strong>.</li><li>Click <strong>Create</strong>.</li><li>Provide the following information on the rule creation page:
+	<ul><li>Under <strong>Configuration</strong>, provide a descriptive name for the packet filter rule. For example, <strong>block_source_UDP</strong>.</li><li>For <strong>Order</strong>, click the order in which the system applies the packet filter if you configure more than one packet filter rule. For example, <strong>First</strong>.</li><li>For <strong>Action</strong>, set to <strong>Discard</strong>. This setting specifies how the system should process a packet that matches the criteria specified in the packet filter rule.</li><li>For <strong>VLAN / Tunnel</strong>, click the appropriate VLAN name. This is the VLAN on which the UDP flood traffic is arriving.</li><li>For <strong>Logging</strong>, click <strong>Enabled</strong> for troubleshooting and verifying the action taken by the packet filter.</li><li>Under <strong>Filter Expression </strong>, for <strong>Filter Expression Method</strong>, click <strong>Build Expression</strong>.</li><li>For <strong>Protocols</strong>, click <strong>UDP</strong>.</li><li>For <strong>Source Hosts and Networks</strong> from the previous procedure, <strong>Determining the source of UDP flood traffic</strong>, add the IP addresses or networks of UDP flood traffic source. For example, <strong>192.0.2.231</strong>.</li><li>For <strong>Destination Hosts and Networks</strong>, if you want to deny access to certain destination or any destination, set the appropriate IP address or network address. For example, <strong>Any</strong>.</li><li>For <strong>Destination Port</strong>, set the destination port. For example, <strong>Any</strong>.</li></ul>
+	</li></ol>
+
+<p><span class="subsubsectiontitle">Creating a packet filter using tmsh</span></p>
+
+<p>To use the TMOS Shell (<strong>tmsh</strong>) to create the same example configuration as described in the Configuration utility version, perform the following procedure:</p>
+
+<ol><li>Log in to <strong>tmsh</strong>.</li><li>Type the following command:
+	<p><span class="code">create /net packet-filter block_source_UDP order 1 action discard rule &quot;( proto UDP ) and ( src net 192.0.2.231 )&quot;</span></p>
+	</li><li>Type the following command:
+	<p><span class="code">save sys config</span></p>
+
+	<p>You can modify the previous example can to block UDP traffic form an entire network using the following command:</p>
+
+	<p><span class="example">create net packet-filter block_udp_UDP_Subnet order 1 action discard rule &quot;( proto UDP ) and ( src net 192.0.2.0/24)&quot;</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="proc3" name="proc3"></a>Reviewing packet filter files</span></p>
+
+<p>If logging is enabled, you can review the packet filter generated logs from the following locations:</p>
+
+<p><span class="subsubsectiontitle">Configuration utility</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Navigate to <strong>System</strong> &gt; <strong>Logs</strong> &gt; <strong>Packet Filter</strong>.</li></ol>
+
+<p><span class="subsubsectiontitle">bash</span></p>
+
+<ul><li>The <strong>/var/log/pktfilter </strong>log file<strong>.</strong></li></ul>
+
+<p><strong><span class="note"><strong>Note</strong>:</span></strong><span class="note"> It is important to disable logging after you confirm the packet filter rule is blocking the UPD flood traffic as expected because this log file can grow rapidly.</span></p>
+</article>
+</body>
+</html>

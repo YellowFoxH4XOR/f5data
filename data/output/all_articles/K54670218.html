@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K54670218: DNS Express calculation to migrate to using in-memory (hugepages) storage for DNS zones</title>
+<meta name="description" content="Support Solution: DNS Express calculation to migrate to using in-memory (hugepages) storage for DNS zones — By default, DNS Express stores the zone data in an efficient disk based database located under /shared/zxfrd, and uses that file to answer queries. To improve performance further, F5 provides the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K54670218">
+</head>
+<body>
+<header>
+<h1>K54670218: DNS Express calculation to migrate to using in-memory (hugepages) storage for DNS zones</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-01-20</dd>
+<dt>Updated</dt><dd>2026-09-16</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP GTM</li><li>BIG-IP DNS: 16.X.X, 15.X.X, 14.X.X, 13.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K54670218">https://my.f5.com/manage/s/article/K54670218</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+<p>By default, DNS Express stores the zone data in an efficient disk based database located under /shared/zxfrd, and uses that file to answer queries.  To improve performance further, F5 provides the ability to store the database entirely in memory blocks, called huge pages, though doing so decreases the total memory available to the tmm process.</p>
+<p>To enable memory storage, set the DB key &quot;<strong>DNSExpress.HugePages</strong>&quot; to a non zero number, and restart the tmm process (this will be service impacting). The variable controls the number of 2MB pages that tmm will dedicate to DNS express usage.  </p>
+<p>When huge pages are used, the database is primarily stored in a memory based filesystem mounted at /dev/mprov/zxfrd, but can be copied periodically to the files under /shared/zxfrd, in order to provide initial zone data after the BIG-IP device has been rebooted (restarting tmm without rebooting does not delete the database), using the db key &quot;<strong>DNSExpress.PersistHugePages</strong>&quot; to &quot;True&quot;</p>
+<p>The timing of the writes to disk is controlled by a third db key - &quot;<strong>DNSExpress.DBWriteDelay</strong>&quot;, which sets the amount of time, in seconds, where the zxfrd process commits any changes it has received through zone transfers to the tmm process. If huge pages are being used, this also causes the database to be copied to /shared/zxfrd.  </p>
+<p>When using huge pages, tmm must reserve a block of memory for DNSX during startup, and can not resize this block dynamically, therefore it must be sufficiently large to accommodate all the data received, as well as the effects of memory fragmentation as records are deleted and created, and also uncommitted memory pages pending a write to disk.   If insufficient memory is available, symptoms can include the zxfrd process crashing with a SEGV signal and writing a core image to disk, and tmm responding to DNS queries with stale or incomplete data.</p>
+<p>If Huge Pages are to be used, determine an appropriate value for DNSExpress.HugePages, using the following guidance.</p>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>DNSExpress</li><li>GTM/DNS</li></ul>
+<p><span class="sectiontitle">Cause</span></p>
+<p>None</p>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<p>The actions or steps required to address the topic covered in the description.<br>Example:</p>
+<ol><li>Start with huge pages set to 0, as this mode does not impose an upper limit on the size of the database. If huge pages are already set to 0, skip this step.<br><span class="code">tmsh modify sys db dnsexpress.hugepages value 0<br>bigstart restart tmm zxfrd # This will restart tmm and be <em><strong>service impacting</strong></em></span></li><li>Check the size of the existing disk-based database:<span class="code">du -sh /shared/zxfrd<br>3.9G    /shared/zxfrd</span></li><li>Multiply the number displayed by 2.5, and round  up,  for a value that will provide room for growth:
+<ul><li><span class="example2">3.9 * 2.5 ==&gt; 9.75 GB  <br></span></li><li><span class="example2">=&gt; 10 GB   </span></li></ul>
+</li><li><span class="example2">Convert to MB, then divide by 2, as each huge page is 2MB in size: </span>
+<ul><li><span class="example2"><strong>10</strong> * 1024 / 2</span></li><li><span class="example2">=&gt; 5120</span></li></ul>
+</li><li>Make the changes<br><span class="code">(bigip)# tmsh modify sys db dnsexpress.hugepages value 5120<br>(bigip)# tmsh modify sys db dnsexpress.persisthugepages value true<br>(bigip)# bigstart restart tmm zxfrd # <em><strong>service impacting</strong></em><br></span><span class="example2"></span></li></ol>
+<p><span class="sectiontitle">Additional Information</span></p>
+<p>Whenever the value of DNSExpress.HugePages is changed, particularly if it is changed from zero to a non-zero value, <strong>the tmm and zxfrd processes must both be restarted concurrently to effect that change, as they both access the same database files</strong>.   If they are not both restarted, a situation can occur where zxfrd is stuck in a restart loop, or is updating database files that tmm isn&#39;t using. To avoid these situations, make the changes to the db keys only during a maintenance window, when tmm and zxfrd can be restarted immediately afterwards.</p>
+</article>
+</body>
+</html>

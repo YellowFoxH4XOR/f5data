@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000134476: F5ingress fails to configure f5-tmm Virtual Server/Pool after App/Pod restart when there is at least one invalid IngressTCP Custom Resource</title>
+<meta name="description" content="Support Solution: F5ingress fails to configure f5-tmm Virtual Server/Pool after App/Pod restart when there is at least one invalid IngressTCP Custom Resource — When applications in watched namespace are scaled down to zero or restarted internal objects like virtual servers are not deleted as they should be.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000134476">
+</head>
+<body>
+<header>
+<h1>K000134476: F5ingress fails to configure f5-tmm Virtual Server/Pool after App/Pod restart when there is at least one invalid IngressTCP Custom Resource</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-05-05</dd>
+<dt>Updated</dt><dd>2026-09-25</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>F5 Automation and Orchestration</li><li>BIG-IP Next</li><li>BIG-IP Next SPK: 1.7.2, 1.7.16, 1.7.15, 1.7.14, 1.7.13, 1.7.12, 1.7.11, 1.7.10, 1.7.9, 1.7.8, 1.7.7, 1.7.6, 1.7.5, 1.7.4, 1.7.3, 1.9.X, 1.9.2, 1.9.1, 1.9.0, 1.8.X, 1.8.2, 1.8.0, 1.7.18, 1.7.17, 1.X.X, 1.7.X, 1.7.1, 1.7.0, 1.6.X, 1.6.0, 1.5.X, 1.5.0, 1.3.X, 1.3.1</li><li>F5 BIG-IP Container Ingress Services</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000134476">https://my.f5.com/manage/s/article/K000134476</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Description</strong></h2>
+
+<p>When applications in watched namespace are scaled down to zero or restarted internal objects like virtual servers are not deleted as they should be.</p>
+
+<p>This issue occurs after applying a F5SPKIngressTCP Custom Resources where the port is not specified in the Service Configuration.</p>
+
+<p> </p>
+
+<ul><li>When viewing the F5SPKIngressTCP you will see a similar message</li></ul>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+#oc get f5-spk-ingresstcp -n nginx-apps
+
+NAME                STATUS  MESSAGE                                         AGE
+invalid-nginx-port  FAILED  Failure in sending CR config to grpc endpoints  7s</pre>
+
+<ul><li>In the f5-tmm logs you will see similar log message</li></ul>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+tmm1[39]: 01010007:7: Config debug: Deleting Virtual Server nginx-apps-tcp-8443-ipv6-virtual-server.
+tmm1[39]: 01010058:6: audit log: action: DELETE; UUID: nginx-apps-tcp-8443-ipv6-virtual-server-profile; event: declTmm.virtual_server_profile; Error: No error
+tmm1[39]: 01010058:6: audit log: action: DELETE; UUID: nginx-apps-tcp-8443-ipv6-vs-persist_profile; event: declTmm.virtual_server_profile; Error: No error</pre>
+
+<p class="ql-indent-2" style="margin-left: 40px;"> </p>
+
+<p> </p>
+
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Environment</strong></h2>
+
+<p>SPK 1.4, 1.5, 1.6, 1.7</p>
+
+<p>F5Ingress</p>
+
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Cause</strong></h2>
+
+<p>ID1282605</p>
+
+<p><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Recommended Actions</strong></p>
+
+<ol><li><font face="Arial, sans-serif"><span style="font-size: 14px;">Remove the invalid </span></font>F5SPKIngressTCP CR, correct the misconfigured port, and re-apply. </li></ol>
+
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Additional Information</strong></h2>
+
+<p><strong style="font-size: 16px;">Example configuration</strong><br><br><strong>Service Configuration</strong></p>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+kind: Service
+apiVersion: v1
+metadata:
+  name: nginx-server
+  labels:
+    app: nginx-server
+spec:
+  ports:
+  - name: tcp80
+    protocol: TCP
+    port: 8080
+    targetPort: 80
+  - name: tcp443
+    protocol: TCP
+    port: 8443
+    targetPort: 443
+  - name: udp
+    protocol: UDP
+    port: 4445
+    targetPort: 4445
+  selector:
+    app: nginx-server
+  sessionAffinity: None
+  ipFamilies:
+    - IPv4
+    - IPv6
+  ipFamilyPolicy: PreferDualStack</pre>
+
+<p><strong>Endpoint/Pod/Deployment config</strong></p>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-server
+  labels:
+    app: nginx-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-server
+  template:
+    metadata:
+      labels:
+        app: nginx-server
+    spec:
+      containers:
+        - name: iperf3
+          image: &#39;&lt;image repository&gt;/resource/nginx:&lt;version&gt;&#39;
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+            - name: https
+              containerPort: 443
+              protocol: TCP
+          imagePullPolicy: Always
+          securityContext:
+            privileged: true
+            runAsUser: 0
+      serviceAccount: default</pre>
+
+<p><strong>Valid IngressTCP Custom Resource</strong></p>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+apiVersion: &quot;ingresstcp.k8s.f5net.com/v1&quot;
+kind: F5SPKIngressTCP
+metadata:
+  name: fastl4-nginx
+service:
+  name: &quot;nginx-server&quot;
+  port: 8080                    --------------&gt; Port is referenced in the nginx-server service 
+spec:
+  idleTimeout: 88045
+  destinationAddress: 2.3.4.5
+  destinationPort: 8080
+  ipv6destinationAddress: fd00::321
+  serviceDownAction: &quot;POOLMBR_ACTION_RESELECT&quot;</pre>
+
+<p><strong>Invalid IngressTCP Custom Resource</strong></p>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+apiVersion: &quot;ingresstcp.k8s.f5net.com/v1&quot;
+kind: F5SPKIngressTCP
+metadata:
+  name: fastl4-nginx-bad
+service:
+  name: &quot;nginx-server&quot;
+  port: 8081                    --------------&gt; Port is not referenced in the nginx-server service 
+spec:
+  idleTimeout: 88045
+  destinationAddress: 2.3.4.5
+  destinationPort: 8080
+  ipv6destinationAddress: fd00::321
+  serviceDownAction: &quot;POOLMBR_ACTION_RESELECT&quot;</pre>
+</article>
+</body>
+</html>

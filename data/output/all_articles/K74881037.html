@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K74881037: Error message - 01340004:3: HA Connection detected dissimilar peer: local npgs 8, remote npgs 8, local npus 24, remote npus 24, local pg 0, remote pg 0, local pu 2, remote pu 1. Connection will be aborted.</title>
+<meta name="description" content="Support Solution: Error message - 01340004:3: HA Connection detected dissimilar peer: local npgs 8, remote npgs 8, local npus 24, remote npus 24, local pg 0, remote pg 0, local pu 2, remote pu 1. Connection will be aborted. — This is a specific case of error:&quot;01340004:3: HA Connection detected dissimilar peer:&quot; (K13828).">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K74881037">
+</head>
+<body>
+<header>
+<h1>K74881037: Error message - 01340004:3: HA Connection detected dissimilar peer: local npgs 8, remote npgs 8, local npus 24, remote npus 24, local pg 0, remote pg 0, local pu 2, remote pu 1. Connection will be aborted.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-01-05</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.X.X, 13.1.0, 16.1.1, 13.0.1, 13.0.0, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 13.X.X, 16.1.X, 16.0.X, 15.X.X, 14.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K74881037">https://my.f5.com/manage/s/article/K74881037</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>This is a specific case of error:&quot;01340004:3: HA Connection detected dissimilar peer:&quot; (<a href="https://my.f5.com/manage/s/article/K13828" target="_self">K13828</a>).<br>BigIP getting error messages similar to the following: &quot;01340004:3: HA Connection detected dissimilar peer: local npgs 8, remote npgs 8, local npus 24, remote npus 24, local pg 0, remote pg 0, <strong>local pu 2, remote pu 1</strong>.&quot;</p>
+
+<p> </p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>The system is with High Availability (HA) and mirroring between the HA peers:</li><li>Both devices have a mirroring IP configured.                              </li><li>Both devices are set up to be in the same sync-failover device group.    </li><li>The devices use <strong>identical</strong> platforms.</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Using a non-default cmp-hash for the mirroring VLAN causing the errors to appear.<br>As the Recommended Action from  <a href="https://my.f5.com/manage/s/article/K13828" target="_self">K13828 </a>says:<br>Follow F5 recommendations for hardware parity in high availability (HA) configurations, especially for <strong>connection mirroring</strong>.<br>In this particular case we can find a related cause,therefore we will break the error message:<br><span class="code">01340004:3: HA Connection detected dissimilar peer: local npgs 8, remote npgs 8,<br>                                                      local npus 24, remote npus 24,<br>                                                      local pg 0, remote pg 0,<br>                                                      local pu 1, remote pu 2.</span>                       &lt;-  Those suppose to be identical<br>Check mirror VLAN settings:</p>
+
+<pre>
+net self /Common/selfip_10.10.10.10-27 {
+    address 10.10.10.10/27
+    allow-service {
+        default
+    }
+    fw-enforced-policy /Common/FW_enforced-policy_failover_traffic_cluster
+    traffic-group /Common/traffic-group-local-only
+    vlan /Common/Vlan_Public
+}
+
+net vlan /Common/Vlan_Public {
+    cmp-hash src-ip              &lt;-----------Using non-default CMP HASH
+    interfaces {
+        1/1.1 {
+            tag-mode service
+            tagged
+        }
+    }
+    sflow {
+        poll-interval-global no
+        sampling-rate-global no
+    }
+    tag 1111
+}
+</pre>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>As described from article <a href="https://my.f5.com/manage/s/article/K14135" target="_self">K14135 </a>under Mirroring recommendations:<br>Use the default Clustered Multiprocessing (CMP) hash setting for the VLAN in which mirroring is configured (BIG-IP 11.3.0 and later).<br>The CMP hash setting for the VLAN specifies how the BIG-IP system disaggregates traffic for the VLAN. The default hash (Default) specifies that the system uses L4 ports when disaggregating traffic on the VLAN. Choosing a non-default hash, such as Source Address, may disrupt mirroring traffic between TMM instances.</p>
+
+<ol><li>From <strong>WebUI</strong> - Go to: <strong>Network  -›  VLANs : VLAN List  -›  VLAN_NAME</strong></li><li>Open Configuration to <strong>Advanced</strong></li><li>Set <strong>CMP HASH</strong> to <strong>Default</strong></li><li>Click on <strong>Update</strong></li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>To verify the error messages disappeared, you may check the ltm log (/var/log/ltm).<br>In case of using for connection mirroring between HA peers, make sure that the VLAN&#39;s CMP Hash setting is set to the default value. Otherwise, the system cannot establish the HA connection.</p>
+</article>
+</body>
+</html>

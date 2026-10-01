@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K27804015: Session and Client information logging for NA (Network Access)</title>
+<meta name="description" content="Support Solution: Session and Client information logging for NA (Network Access) — How to log specific user VPN properties locally or to a remote log server">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K27804015">
+</head>
+<body>
+<header>
+<h1>K27804015: Session and Client information logging for NA (Network Access)</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-04-09</dd>
+<dt>Updated</dt><dd>2024-03-11</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 14.X.X, 15.X.X, 16.X.X, 17.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K27804015">https://my.f5.com/manage/s/article/K27804015</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+<p>How to log specific user VPN properties locally or to a remote log server</p>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>APM</li><li>Network Access</li><li>Remote logging </li></ul>
+<p><span class="sectiontitle">Cause</span></p>
+<p>These values have to be manually extracted from session variables </p>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<ol><li>Go to <strong>Local Traffic &gt; iRule</strong></li><li>Create below iRule
+<pre class="language-markup"><code>when CLIENT_ACCEPTED {
+  ACCESS::restrict_irule_events disable
+}
+when HTTP_REQUEST {
+  if { [HTTP::uri] starts_with &quot;/myvpn?sess=&quot; } {
+    after 5000 {
+      log local0.notice &quot;User_Name=[ACCESS::session data get session.logon.last.username] Session_ID=[ACCESS::session data get session.user.sessionid] Assigned PPP Dynamic IPv4: [ACCESS::session data get session.assigned.clientip] NA Resource: [ACCESS::session data get session.assigned.resources.na] Client IP: [ACCESS::session data get session.user.clientip]&quot;
+    }
+  }
+ }
+}</code></pre>
+<span style="font-family: Courier New,Courier,monospace;"><span class="example2"><span style="font-family: Courier New, Courier, monospace;"><span style="color: rgb(39, 174, 96);"><em><strong>Note</strong>: if you are using APM Clients 7240 or later, see </em></span><em><a href="https://my.f5.com/manage/s/article/K000132750" target="_blank">K000132750</a></em></span></span></span></li><li>Apply the iRule to the Virtual Server</li></ol>
+<p><span class="sectiontitle">Additional Information</span></p>
+<ul><li>These lines will get logged in the LTM logs and you can extract the values and send to remote server</li><li>If you need some more parameters, you can run below command and see some more session parameters which can be called in the iRule:
+<p><span class="code">sessiondump -sid &lt;sessionid&gt;</span>   <span class="note">(only active or pending session)</span></p>
+</li><li>You can modify the iRule provided in the <strong>Recommended Actions</strong> section to your meet your requirements. For example, if you observe the iRule logging the information numerous times over the life of the Network Access session, you can add further conditions to the <strong>if</strong> condition of the iRule. For example, you can use the following iRule with an additional variable, <strong>session_logged</strong> so that the iRule will log only once per IP address during a session:
+<p><span class="example2"># Since the URI can be sent more than once during an APM SessionID, this iRule uses the session_logged variable to track what IP Address was assigned.<br># The iRule will only log once per IP Address assigned during a session. <br></span></p>
+<pre class="language-markup"><code>when CLIENT_ACCEPTED {
+  ACCESS::restrict_irule_events disable
+  set session_logged &quot;&quot; 
+}
+when HTTP_REQUEST {
+    if { [HTTP::uri] starts_with &quot;/myvpn?sess=&quot; } {
+      if { $session_logged != [ACCESS::session data get session.assigned.clientip] } {
+      set session_logged [ACCESS::session data get session.assigned.clientip]
+      after 5000 {
+        log local0.notice &quot;User_Name=[ACCESS::session data get session.logon.last.username] Session_ID=[ACCESS::session data get session.user.sessionid] Assigned PPP Dynamic IPv4: [ACCESS::session data get session.assigned.clientip] NA Resource: [ACCESS::session data get session.assigned.resources.na] Client IP: [ACCESS::session data get session.user.clientip]&quot;
+      }
+    }
+}</code></pre>
+</li></ul>
+<p> </p>
+<p>Note that if DTLS is enabled, this iRule must be applied as well to the DTLS virtual server.</p>
+<p>For the iRule to work on the DTLS virtual server, you&#39;d need to include an http profile as well as the Access Profile used on the TLS virtual server.</p>
+<p>You will also need to amend the iRule to disable HTTP for the myvpn request, like this:</p>
+<pre class="language-markup"><code>when CLIENT_ACCEPTED {
+  ACCESS::restrict_irule_events disable
+}
+when HTTP_REQUEST {
+  if { [HTTP::uri] starts_with &quot;/myvpn?sess=&quot; } {
+    after 5000 {
+      log local0.notice &quot;User_Name=[ACCESS::session data get session.logon.last.username] Session_ID=[ACCESS::session data get session.user.sessionid] Assigned PPP Dynamic IPv4: [ACCESS::session data get session.assigned.clientip] NA Resource: [ACCESS::session data get session.assigned.resources.na] Client IP: [ACCESS::session data get session.user.clientip]&quot;
+   }
+   HTTP::disable
+  }
+ }
+}</code></pre>
+<p><span style="font-family: Courier New, Courier, monospace;"><span class="example2"><span style="color: rgb(39, 174, 96);"><em><strong>Note</strong>: if you are using APM Clients 7240 or later, see </em></span><em><a href="https://my.f5.com/manage/s/article/K000132750" target="_blank">K000132750</a></em></span></span></p>
+</article>
+</body>
+</html>

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K73188558: How to recover disk space used by deleted files without rebooting</title>
+<meta name="description" content="Support Solution: How to recover disk space used by deleted files without rebooting — When a file is deleted from a unix filesystem, the contents of the file are not actually removed until all open file handles on that file are closed. This means that a file can be in-use by a…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K73188558">
+</head>
+<body>
+<header>
+<h1>K73188558: How to recover disk space used by deleted files without rebooting</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-01-31</dd>
+<dt>Updated</dt><dd>2026-06-08</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 21.X.X, 21.1.X, 21.1.0, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.3, 17.1.2, 17.1.1, 16.1.6, 16.1.5, 16.1.4, 17.X.X, 16.0.0, 16.0.1, 16.0.X, 16.1.0, 16.1.1, 16.1.2, 16.1.3, 16.1.X, 17.0.0, 17.0.X, 17.1.0, 17.1.X, 16.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K73188558">https://my.f5.com/manage/s/article/K73188558</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h1><span class="sectiontitle">Description</span></h1>
+<p>When a file is deleted from a unix filesystem, the contents of the file are not actually removed until all open file handles on that file are closed.  This means that a file can be in-use by a process, and still deleted (eg,, using the &quot;rm&quot; command), but as far as that process is concerned, the file is still there, and once the process ends, or otherwise closes the file, the kernel makes the disk space it was using available.<br><br>This can lead to a situation where a hung or unresponsive process has a file open which is occupying a lot of disk space, and in extreme situations, this could cause a mount point to run out of free space, with no available files to delete.<br><br>It is possible to &#39;truncate&#39; a deleted file, freeing up the space it was using, even though it is still held open. This procedure should be carried out carefully, with the risks fully assessed before proceeding, as many processes will react badly or in unexpected ways if their data files are altered or truncated while they&#39;re still using them.  Care should be taken to determine why the owning process has hung, and what  it would likely do if one of the files it has open was truncated.  In most cases, it&#39;s better and safer to kill and restart the processes that own the file, so that it is cleanly closed, but there are exceptions - for example, truncating the file <span style="font-family: Lucida Sans Unicode,Lucida Grande,sans-serif;"><strong>/var/tmp/mcpd.out</strong></span> is generally considered a safe procedure (see <a href="https://my.f5.com/manage/s/article/K09512955" target="_blank"><strong>K09512955</strong></a> ) because we know that this file only contains debug-level log output, that mcpd never reads from it, and restarting the mcpd process is service-impacting.   <br><br>Secondly, it&#39;s important to understand the difference between filesystems that occupy physical disk space and those that do not.   The unix directory structure consists of a tree of mount points where various filesystems are connected. Some cases these will be backed by physical storage devices such as hard drives and SSDs, but others will be memory based, or virtual filesystems that have no underlying storage at all.<br><br>For example, the /dev filesystem provides an I/O interface to system drivers and devices, but occupies no space. Similarly the /proc filesystem allows for information about processes to be presented in what appears to be files and folders, but also occupies no space.  The tmpfs and hugetlbfs type of filesystems are also memory based and while they do provide storage, it&#39;s all in RAM.  Furthermore, some processes have been intentionally designed (tmm does this, for example) to open and then immediately delete their temporary memory-based files, even though those files are still  being actively used, to ensure that they&#39;re never left behind if the process was to exit uncleanly. It is therefore normal to see &quot;(deleted)&quot; files showing up in the output of the &#39;lsof&#39; command, and this does not, by itself, indicate a problem with the BIG-IP system.<br><br>For the types of filesystems that do utilise physical storage (hdd / ssd) systems, the unix directory structure consists of mount points where those filesystems are attached, and each of those &#39;mount points&#39; can independently run out of space, so in order to address low disk space concerns, you must first identify which mount point(s) the issue is present on, and then focus on only the files that are stored  under that mount point.  In other words if there is insufficient disk space to write a file to /var/log/, deleting files from /shared or /home will not help, as they are on different mount points.</p>
+<h1><br><span class="sectiontitle">Environment</span></h1>
+<ul><li>Critically low disk space on one or more mount points.</li></ul>
+<h1><br>Cause</h1>
+<p>None</p>
+<h1><br><span class="sectiontitle">Recommended Actions</span></h1>
+<p>With that in mind, if, after careful consideration, or direction by F5 Support staff, it is determined that a deleted file needs to be truncated to free up physical disk space, the instructions below can be followed.<br><br>The &#39;<span style="font-family: Lucida Sans Unicode,Lucida Grande,sans-serif;">lsof</span>&#39; command can be used to list deleted files that are still held open. For example, if I create a new file in <span style="font-family: Lucida Sans Unicode,Lucida Grande,sans-serif;">/var/log</span>, and while leaving it open, delete it in another terminal, then run lsof, I see it showing as <em>(deleted)</em>:</p>
+<pre style="margin-left: 40px;"><em><span class="code"><span style="font-family: Lucida Sans Unicode,Lucida Grande,sans-serif;">(session-1):# <strong>(ls ; cat ) &gt;  /var/log/test </strong>
+
+(session-2):# <strong>rm /var/log/test</strong>
+(session-2):# l<strong>sof 2&gt;/dev/null | grep deleted | grep test </strong>
+bash      28996            root    <strong>1</strong>w      REG              253,3        <strong>730        </strong>184 /var/log/test (deleted)
+cat        28998            root    <strong>1</strong>w      REG              253,3        <strong>730        </strong>184 /var/log/test (deleted)</span></span></em></pre>
+<p><br><br>The output of lsof contains a number of columns, but the most  useful are the process name, pid, filehandle, and size of the file.   In this case, the size is <strong>730 </strong>bytes, and there are  two filehandles attached to /var/log/test, one from bash (pid 28996, filehandle 1), and the other from cat (pid 28998, filehandle 1).  The process&#39;s filehandle is the 4th column in the lsof output.<br><br>The cleanest and safest way to recover disk space occupied by deleted files is to terminate all the processes that have the file held open. </p>
+<pre style="margin-left: 40px;"><em><span style="font-family: Lucida Sans Unicode,Lucida Grande,sans-serif;">[root@gtm-17002-2-121:Active:Standalone] config # </span> <span class="code"><strong><span style="font-family: Lucida Sans Unicode,Lucida Grande,sans-serif;">kill 28996 28998 </span></strong></span></em></pre>
+<p><br>If the process(es) do not respond to kill signals, or if they can not be terminated because of to an undesirable service impact, and it is known that the contents of the deleted file in question is safe to remove, then the file can be truncated by referencing it through the proc filesystem.   All files held open by a process are visible under <span style="font-family: Lucida Sans Unicode,Lucida Grande,sans-serif;">/proc/&lt;pid&gt;/fd</span>, for example:</p>
+<pre style="margin-left: 40px;"><em><span style="font-family: Lucida Sans Unicode,Lucida Grande,sans-serif;">[root@gtm-17002-2-121:Active:Standalone] config # l<strong>s -l /proc/28996/fd/</strong>
+total 0
+lrwx------. 1 root root 64 May 18 12:01 0 -&gt; /dev/pts/5
+<strong>l-wx------. 1 root root 64 May 18 12:01 1 -&gt; /var/log/test (deleted)</strong>
+lrwx------. 1 root root 64 May 18 12:01 2 -&gt; /dev/pts/5
+lrwx------. 1 root root 64 May 18 12:01 255 -&gt; /dev/pts/5
+
+[root@gtm-17002-2-121:Active:Standalone] config # <strong>ls -l /proc/28998/fd/</strong>
+total 0
+lrwx------. 1 root root 64 May 18 12:01 0 -&gt; /dev/pts/5
+<strong>l-wx------. 1 root root 64 May 18 12:01 1 -&gt; /var/log/test (deleted)</strong>
+lrwx------. 1 root root 64 May 18 12:01 2 -&gt; /dev/pts/5</span></em></pre>
+<p><br>If necessary, the content of the deleted file can be viewed by simply using the cat command - in this case, the content of the file is the output of the ls command that was run earlier when we created that file:</p>
+<pre style="margin-left: 40px;"><em><span style="font-family: Lucida Sans Unicode,Lucida Grande,sans-serif;">[root@gtm-17002-2-121:Active:Standalone] config # c<strong>at /proc/28998/fd/1 |head -5</strong>
+aaa
+api_settings
+big3d
+BigDB.dat
+bigip</span></em></pre>
+<p><br>The disk space occupied by this file can be recovered by truncating the file to zero bytes:</p>
+<pre style="margin-left: 40px;"><span style="font-family: Lucida Sans Unicode,Lucida Grande,sans-serif;"><em>[root@gtm-17002-2-121:Active:Standalone] config # <strong>truncate -s0 /proc/28998/fd/1</strong>
+[root@gtm-17002-2-121:Active:Standalone] config # <strong>cat /proc/28998/fd/1 </strong></em></span>
+<span style="font-family: Lucida Sans Unicode,Lucida Grande,sans-serif;"><em>
+# (no output - the deleted file is now empty, and the disk space it was using is available)</em></span></pre>
+<p><br>Another way to truncate a file is to redirect &quot;nothing&quot; into that file, using shell redirection syntax:</p>
+<pre style="margin-left: 40px;"><span style="font-family: Lucida Sans Unicode,Lucida Grande,sans-serif;"><em>[root@gtm-17002-2-121:Active:Standalone] config #  <strong>&gt;</strong> <strong>/proc/28998/fd/1</strong></em></span></pre>
+<h1> </h1>
+<ul></ul>
+<h1><span class="sectiontitle">Additional Information</span></h1>
+<p>The recommended and safest way to recover disk space occupied by a deleted file will always be to terminate the process(es) that have open file handles on that file.  This could mean rebooting the BIG-IP device, to ensure that any dependencies are also restarted correctly. <br><br>Manual truncation of a deleted file must always be carried out with due care and knowledge of what the expected result is.  Typically this would be an action only be only be carried out at the request of an F5 Support Engineer.<br><br>The presence of deleted files in a running BIG-IP system is both normal and not a direct indication of a problem.<br><br> </p>
+</article>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000137506: TCP connection reset with cause &quot;HTTP internal error (bad state transition)&quot;</title>
+<meta name="description" content="Support Solution: TCP connection reset with cause &quot;HTTP internal error (bad state transition)&quot; — TCP connection reset with cause &quot;HTTP internal error (bad state transition)&quot;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000137506">
+</head>
+<body>
+<header>
+<h1>K000137506: TCP connection reset with cause &quot;HTTP internal error (bad state transition)&quot;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-11-16</dd>
+<dt>Updated</dt><dd>2023-11-16</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 15.0.0, 15.0.1, 15.0.X, 15.1.0, 15.1.1, 15.1.2, 15.1.3, 15.1.4, 15.1.5, 15.1.6, 15.1.7, 15.1.8, 15.1.9, 15.1.10, 15.1.X, 16.0.0, 16.0.1, 16.0.X, 16.1.0, 16.1.1, 16.1.2, 16.1.3, 16.1.4, 16.1.X, 17.0.0, 17.0.X, 17.1.0, 17.1.1, 17.1.X, 15.X.X, 16.X.X, 17.X.X</li><li>BIG-IP LTM: 15.0.0, 15.0.1, 15.0.X, 15.1.0, 15.1.1, 15.1.2, 15.1.3, 15.1.4, 15.1.5, 15.1.6, 15.1.7, 15.1.8, 15.1.9, 15.1.10, 15.1.X, 16.0.0, 16.0.1, 16.0.X, 16.1.0, 16.1.1, 16.1.2, 16.1.3, 16.1.4, 16.1.X, 17.0.0, 17.0.X, 17.1.0, 17.1.1, 17.1.X, 17.X.X, 16.X.X, 15.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000137506">https://my.f5.com/manage/s/article/K000137506</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><strong>Description</strong><br><br>TCP connection reset with cause &quot;HTTP internal error (bad state transition)&quot;<br><br>/var/log/ltm logs output similar to<br><br><span style="font-family: Courier New,Courier,monospace;">Nov 3 16:26:54 BIGIP err tmm[12765]: 011f0007:3: http_process_state_prepend - Invalid action:0x107041 clientside (172.16.1.1:55555 -&gt; 172.16.100.100:443) ((null connflow)) (Client side: vip=/Common/vs_prod profile=http pool=/Common/pool_prod client_ip=172.16.1.1)</span><br><br><strong>Environment</strong><br><br>BIGIP with standard virtual server and irule calling HTTP::respond in event ASM_REQUEST_DONE<br><br><strong>Cause</strong><br><br>HTTP::respond does not work in event ASM_REQUEST_DONE. This is due to how BIGIP processes the sequence of events internally.<br><br><strong>Recommended Actions</strong><br><br>Move the HTTP::respond to event HTTP_REQUEST_RELEASE. If required, add logic (eg: setting a flag) in ASM_REQUEST_DONE to control the call to HTTP::respond in HTTP_REQUEST_RELEASE).<br><br>For example, the following irule snippet was previously failing when HTTP::respond was called within event ASM_REQUEST_DONE. The fix here is to move the call for HTTP::respond to event HTTP_REQUEST_RELEASE. The control is made using the newly added variable &quot;flag_error&quot;.<br> </p>
+
+<pre class="ckeditor_codeblock">
+when ASM_REQUEST_DONE {
+  set flag_error 0
+  if {[HTTP::uri] contains &quot;/images&quot; and ([class match [ASM::client_ip] equals &quot;/Common/trust-list&quot;])} {
+    ASM::unblock
+  } else {
+# The line below is now relocated to event HTTP_REQUEST_RELEASE
+# HTTP::respond 404 content &quot;HTTP ERROR 404 Reason: Access denied&quot; Mime-Type &quot;text/html&quot; 
+    set flag_error 1
+  }
+}
+
+when HTTP_REQUEST_RELEASE { 
+  if {([info exists flag_error]) and ($flag_error)} { 
+    <strong>HTTP::respond 404 content &quot;HTTP ERROR 404 Reason: Access denied&quot; Mime-Type &quot;text/html&quot;</strong>
+    set flag_error 0
+    event disable
+    TCP::close
+  }
+}
+</pre>
+
+<p><br><strong>Additional Information</strong><br><br>None.</p>
+
+<pre id="box">
+ </pre>
+
+<p> </p>
+</article>
+</body>
+</html>

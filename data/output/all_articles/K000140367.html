@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000140367: Event logs are not sent per security log profile associated to a virtual server</title>
+<meta name="description" content="Support Solution: Event logs are not sent per security log profile associated to a virtual server — Security event logs are not sent per configurations in security log profile when multiple security log profiles are attached to a virtual server. When only a single log profile is attached to the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000140367">
+</head>
+<body>
+<header>
+<h1>K000140367: Event logs are not sent per security log profile associated to a virtual server</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-07-24</dd>
+<dt>Updated</dt><dd>2025-03-03</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP AFM: 15.0.0, 17.X.X, 16.X.X, 15.X.X, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000140367">https://my.f5.com/manage/s/article/K000140367</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Security event logs are not sent per configurations in security log profile when multiple security log profiles are attached to a virtual server. When only a single log profile is attached to the virtual server, on the other hand, event logs are sent as expected. Even if re-configuration starts sending event logs, it stops after reboot.</p>
+<p>Having two security log profiles: profile A has the affected sub-module enabled in the profile, and profile B has other sub-modules enabled, there are two scenarios to be affected:</p>
+<ol><li><a id="scenario1" target="_blank"></a>Profiles are attached in the order: <strong>B first, followed by A</strong> -- Profile config in A does not become effective, and event logs supposed to be sent by profile A are not sent<br>Known to be affected sub-modules in log profile:
+<ol><li>Classification</li><li>Network Address Translation</li><li>Protocol Inspection</li></ol>
+</li><li><a id="scenario2" target="_blank"></a>Profiles are attached in the order: <strong>A first, followed by B</strong> -- Profile config in A is overwritten by profile B, and event logs supposed to be sent by profile A are not sent<br>Known to be affected sub-modules in log profile:
+<ol><li>Auto Discovery</li><li>Network Firewall - Port Misuse</li><li>Protocol Security - SSH Proxy</li></ol>
+</li></ol>
+<p>For example, assume there are two security log profiles: One with <strong>protocol-inspection</strong> and the other with <strong>application</strong> security like below.</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">security log profile log_profile_01 {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    protocol-inspection {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        log-publisher my-publisher</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    }</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    application {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        log_profile_01 {<br></span><span style="font-family: &#39;courier new&#39;, courier, monospace;">            logger-type remote</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        }</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    }</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">security log profile log_profile_02 {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    application {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        log_profile_02 {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">            logger-type local</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        }</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    }</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></p>
+<p>The following command attaches log_profile_02 and log_profile_01 in the specific order: <strong>log_profile_02 first, followed by log_profile_01</strong>. This matches the <a href="#scenario1" target="_self"><strong>scenario 1</strong></a> above, and the protocol-inspection event logs would not be sent through my-publisher.</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh modify ltm virtual vs_http security-log-profiles add { log_profile_02 log_profile_01 }</span></p>
+<p>The following command attaches log_profile_01 and log_profile_02 in the specific order: <strong>log_profile_01 first, followed by log_profile_02</strong>. Both log profiles function properly in this case.</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh modify ltm virtual vs_http security-log-profiles add { log_profile_01 log_profile_02 }</span></p>
+<h2>Environment</h2>
+<ul><li>BIG-IP AFM</li><li>More than one security log profiles are attached to a single virtual server</li><li>The affected sub-modules are enabled in security log profile</li></ul>
+<h2>Cause</h2>
+<p><a href="https://cdn.f5.com/product/bugtracker/ID1670445.html" target="_blank">ID 1670445</a> tracks the issue.</p>
+<h2>Recommended Actions</h2>
+<p>There are two possible workarounds for this issue.</p>
+<h3>Workaround A</h3>
+<p>Consolidate multiple security log profiles into a single profile and attach it to a virtual server.</p>
+<h3>Workaround B</h3>
+<p>In case consolidating into a single security log profile is not an option for whatever reasons, and one of them has the affected sub-modules enabled, use CLI to explicitly attach security log profiles in specific order.</p>
+<ol><li>Dissociate security log profiles from the virtual server<br><code>tmsh modify ltm virtual &lt;vs_name&gt; security-log-profiles none</code></li><li>Attach the necessary security log profiles to the virtual server in the correct order ( the left most profile inside curly braces { } will be attached first )<br><a href="#scenario1" target="_self">Scenario 1</a>: Specify the security log profile with the affected sub-module as the left most profile inside curly braces.<br><code>tmsh modify ltm virtual &lt;vs_name&gt; security-log-profiles add { &lt;log_profile_with_affected_sub_module&gt; &lt;other_profiles&gt; }</code><br><a href="#scenario2" target="_self">Scenario 2</a>: Specify the security log profile with the affected sub-module as the right most profile inside curly braces.<br><code>tmsh modify ltm virtual &lt;vs_name&gt; security-log-profiles add { &lt;other_profiles&gt; &lt;log_profile_with_affected_sub_module&gt; }</code></li></ol>
+<p><span style="color: #c20025;"><em><strong>Important</strong>: The workaround B may not persist across reboots. Creating a custom script like below by following <a href="https://my.f5.com/manage/s/article/K11948" target="_blank" style="color: #c20025;">K11948</a> to run these commands will also be needed to apply the workaround automatically after reboots.</em></span></p>
+<ol><li>Use a text editor like vim to create a startup script file<br><p><code>vi /config/startup_script_K000140367.sh</code></p>
+<p>with contents like below:</p>
+<p><code>#!/bin/bash
+# Filename: /config/startup_script_K000140367.sh
+
+source /usr/lib/bigstart/bigip-ready-functions
+wait_bigip_ready
+
+# Here you could perform customized command(s) after MCPD is found running when the BIG-IP system starts up.
+# Customized startup command(s) can be added below this line.
+
+tmsh modify ltm virtual &lt;vs_name&gt; security-log-profiles none<br><br># Either one of them
+tmsh modify ltm virtual &lt;vs_name&gt; security-log-profiles add { &lt;log_profile_with_affected_sub_module&gt; &lt;other_profiles&gt; }<br># or<br>tmsh modify ltm virtual &lt;vs_name&gt; security-log-profiles add { &lt;other_profiles&gt; &lt;log_profile_with_affected_sub_module&gt; }
+
+# Customized startup command(s) should end above this line.
+# End of file /config/startup_script_K000140367.sh</code></p>
+</li><li>
+<p>Make the file executable<br><code>chmod +x /config/startup_script_K000140367.sh</code></p>
+</li><li>
+<p>Append the script command to the end of /config/startup file<br><code>echo &quot;/config/startup_script_K000140367.sh &amp;&quot; &gt;&gt; /config/startup</code></p>
+</li></ol>
+<h2>Additional Information</h2>
+<p>When using BIG-IP Configuration Utility (GUI) to attach more than one log profiles to a virtual server, the order to attach would be determined internally, and admins cannot control it. When using GUI, attach one log profile, click <strong>Update</strong> to save, and attach another log profile, and so on.</p>
+</article>
+</body>
+</html>

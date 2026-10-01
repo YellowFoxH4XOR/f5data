@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000139110: BIG-IP systems with AFM provisioned use more memory than memory graphs show</title>
+<meta name="description" content="Support Solution: BIG-IP systems with AFM provisioned use more memory than memory graphs show — The Memory Breakdown and Memory Used graphs understate the amount of memory used in the other component in the graph due to a quirk in the way other memory use is calculated. This can sometimes…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000139110">
+</head>
+<body>
+<header>
+<h1>K000139110: BIG-IP systems with AFM provisioned use more memory than memory graphs show</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-03-30</dd>
+<dt>Updated</dt><dd>2024-04-04</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP AFM: 17.1.X, 15.1.X, 16.1.X, 15.1.0, 15.1.1, 15.1.2, 15.1.3, 15.1.5, 15.1.6, 15.1.7, 15.1.4, 15.1.8, 15.1.9, 15.1.10, 16.1.0, 16.1.1, 16.1.2, 16.1.3, 16.1.4, 17.1.0, 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000139110">https://my.f5.com/manage/s/article/K000139110</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>The <strong>Memory Breakdown</strong> and <strong>Memory Used</strong> graphs understate the amount of memory used in the other component in the graph due to a quirk in the way other memory use is calculated. This can sometimes disguise memory use levels that are problematic, especially on systems with less memory such as small vCMP guests and tenants.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP AFM provisioned</li></ul>
+<h2>Cause</h2>
+<p>To understand this quirk of the graphs, it&#39;s necessary to understand what the graphs show, which means having a high level view of how memory is categorised in TMOS.</p>
+<p>Memory on a BIG-IP is divided into two broad pools, each of which is further sub-divided. One is a pool of huge page memory, and the other is what is left over - memory using the default, native 4KB page size, which can be thought of as ordinary memory. This often goes by the name of host or Linux host or 4KB page memory, and in this context host has nothing to do with hypervisors.</p>
+<p>Huge page memory works best for processes that use very large (huge!) amounts of memory. On BIG-IP only specific processes are set up to use huge pages, though these can and do also use ordinary 4KB pages as well. The traffic handling process, TMM, has traditionally been the single process on a BIG-IP that uses huge pages. This is shown as the lower section on the Memory Breakdown graph, with a green background. From the perspective of the Linux kernel this memory is all allocated, so the amount shown as in use in red is a report from TMM itself. Nowadays, some other processes from modules other than LTM that do a lot of communication with TMM have been allowed to use some huge page memory. We can call this use non-TMM huge pages. It&#39;s not shown on the Memory Breakdown graph as a specific block on its own.</p>
+<p>The component of memory we call <strong>Other </strong>is actually a mix of two things - ordinary 4KB page memory and the non-TMM huge pages block mentioned above. You may feel it&#39;s odd to lump two disparate things like that together, and the name &#39;other&#39; reflects that, but it causes no real issue. The ordinary host memory use is tracked by Linux with various statistics. The Linux kernel has no view into the use of these non-TMM huge pages, so the BIG-IP statistics subsystem treats them as 100% in use. This means, other when system is re-provisioned, changes in other memory are always due to changes in host memory.</p>
+<p>So how is other memory use calculated for the graphs? Rather than add up use of 4KB pages, we take off free or easily freeable memory from the total possible. If we subtract the TMM huge page use from physical memory total we have the total allocation of other memory. From that we subtract free + buffers + cached (each of those tracked by the kernel, though the names can slightly vary depending where you see them). This works fairly well because free+ buffers + cached has traditionally been a good measure of free or easily freeable 4KB page memory. It&#39;s much better than just using free alone. However, this is where the quirk surfaces.</p>
+<p>AFM systems use shared memory to hold two copies of BLOBs (binary large objects) that are compiled AFM rules. These are shared between the rule compiler process, pccd, and the traffic handling process, TMM. At any time one will be active in TMM and updates will be made to the other copy. This shared memory is actually stored in an in-memory filesystem under <strong>/dev/shm</strong> in <strong>pktclass1</strong> and <strong>pktclass2</strong> files. In turn this filesystem is pinned into the cached component of memory - where Linux normally caches I/O to improve latency. Normally cached is mostly freeable, but not entirely - it&#39;s usually above 100 Mbytes if you flush the caches. That means other memory, even under intense memory pressure will never ever show as 100%, though it can get quite close on large memory systems.</p>
+<p>The quirk is caused by the memory reserved for the two BLOB copies, which is often 1 GB or more (sometimes slightly less). This memory ends up under the cached component. Free other memory is considered to free+buffers+cached. Even if the actual AFM ruleset is tiny the memory reserved for the BLOBs is quite large, so cached is quite large, and this memory shows as free on the graphs when it isn&#39;t.</p>
+<p>You can get a good idea of how much this is by looking at the output of <strong>df -h</strong> <strong>/dev/shm</strong>. The memory reserved for the two BLOBs account for almost all this.</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">df -h</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Filesystem               Size Used Avail Use% Mounted on</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmpfs                     7.8G 672M 7.2G  9% /dev/shm</span></p>
+<h2>Recommended Actions</h2>
+<p>Remember on an AFM system the other memory component is under reported and particularly on smaller systems memory can be much tighter than it might appear from the graph. Nowadays the best statistic to look at for how much free ordinary host 4KB page memory there is is to look at <strong>MemAvailable </strong>from the output of <strong>cat /proc/meminfo</strong> - it&#39;s a better estimate than free + buffers + cached.</p>
+<h2>Additional Information</h2>
+<p>Other in memory tmpfs filesystems that grow over large can also cause similar issues and trigger memory pressure not visible on memory graphs. As an example saving a big file, such as a large packet capture, into the <strong>/run</strong> filesystem will have this issue.</p>
+<p>4KB page use by processes is tracked by the Linux kernel as resident (RSS) for each process, and that is visible in <strong>top</strong>, <strong>ps </strong>and other utilities and datasets such as <strong>proc_pid_stat</strong> snapshot statistics that show memory information. Some of those pages may be explicitly shared, and that shows under the shared stat for the process. It&#39;s also possible to have shared pages between processes via copy on write (COW), and that doesn&#39;t get tracked under shared.</p>
+<p>The BLOB reservation also shows up under TMM resident memory (remember resident is 4KB page use) as well as <strong>/dev/shm</strong>. It is also going to be a large part of the TMM shared memory. So a large TMM resident value that largely corresponds with the shared value can be a hint to remember this quirk, and checking on whether AFM is provisioned and <strong>df -h</strong> should confirm how much.</p>
+<p>You can check how big an actual BLOB is by looking at <strong>/var/log/pccd</strong> logs for lines similar to:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">  BLOB Size: 2184 bytes, version 7</span></p>
+<p>Logs from the oom-killer if that is ever triggered may double count this memory reserved for AFM BLOBs. It will be seen both under shmem and in the process dump within TMM RSS.</p>
+<p>It may be possible to lower the memory reserved for BLOBs if it&#39;s not needed but usually the minimum sizes are quite large still.</p>
+<p>The system DB variable <strong>pccd.maxblobsize </strong>is used here, but the current minimum for that is 512 MB for each of the two BLOBs. The reservation can be smaller than 1GB on very small systems but usually it&#39;s still a very substantial part of 1 GB even then.</p>
+</article>
+</body>
+</html>

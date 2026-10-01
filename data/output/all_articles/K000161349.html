@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161349: BIG-IP LTM Tenant Stuck in &quot;TMM Not Ready&quot; State After Reboot Due to internal ARP Storm</title>
+<meta name="description" content="Support Solution: BIG-IP LTM Tenant Stuck in &quot;TMM Not Ready&quot; State After Reboot Due to internal ARP Storm — After rebooting a BIG-IP LTM tenant on F5OS-C, the standby unit remained in a &quot;TMM not ready&quot; state, with the cluster member showing as unavailable and the GUI displaying a yellow status. The issue…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161349">
+</head>
+<body>
+<header>
+<h1>K000161349: BIG-IP LTM Tenant Stuck in &quot;TMM Not Ready&quot; State After Reboot Due to internal ARP Storm</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-05-20</dd>
+<dt>Updated</dt><dd>2026-05-20</dd>
+<dt>Applies to</dt><dd><ul><li>VELOS Platforms</li><li>BIG-IP</li><li>BIG-IP LTM: 17.1.0, 17.1.2, 17.1.1, 17.5.X, 17.1.X, 17.5.1, 17.5.0, 17.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161349">https://my.f5.com/manage/s/article/K000161349</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>After rebooting a BIG-IP LTM tenant on F5OS-C, the standby unit remained in a &quot;TMM not ready&quot; state, with the cluster member showing as unavailable and the GUI displaying a yellow status. The issue persisted across multiple reboots, preventing HA redundancy. Log messages included repeated &quot;Inet port exhaustion&quot; errors and abnormal SEP (Switch Extender Port) mapping entries</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM Tenant</li><li>F5OS-C</li><li>Version: 17.5.X</li><li>Version: 17.1.X</li></ul>
+<h2><strong>Cause</strong></h2>
+<p>A race condition in the <em>sdag </em>(Switch DAG) context during TMM startup causes an ARP storm. The <em>sdag </em>context may not be properly dropped, resulting in continuous ARP looping for the peer HA device&#39;s IP address. This prevents TMM from reaching a ready state, leaving the tenant in &quot;<em>TMM not ready</em>&quot; status.</p>
+<pre class="language-php" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>----------------------------------------------------------------------
+Sys::Cluster: default
+----------------------------------------------------------------------
+Address 10.218.251.51/23
+Availability available
+State enabled
+Reason Cluster Enabled
+Primary Slot ID 6
+Primary Selection Time 04/09/2026 03:24:28
+
+--------------------------------------------------------------------------------------------------------------------
+| Sys::Cluster Members
+| ID Address Availability State Licensed HA Clusterd Reason
+--------------------------------------------------------------------------------------------------------------------
+1 :: unknown enabled false unknown shutdown Slot powered off or empty
+2 :: unknown enabled false unknown shutdown Slot powered off or empty
+3 :: unknown enabled false unknown shutdown Slot powered off or empty
+4 :: unknown enabled false unknown shutdown Slot powered off or empty
+5 :: unknown enabled false unknown shutdown Slot powered off or empty
+6 :: unavailable enabled true standby running TMM not ready &gt;-------------
+7 :: unknown enabled false unknown shutdown Slot powered off or empty
+8 :: unknown enabled false unknown shutdown Slot powered off or empty</code></pre>
+<p>Run the following command from the Tenant (Where TMM is not ready):</p>
+<pre class="language-php" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>for f in tmm[0-9]* ; do     tmctl -w 300 -f ${f} tmm/cmp -s cmp_state,queue_drops,neighbor_update_out,neighbor_update_in,dag_update_out,dag_update_in,state_transition_out,state_transition_in | sed &#39;s/^/&#39;&quot;${f}&quot;&#39;: /&#39;; done | sed -n -e 1,2p -e &#39;/^tmm.:  *[0-9]/p&#39;</code></pre>
+<p>The results will look smilar to the following:</p>
+<pre class="language-php" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmm0: cmp_state queue_drops neighbor_update_out neighbor_update_in dag_update_out dag_update_in state_transition_out state_transition_in
+tmm0: --------- ----------- ------------------- ------------------ -------------- ------------- -------------------- -------------------
+tmm0:         0     1143252              316455             311845              0             0                    0                   0
+tmm1:         0           0               35320              35332              0             0                    0                   0
+tmm2:         0           0               35332              35332              0             0                    0                   0
+tmm3:         0           0               37376              37376              0             0                    0                   0
+tmm4:         0           0               36354              36354              0             0                    0                   0
+tmm5:         0           0               33799              33799              0             0                    0                   0
+tmm6:         0           0               33800              33799              0             0                    0                   0
+tmm7:         0           0               34821              34821              0             0                    0                   0
+tmm8:         0           0               35332              35332              0             0                    0                   0
+tmm9:         0           0               35843              35843              0             0                    0                   0</code></pre>
+<h2>Answer/Recommended Actions</h2>
+<ul><li>Restart TMM on the affected tenant. If the race condition is not triggered, TMM may recover. This may need to be repeated.</li><li>If first step didn&#39;t help reboot the blade (this is not a fix temp mesure to recvoer tenant)</li><li>Product Development fill the followig <em>BugID </em><span style="font-size: 14px;font-family: &#39;JetBrains Mono&#39;, monospace;"><em>2288173</em> </span>and submitted a fix for it</li></ul>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

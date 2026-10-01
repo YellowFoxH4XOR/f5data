@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160289: F5 APM session clears immediately after the access policy completes</title>
+<meta name="description" content="Support Solution: F5 APM session clears immediately after the access policy completes — SAML authentication fails with error &quot;Decryption of assertion key failed&quot; when assertion encryption is enabled. APM session is not removed when users log out of Citrix StoreFront. Error messages…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160289">
+</head>
+<body>
+<header>
+<h1>K000160289: F5 APM session clears immediately after the access policy completes</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-03-10</dd>
+<dt>Updated</dt><dd>2026-03-10</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.0.0, 17.1.0, 17.0.X, 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160289">https://my.f5.com/manage/s/article/K000160289</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>SAML authentication fails with error &quot;Decryption of assertion key failed&quot; when assertion encryption is enabled. APM session is not removed when users log out of Citrix StoreFront. Error messages include &quot;Response/assertion is not signed&quot; and &quot;Session deleted due to user logout request.&quot; Session may terminate immediately after SAML authentication completes.</p>
+<h2>Environment</h2>
+<ul><li>F5 BIG-IP APM</li><li>Citrix StoreFront servers</li><li>SAML authentication enabled with assertion encryption</li><li>F5 in FIPS mode</li><li>SAML IdP: RSA SecurID</li><li>Access Policy with SAML authentication agent</li><li>iRules for browser prefetch mitigation and session handling</li></ul>
+<h2>Cause</h2>
+<p>The SAML assertion decryption failure was caused by a mismatch in the key transport algorithm. RSA-OAEP was not supported for assertion encryption in the F5 FIPS setup. Changing the IdP to use RSA v1.5 resolved the issue.</p>
+<p>Session logout issues occur because Citrix StoreFront does not send a unique, detectable HTTP request on logout, making iRule-based session removal unreliable. SAML Single Logout (SLO) or a unique logout URI is required for reliable session termination.</p>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>SAML Assertion Decryption Failure</strong></p>
+<ol><li>Confirm the SAML IdP is using RSA v1.5 for key transport algorithm when assertion encryption is enabled and F5 is in FIPS mode.</li><li>Ensure the IdP encrypts assertions using the public certificate that matches the private key configured on the F5 SAML SP object.</li><li>Verify certificate/key pair match on F5:<br><span style="background-color: #f1f1f1;"></span><span style="background-color: #f1f1f1;">openssl x509 -noout -modulus -in &lt;certificate.crt&gt; | openssl md5</span><br><span style="background-color: #f1f1f1;">openssl rsa -noout -modulus -in &lt;private.key&gt; | openssl md5</span><br>NOTE: The output hashes must match.</li><li>Re-exchange metadata between F5 and IdP if certificate/key changes are made.</li><li>Test SAML authentication after making these changes.</li></ol>
+<p><strong>Session Logout Issues</strong></p>
+<p><strong>Option 1: SAML Single Logout (SLO) - Recommended</strong></p>
+<ol><li><strong>F5 BIG-IP APM Configuration:</strong>
+<ul><li>Navigate to Access &gt; Federation &gt; SAML Service Provider &gt; Local SP Services</li><li>Configure SLO Settings:
+<ul><li>Single Logout URI: /saml/sp/profile/post/slo</li><li>Binding: POST</li><li>Certificate/Key: Use the same certificate/key pair as for SAML Authentication</li></ul>
+</li><li>Export Metadata</li></ul>
+</li><li><strong>Citrix StoreFront Configuration:</strong>
+<ul><li>Import the F5 metadata XML file</li><li>Enable Single Logout</li><li>Set the SLO endpoint to the F5 SLO URI</li><li>Set the binding to POST</li></ul>
+</li></ol>
+<p><strong>Option 2: Logout Redirect URI</strong></p>
+<ol><li><strong>Citrix StoreFront Configuration:</strong>
+<ul><li>Set Post-Logout Redirect URL to a unique path (e.g., /my.logout.php3)</li></ul>
+</li><li><strong>F5 BIG-IP APM Configuration:</strong>
+<ul><li>Navigate to Access &gt; Profiles / Policies &gt; Access Profiles</li><li>Edit the profile used for Citrix</li><li>Add /my.logout.php3 to the Logout URI Include field</li><li>Save and Apply Access Policy</li></ul>
+</li></ol>
+<p><strong>Additional Troubleshooting</strong></p>
+<ul><li>Ensure &quot;Close session after redirect&quot; is unchecked in Access Policy Redirect Endings unless immediate session deletion is desired.</li><li>Remove any iRules attempting to handle Citrix logout unless StoreFront is customized to send a unique logout request.</li><li>Apply browser prefetch mitigation iRule if needed.</li></ul>
+<h2>Additional Information</h2>
+<ul><li>Assertion encryption and decryption require exact certificate/key matching between IdP and SP.</li><li>Citrix StoreFront&#39;s default logout flow does not trigger a unique HTTP request; SAML SLO or logout URI configuration is required.</li><li>Browser prefetch requests can cause unexpected session terminations and should be mitigated with an iRule.</li><li>SAML authentication is supported only for browser-based access, not Citrix Workspace App.</li></ul>
+</article>
+</body>
+</html>

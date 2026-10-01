@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K09264213: Mount workload certificates to the application container filesystem in Aspen Mesh</title>
+<meta name="description" content="Support Solution: Mount workload certificates to the application container filesystem in Aspen Mesh — Beginning in Aspen Mesh 1.6, Envoy proxies use the SDS (Secret Discovery Service) interface to fetch certificates from Istiod via the istio-agent service running inside the istio-proxy container. Due…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K09264213">
+</head>
+<body>
+<header>
+<h1>K09264213: Mount workload certificates to the application container filesystem in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-06-25</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K09264213">https://my.f5.com/manage/s/article/K09264213</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+<p>Beginning in Aspen Mesh 1.6, Envoy proxies use the SDS (Secret Discovery Service) interface to fetch certificates from <strong>Istiod</strong> via the istio-agent service running inside the istio-proxy container. Due to security reasons the certificate is kept by the Envoy istio-proxy in memory and not stored in the filesystem. You can export the certificate using the <strong>istioctl proxy-config secret</strong> command but you cannot export keys. To export the keys from the Envoy istio proxy you have to use the <strong>proxyMetadata</strong> annotation. Following that, you can mount the certificates and keys to the application container using the volume shared between the istio-proxy and application container.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li><strong>Kubernetes: </strong>1.17x, 1.18.x, 1.19.x, 1.20.x  </li><li><strong>Aspen Mesh:</strong> 1.6.x, 1.9.x  </li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+<p>None</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<p>None</p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+<p>To export the workload SDS certificate and key from the Envoy proxy memory, you have to add the <strong>proxyMetadata</strong> annotation to your pod manifest. Using this annotation, you tell istio-proxy to export the SDS certificate to the <strong>/tmp/istio-certs</strong> directory. To share this directory with the application container, you have to add 2 additional annotations to mount the Kubernetes volume named istio-certs on istio-proxy. This volume has to be defined in the pod or deployment specification and mounted on the application container. The following describes the configuration needed:</p>
+
+<p><span class="code">annotations:<br>        proxy.istio.io/config: |<br>          proxyMetadata:<br>            OUTPUT_CERTS: /tmp/istio-certs<br>        sidecar.istio.io/userVolume: &#39;[{&quot;name&quot;: &quot;istio-certs&quot;, &quot;emptyDir&quot;: {&quot;medium&quot;: &quot;Memory&quot;}}]&#39;<br>        sidecar.istio.io/userVolumeMount: &#39;[{&quot;name&quot;: &quot;istio-certs&quot;, &quot;mountPath&quot;: &quot;/tmp/istio-certs&quot;}]&#39;</span></p>
+The following example shows the sleep application with SDS certificates mounted in the <strong>/tmp/istio-certs</strong> directory:
+
+<p><span class="code">apiVersion: v1<br>kind: ServiceAccount<br>metadata:<br>  name: sleep<br>---<br>apiVersion: apps/v1<br>kind: Deployment<br>metadata:<br>  name: sleep<br>spec:<br>  replicas: 1<br>  selector:<br>    matchLabels:<br>      app: sleep<br>  template:<br>    metadata:<br>      labels:<br>        app: sleep<br>      annotations:<br>        proxy.istio.io/config: |<br>          proxyMetadata:<br>            OUTPUT_CERTS: /tmp/istio-certs<br>        sidecar.istio.io/userVolume: &#39;[{&quot;name&quot;: &quot;istio-certs&quot;, &quot;emptyDir&quot;: {&quot;medium&quot;: &quot;Memory&quot;}}]&#39;<br>        sidecar.istio.io/userVolumeMount: &#39;[{&quot;name&quot;: &quot;istio-certs&quot;, &quot;mountPath&quot;: &quot;/tmp/istio-certs&quot;}]&#39;<br>    spec:<br>      terminationGracePeriodSeconds: 0<br>      serviceAccountName: sleep<br>      containers:<br>      - name: sleep<br>        image: curlimages/curl<br>        command: [&quot;/bin/sleep&quot;, &quot;3650d&quot;]<br>        imagePullPolicy: IfNotPresent<br>        volumeMounts:<br>        - mountPath: <strong>/tmp/istio-certs/</strong><br>          name: istio-certs<br>      volumes:<br>      - emptyDir:<br>        medium: Memory<br>        name: istio-certs</span></p>
+If you connect to the sleep container and list the directory, you can see the certificates mounted in <strong>/tmp/istio-certs/</strong>:
+
+<p><span class="example2">$ ls -ls /tmp/istio-certs/<br>total 12<br>     4 -rw-r--r--    1 1337     1337          2319 Jun 21 22:30 cert-chain.pem<br>     4 -rw-r--r--    1 1337     1337          1675 Jun 21 22:30 key.pem<br>     4 -rw-r--r--    1 1337     1337          1099 Jun 21 22:30 root-cert.pem</span></p>
+</article>
+</body>
+</html>

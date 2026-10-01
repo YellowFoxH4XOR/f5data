@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K37362145: Brute force protection handles JSON elements of login page as case sensitive when the policy is configured as case insensitive</title>
+<meta name="description" content="Support Solution: Brute force protection handles JSON elements of login page as case sensitive when the policy is configured as case insensitive — Case-insensitive configuration fails to detect uppercase JSON elements on a login page. This may cause, for example, brute force protection to not trigger.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K37362145">
+</head>
+<body>
+<header>
+<h1>K37362145: Brute force protection handles JSON elements of login page as case sensitive when the policy is configured as case insensitive</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-04-23</dd>
+<dt>Updated</dt><dd>2024-02-12</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 16.X.X, 12.1.1, 12.0.0, 12.1.0, 15.X.X, 14.X.X, 13.X.X, 12.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 13.1.0, 16.1.0, 13.0.1, 16.0.1, 13.0.0, 16.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K37362145">https://my.f5.com/manage/s/article/K37362145</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>Case-insensitive configuration fails to detect uppercase JSON elements on a login page. This may cause, for example, brute force protection to not trigger.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>ASM security policy is configured case-insensitive.</li><li>Login Page Authentication Type is JSON/AJAX Request.</li><li>Brute Force attack protection.</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>This behavior is due to ID995889; Username/Password JSON elements of login page detected as case sensitive when the policy is configured as case insensitive</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>Assign below iRule to the impacted virtual server to make sure that both username and password parameters will be presented in lowercase before ASM start inspection:</p>
+
+<address><span style="color: #c0392b;"><span class="note">Note: Adjust the iRule as needed and test it before applying it to production to avoid any traffic impact. Remove the comments before the lines <em>log local0.</em> to debug the iRule.</span></span></address>
+
+<pre class="ckeditor_codeblock">
+when HTTP_REQUEST {
+   if {[HTTP::method] eq &quot;POST&quot; &amp;&amp; [HTTP::header value Content-Type] contains &quot;json&quot;}{
+       if {[HTTP::header &quot;Content-Length&quot;] ne &quot;&quot; &amp;&amp; [HTTP::header &quot;Content-Length&quot;] &lt;= 1048576}{
+         set content_length [HTTP::header &quot;Content-Length&quot;]
+       } else {
+         set content_length 1048576
+      }
+      # Check if $content_length is not set to 0
+      if { $content_length &gt; 0} {
+        HTTP::collect $content_length
+      }
+   }
+}
+when HTTP_REQUEST_DATA {
+       #log local0. &quot;===== Matched iRule K37362145 ======&quot;
+       #log local0. &quot;Content length is [HTTP::header Content-Length]&quot;
+       set json_orig [HTTP::payload]
+       #log local0. &quot;json body is $json_orig&quot;
+       set orig_length [HTTP::payload length]
+       #log local0. &quot;Payload length is $orig_length&quot;
+       set json_replaced [string map -nocase [list username username password password] $json_orig]
+       #log local0. &quot;After replacing the strings: $json_replaced&quot;
+       set new_length [string length $json_replaced]
+       #log local0. &quot;New length = $new_length&quot;
+       #log local0. &quot;old data = $json_orig&quot;
+       #log local0. &quot;new data = $json_replaced&quot;
+       HTTP::payload replace 0 $orig_length $json_replaced
+       HTTP::header replace Content-Length $new_length
+       #log local0. &quot;===================================&quot;
+}</pre>
+
+<p> </p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p><a href="https://clouddocs.f5.com/api/irules/HTTP__payload.html#description" target="_blank">F5 iRules - Clouddocs - HTTP::payload</a></p>
+</article>
+</body>
+</html>

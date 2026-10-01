@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000159908: F5 recommends removing orphaned configuration objects but they are grayed out</title>
+<meta name="description" content="Support Solution: F5 recommends removing orphaned configuration objects but they are grayed out — SSL certificates attached to profiles that are not used by any virtual server">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000159908">
+</head>
+<body>
+<header>
+<h1>K000159908: F5 recommends removing orphaned configuration objects but they are grayed out</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-05</dd>
+<dt>Updated</dt><dd>2026-02-05</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000159908">https://my.f5.com/manage/s/article/K000159908</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When F5 iHealth recommends removing orphaned configuration objects such as unused monitors and SSL certificates, these objects may appear grayed out in the BIG-IP Configuration utility (GUI) and cannot be deleted. This situation occurs when attempting to clean up configuration items identified by iHealth diagnostics under &quot;F5 recommends removing orphaned configuration objects,&quot; including:</p>
+<ul><li>Unused monitors not attached to any pool or node</li><li>SSL certificates not currently in use by any virtual server</li><li>SSL certificates attached to profiles that are not used by any virtual server</li></ul>
+<p>The GUI prevents deletion of these objects even though they appear to be orphaned, and standard deletion attempts fail.</p>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP LTM</li><li>Version: 17.5.1 (and other versions)</li><li>Platform: F5-BIG-LTM-R4600, C131 (and other platforms)</li><li>Configuration objects involved:
+<ul><li>Unused monitors</li><li>SSL certificates not assigned to virtual servers</li><li>SSL certificates attached to unused profiles</li><li>Profiles not used by any virtual server</li></ul>
+</li><li>iHealth diagnostic report recommending removal of orphaned objects</li></ul>
+<h2>Cause</h2>
+<p>Objects appear grayed out in the GUI because they are still referenced by other configuration objects, even if not actively used by virtual servers. Common causes include:</p>
+<ul><li>Certificates still associated with HTTPS monitors (even if not visible in GUI)</li><li>Certificates attached to SSL profiles that are not assigned to virtual servers</li><li>Profiles referenced by iRules or other indirect dependencies</li><li>Monitor associations not visible in the GUI but present in the configuration</li></ul>
+<h2>Answer/Recommended Actions</h2>
+<p><span style="color: #c20025;"><span style="background-color: #f1f1f1;"><em><strong>Important</strong>: Create a UCS backup before making any configuration changes.</em></span></span></p>
+<h3>Step 1: Create a Configuration Backup</h3>
+<p><span style="background-color: #f1f1f1;">tmsh save sys ucs backup_before_cleanup</span></p>
+<h3>Step 2: Identify Dependencies Using tmsh</h3>
+<ol><li>Log in to tmsh:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh</span></p>
+</li><li>Check for SSL profile references to certificates:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">list ltm profile client-ssl all-properties | grep -i cert</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">list ltm profile server-ssl all-properties | grep -i cert</span></p>
+</li><li>Check for HTTPS monitor associations with certificates:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">list ltm monitor https all-properties | grep -E &quot;cert|key&quot;</span></p>
+</li><li>Check for pool and node monitor associations:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">list ltm pool all-properties | grep -A 20 &quot;monitor&quot;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">list ltm node all-properties | grep -A 10 &quot;monitor&quot;</span></p>
+</li></ol>
+<h3>Step 3: Remove Certificate Associations from HTTPS Monitors</h3>
+<p>If certificates are associated with HTTPS monitors, remove them using tmsh:</p>
+<ol><li>Clear the certificate configuration:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">modify ltm monitor https &lt;monitor_name&gt; cert none</span></p>
+</li><li>Clear the key configuration:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">modify ltm monitor https &lt;monitor_name&gt; key none</span></p>
+</li><li>Save the configuration:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">save sys config</span></p>
+</li></ol>
+<h3>Step 4: Delete Unused SSL Profiles</h3>
+<p>Before deleting certificates, remove unused SSL profiles that reference them:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">delete ltm profile client-ssl &lt;profile_name&gt;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">delete ltm profile server-ssl &lt;profile_name&gt;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">save sys config</span></p>
+<h3>Step 5: Delete Orphaned Monitors</h3>
+<p>Once all dependencies are cleared, delete the orphaned monitors:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">delete ltm monitor &lt;monitor_type&gt; &lt;monitor_name&gt;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">save sys config</span></p>
+<h3>Step 6: Delete Orphaned Certificates and Keys</h3>
+<p>After removing all references, delete the certificates and keys:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">delete sys crypto cert &lt;certificate_name&gt;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">delete sys crypto key &lt;key_name&gt;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">save sys config</span></p>
+<h3>Step 7: Verify Deletion</h3>
+<p>Confirm the objects have been removed:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">list sys crypto cert</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">list sys crypto key</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">list ltm monitor</span></p>
+<h2>Additional Information</h2>
+<ul><li>Objects grayed out in the GUI typically indicate they are still referenced somewhere in the configuration, even if not actively used.</li><li>Do not delete default certificates, profiles, or objects referenced by iRules without careful review.</li><li>Certificates attached to profiles that are not used by virtual servers require the profile to be deleted first before the certificate can be removed.</li><li>In BIG-IP version 13.1.0 and later, HTTPS monitors use Server SSL profiles instead of direct certificate/key associations. Monitors created in earlier versions may still have legacy certificate associations that are not visible in the GUI.</li><li>Always verify that objects are truly orphaned before removal to avoid service disruption.</li><li>If you encounter errors during deletion, the object may have additional hidden dependencies that need to be identified and removed first.</li></ul>
+</article>
+</body>
+</html>

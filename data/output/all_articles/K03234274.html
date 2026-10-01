@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K03234274: Aspen Mesh allows Prometheus to scrape metrics from pods with sidecar injected</title>
+<meta name="description" content="Support Solution: Aspen Mesh allows Prometheus to scrape metrics from pods with sidecar injected — Aspen Mesh is shipped with a Prometheus instance for collecting metrics about sidecars stats and control plane, which will be later used by Aspen Mesh Dashboard.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K03234274">
+</head>
+<body>
+<header>
+<h1>K03234274: Aspen Mesh allows Prometheus to scrape metrics from pods with sidecar injected</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-11-12</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K03234274">https://my.f5.com/manage/s/article/K03234274</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>Aspen Mesh is shipped with a Prometheus instance for collecting metrics about sidecars stats and control plane, which will be later used by Aspen Mesh Dashboard.</p>
+
+<p>Your application could also expose a metrics endpoint that allows you to monitor different metrics. These metrics are not shared across the Prometheus instances, and it is probably a good idea to have an external Prometheus instance to collect these types of metrics.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Kubernetes: 1.17x, 1.18.x, 1.19.x, 1.20.x</li><li>Aspen Mesh: 1.6.x, 1.9.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>When you set a job in Prometheus for scrapping metrics from a pod with sidecar injected, you may encounter an error that says there was a connection refused by the pod when it is trying to pull the metrics.</p>
+
+<p>The error comes from a connection to the pod where the istio-proxy sidecar is capturing all of the traffic. By default, in Aspen Mesh, mTLS is enabled to secure all the connections, and since the Prometheus instance cannot prove its identity, the connection is dropped.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p><span class="subsectiontitle">Disabling mTLS on port where metrics are exposed</span></p>
+
+<ol><li>Identify what port will be used in Prometheus to access the metrics, in the example below you can find a scrape configuration of the application <strong>infrabin</strong>:
+
+	<p><span class="example2">- bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token<br>	      job_name: infrabin<br>	      kubernetes_sd_configs:<br>	      - role: pod<br>	      relabel_configs:<br>	      - action: keep<br>	        regex: infrabin<br>	        source_labels:<br>	        - __meta_kubernetes_pod_label_app<br>	      - source_labels: [__meta_kubernetes_namespace]<br>	        regex: default<br>	        action: keep<br>	      - source_labels: [__meta_kubernetes_pod_container_port_number]<br>	        regex: &quot;8080&quot;<br>	        action: keep<br>	      scheme: http<br>	      scrape_interval: 15s<br>	      scrape_timeout: 10s<br>	      tls_config:<br>	        ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt</span></p>
+
+	<p>The port where Prometheus is accessing the metrics is 8080.</p>
+	</li><li>Create a PeerAuthentication rule to disable mTLS on port 8080 only. For exmaple:
+	<p><span class="example2">apiVersion: security.istio.io/v1beta1<br>	kind: PeerAuthentication<br>	metadata:<br>	  name: infrabin<br>	  namespace: default<br>	spec:<br>	  selector:<br>	    matchLabels:<br>	      app: infrabin<br>	  mtls:<br>	    mode: STRICT<br>	  portLevelMtls:<br>	    8080:<br>	      mode: DISABLE</span></p>
+
+	<p>The PeerAuthentication above still maintains mTLS enabled as you see (STRICT) but disabled only in port 8080.</p>
+
+	<p>Notice also, we are using a selector for a specific workload, if the selector is omitted, the PeerAuthentication rule will be applied to all the workloads in the namespace and is possible to some applications stop working as intended.</p>
+	</li><li>Verify that the error about refused connection is gone on your Prometheus instance and the endpoint is healthy.</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

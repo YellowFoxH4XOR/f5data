@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000156979: Message: 01260009:4: [client] -&gt; [virtual server]: Connection error: ssl_select_suite:XXXXX: alert(40) cannot find matching cert</title>
+<meta name="description" content="Support Solution: Message: 01260009:4: [client] -&gt; [virtual server]: Connection error: ssl_select_suite:XXXXX: alert(40) cannot find matching cert — When client connects to client-ssl virtual server, handshake may be terminated and an error &quot;alert(40) cannot find matching cert&quot; may be thrown.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000156979">
+</head>
+<body>
+<header>
+<h1>K000156979: Message: 01260009:4: [client] -&gt; [virtual server]: Connection error: ssl_select_suite:XXXXX: alert(40) cannot find matching cert</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-10-10</dd>
+<dt>Updated</dt><dd>2025-10-10</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.0, 17.1.2, 17.1.1, 17.1.X, 17.5.X, 17.5.1, 17.5.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000156979">https://my.f5.com/manage/s/article/K000156979</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When client connects to client-ssl virtual server, handshake may be terminated and an error &quot;alert(40) cannot find matching cert&quot; may be thrown.</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Oct 10 11:21:37 bigip.local warning tmm[19298]: 01260009:4: 10.1.1.98:65121 -&gt; 10.1.1.191:443: Connection error: ssl_select_suite:11477: alert(40) cannot find matching cert</span></p>
+<h2></h2>
+<h2>Environment</h2>
+<ul><li>TLSv1.3 is enabled on client-ssl virtual server (that means, cipher-group is specified and no-tlsv1.3 option is disabled on client-ssl profile).</li><li>Cipher-rule dh-groups configuration does not cover specific named groups which client offers for key exchange.</li><li>Client connects to client-ssl virtual server with TLSv1.3 and with named groups which is not covered by &quot;dh-groups&quot; option on cipher rule.</li></ul>
+<p> </p>
+<p>Here is example configuration that meets all of the above conditions. Note that cipher rule dh-groups supports only 3 named groups, P256, P384, and X25519.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ltm cipher rule my_tls13_cipher_rule {
+    dh-groups P256:P384:X25519
+}
+ltm cipher group my_tls13_cipher_group {
+    allow {
+        my_tls13_cipher_rule { }
+    }
+}
+ltm profile client-ssl my_tls13_clientssl_profile {
+    app-service none
+    cert-key-chain {
+        default {
+            cert default.crt
+            key default.key
+        }
+    }
+    cipher-group my_tls13_cipher_group
+    ciphers none
+    defaults-from clientssl
+    inherit-ca-certkeychain true
+    inherit-certkeychain true
+    options { dont-insert-empty-fragments }
+}
+ltm virtual tls13_clientssl_vs {
+    destination 10.1.1.191:443
+    ip-protocol tcp
+    mask 255.255.255.255
+    pool http_pool
+    profiles {
+        my_tls13_clientssl_profile {
+            context clientside
+        }
+        tcp { }
+    }
+    source 0.0.0.0/0
+    translate-address enabled
+    translate-port enabled
+}</code></pre>
+<p> </p>
+<p>When client connects to the virtual server with &quot;-groups ffdhe2048&quot; options as shown below, &quot;alert(40) cannot find matching cert&quot; error will be thrown and client will fail to connect to client-ssl virtual server. This is because above cipher-rule configuration missed FFDHE2048 on dh-groups setting.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>$ openssl s_client -connect 10.1.1.191:443 -tls1_3 -groups ffdhe2048</code></pre>
+<p> </p>
+<h2>Cause</h2>
+<p>Cipher rule &quot;dh-groups&quot; option lacks of specific named groups which is used by client.</p>
+<p> </p>
+<h2>Recommended Actions</h2>
+<p>First, check supported_groups TLS extension inside client hello pkt which triggered handshake alert. Then, add necessary named group to cipher rule dh-groups configuration.</p>
+<p> </p>
+<p>For example, if client came in with FFDHE2048 or FFDHE3072 but those were not on the dh-groups setting, update cipher rule with those named group.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000X9nh&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000TojPR" alt="" style="display: block;margin-left: auto;margin-right: auto;" width="1025" height="714"></img></p>
+<p style="text-align: center;"><span style="color: #666666;">Figure: Client Hello packet</span></p>
+<p> </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># tmsh modify ltm cipher rule [cipher-rule-name] dh-groups P256:P384:X25519:FFDHE2048:FFDHE3072</code></pre>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None.</p>
+<p> </p>
+</article>
+</body>
+</html>

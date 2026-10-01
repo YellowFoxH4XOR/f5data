@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K95990797: Recovering StatefulSet pods in Aspen Mesh from CrashLoopBackOff errors</title>
+<meta name="description" content="Support Solution: Recovering StatefulSet pods in Aspen Mesh from CrashLoopBackOff errors — ERROR [main] 2021-12-30 01:22:09,152 LogTransaction.java:497 - Unexpecteddisk state: failed to read transaction log[md_txn_compaction_b49c57d0-62f4-11ec-b238-ed6de66b875e.log…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K95990797">
+</head>
+<body>
+<header>
+<h1>K95990797: Recovering StatefulSet pods in Aspen Mesh from CrashLoopBackOff errors</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-01-21</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K95990797">https://my.f5.com/manage/s/article/K95990797</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>The following example shows that after going through the logs on pods with volumes, the errors were thrown with the specific compaction log files:</p>
+
+<p><span class="example2">ERROR [main] 2021-12-30 01:22:09,152 LogTransaction.java:497 - Unexpecteddisk state: failed to read transaction log[md_txn_compaction_b49c57d0-62f4-11ec-b238-ed6de66b875e.log in/opt/cassandra/data/data/system/local-7ad54392bcdd35a684174e047860b377]Files and contents follow:ERROR [main] 2021-12-30 01:22:09,155 CassandraDaemon.java:803 - Cannotremove temporary or obsoleted files for system.local due to a problem withtransaction log files. Please check records with problems in the logmessages above and fix them. Refer to the 3.0 upgrading instructions inNEWS.txt for a description of transaction log files.</span></p>
+In the above error, we can see the location of log file. In these cases, either you can log into your Persistent Volume (PV) to run repair commands following the official Cassandra documentation or you can delete the compaction log file from the PV.
+
+<p><span class="sectiontitle"><strong>Environment</strong></span></p>
+
+<ul><li>Aspen Mesh: 1.9.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>None</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>In cases where the status of the pod is CrashLoopBackOff and you are not able to log into the shell of the pod, we would need to find ways to debug the PV where our data is stored. In Aspen Mesh, we have two StatefulSet with three replicas for each one:</p>
+
+<p><span class="example2">&gt; kubectl get sts -n istio-system<br><br>NAME                       READY   AGE<br>aspen-mesh-event-storage   3/3     38d<br>istiod-cassandra           3/3     38d</span></p>
+
+<p>When querying the<strong> istio-system</strong> namespace, we see six pods with each having PV attached to them:</p>
+
+<p><span class="example2">&gt; kubectl  get pods -n istio-system   | grep &#39;istiod-cassandra\|aspen-mesh-event-storage&#39;<br>NAME                                                  READY   STATUS             aspen-mesh-event-storage-0                            1/1     Running            aspen-mesh-event-storage-1                            1/1     Running            aspen-mesh-event-storage-2                            1/1     Running            istiod-cassandra-0                                    2/2     Running            istiod-cassandra-1                                    2/2     Running            istiod-cassandra-2                                    2/2     Running            </span></p>
+
+<p>Please find the PV that is being used for the pod throwing CrashLoopBackOff status. You can do this via the following commands:</p>
+
+<p><span class="example2">&gt; kubectl get pods -n istio-system   aspen-mesh-event-storage-0 -o yaml | grep -i claimName<br>      <br>claimName: data-aspen-mesh-event-storage-0<br><br>&gt; kubectl get pvc -n istio-system<br>NAME                              STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   AGE<br>aspen-mesh-alertmanager           Bound    pvc-a4b88211-0fcc-4cb3-906a-db7d1afedbcb   2Gi        RWO            gp2            39d<br>aspen-mesh-metrics-collector      Bound    pvc-009a3439-6953-4bb1-9ea2-dc019e935ad0   15Gi       RWO            gp2            39d<br>data-aspen-mesh-event-storage-0   Bound    pvc-67ada514-5817-4473-bb00-ca6f97ae7f65   10Gi       RWO            gp2            178d<br>data-aspen-mesh-event-storage-1   Bound    pvc-78306b16-a349-4dc1-a301-4e72daf89bc8   10Gi       RWO            gp2            178d<br>data-aspen-mesh-event-storage-2   Bound    pvc-846486cf-2e2b-4a00-a127-26fac600f1e9   10Gi       RWO            gp2            178d<br>data-istiod-cassandra-0           Bound    pvc-17ac32f0-373a-4f22-84e7-35de3422c3ee   10Gi       RWO            gp2            178d<br>data-istiod-cassandra-1           Bound    pvc-f96d501c-5bf2-4415-84c2-74093ac1acce   10Gi       RWO            gp2            178d<br>data-istiod-cassandra-2           Bound    pvc-7f788cfd-cdc2-4250-969e-4bb92857a1a1   10Gi       RWO            gp2            178d</span></p>
+
+<p>In the above example, PV <strong>pvc-67ada514-5817-4473-bb00-ca6f97ae7f65</strong> is associated with claim <strong>data-aspen-mesh-event-storage-0</strong>. You would need these values to create your debug pod.</p>
+Here are the steps to move the PV from the StatefulSet to a debug pod from where we can access it:
+
+<ol><li>
+	<p>Scale down the StatefulSet to 0 replicas:</p>
+
+	<p><span class="code">&gt; kubectl scale --replicas=0 statefulset/aspen-mesh-event-storage -n istio-system</span></p>
+	</li><li>
+	<p>Once you know the claim being used, you would need to create a pod with the following specifications which mounts the PV that is having issue to a debug pod:</p>
+
+	<p><span class="example2">kind: Pod<br>	apiVersion: v1<br>	metadata:<br>	  name: volume-debugger. # you can name this whatever is appropriate<br>	  namespace: istio-system<br>	spec:<br>	  volumes:<br>	    - name: pvc-67ada514-5817-4473-bb00-ca6f97ae7f65. <br>	      persistentVolumeClaim:<br>	       claimName: data-aspen-mesh-event-storage-0.  # name of the claim from the previous step<br>	  containers:<br>	    - name: debugger<br>	      image: busybox.# I am using a busybox image, you can use curl image if you want<br>	      command: [&#39;sleep&#39;, &#39;3600&#39;]<br>	      volumeMounts:<br>	        - mountPath: &quot;/data&quot;<br>	          name: pvc-67ada514-5817-4473-bb00-ca6f97ae7f65 # name of the claim </span></p>
+	</li><li>
+	<p>Exec into the pod and go to the mountPath directory:</p>
+
+	<p><span class="code">&gt; kubectl exec –it volume-debugger –n istio-system – sh<br>	&gt; cd /data</span></p>
+	</li><li>
+	<p>In this case, we decided to delete the compaction file that was throwing an error:</p>
+
+	<p><span class="code">&gt; rm /data/system/local-7ad&lt;truncated&gt;/md_txn_compaction_&lt;truncated&gt;.log</span></p>
+	</li><li>
+	<p>Exit the volume debugger pod and delete it:</p>
+
+	<p><span class="code">&gt; kubectl delete volume-debugger –n istio-system</span></p>
+	</li><li>
+	<p>After removing the affected files, we would scale the StatefulSet back to three replicas:</p>
+
+	<p><span class="code">&gt; kubectl scale --replicas=3 statefulset/aspen-mesh-event-storage -n istio-system</span></p>
+	</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+To use the nodetool command to repair the node, you would need a running Casssandra pod. But in this case, our pod was in CrashLoopBackOff, so we were not able to use that. Hence, we took the route of deleting the files. For more details, refer to the <a href="https://support.datastax.com/s/article/ERROR-Unexpected-disk-state-failed-to-read-transaction-log" target="_self">error message article</a>. We recommend to setup backups for your databases used in Aspen Mesh.
+</article>
+</body>
+</html>

@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K28202455: Disable JDNI lookups for Traffix EMS ELK</title>
+<meta name="description" content="Support Solution: Disable JDNI lookups for Traffix EMS ELK — From SDC (Signaling Delivery Controller) 5.1 CF30 and above, EMS (Element Management System) introduced ELK as a Splunk replacement. EMS ELK comprises three components called Fluentd, Elasticsearch…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K28202455">
+</head>
+<body>
+<header>
+<h1>K28202455: Disable JDNI lookups for Traffix EMS ELK</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-12-14</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Traffix SDC: 5.2.X, 5.1.X, 5.2.0, 5.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K28202455">https://my.f5.com/manage/s/article/K28202455</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>From SDC (Signaling Delivery Controller)  5.1 CF30 and above, EMS (Element Management System) introduced ELK as a Splunk replacement. EMS ELK comprises three components called Fluentd, Elasticsearch and Kibana. Elasticsearch uses Log4j 2 for its logging framework. Log4j 2 added lookups feature, including JNDI lookups. JNDI lookups are not restricted, leading to possible vulnerability. EMS ELK does not use JNDI lookups and should be disabled to prevent exploit from JNDI lookups.<br><br>You may use the following steps to check if Log4j 2 is included in EMS ELK before apply the recommended actions.</p>
+
+<ul><li><span class="code">rpm -qa | grep elasticsearch</span></li></ul>
+<span class="note">Replace the correct elasticsearch version from above output.</span>
+
+<p><span class="example2"><span class="code">rpm -ql elasticsearch-7.8.0-1.x86_64 | grep log4j </span><br>/etc/elasticsearch/log4j2.properties<br>/usr/share/elasticsearch/lib/log4j-api-2.11.1.jar<br>/usr/share/elasticsearch/lib/log4j-core-2.11.1.jar<br>/usr/share/elasticsearch/modules/x-pack-core/log4j-1.2-api-2.11.1.jar<br>/usr/share/elasticsearch/modules/x-pack-identity-provider/log4j-slf4j-impl-2.11.1.jar<br>/usr/share/elasticsearch/modules/x-pack-security/log4j-slf4j-impl-2.11.1.jar</span><br><br><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Traffix EMS 5.1 -CF30 and above</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Elasticsearch component of EMS ELK uses Log4j 2 with lookups feature, such as JNDI lookups. An attacker can use this vulnerability to construct a specifically crafted packet and can lead to remote code execution.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>Apply the following on EMS nodes.</p>
+
+<ol><li>Add <strong>-Dlog4j2.formatMsgNoLookups=true</strong> to the following files
+
+	<ul><li><span class="example2">/etc/elasticsearch/elasticsearch_data/jvm.options</span></li><li><span class="example2">/etc/elasticsearch/elasticsearch_master/jvm.options</span></li></ul>
+	</li><li>Go to the above mentioned location
+	<ul><li><span class="code">vi jvm.options</span><br>		<span class="example2">## JVM temporary directory</span><br>		<span class="example2">-Djava.io.tmpdir=${ES_TMPDIR}</span><br>		<span class="example2">-Dlog4j2.formatMsgNoLookups=true</span>   <strong>&lt;&lt;------add this line</strong></li></ul>
+	</li><li>Repeat the steps on second EMS node</li><li>Remove Jndi Lookup class</li></ol>
+
+<div style="margin-left: 40px;">Install zip package</div>
+
+<ul style="list-style-type: circle;margin-left: 40px;"><li><span class="code">salt &#39;*&#39; cmd.run &#39;yum -y install zip&#39;</span></li></ul>
+
+<div style="margin-left: 40px;">Search path of Elasticsearch Log4j 2 jar file</div>
+
+<ul style="list-style-type: circle;margin-left: 40px;"><li><span class="code">salt &#39;*&#39; cmd.run &#39;find / -name &quot;*log4j-core*.jar&quot; -type f | grep .jar&#39; </span> </li></ul>
+
+<div style="margin-left: 80px;"><span class="example2">emselk2-MmZhYjc5ZmI1OTkzMTEzYmMzMGFiZGM1:</span></div>
+
+<div style="margin-left: 80px;"><span class="example2">    <span class="note">/usr/share/elasticsearch/lib/log4j-core-2.11.1.jar</span></span></div>
+
+<div style="margin-left: 80px;"><span class="example2">emselk1-MmYxOGVkMzM5MTkyNzM3MWJjNGRlNzcz:</span></div>
+
+<div style="margin-left: 80px;"><span class="example2">    <span class="note">/usr/share/elasticsearch/lib/log4j-core-2.11.1.jar</span></span><br> </div>
+
+<ul style="list-style-type: circle;margin-left: 40px;"><li><span class="code">salt &#39;*&#39; cmd.run &#39;jar tvf <span class="note">/usr/share/elasticsearch/lib/log4j-core-2.11.1.jar</span> | grep JndiLookup.class | wc -l&#39; </span></li></ul>
+
+<p style="margin-left: 80px;"><span class="example2">emselk2-MmZhYjc5ZmI1OTkzMTEzYmMzMGFiZGM1:</span></p>
+
+<p style="margin-left: 80px;"><span class="example2">    1</span></p>
+
+<div style="margin-left: 80px;"><strong>1 </strong>indicates Jndi class exists in the Log4j 2 jar file and run next command to remove it whilst <strong>0 </strong>means Jndi class is removed or does not exist.</div>
+
+<ul style="list-style-type: circle;margin-left: 40px;"><li><span class="code">salt &#39;*&#39; cmd.run &#39;zip -q -d /usr/share/elasticsearch/lib/log4j-core-2.11.1.jar org/apache/logging/log4j/core/lookup/JndiLookup.class&#39;</span></li><li><span class="code">salt &#39;*&#39; cmd.run &#39;jar tvf /usr/share/elasticsearch/lib/log4j-core-2.11.1.jar | grep JndiLookup.class | wc -l&#39;</span></li></ul>
+
+<ol start="5" style="list-style-type: decimal;"><li>Restart both elasticsearch_master and elasticsearch_data on both EMS nodes
+	<ul><li><span class="code">monit summary</span>  <br>		<span class="note">Replace the &quot;EMS_NodeName&quot; as per the monit summary output</span><br>		<span class="code">monit restart &lt;EMS_NodeName&gt;_elasticsearch_data</span><br>		<span class="code">monit restart &lt;EMS_NodeName&gt;_elasticsearch_master</span><br>		<span class="code">monit summary</span></li></ul>
+	</li><li>Check the mitigation is added in the ELK process (on both elasticsearch_master and elasticsearch_data)</li></ol>
+
+<div style="margin-left: 80px;"><span class="code">ps -ef | grep --color Dlog4j2.formatMsgNoLookups</span></div>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

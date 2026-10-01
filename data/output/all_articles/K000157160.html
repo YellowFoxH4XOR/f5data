@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000157160: Send F5 Authentication and Audit logs to Secure Remote syslog server</title>
+<meta name="description" content="Support Solution: Send F5 Authentication and Audit logs to Secure Remote syslog server — This article describes how to configure F5 BIG-IP LTM systems to forward only authentication and audit logs to a remote syslog server, including steps for securing log transmission using SSL/TLS. The…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000157160">
+</head>
+<body>
+<header>
+<h1>K000157160: Send F5 Authentication and Audit logs to Secure Remote syslog server</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-11-09</dd>
+<dt>Updated</dt><dd>2026-03-10</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.2</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000157160">https://my.f5.com/manage/s/article/K000157160</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>This article describes how to configure F5 BIG-IP LTM systems to forward only authentication and audit logs to a remote syslog server, including steps for securing log transmission using SSL/TLS. The configuration ensures that only the specified log types (audit and authentication events) are sent to the remote syslog destination, with encrypted communication for enhanced security.</p>
+<h2>Environment</h2>
+<ul><li>Product: F5 BIG-IP LTM</li><li>Version: 17.1.2</li><li>Platform: F5-BIG-BT-I5800, C119</li><li>Key configuration elements:
+<ul><li>syslog-ng filters in BIG-IP’s /sys syslog configuration</li><li>Remote syslog server(s) (UDP port 514 or TLS port 6514)</li><li>SSL/TLS certificates for secure forwarding</li><li>Optional: High-Speed Logging (HSL) for advanced use cases</li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p>None</p>
+<h2>Recommended Actions</h2>
+<p><strong>A. Forwarding Only Audit and Authentication Logs</strong></p>
+<ol><li><strong>Access tmsh on the BIG-IP system:</strong><br><span style="background-color: #f1f1f1;">tmsh</span></li><li><strong>Edit the syslog configuration:</strong><br><span style="background-color: #f1f1f1;">edit /sys syslog all-properties</span></li><li><strong>Customize syslog-ng filters:</strong><br>Add or replace with the following (adjust IPs/ports as needed):<br><p><span style="font-family: &#39;courier new&#39;, courier, monospace;">include &quot;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">filter f_audit { match(AUDIT); };</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">filter f_authpriv { match(AUTH); };</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">destination d_syslog_server {</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">   udp(&quot;&lt;remote_syslog_ip&gt;&quot; port(514));</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">};</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">log { source(s_syslog_pipe); filter(f_audit); destination(d_syslog_server); };</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">log { source(s_syslog_pipe); filter(f_authpriv); destination(d_syslog_server); };</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">&quot;</span></p>
+This setup forwards only &quot;AUDIT&quot; and &quot;AUTH&quot; matching entries.</li><li><strong>Save and apply changes:</strong><br><span style="background-color: #f1f1f1;">:wq!</span><br><span style="background-color: #f1f1f1;">save /sys config</span></li></ol>
+<p><strong>B. Securing Log Forwarding with SSL/TLS</strong></p>
+<ol start="1"><li><strong>Import Certificates:</strong> <br>Import client certificate/key for BIG-IP and CA bundle for the remote syslog server via GUI:<br>- System &gt; Device Certificates &gt; Import</li><li><strong>Create a Remote Syslog Server Pool:</strong> <br><span style="background-color: #f1f1f1;">create ltm pool pool_remote_secure_syslog {<br>  members replace-all-with { &lt;remote_syslog_ip&gt;:6514 { address &lt;remote_syslog_ip&gt; } }<br>  monitor tcp_half_open<br>}</span></li><li><strong>Create a Server SSL Profile:</strong> <br><span style="background-color: #f1f1f1;">create ltm profile server-ssl profile_serverssl_syslog {<br>  ca-file &lt;CA_bundle.crt&gt;<br>  cert &lt;client_cert.crt&gt;<br>  key &lt;client_key.key&gt;<br>  peer-cert-mode require<br>  defaults-from serverssl<br>}</span></li><li>(Optional) Set Up Internal VLAN &amp; Self IP:<br><span style="background-color: #f1f1f1;">create net vlan vlan_securelog<br>create net self &lt;self_ip&gt; vlan vlan_securelog </span></li><li>Configure an Encrypting Virtual Server:<br><span style="background-color: #f1f1f1;"> create ltm virtual-address &lt;vs_ip&gt; traffic-group traffic-group-local-only auto-delete false<br>create ltm virtual vs_secure_syslog_target {<br>           &amp;nb...  &amp;nb... destination &lt;vs_ip&gt;:514<br>ip-protocol tcp<br>pool pool_remote_secure_syslog<br>profiles replace-all-with { profile_serverssl_syslog tcp }<br>vlans replace-all-with { vlan_securelog }<br>vlans-enabled<br>} </span></li><li>Redirect Audit/Auth Logs via Syslog-ng Filters:<br>Update /sys syslog configuration:<br><p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> modify sys syslog { include &quot; destination d_to_secure_syslog { tcp(&quot;&lt;vs_ip&gt;&quot; port(514)); }; log { source(s_syslo... log { source(s_sy... &quot; } </span></p>
+</li><li>Save your configuration:<br><span style="background-color: #f1f1f1;"> save /sys config </span></li><li>Test and verify that only audit and authentication logs are securely sent to the remote server.</li></ol>
+<h2>Additional Information</h2>
+<ul><li>Adjust match conditions in filters (&quot;AUDIT&quot;, &quot;AUTH&quot;) based on actual log message formats or specific authentication event requirements.</li><li>For advanced scenarios, consider configuring High-Speed Logging (HSL).</li><li>Always test after making changes to confirm only intended logs are forwarded.</li></ul>
+<h2>Related Content</h2>
+<ul><li><a href="https://techdocs.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/tmos-implementations-11-5-1/23.html" target="_blank">K56602501: Configuring syslog-ng filters</a></li><li>K13333: Additional syslog-ng filter examples</li><li>K10887436: External logging configuration guidance</li><li>K66016476: Sending auditd logs externally (for Linux kernel/auditd)</li><li>K000151543: Auditing privileged user activity</li></ul>
+</article>
+</body>
+</html>

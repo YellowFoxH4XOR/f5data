@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161655: How to log jti claim from OAuth Scope agent in API Protection flow</title>
+<meta name="description" content="Support Solution: How to log jti claim from OAuth Scope agent in API Protection flow — 01870023:5: /Common/TST-svc1-ApiProtection_ap:TST:6D610367: subsession">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161655">
+</head>
+<body>
+<header>
+<h1>K000161655: How to log jti claim from OAuth Scope agent in API Protection flow</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-09</dd>
+<dt>Updated</dt><dd>2026-06-09</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161655">https://my.f5.com/manage/s/article/K000161655</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When configuring a Logging agent in a BIG-IP APM API Protection per-request policy to capture the <span style="background-color: #f1f1f1;">jti</span> claim from a JWT validated by an OAuth Scope agent, the log entry returns an empty string. Using the variable <span style="background-color: #f1f1f1;">subsession.oauth.client.last.id_token.jti</span> does not populate the expected value, resulting in output such as:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">jti=</span></p>
+<p>Example log entry showing the empty <span style="background-color: #f1f1f1;">jti</span> field:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">01870023:5: /Common/TST-svc1-ApiProtection_ap:TST:6D610367: subsession </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">[OAuth Scope] -&gt; [VarAssign from HTTP Authorization] </span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">perflow.session.id=0000000000000000000000006D610367 ... jti=</span></p>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP APM</li><li>Version: 17.5.1</li><li>Feature: API Protection per-request policy</li><li>Policy agents involved:
+<ul><li>OAuth Scope agent (acting as resource server validating bearer tokens)</li><li>Logging agent</li></ul>
+</li><li>Configuration: Logging agent placed after the OAuth Scope agent in the per-request policy</li></ul>
+<h2>Cause</h2>
+<p>The variable <span style="background-color: #f1f1f1;">subsession.oauth.client.last.id_token.jti</span> belongs to the OAuth Client agent namespace and is not populated by the OAuth Scope agent. In an API Protection flow, the OAuth Scope agent populates a separate set of subsession variables under a different namespace, requiring a different variable path to access JWT claims such as <span style="background-color: #f1f1f1;">jti</span>.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>Use the correct variable for the OAuth Scope agent namespace:</p>
+<p>In the Logging agent&#39;s Log Message field, use the following variable to log the <span style="background-color: #f1f1f1;">jti</span> claim:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">jti=%{subsession.oauth.scope.last.jwt.jti}</span></p>
+<p>Steps to configure:</p>
+<ol><li>Navigate to your API Protection per-request policy in the BIG-IP APM Visual Policy Editor.</li><li>Locate the OAuth Scope agent in the policy flow.</li><li>Place the Logging agent immediately after the OAuth Scope agent on the Successful branch to ensure subsession variables are already populated when the Logging agent executes.</li><li>In the Logging agent&#39;s Log Message field, enter:<br><span style="font-family: &#39;courier new&#39;, courier, monospace;">jti=%{subsession.oauth.scope.last.jwt.jti}</span></li><li>Save and apply the policy.</li></ol>
+<p>If the variable still returns empty, confirm the exact variable name via debug logging:</p>
+<ol><li>Go to Access &gt; Overview &gt; Event Logs &gt; Settings.</li><li>Edit the log setting for your access profile and set the Per-Request Policy log level to Debug.</li><li>Trigger a test request and inspect <span style="font-family: &#39;courier new&#39;, courier, monospace;">/var/log/apm</span> for all <span style="font-family: &#39;courier new&#39;, courier, monospace;">subsession.*</span> variables populated by the OAuth Scope agent — look for any entry containing <span style="font-family: &#39;courier new&#39;, courier, monospace;">jti</span> to confirm the exact variable path.</li><li>Restore the log level to its original setting after testing, as debug logging generates significant log volume.</li></ol>
+<p>Alternatively, enable policy trace logging temporarily via tmsh:</p>
+<p><span style="background-color: #f1f1f1;">tmsh modify sys db tmm.access.policytrace value enable</span></p>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: Disable this after testing as it generates significant log volume:</em></span></p>
+<p><span style="background-color: #f1f1f1;">tmsh modify sys db tmm.access.policytrace value disable</span></p>
+<p>If the variable is still not populated, consider the following:</p>
+<ul><li>The incoming JWT may not contain a <span style="background-color: #f1f1f1;">jti</span> claim.</li><li>If the OAuth Scope agent is using external token introspection, the available claims depend on what the authorization server returns. In this case, use a Variable Assign agent after the OAuth Scope agent to map the value to a perflow variable, then log that instead:
+<ul><li>Left side (Custom Variable): <span style="background-color: #f1f1f1;">perflow.custom.jti</span></li><li>Right side (Session Variable): <span style="background-color: #f1f1f1;">subsession.oauth.scope.last.jwt.jti</span></li><li>Then log <span style="background-color: #f1f1f1;">%{perflow.custom.jti}</span> in the Logging agent.</li></ul>
+</li></ul>
+<h2>Additional Information</h2>
+<ul><li>The OAuth Client agent namespace (<span style="background-color: #f1f1f1;">subsession.oauth.client.last.*</span>) and the OAuth Scope agent namespace (<span style="background-color: #f1f1f1;">subsession.oauth.scope.last.*</span>) are distinct. The OAuth Client agent is used in a different flow (e.g., when BIG-IP APM acts as an OAuth client), while the OAuth Scope agent is used when BIG-IP APM acts as a resource server validating bearer tokens in an API Protection flow.</li><li>The <span style="background-color: #f1f1f1;">jti</span> claim is a reserved/standard JWT claim. APM parses and stores it into the subsession variable namespace upon successful JWT validation by the OAuth Scope agent.</li></ul>
+</article>
+</body>
+</html>

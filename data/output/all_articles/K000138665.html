@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000138665: BlackHoleCluster logs when executing cross-namespace tests with sidecar injection enabled</title>
+<meta name="description" content="Support Solution: BlackHoleCluster logs when executing cross-namespace tests with sidecar injection enabled — ➜ kubectl exec -it sleep-5cc5b5cbf9-675vq -- curl -I http://httpbin.istio-sidecar2.svc.cluster.local:8000">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000138665">
+</head>
+<body>
+<header>
+<h1>K000138665: BlackHoleCluster logs when executing cross-namespace tests with sidecar injection enabled</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-02-26</dd>
+<dt>Updated</dt><dd>2024-02-26</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000138665">https://my.f5.com/manage/s/article/K000138665</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When trying cross-namespace communication with sidecar injection enabled in both namespaces (Eg. sleep.default -&gt; httpbin.istio-sidecar2), the test fails, and the following logs are seen in the source pod: </p>
+<p><code>➜   kubectl exec -it sleep-5cc5b5cbf9-675vq -- curl -I http<strong>:</strong>//httpbin.istio-sidecar2<strong>.</strong>svc.cluster<strong>.</strong>local<strong>:</strong>8000<br>curl: (56) Recv failure: Connection reset by peer<br>command terminated with exit code 56</code></p>
+<pre class="language-markup"><code>[2024-02-26T22:19:55.983Z] &quot;- - -&quot; 0 UH - - &quot;-&quot; 0 0 0 - &quot;-&quot; &quot;-&quot; &quot;-&quot; &quot;-&quot; &quot;-&quot; BlackHoleCluster - 10.96.92.95:8000 10.244.1.40:57616 - -
+[2024-02-26T22:32:25.257Z] &quot;- - -&quot; 0 UH - - &quot;-&quot; 0 0 0 - &quot;-&quot; &quot;-&quot; &quot;-&quot; &quot;-&quot; &quot;-&quot; BlackHoleCluster - 10.96.92.95:8000 10.244.1.40:40902 - -</code></pre>
+<h2>Environment</h2>
+<p>1.14.x</p>
+<h2>Cause</h2>
+<p>One possible reason is that <a href="https://istio.io/v1.14/blog/2021/discovery-selectors/" target="_blank">discoverySelectors</a> is enabled in the mesh and the destination namespace (istio-sidecar2) is not labeled correctly.</p>
+<p>By default, Istio watches all Namespaces, Services, Endpoints and Pods in a cluster. Starting with Istio 1.10, discoverySelectors was added as an option to <a href="https://istio.io/v1.14/docs/reference/config/istio.mesh.v1alpha1/#MeshConfig" target="_blank">MeshConfig</a>, The discoverySelectors configuration enables users to dynamically restrict the set of namespaces that are part of the mesh.</p>
+<p>For this test discoverySelectors was added in the override values file, the below means all namespaces that we want to make part of our mesh need to have the &quot;istio-discovery: enabled&quot; label in place:</p>
+<pre class="language-markup"><code>meshConfig:
+    discoverySelectors:
+      - matchLabels:
+          istio-discovery: enabled</code></pre>
+<h4>Looking at the labels of istio-sidecar2, we don&#39;t see the label in place:</h4>
+<pre class="language-markup"><code>➜  kubectl get namespace --show-labels
+NAME                 STATUS   AGE   LABELS
+...
+istio-sidecar2       Active   31m   istio-injection=enabled,kubernetes.io/metadata.name=istio-sidecar2</code></pre>
+<h4>And if we inspect the listeners available to the sleep pod, we don&#39;t see any listeners with port 8000 (httpbin svc port):</h4>
+<pre class="language-markup"><code>➜  istioctl pc listeners sleep-5cc5b5cbf9-675vq | grep 8000
+➜  </code></pre>
+<h2>Recommended Actions</h2>
+<p>Add the &quot;istio-discovery: enabled&quot; to the namespaces that you want to track in the mesh:</p>
+<pre class="language-markup"><code>➜ kubectl label namespace istio-sidecar2  istio-discovery=enabled
+namespace/istio-sidecar2 labeled</code></pre>
+<h2>Additional Information</h2>
+<p>After labeling the namespace you should be able to see the port 8000 listener and the test should be successful:</p>
+<p><code>➜ kubectl exec -it sleep-5cc5b5cbf9-675vq -- curl -I http<strong>:</strong>//httpbin<strong>.</strong>istio-sidecar2<strong>.</strong>svc<strong>.</strong>cluster<strong>.</strong>local<strong>:</strong>8000<br>HTTP/1.1 200 OK</code></p>
+<pre class="language-markup"><code>➜ istioctl pc listeners sleep-5cc5b5cbf9-675vq | grep 8000
+0.0.0.0 8000  ALL                                                                      Route: 8000
+</code></pre>
+<p> </p>
+</article>
+</body>
+</html>

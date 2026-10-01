@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161719: AS3 Application Deletion Fails with &quot;Cannot delete referenced virtual address&quot; When Using Shared Virtual Address Across Multiple Virtual Servers</title>
+<meta name="description" content="Support Solution: AS3 Application Deletion Fails with &quot;Cannot delete referenced virtual address&quot; When Using Shared Virtual Address Across Multiple Virtual Servers — 01070344:3: Cannot delete referenced virtual address /&lt;partition&gt;/&lt;address&gt;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161719">
+</head>
+<body>
+<header>
+<h1>K000161719: AS3 Application Deletion Fails with &quot;Cannot delete referenced virtual address&quot; When Using Shared Virtual Address Across Multiple Virtual Servers</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-15</dd>
+<dt>Updated</dt><dd>2026-06-17</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Automation and Orchestration</li><li>BIG-IP</li><li>BIG-IP LTM: 17.0.0, 17.1.0, 17.0.X, 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1</li><li>F5 Application Services 3 Extension</li><li>F5 Modules for Ansible</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161719">https://my.f5.com/manage/s/article/K000161719</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<ul><li>Deleting an AS3 application or virtual server using a per-application <span style="font-family: terminal, monaco, monospace;">DELETE</span> request (e.g., <span style="font-family: terminal, monaco, monospace;">DELETE /mgmt/shared/appsvcs/declare/&lt;tenant&gt;/applications/&lt;app&gt;</span>) returns a HTTP 422 error with the message:</li></ul>
+<p><code>01070344:3: Cannot delete referenced virtual address /&lt;partition&gt;/&lt;address&gt;</code></p>
+<ul><li>This occurs when multiple virtual servers across different AS3 applications share the same virtual address, typically defined in a shared application. The error is logged in both <span style="font-family: terminal, monaco, monospace;">/var/log/restnoded/restnoded.log</span> and <span style="font-family: terminal, monaco, monospace;">/var/log/ltm</span>:</li></ul>
+<p><code>severe: [appsvcs] {&quot;message&quot;:&quot;Declaration failed: 01070344:3: Cannot delete referenced virtual address /&lt;tenant&gt;/&lt;address&gt;.&quot;,&quot;level&quot;:&quot;error&quot;}</code></p>
+<p><code>err mcpd[&lt;pid&gt;]: 01070344:3: Cannot delete referenced virtual address /&lt;tenant&gt;/&lt;address&gt;.</code></p>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP LTM with AS3 (Application Services 3 Extension)</li><li>BIG-IP Version: 17.5.1.6</li><li>AS3 Version: 3.57.0-8 (affected); 3.58.0-4 (fixed)</li><li>Configuration:
+<ul><li>    Shared virtual address defined in a shared application</li><li>    Multiple virtual servers/applications referencing the same shared address</li><li>    AS3 creates traffic-matching-criteria (TMC) objects per virtual server, each pointing to the shared address</li><li>    Shared virtual addresses are auto-created from the address list entries with autoDelete: true</li></ul>
+</li><li>Automation: Ansible playbooks or direct AS3 REST API calls performing per-application deletions</li></ul>
+<h2>Cause</h2>
+<ul><li>A defect in AS3&#39;s per-application deletion logic caused it to attempt deletion of shared virtual addresses (auto-created from an address list with autoDelete: true) without first checking whether those addresses were still referenced by other applications&#39; traffic-matching-criteria (TMC) objects.</li><li>When the delete was attempted, mcpd correctly blocked the deletion (since the address was still in use by another virtual server&#39;s TMC), resulting in the <span style="font-family: terminal, monaco, monospace;">01070344:3 erro</span>r and a HTTP 422 response from AS3 — even though the target virtual server itself was successfully deleted.</li></ul>
+<h2>Answer/Recommended Actions</h2>
+<ol><li>Upgrade AS3 to version 3.58.0-4 or later, which includes the fix for correct handling of shared virtual address deletion during per-application deletes.</li><li>After upgrading, verify that per-application deletes succeed without triggering the referenced virtual address error.</li><li>Continue to use a shared application for common virtual addresses and reference them using the &quot;use&quot; or &quot;bigip&quot; method as appropriate.</li></ol>
+<h2>Additional Information</h2>
+<ul><li>Despite the 422 error response, the target virtual server is successfully deleted. The error is generated because AS3 attempts to delete the underlying shared virtual address (which has autoDelete: true) after removing the virtual server and its associated TMC object — but mcpd blocks this deletion since the address is still referenced by another virtual server&#39;s TMC object. The shared virtual address itself remains intact and functional.</li><li>Workarounds such as setting autoDelete to false, always including the shared application block in every declaration, or using &quot;use&quot; vs. &quot;bigip&quot; reference methods do not resolve the issue.</li><li>When a virtual server uses an address list as its destination, AS3/BIG-IP creates a TMC object and auto-generates virtual address objects for each IP in the list. When one application is deleted, AS3&#39;s deletion logic triggers an attempt to remove these auto-generated virtual addresses without verifying whether other TMC objects (belonging to other applications) still reference them.</li></ul>
+</article>
+</body>
+</html>

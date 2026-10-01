@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161696: GTM–LTM iQuery SSL Handshake Failure Caused by Incompatible Cipher Configuration</title>
+<meta name="description" content="Support Solution: GTM–LTM iQuery SSL Handshake Failure Caused by Incompatible Cipher Configuration — BIG-IP DNS may fail to establish iQuery trust and connectivity with BIG-IP LTM when custom TLS settings exclude cipher suites required by iQuery. GSLB health checks may fail, and Wide IPs may become…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161696">
+</head>
+<body>
+<header>
+<h1>K000161696: GTM–LTM iQuery SSL Handshake Failure Caused by Incompatible Cipher Configuration</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-26</dd>
+<dt>Updated</dt><dd>2026-08-26</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161696">https://my.f5.com/manage/s/article/K000161696</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>BIG-IP DNS may fail to establish iQuery trust and connectivity with BIG-IP LTM when custom TLS settings exclude cipher suites required by iQuery. GSLB health checks may fail, and Wide IPs may become unavailable.</p>
+<p>Common errors include:</p>
+<ul><li>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">SSL routines:SSL23_GET_SERVER_HELLO:sslv3 alert handshake failure</span></p>
+</li><li>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">SSL_ERROR_SYSCALL</span></p>
+</li><li>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">ssl3_get_client_hello:no shared cipher</span></p>
+</li><li>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Cipher is (NONE)</span></p>
+</li></ul>
+<p>The <span style="background-color: #f1f1f1;">bigip_add</span> utility may appear to complete successfully while <span style="background-color: #f1f1f1;">iqdump</span> continues to report an SSL handshake failure or an untrusted device certificate.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP DNS and BIG-IP LTM</li><li>iQuery communication through Self IP addresses</li><li>Custom TLS and cipher settings configured on BIG-IP DNS and BIG-IP LTM</li><li>Relevant settings may include:
+<ul><li><span style="background-color: #f1f1f1;">big3d.minimum.tls.version</span></li><li><span style="background-color: #f1f1f1;">gtm global-settings general iquery-minimum-tls-version</span></li><li><span style="background-color: #f1f1f1;">big3d.ssl.cipherlist</span></li><li><span style="background-color: #f1f1f1;">gtm global-settings general ssl-cipher-list</span></li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p>The custom cipher configuration excluded all RSA-based cipher suites by using <span style="background-color: #f1f1f1;">!RSA</span>. iQuery SSL communication between the <span style="background-color: #f1f1f1;">gtmd</span> and <span style="background-color: #f1f1f1;">big3d</span> processes requires compatible RSA-based cipher suites. Because no common cipher was available, the TLS handshake failed with a <span style="background-color: #f1f1f1;">no shared cipher</span> error.</p>
+<p>This behavior is tracked under <a href="https://cdn.f5.com/product/bugtracker/ID936417.html" target="_blank">Bug ID 936417</a>. A supported cipher configuration that includes compatible RSA-based cipher suites can resolve the issue.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>Perform the following actions on the applicable BIG-IP DNS and BIG-IP LTM systems.</p>
+<ol><li>Verify that port 22 is permitted on the Self IPs used for iQuery communication and that SSH allow lists permit communication between the systems.</li><li>Review the current iQuery and <span style="background-color: #f1f1f1;">big3d</span> TLS settings: <br><span style="background-color: #f1f1f1;">tmsh list gtm global-settings general</span> <br><span style="background-color: #f1f1f1;">tmsh list sys db big3d.minimum.tls.version</span> <br><span style="background-color: #f1f1f1;">tmsh list sys db big3d.ssl.cipherlist</span></li><li>Revert the iQuery cipher and TLS settings to the supported defaults: <br><span style="background-color: #f1f1f1;">tmsh modify gtm global-settings general iquery-minimum-tls-version tls1</span> <br><span style="background-color: #f1f1f1;">tmsh modify gtm global-settings general ssl-cipher-list DEFAULT</span> <br><span style="background-color: #f1f1f1;">tmsh modify sys db big3d.minimum.tls.version value tls1</span> <br><span style="background-color: #f1f1f1;">tmsh modify sys db big3d.ssl.cipherlist value DEFAULT</span></li><li>Restart the iQuery services: <br><span style="background-color: #f1f1f1;">bigstart restart gtmd big3d</span></li><li>Re-establish trust from BIG-IP DNS to the BIG-IP LTM system: <br><span style="background-color: #f1f1f1;">bigip_add &lt;LTM_Self_IP&gt;</span></li><li>Save the configuration: <br><span style="background-color: #f1f1f1;">tmsh save sys config</span></li><li>Verify iQuery connectivity: <br><span style="background-color: #f1f1f1;">iqdump &lt;LTM_Self_IP&gt;</span> <br><span style="background-color: #f1f1f1;">tmsh show gtm iquery</span></li><li>If security hardening requires a custom cipher list, ensure that it includes cipher suites compatible with iQuery and does not exclude all RSA-based suites. The following cipher list can be used as a starting point:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">AESGCM:AES:!ADH:!AECDH:!PSK:!aECDH:!DSS:!ECDSA:!AES128:-SHA1:AES256-SHA</span></p>
+<p>Validate custom cipher settings with the security team and test iQuery connectivity after applying them.</p>
+</li></ol>
+<h2>Additional Information</h2>
+<ul><li>A valid and unique device certificate does not resolve this condition when the TLS peers cannot negotiate a common cipher.</li><li>Successful TCP or SSH connectivity does not confirm successful iQuery connectivity. iQuery must complete its SSL/TLS handshake separately.</li><li>The <span style="background-color: #f1f1f1;">bigip_add</span> utility uses SSH during certificate exchange; therefore, port 22 and SSH allow-list settings must be correct before trust can be established.</li><li>Reverting to supported default cipher settings can restore BIG-IP DNS–BIG-IP LTM trust and iQuery connectivity.</li><li>Security-hardening changes affecting <span style="background-color: #f1f1f1;">big3d</span>, <span style="background-color: #f1f1f1;">gtmd</span>, TLS versions, or cipher suites should be tested against iQuery before deployment.</li></ul>
+</article>
+</body>
+</html>

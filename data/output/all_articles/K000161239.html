@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161239: F5 Distributed Cloud - How to deploy Customer Edge nodes on AWS at scale using Terraform automation with Virtual Sites and AWS Network Load Balancers</title>
+<meta name="description" content="Support Solution: F5 Distributed Cloud - How to deploy Customer Edge nodes on AWS at scale using Terraform automation with Virtual Sites and AWS Network Load Balancers — Deploying F5 Distributed Cloud Customer Edge (CE) nodes on AWS manually introduces configuration overhead, inconsistency risks, and scaling challenges. A Terraform-based Infrastructure as Code…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161239">
+</head>
+<body>
+<header>
+<h1>K000161239: F5 Distributed Cloud - How to deploy Customer Edge nodes on AWS at scale using Terraform automation with Virtual Sites and AWS Network Load Balancers</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-05-12</dd>
+<dt>Updated</dt><dd>2026-05-12</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Distributed Cloud Services</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161239">https://my.f5.com/manage/s/article/K000161239</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Deploying F5 Distributed Cloud Customer Edge (CE) nodes on AWS manually introduces configuration overhead, inconsistency risks, and scaling challenges. A Terraform-based Infrastructure as Code solution enables teams to deploy CE nodes on AWS in a consistent, automated, and scalable way — from single-node proof-of-concepts to multi-node production deployments — using a dual-layer load balancing strategy combining AWS Network Load Balancers (NLB) and F5 Distributed Cloud Virtual Sites.</p>
+<ul><li>How can F5 Distributed Cloud Customer Edge nodes be deployed on AWS using Terraform automation?</li><li>How does the dual-layer load balancing strategy using AWS NLB and F5 Distributed Cloud Virtual Sites work?</li><li>What AWS infrastructure prerequisites are required before deploying F5 XC CE nodes with Terraform?</li><li>How is the number of CE nodes scaled up or down using this Terraform solution?</li><li>Why are Virtual Sites used in this architecture and how do they provide abstraction across multiple CE nodes?</li></ul>
+<h2>Environment</h2>
+<ul><li>F5 Distributed Cloud (SaaS)</li><li>Customer Edge (CE) nodes deployed on AWS EC2 using F5 XC CE AMI</li><li>Single-node to multi-node CE deployments (1–10 nodes supported)</li><li>AWS infrastructure components:
+<ul><li>VPC with DNS support enabled</li><li>Three-tier subnet architecture: Public subnet (NLB), Outside subnet (CE SLO — private with NAT route), Inside subnet (CE SLI — private for workloads)</li><li>NAT Gateway for CE outbound internet access</li><li>AWS Network Load Balancer (NLB) for Layer 4 distribution to CE nodes</li></ul>
+</li><li>F5 Distributed Cloud Virtual Site configured with label-based CE membership</li><li>Terraform CLI with F5 XC Terraform Provider</li><li>F5 Distributed Cloud API credentials (P12 certificate)</li></ul>
+<h2>Cause</h2>
+<p>None</p>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>Architecture Overview</strong></p>
+<p>This solution implements a dual-layer load balancing strategy:</p>
+<ul><li><strong>Layer 1 — AWS NLB:</strong> Provides cloud-native Layer 4 distribution across CE nodes, AWS-native health checking, cross-zone load balancing, and AWS Shield Standard DDoS protection. CE nodes are not directly exposed to the internet.</li><li><strong>Layer 2 — F5 XC CE + Virtual Sites:</strong> Provides application-layer security (WAF, Bot Defense, API Protection, Rate Limiting), advanced traffic management (A/B testing, canary deployments, application load balancing), and multi-cloud connectivity. Virtual Sites provide unified configuration and policy enforcement across all CE nodes regardless of physical location or count.</li></ul>
+<p><strong>Prerequisites: AWS Infrastructure Setup</strong></p>
+<p>This Terraform solution follows a bring-your-own-infrastructure model. The following AWS components must exist before deployment:</p>
+<ol><li><strong>VPC with DNS support:</strong>
+<pre>aws ec2 create-vpc \
+  --cidr-block 10.0.0.0/16 \
+  --enable-dns-hostnames \
+  --enable-dns-support \
+  --tag-specifications &#39;ResourceType=vpc,Tags=[{Key=Name,Value=my-vpc}]&#39;
+</pre>
+</li><li><strong>Three-tier subnet architecture:</strong>
+<ul><li><strong>Public Subnet:</strong> Hosts the NAT Gateway and optionally the NLB.</li><li><strong>Outside Subnet (Private):</strong> Connects CE SLO interfaces with NAT Gateway routing for internet access.</li><li><strong>Inside Subnet (Private):</strong> Handles internal workload traffic via CE SLI interfaces.</li></ul>
+</li><li><strong>NAT Gateway for CE outbound access:</strong>
+<pre>aws ec2 allocate-address --domain vpc
+aws ec2 create-nat-gateway \
+  --subnet-id subnet-public-xxxxxxxxx \
+  --allocation-id eipalloc-xxxxxxxxx
+</pre>
+</li><li><strong>Route Table Configuration:</strong>
+<table border="1" cellpadding="6" cellspacing="0"><thead><tr><th colspan="1" rowspan="1">Subnet</th><th colspan="1" rowspan="1">Destination</th><th colspan="1" rowspan="1">Target</th><th colspan="1" rowspan="1">Purpose</th></tr></thead><tbody><tr><td colspan="1" rowspan="1">Public</td><td colspan="1" rowspan="1">0.0.0.0/0</td><td colspan="1" rowspan="1">IGW</td><td colspan="1" rowspan="1">Internet access</td></tr><tr><td colspan="1" rowspan="1">Outside</td><td colspan="1" rowspan="1">0.0.0.0/0</td><td colspan="1" rowspan="1">NAT Gateway</td><td colspan="1" rowspan="1">CE outgoing internet access</td></tr><tr><td colspan="1" rowspan="1">Inside</td><td colspan="1" rowspan="1">10.0.0.0/16</td><td colspan="1" rowspan="1">Local</td><td colspan="1" rowspan="1">VPC internal traffic</td></tr></tbody></table>
+</li></ol>
+<p><strong>Prerequisites: F5 Distributed Cloud</strong></p>
+<ol><li>Generate an API Certificate (P12) from the F5 XC Console following the <a href="https://docs.cloud.f5.com/docs-v2/administration/how-tos/user-mgmt/Credentials#generate-api-certificate-for-service-credentials" target="_blank">official documentation</a>.</li><li>Locate the latest F5 XC CE AMI for the target AWS region:
+<pre>aws ec2 describe-images \
+  --region your-region \
+  --filters &quot;Name=name,Values=*f5xc-ce*&quot; \
+  --query &quot;reverse(sort_by(Images, &amp;CreationDate))[0].ImageId&quot; \
+  --output text
+</pre>
+</li></ol>
+<p><strong>Step 1: Clone the Repository</strong></p>
+<pre>git clone https://github.com/veysph/Prod-TF.git
+cd Prod-TF/Virtual\ Site/f5xc-ce-aws
+cp terraform.tfvars.example terraform.tfvars
+</pre>
+<p><strong>Step 2: Configure terraform.tfvars</strong></p>
+<p>Edit <code>terraform.tfvars</code> with values specific to your AWS environment and F5 XC tenant:</p>
+<pre># AWS Infrastructure References
+vpc_name                = &quot;your-vpc-name&quot;
+outside_subnet_name     = &quot;your-outside-subnet-name&quot;   # Private subnet with NAT route
+inside_subnet_name      = &quot;your-inside-subnet-name&quot;    # Private subnet for workloads
+nlb_public_subnet_name  = &quot;your-public-subnet-name&quot;    # Public subnet for NLB
+aws_region              = &quot;your-aws-region&quot;
+aws_ssh_key             = &quot;your-ssh-key-name&quot;
+aws_f5xc_ami            = &quot;ami-xxxxxxxxxxxxxxxxx&quot;
+
+# F5 XC Configuration
+f5xc_ce_site_name       = &quot;your-site-name&quot;
+f5xc_api_url            = &quot;https://your-tenant.console.ves.volterra.io/api&quot;
+f5xc_api_p12_file       = &quot;/path/to/your/api-creds.p12&quot;
+
+# Scaling and Features
+num_ce_nodes            = 1     # Deploy 1-10 nodes
+deploy_nlb              = true
+create_f5xc_virtual_site = true
+create_f5xc_loadbalancer = true
+</pre>
+<p><strong>Step 3: Execute Deployment</strong></p>
+<pre>terraform init
+terraform plan
+terraform apply
+</pre>
+<p><strong>Scaling CE Nodes</strong></p>
+<p>To scale the number of CE nodes after initial deployment, update the <code>num_ce_nodes</code> variable in <code>terraform.tfvars</code> and re-apply:</p>
+<pre>terraform apply
+</pre>
+<p>New CE nodes automatically join the Virtual Site based on label matching and begin receiving traffic through the NLB without any DNS changes or manual configuration.</p>
+<h2>Additional Information</h2>
+<p><strong>Understanding Virtual Sites in this Architecture</strong></p>
+<p>A Virtual Site in F5 Distributed Cloud is a logical abstraction that groups multiple CE sites together, creating a unified distributed application delivery fabric. In this deployment:</p>
+<ul><li><strong>Location Abstraction:</strong> Configuration is pushed uniformly to all CE nodes regardless of their physical location or count. You do not need to update individual CE configurations as nodes are added or removed.</li><li><strong>Label-Based Membership:</strong> CE sites automatically join the Virtual Site based on label matching. For example, any CE site with the label <code>environment=production</code> automatically joins the <code>production</code> Virtual Site:
+<pre>f5xc_vsite_key       = &quot;environment&quot;
+f5xc_vsite_key_label = &quot;production&quot;
+</pre>
+</li><li><strong>Multi-Region and Multi-Cloud:</strong> A single Virtual Site can span CE nodes across AWS US-East, AWS US-West, AWS EU-Central, Azure, and on-premises data centers simultaneously, while maintaining a single configuration interface.</li></ul>
+<p><strong>Why AWS NLB and F5 XC CE Together?</strong></p>
+<p>Each layer addresses different responsibilities:</p>
+<ul><li><strong>AWS NLB:</strong> Ultra-low latency Layer 4 distribution, cross-zone load balancing, AWS Shield Standard DDoS protection, CloudWatch integration, and CE health checking at Layer 4. CE nodes are not directly exposed to the internet.</li><li><strong>F5 XC CE:</strong> Application-layer security (WAF, Bot Defense, API Discovery, API Protection, Rate Limiting), advanced L7 traffic management (A/B testing, canary deployments, path-based routing), and multi-cloud networking connectivity.</li></ul>
+<p>The full Terraform repository including all modules, variables, architecture diagrams, and advanced configuration examples is available at: <a href="https://github.com/veysph/Prod-TF/tree/main/Virtual%20Site/f5xc-ce-aws" target="_blank">https://github.com/veysph/Prod-TF/tree/main/Virtual%20Site/f5xc-ce-aws</a></p>
+</article>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000137971: How to integrate Kiali and Prometheus with Aspen Mesh</title>
+<meta name="description" content="Support Solution: How to integrate Kiali and Prometheus with Aspen Mesh — This article will provide the steps on how to integrate Kiali with prometheus using Aspen Mesh.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000137971">
+</head>
+<body>
+<header>
+<h1>K000137971: How to integrate Kiali and Prometheus with Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-12-29</dd>
+<dt>Updated</dt><dd>2023-12-29</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.14</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000137971">https://my.f5.com/manage/s/article/K000137971</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+
+<p>This article will provide the steps on how to integrate Kiali with prometheus using Aspen Mesh.</p>
+
+<h2>Environment</h2>
+
+<p>Aspen Mesh 1.14.X</p>
+
+<h2>Cause</h2>
+
+<p>Kiali and Prometheus are not added after installing Aspen Mesh, and some specific configuration needs to be applied in order to be able to use Kiali with Prometheus.</p>
+
+<h2>Recommended Actions</h2>
+
+<p><strong>1. </strong> If you have already installed Kiali and Prometheus, please remove the deployments added into the cluster:</p>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+kubectl delete deployments.apps prometheus -n istio-system
+kubectl delete deployments.apps kiali -n istio-system
+kubectl delete deployments.apps kiali-operator -n kiali-operator
+<em>IF kiali was installed with helm:</em> helm uninstall --namespace kiali-operator kiali-operator
+</pre>
+
+<p><br><strong>2.</strong> Update your override values yaml file and add the following value:</p>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+meshConfig:
+  enablePrometheusMerge: true
+</pre>
+
+<p style="margin-left: 40px;">and apply it with the command:</p>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+helm upgrade istiod manifests/charts/istio-control/istio-discovery \
+    --namespace istio-system \
+    --values &lt;aspenMeshOverrideValuesFilename&gt;
+</pre>
+
+<p style="margin-left: 40px;">You can verify if it has the correct value(true) with this command:</p>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+kubectl get cm istio -n istio-system -o jsonpath=&#39;{.data.mesh}&#39; | grep Prometheus
+</pre>
+
+<p style="margin-left: 40px;">Once this value is added into the Aspen Mesh istio config. You will have to restart the deployments of the applications you want to monitor with the inbound/outband traffic metrics, because the prometheus scrape annotation needs to be added into the pod for prometheus to monitor it. <br> </p>
+
+<p><strong>3.</strong> You have to install prometheus with tls. The prometheus config yaml is located on the AspenMesh folder under the path <strong>samples/addons/extras/prometheus_vm_tls.yaml</strong></p>
+ 
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+kubectl apply -f aspenmesh-carrier-grade-1.14.6-am5/samples/addons/extras/prometheus_vm_tls.yaml
+</pre>
+
+<p><br><strong>4.</strong> Install the latest kiali release with helm:</p>
+ 
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+helm repo add kiali https<strong>:</strong>//kiali<strong>.</strong>org/helm-charts
+
+helm install \
+    --set cr.create=true \
+    --set cr.namespace=istio-system \
+    --namespace kiali-operator \
+    --create-namespace \
+    kiali-operator \
+    kiali/kiali-operator
+</pre>
+
+<h2><br>Additional Information</h2>
+
+<p>In order to access the dashboard, please follow these steps:</p>
+ 
+
+<ul><li>Use port-forwarding to access Kiali Dashboard by running this command:</li></ul>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+kubectl port-forward svc/kiali 20001:20001 -n istio-system
+</pre>
+
+<ul><li>And use the output of the following command to get the token to login:</li></ul>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+kubectl -n istio-system create token kiali-service-account
+</pre>
+</article>
+</body>
+</html>

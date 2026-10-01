@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000134772: TLS handshake failure in response to ClientHello initiated from istio-proxy (client) to server (java18 application): Illegal server name</title>
+<meta name="description" content="Support Solution: TLS handshake failure in response to ClientHello initiated from istio-proxy (client) to server (java18 application): Illegal server name — SNI is set automatically by Aspen Mesh to outbound_.8080_._.example.com causing TLS negotiation to fail.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000134772">
+</head>
+<body>
+<header>
+<h1>K000134772: TLS handshake failure in response to ClientHello initiated from istio-proxy (client) to server (java18 application): Illegal server name</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-05-25</dd>
+<dt>Updated</dt><dd>2023-08-04</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.X.X, 1.14, 1.11</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000134772">https://my.f5.com/manage/s/article/K000134772</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>SNI is set automatically by Aspen Mesh to <em>outbound_.8080_._.example<strong>.</strong>com</em> causing TLS negotiation to fail.<br>Server running an application written in JAVA shows the following</p>
+
+<pre class="ckeditor_codeblock">
+javax.net.ssl|ERROR|D8|2023-05-24 09:47:25.913 CDT|TransportContext.java:363|Fatal (ILLEGAL_PARAMETER): Illegal server name, type=host_name(0), name=outbound_.8080_._.example<strong>.</strong>com, value={6F7574626F756E645F2E383038305F2E5F2E64616C6C61732D736370312D6970322E3567632E767A696D73746573742E636F6D} (
+
+&quot;throwable&quot; : {
+
+ javax.net.ssl.SSLProtocolException: Illegal server name, type=host_name(0), name=outbound_.8080_._.example<strong>.</strong>com
+</pre>
+
+<p><br>Istio-proxy container logs return a 503 HTTP status code and TLS errors</p>
+
+<pre class="ckeditor_codeblock">
+[2023-05-24T14:47:25.900Z] &quot;GET /path/ HTTP/2&quot; 503 UF,URX upstream_reset_before_response_started{connection_failure,TLS_error:_268436503:SSL_routines:OPENSSL_internal:SSLV3_ALERT_ILLEGAL_PARAMETER} - &quot;TLS error: 268436503:SSL routines:OPENSSL_internal:SSLV3_ALERT_ILLEGAL_PARAMETER&quot; 0 199 84 - &quot;-&quot; &quot;-&quot; &quot;e9181af5-ac3a-4a33-80c9-ffbb6975ae84&quot; &quot;10.10.0.2:8080&quot; &quot;10.10.0.2:8080&quot; outbound|8080||example<strong>.</strong>com - 10.10.0.2:8080 10.131.14.183:64998 - default</pre>
+
+<h2><br><strong>Environment</strong></h2>
+
+<p>Aspen Mesh 1.x<br> </p>
+
+<h2><strong>Cause</strong></h2>
+
+<p>DestinationRule used to route this traffic does not have SNI configuration set causing Aspen Mesh to use the default behavior.</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: networking<strong>.</strong>istio<strong>.</strong>io/v1beta1
+kind: DestinationRule
+metadata:
+  name: no-sni
+  namespace: default
+spec:
+  host: example<strong>.</strong>com
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL</pre>
+
+<p> </p>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>Create/Update the DestinationRule to use the SNI expected by the server.<br>The below DR can be used as example:</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: networking<strong>.</strong>istio<strong>.</strong>io/v1beta1
+kind: DestinationRule
+metadata:
+  name: dr-sni
+  namespace: default
+spec:
+  host: example<strong>.</strong>com
+  exportTo:
+  - &quot;.&quot;
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+      sni: example<strong>.</strong>com</pre>
+
+<p> </p>
+
+<h2><strong>Additional Information</strong></h2>
+
+<p>You can confirm the Destination Rule being used and SNI that will be presented by running these commands</p>
+
+<pre class="ckeditor_codeblock">
+istioctl pc c podname -n namespace --fqdn example<strong>.</strong>com
+
+SERVICE FQDN                     PORT     SUBSET     DIRECTION     TYPE             DESTINATION RULE
+example<strong>.</strong>com                      8080     -          outbound      ORIGINAL_DST     dr-name.ns-name</pre>
+
+<p>The DR used in the output above is <em>dr-name.ns-name</em><br> </p>
+
+<pre class="ckeditor_codeblock">
+istioctl pc c podname -n namespace --fqdn example<strong>.</strong>com -o yaml
+
+....omitted....
+ tlsCertificateSdsSecretConfigs:
+        - name: default
+          sdsConfig:
+            apiConfigSource:
+              apiType: GRPC
+              grpcServices:
+              - envoyGrpc:
+                  clusterName: sds-grpc
+              setNodeOnFirstMessageOnly: true
+              transportApiVersion: V3
+            initialFetchTimeout: 0s
+            resourceApiVersion: V3
+      sni: outbound_.8080_._.example<strong>.</strong>com ## SNI used by default when there&#39;s no SNI explicitly set 
+....omitted....
+</pre>
+</article>
+</body>
+</html>

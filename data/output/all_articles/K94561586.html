@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K94561586: Exposing a service over SIMPLE TLS using Istio ingress gateway in Aspen Mesh</title>
+<meta name="description" content="Support Solution: Exposing a service over SIMPLE TLS using Istio ingress gateway in Aspen Mesh — Istio Ingress Gateway is the Kubernetes Ingress Proxy that you can configure to expose a service to clients outside of the Aspen Mesh service cluster. You configure the Istio Ingress Gateway object…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K94561586">
+</head>
+<body>
+<header>
+<h1>K94561586: Exposing a service over SIMPLE TLS using Istio ingress gateway in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-06-25</dd>
+<dt>Updated</dt><dd>2023-02-07</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K94561586">https://my.f5.com/manage/s/article/K94561586</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h1><span class="sectiontitle">Description</span></h1>
+
+<p>Istio Ingress Gateway is the Kubernetes Ingress Proxy that you can configure to expose a service to clients outside of the Aspen Mesh service cluster. You configure the Istio Ingress Gateway object using manifests but if you want to expose the service over secure HTTPS protocol, you have to provide SSL certificates the Ingress Gateway can fetch from a specified location. In this article we are going to describe how we can expose the service over the HTTPS protocol.<br> </p>
+
+<h1><span class="sectiontitle">Environment</span></h1>
+
+<ul><li>
+	<p><strong>Aspen Mesh</strong>: 1.14.5  <br>	 </p>
+	</li></ul>
+
+<h1><span class="sectiontitle">Cause</span></h1>
+
+<p>HTTPS traffic is encrypted and therefore is recommended to avoid data in clear text over the internet.<br> </p>
+
+<h1><span class="sectiontitle">Recommended Actions</span></h1>
+
+<p>Before you begin, you need to install Aspen Mesh and the Istio Ingress Gateway on your cluster. You will subsequently use the <strong>httpbin</strong> application deployed inside the Aspen Mesh mesh cluster. And finally to test the connection, you will reach the service from outside the cluster using the <strong>curl</strong> command.</p>
+
+<ul><li>
+	<p><a href="#install_mesh" target="_self">Install Aspen Mesh and Istio Ingress Gateway</a></p>
+	</li><li>
+	<p><a href="#create_cert" target="_self">Create SSL certificates for the Ingress Gateway</a></p>
+	</li><li>
+	<p><a href="#configure" target="_self">Configure Istio Ingress Gateway to use the certificates</a></p>
+	</li><li>
+	<p><a href="#expose" target="_self">Expose httpbin with SIMPLE HTTPS protocol</a></p>
+	</li></ul>
+
+<p><span class="subsectiontitle"><a id="install_mesh" name="install_mesh"></a>Install Aspen Mesh and Istio Ingress Gateway</span></p>
+
+<ol><li>
+	<p>Install Aspen Mesh and Istio Ingress Gateway using the steps in the <a href="https://my.aspenmesh.io/client/docs/1.9/getting-started/install/" target="_self">Install section</a> in the <strong>Aspen Mesh Getting Started guide</strong>.</p>
+
+	<p>For more information about installing and configuring Istio Ingress Gateway, refer to <a href="https://my.f5.com/manage/s/article/K50557252" target="_self">K50557252: Install Istio Ingress Gateway using the Aspen Mesh Ingress Helm Chart</a>.</p>
+	</li><li>
+	<p>To install the <strong>httpbin</strong> application in the namespace <strong>app1</strong>, enter the following commands:</p>
+	</li></ol>
+
+<p style="margin-left: 40px;"><em><span class="code">kubectl create namespace app1<br>kubectl label --overwrite namespace app1 istio-injection=enabled<br>kubectl apply -f samples/httpbin/httpbin.yaml -n app1 </span></em></p>
+
+<p><span class="subsectiontitle"><a id="create_cert" name="create_cert"></a>Create SSL certificates for the Ingress Gateway</span></p>
+
+<p>In the next step you’d need to create SSL certificates used by Ingress Gateway to secure the channel between the external client and the Ingress Gateway. If you enabled mTLS in the Service Mesh (which is enabled by default in Aspen Mesh), then the connection between the Ingress Gateway pod and the <strong>httpbin</strong> application will be secured using certificates maintained by Istio. To create SSL certificates using <strong>openssl</strong>, perform the following procedure:</p>
+
+<ol><li>
+	<p>Create a self-signed root CA certificate and a key to sign the certificates used by the Ingress Gateway for the <strong>httpbin </strong>application.</p>
+
+	<p><em><span class="example2">openssl req -x509 -sha256 -nodes -days 30 -newkey rsa:2048 -subj &#39;/O=rootca Inc./CN=example.com&#39; -keyout rootca.key -out rootca.crt</span></em></p>
+	</li><li>
+	<p>Create a certificate and a private key for the <strong>httpbin </strong>application using the following commands:</p>
+
+	<p><em><span class="example2">openssl req -out httpbin.csr -newkey rsa:2048 -nodes -keyout httpbin.key -subj &quot;/CN=httpbin.example.com/O=httpbin app&quot;<br>	openssl x509 -req -days 30 -CA rootca.crt -CAkey rootca.key -set_serial 0 -in httpbin.csr -out httpbin.crt</span></em></p>
+	</li><li>
+	<p>You should have 2 SSL certificates pairs as output when you enter the <strong>ls </strong>following command:<br>	<em><span class="code">&gt; ls</span><br>	<span class="example2">httpbin.crt httpbin.csr httpbin.key rootca.crt  rootca.key</span></em></p>
+	</li></ol>
+
+<p><a id="configure" name="configure"></a><span class="subsectiontitle">Configure Istio Ingress Gateway to use the certificates</span></p>
+
+<p>After creating the certificates for your application you need to tell Istio Ingress Gateway where to find the certificates. From the <a href="https://istio.io/latest/docs/reference/config/networking/gateway/#ServerTLSSettings" target="_self">Gateway object specification</a> in the <strong>Istio documentation, </strong>you can do this in two ways:</p>
+
+<ul><li>
+	<p>By specifying <strong>credentialName </strong>field</p>
+	</li><li>
+	<p>By specifying <strong>serverCertificate </strong>and <strong>privateKey </strong>fields.</p>
+	</li></ul>
+
+<p>The <strong>credentialName </strong>field is the name of the secret object located in the same namespace where the Istio Ingress Gateway is installed. The secret object holds the TLS certificate, key and the CA certificates for mTLS, mutual TLS. The following describes the specifications:</p>
+
+<ul><li>
+	<p>The secret in generic type have to contain the files in the following format: <strong><strong>key: &lt;privateKey&gt;, cert: &lt;serverCert&gt;</strong>.</strong></p>
+	</li><li>
+	<p>For mTLS , specify in the format: <strong><strong>cacert: &lt;CACertificate&gt;</strong></strong></p>
+	</li><li>
+	<p>For the Secret type TLS, specify the following fields: <strong>--key=&lt;KEY_FILE&gt; and --cert=&lt;CERT_FILE&gt;</strong></p>
+	</li></ul>
+
+<p>The <strong>serverCertificate </strong>and <strong>privateKey </strong>fields are the paths to the files holding the certificates and keys. The paths are the absolute path to the files stored inside the Istio Ingress Gateway container. Usually, the files are mounted on the container as volumes and fetched from the Secret object.</p>
+
+<p>If you do not want to modify the Istio Ingress Gateway deployment and configuration to mount additional volumes with TLS certificates for the Gateway you should use the <strong>credentialName </strong>object or you can create pre-mounted Secrets called <strong>ingressgateway-certs</strong> and <strong>ingressgateway-ca-certs</strong>. These 2 Secrets are mounted on the Ingress Gateway pod by default during the installation but usually they do not exist in the cluster. This is done intentionally and because the Secret volumes are mounted as <strong>Optional</strong>, this will not block the Ingress Gateway from the start. You need to name your secrets holding certificates <strong>ingressgateway-certs</strong> and <strong>ingressgateway-ca-certs. </strong>Secrets will be mounted inside the Ingress pod in the following locations:</p>
+
+<p><em><span class="code">  secretVolumes:<br>    - mountPath: /etc/istio/ingressgateway-certs<br>      secretName: istio-ingressgateway-certs<br>      name: ingressgateway-certs<br>    - mountPath: /etc/istio/ingressgateway-ca-certs<br>      secretName: istio-ingressgateway-ca-certs<br>      name: ingressgateway-ca-certs</span></em></p>
+
+<p><a id="expose" name="expose"></a><span class="subsectiontitle">Expose httpbin with SIMPLE HTTPS protocol</span></p>
+
+<p>Perform the following procedure:</p>
+
+<ol><li>
+	<p>Create the secret holding SSL certificates. The namespace should be the same as the Istio Ingress Gateway namespace.</p>
+
+	<p><em><span class="example2">kubectl create -n istio-system secret tls httpbin-secret --key=httpbin.key --cert=httpbin.crt</span></em></p>
+	</li><li>
+	<p>Configure the Gateway object using the <strong>kubectl </strong>command to apply the following yaml file to allow HTTPS traffic destined for the <strong>httpbin.example.com</strong> host:</p>
+
+	<pre class="ckeditor_codeblock">
+cat &lt;&lt;EOF | kubectl apply -n app1 -f -
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: httpbin-gateway
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    tls:
+      mode: SIMPLE
+      credentialName: httpbin-secret
+    hosts:
+    - httpbin.example.com
+EOF
+</pre>
+	</li><li>
+	<p>Configure the <strong>VirtualService </strong>object to route all requests for the <strong>/get</strong> URI to the <strong>httpbin </strong>service listening on port 8000 using the <strong>kubectl </strong>command to apply the following yaml file:</p>
+
+	<pre class="ckeditor_codeblock">
+cat &lt;&lt;EOF | kubectl apply -n app1 -f -
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: httpbin-vs
+spec:
+  hosts:
+  - &quot;httpbin.example.com&quot;
+  gateways:
+  - httpbin-gateway
+  http:
+  - match:
+    - uri:
+        exact: /get
+    route:
+    - destination:
+        host: httpbin
+        port:
+          number: 8000
+EOF
+</pre>
+	</li><li>
+	<p>Test your application using the following example <strong>curl </strong>command: </p>
+
+	<p><span class="note"><strong>Note</strong>: Replace <strong>ISTIO_INGRESS_GATEWAY_IP</strong> from the command with the IP address of your Ingress gateway. </span></p>
+
+	<pre class="ckeditor_codeblock">
+curl -H &quot;Host: httpbin.example.com&quot; --cacert rootca.crt --resolve &quot;httpbin.example.com:443:&lt;ISTIO_INGRESS_GATEWAY_IP&gt;&quot;  https://httpbin.example.com:443/get
+{
+  &quot;args&quot;: {},
+  &quot;headers&quot;: {
+    &quot;Accept&quot;: &quot;*/*&quot;,
+    &quot;Content-Length&quot;: &quot;0&quot;,
+    &quot;Host&quot;: &quot;httpbin.example.com&quot;,
+    &quot;User-Agent&quot;: &quot;curl/7.64.1&quot;,
+    &quot;X-B3-Parentspanid&quot;: &quot;6c9122a722a847bc&quot;,
+    &quot;X-B3-Sampled&quot;: &quot;1&quot;,
+    &quot;X-B3-Spanid&quot;: &quot;881483a270cf3fba&quot;,
+    &quot;X-B3-Traceid&quot;: &quot;ab2bc8946d8a468e6c9122a722a847bc&quot;,
+    &quot;X-Envoy-Attempt-Count&quot;: &quot;1&quot;,
+    &quot;X-Envoy-Internal&quot;: &quot;true&quot;,
+    &quot;X-Forwarded-Client-Cert&quot;: &quot;By=spiffe://cluster.local/ns/app1/sa/httpbin;Hash=61dba3d3d36ea6f5dc7d7454d7b58d97165c82a7919eb858638de375fe79241c;Subject=\&quot;\&quot;;URI=spiffe://cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account&quot;
+  },
+  &quot;origin&quot;: &quot;10.131.2.2&quot;,
+  &quot;url&quot;: &quot;https://httpbin.example.com/get&quot;</pre>
+
+	<p><br>	The Gateway configuration we used has the host field configured which means that the Istio Ingress Gateway will perform a TLS SNI match for all requests before decrypting the traffic and passing to the HTTP router. This means that any HTTPS request with the SNI field different from the host specified in the Gateway will be rejected.</p>
+
+	<p>The <strong>curl </strong>command will include the host name into the SNI field only when we specify the <em><strong>--resolve &quot;httpbin.example.com:443:&lt;ISTIO_INGRESS_GATEWAY_IP&quot;</strong></em> option. Without the <em><strong>–resolve</strong></em> option, if you use the Gateway IP in the URL (https://&lt;IP&gt;:443/get) then the SNI will contain the IP address instead of the hostname <strong>httpbin.example.com</strong>.</p>
+
+	<p>Once the request is accepted by the Gateway it is processed later by the HTTP router. The HTTP router (configured by the <strong>VirtualService </strong>object) is using the Host header to choose the service and cluster where the traffic should be forwarded. If we remove the Host header from the <strong>curl </strong>command then the proxy will respond with a 404 error message because the proxy will not be able to select the correct route.<br>	 </p>
+	</li></ol>
+
+<h1><span class="sectiontitle">Additional Information</span></h1>
+
+<ul><li><a href="https://my.f5.com/manage/s/article/K50557252" target="_self">K50557252: Install Istio Ingress Gateway using Aspen Mesh Ingress Helm Chart</a></li><li><a href="https://my.f5.com/manage/s/article/K16530333" target="_self">K16530333: Configure workload TLS certificates validity in Aspen Mesh</a></li><li>The <a href="https://my.aspenmesh.io/client/docs/1.9/getting-started/" target="_self">Getting Started</a> section of the <strong>Aspen Mesh Operation Guide</strong></li></ul>
+</article>
+</body>
+</html>

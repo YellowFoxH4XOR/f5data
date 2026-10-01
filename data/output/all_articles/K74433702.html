@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K74433702: Control plane sending a huge number of communications towards applications</title>
+<meta name="description" content="Support Solution: Control plane sending a huge number of communications towards applications — When inspecting the traffic hitting the istio-proxy sidecar there may seem to be an excessive amount of traffic from the control plane.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K74433702">
+</head>
+<body>
+<header>
+<h1>K74433702: Control plane sending a huge number of communications towards applications</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-05-26</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K74433702">https://my.f5.com/manage/s/article/K74433702</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>When inspecting the traffic hitting the istio-proxy sidecar there may seem to be an excessive amount of traffic from the control plane.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Aspen Mesh: 1.6.x - 1.11.x</li><li>Kubernetes: 1.17x - 1.22.x</li><li>Red Hat OpenShift: 4.6.x - 4.8.x</li><li>Large cluster with Istio injection enabled on several namespaces</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>When there are changes or modifications to the Aspen Mesh cluster, the Istiod daemon by default updates all the sidecars or istio-proxies in the cluster where istio-injection has been labeled on the namespace. Additionally, each proxy generates metrics about all the ingress and egress traffic passing through.  Therefore, when there are a lot of changes within a larger cluster, more traffic is seen on the sidecars. The large amount of traffic will be encrypted over TCP port 15012 which is gRPC communicating the updates over the xDS (* discovery service) API.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>You can minimize this communication by using the Sidecar custom resource. The sidecar describes the configuration of the sidecar proxy that mediates inbound and outbound communication of the workload instance to which it is attached. Setting this configuration restricts the data (and services) that is sent to pods in other namespaces. </p>
+
+<p>For example, to reduce traffic use the Sidecar custom resource to restrict the traffic to what namespaces the traffic is allowed to egress. In the example below the configuration allows egress traffic to its own namespace “default” and the “istio-system&quot;. </p>
+
+<p><span class="example2">cat &lt;&lt;EOF | kubectl apply -f -<br>apiVersion: networking.istio.io/v1alpha3<br>kind: Sidecar<br>metadata:<br>  name: sidecar-example<br>  namespace: default<br>spec:<br>  egress:<br>  - hosts:<br>    - &quot;default/*&quot;<br>    - &quot;istio-system/*&quot;<br>EOF</span></p>
+
+<p>When performing the following command, we can see configuration related to another pod in a different istio labeled namespace named “dev.”:</p>
+
+<p><span class="example2"># kubectl exec -it sleep-557747455f-4cvxt -- curl localhost:15000/clusters | grep dev | head –n 4 <br><br>outbound|80||sleep.dev.svc.cluster.local::observability_name::outbound|80||sleep.dev.svc.cluster.local<br>outbound|80||sleep.dev.svc.cluster.local::default_priority::max_connections::4294967295<br>outbound|80||sleep.dev.svc.cluster.local::default_priority::max_pending_requests::4294967295<br>outbound|80||sleep.dev.svc.cluster.local::default_priority::max_requests::4294967295</span></p>
+
+<p>After applying the above sidecar configuration, the command should return no results.</p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>To revert the changes, simply remove the configuration.</p>
+</article>
+</body>
+</html>

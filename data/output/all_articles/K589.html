@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K589: Repairing a corrupted password database on BIG-IP or 3-DNS</title>
+<meta name="description" content="Knowledge: Repairing a corrupted password database on BIG-IP or 3-DNS — BIG-IP and 3-DNS are based on BSD UNIX, which uses a password scheme somewhat different from other (particularly SVR4) UNIX platforms. These products also make use of shadow passwords. The…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K589">
+</head>
+<body>
+<header>
+<h1>K589: Repairing a corrupted password database on BIG-IP or 3-DNS</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2007-07-31</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>3-DNS: 4.6.4</li><li>BIG-IP 4.X: 4.6.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K589">https://my.f5.com/manage/s/article/K589</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p><a href="#1Intro"><b>Introduction</b></a><br>   <a href="#standard">Standard Passwords</a><br>   <a href="#shadow">Shadow Passwords</a></p>
+<p><a href="#repair"><b>Repairing the Database</b></a><br>   <a href="#method">Method 1: master.passwd is Clean</a><br>   <a href="#method2">Method 2: master.passwd is Corrupt</a></p>
+<p><a href="#references"><b>References</b></a><br>   <a href="#current3.1">Current master.passwd File</a></p>
+<h3><a name="1Intro"></a>Introduction</h3>
+<p>BIG-IP and 3-DNS are based on BSD UNIX, which uses a password scheme somewhat different from other (particularly SVR4) UNIX platforms. These products also make use of shadow passwords. The combination of these two password methods requires some very specific fixes when the database is corrupt.</p>
+<h4><a name="standard"></a>Standard Passwords</h4>
+<p>Like most UNIX platforms, BSD UNIX uses the <b>/etc/passwd</b> command for the regular accounts file. This file exists to provide compatibility to all applications that expect to see a plain-text password file. In addition to this file, BSD UNIX maintains a password database (<b>/etc/pwd.db</b>) that the operating system uses instead, but contains the same information as, the <b>/etc/passwd</b> file.</p>
+<h4><a name="shadow"></a>Shadow Passwords</h4>
+<p>The concern about a plain-text password file is that anyone can read it, exposing a major security hole. Shadow passwords fix this problem by creating counterparts to the <b>passwd</b> and <b>pwd.db</b> files that are readable only by root. These shadow password files are <b>/etc/master.passwd</b> and <b>/etc/spwd.db</b>.</p>
+<p>When shadow passwords are in effect, the password fields in <b>passwd</b> and <b>pwd.db</b> are left blank; the passwords are kept only in the shadow password files.</p>
+<h3><a name="repair"></a>Repairing the Database</h3>
+<p>The password database files can get corrupted. This usually happens most frequently when someone abruptly stops the First-Time Boot/Setup utility by using the power switch or reset button; but theoretically this could happen any time the system is killed before password database data is synchronized to disk. When this happens, the databases must be recreated before users will be able to log in again.</p>
+<h4><a name="method"></a>Method 1: <b>master.passwd</b> is clean</h4>
+<p>Usually when a database gets corrupted, the <b>pwd.db</b> and <b>spwd.db</b> files are affected, but the <b>master.passwd</b> file is untouched. This file is referred to as clean.</p>
+<p>To fix a corrupted password database when the <b>master.passwd</b> file is clean, perform the following steps:</p>
+<ol><li><p>Log in to the controller in single-user mode.</p>
+<p class="note"><b>Note:</b> For specific instructions about how to log in to the controller in single-user mode, refer to <a href="https://my.f5.com/manage/s/article/K993" target="_blank">K993: Enabling networking from single-user mode</a>.</p>
+</li><li><p>Mount all available disks, by typing the following command:</p>
+<p class="code">/sbin/mount -a</p>
+</li><li><p>If the disks were not unmounted properly, the command mount will not properly mount the disks. If this occurs, clean the file system by typing the following commands:</p>
+<pre class="code">
+/sbin/fsck -y /dev/wd0a
+/sbin/fsck -y /dev/wd0h
+/sbin/fsck -y /dev/wd0g</pre>
+<p>For example:</p>
+<pre class="example2">
+bigip1:~# /sbin/fsck -y /dev/wd0g
+** /dev/rwd0g (NO WRITE)
+** Last Mounted on /var
+** Phase 1 - Check Blocks and Sizes
+** Phase 2 - Check Pathnames
+** Phase 3 - Check Connectivity
+** Phase 4 - Check Reference Counts
+UNREF FILE I=150337 OWNER=root MODE=100644
+SIZE=0 MTIME=Jul 19 05:35 2000 
+CLEAR? no
+
+** Phase 5 - Check Cyl groups
+1116 files, 52794 used, 1468306 free (1650 frags, 183332 blocks, 0.1% fragmentation)
+bigip1:~# </pre>
+</li><li><p>Back up the <b>passwd</b> and <b>master.passwd</b> files, by typing the following commands:</p>
+<pre class="code">
+cp /etc/passwd /etc/passwd.orig
+cp /etc/master.passwd /etc/master.passwd.orig</pre>
+<p>For example:</p>
+<pre class="example2">
+bigip1:/# cp /etc/passwd /etc/passwd.orig
+bigip1:/# cp /etc/master.passwd /etc/master.passwd.orig</pre>
+</li><li><p>Delete the password databases by typing the following command:</p>
+<pre class="code">
+rm /etc/pwd.db
+rm /etc/spwd.db</pre>
+<p>For example:</p>
+<pre class="example2">
+bigip1:/# rm /etc/pwd.db
+bigip1:/# rm /etc/spwd.db</pre>
+</li><li><p>Recreate the password databases from <b>master.passwd</b> file, by typing the following command:</p>
+<pre class="code">
+/usr/sbin/pwd_mkdb /etc/master.passwd</pre>
+<p>For example:</p>
+<pre class="example2">
+bigip1:/# /usr/sbin/pwd_mkdb /etc/master.passwd</pre>
+</li></ol>
+<h4><a name="method2"></a>Method 2: <b>master.passwd</b> is corrupt</h4>
+<p class="note"><b>Note:</b> The following procedure will get you in to the system. From this point, you must create a password for the root account, plus add the other system accounts back in (preferably with vipw). You can use a master.passwd file from another BIG-IP as a template, or you could download a valid master.passwd from the References section.</p>
+<p>If both the password databases and the <b>master.passwd</b> file are corrupt, you must create a new <b>master.passwd</b> file before you recreate the password database.</p>
+<p>To create the <b>master.passwd</b> file, perform the following steps:</p>
+<ol><li><p>Log in to the controller in single-user mode.</p>
+<p class="note"><b>Note:</b> For specific instructions about how to log in to the controller in single-user mode, refer to <a href="https://my.f5.com/manage/s/article/K993" target="_blank">K993: Enabling networking from single-user mode</a>.</p>
+</li><li><p>Mount all available disks by typing the following command:</p>
+<pre class="code">
+/sbin/mount -a</pre>
+</li><li><p>If the disks were not unmounted properly, the command mount will not properly mount the disks. If this occurs, clean the file system by typing the following commands:</p>
+<pre class="code">
+/sbin/fsck -y /dev/wd0a
+/sbin/fsck -y /dev/wd0h
+/sbin/fsck -y /dev/wd0g</pre>
+<p>For example:</p>
+<pre class="example2">
+bigip1:~# /sbin/fsck -y /dev/wd0g
+** /dev/rwd0g (NO WRITE)
+** Last Mounted on /var
+** Phase 1 - Check Blocks and Sizes
+** Phase 2 - Check Pathnames
+** Phase 3 - Check Connectivity
+** Phase 4 - Check Reference Counts
+UNREF FILE I=150337 OWNER=root MODE=100644
+SIZE=0 MTIME=Jul 19 05:35 2000 
+CLEAR? no
+
+** Phase 5 - Check Cyl groups
+1116 files, 52794 used, 1468306 free (1650 frags, 183332 blocks, 0.1% fragmentation)
+bigip1:~# </pre>
+</li><li><p>Delete the <b>/etc/passwd</b>, <b>/etc/master.passwd</b>, <b>/etc/pwd.db</b>, and <b>/etc/spwd.db</b> files, by typing the following command:</p>
+<pre class="code">
+rm /etc/passwd /etc/master.passwd /etc/pwd.db /etc/spwd.db</pre>
+</li><li><p>Create a file named <b>/etc/master.passwd</b> and type the following line:</p>
+<pre class="code">
+root::0:0:daemon:0:0:System Administrator:/root:/bin/bash</pre>
+<p>If you cannot access an editor because of a path issue or unmounted filesystems, you can echo this line to the file by typing the following command:</p>
+<p class="warning"><b>Important</b>: This following command must be on one line. If the following line breaks, it was done for formatting purposes only. The command will not work if it is on two lines as displayed.</p>
+<pre class="code">
+echo &#39;&#39;root::0:0:daemon:0:0:System Admin:/root:/bin/bash&#39;&#39; \
+ &gt;/etc/master.passwd)</pre>
+<p>For example:</p>
+<p class="warning"><b>Important</b>: This following command must be on one line. If the following line breaks, it was done for formatting purposes only. The command will not work if it is on two lines as displayed.</p>
+<pre class="example2">
+bigip1:/# echo &#39;&#39;root::0:0:daemon:0:0:System Admin:/root: \
+ /bin/bash&#39;&#39; &gt;/etc/master.passwd
+
+bigip1:/#</pre>
+</li><li><p>Recreate the password databases from this new <b>master.passwd</b> file, by typing the following command:</p>
+<pre class="code">
+/usr/sbin/pwd_mkdb /etc/master.passwd</pre>
+</li></ol>
+<h3><a name="references"></a>References</h3>
+<p>Refer to the following man pages contain additional information:</p>
+<p><b>pwd_mkdb</b> man page<br> <b>passwd(5)</b> man page<br></p>
+<h4><a name="current3.1"></a>Current <b>master.passwd</b> File</h4>
+<p>You should be able to use the <b>master.passwd</b> file for BIG-IP or 3-DNS Controller version 2.0 or later. You can log in and recreate the databases from the <b>master.passwd</b> file using the following example:</p>
+<pre class="example2">
+root:_J9..RefxLd7UeXtPO0s:0:0:daemon:0:0:System Administrator:/root:/bin/bash
+support:*:0:0:daemon:0:0:Support:/root:/bin/bash
+daemon:*:1:1::0:0:System Daemon:/nonexistent:/sbin/nologin
+sys:*:2:2::0:0:Operating System:/nonexistent:/sbin/nologin
+bin:*:3:7::0:0:BSDI Software:/nonexistent:/sbin/nologin
+operator:*:5:5::0:0:System Operator:/nonexistent:/sbin/nologin
+tty:*:6:6::0:0:Terminal User:/nonexistent:/sbin/nologin
+nobody:*:32767:32766::0:0:Unprivileged user:/nonexistent:/sbin/nologin
+nonroot:*:65534:32766::0:0:Non-root root user for NFS:/nonexistent:/sbin/nologin
+</pre>
+</article>
+</body>
+</html>

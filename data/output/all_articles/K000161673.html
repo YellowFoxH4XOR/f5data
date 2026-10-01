@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161673: 011d0004:3 /shared partition full due to Tomcat holding deleted file descriptors</title>
+<meta name="description" content="Support Solution: 011d0004:3 /shared partition full due to Tomcat holding deleted file descriptors — The /shared disk partition on a BIG-IP LTM device reports 0% free space (99–100% utilization), even after files have been deleted from the filesystem. This prevents operations such as software…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161673">
+</head>
+<body>
+<header>
+<h1>K000161673: 011d0004:3 /shared partition full due to Tomcat holding deleted file descriptors</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-22</dd>
+<dt>Updated</dt><dd>2026-06-22</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>F5 Distributed Cloud Services</li><li>BIG-IP LTM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161673">https://my.f5.com/manage/s/article/K000161673</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>The /shared disk partition on a BIG-IP LTM device reports 0% free space (99–100% utilization), even after files have been deleted from the filesystem. This prevents operations such as software upgrades that require available disk space on /shared.</p>
+<p><strong>Symptoms:</strong></p>
+<p>- Error: 011d0004:3: Disk partition /shared has only 0% free<br>- df -h /shared shows 98–100% disk usage<br>- Files appear deleted from the filesystem, but disk space is not reclaimed<br>- Large deleted files visible under /shared/images/ (e.g., upload_*.dat files) and /shared/tmp/ held open by Java/Tomcat processes</p>
+<h2>Environment</h2>
+<ul><li>LTM</li><li>/shared partition is full</li></ul>
+<h2>Cause</h2>
+<p>Tomcat (Java process) held open file descriptors to large files under /shared/images/ (e.g., upload_*.dat files) that had been deleted from the filesystem. On Linux, when a process holds an open file descriptor to a deleted file, the disk blocks are not released until the process closes the file handle or is restarted. This caused the /shared partition to remain at high usage despite the files being removed from the directory listing.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>1. Identify deleted files still held open by processes on /shared:</p>
+<p><span style="background-color: #f1f1f1;">lsof +L1 | grep /shared</span></p>
+<p>Look for entries showing (deleted) in the file path — these are files that have been removed from the filesystem but whose disk blocks are still held by a running process.</p>
+<p>2. Identify the largest files consuming space on /shared (optional, for further investigation):</p>
+<p><span style="background-color: #f1f1f1;">find /shared/ -xdev -type f -exec du -m {} \; | sort -rn | head -20</span></p>
+<p>3. Restart the Tomcat service to release the held file descriptors:</p>
+<p><span style="background-color: #f1f1f1;">bigstart restart tomcat</span></p>
+<p>4. Verify disk space has been recovered:</p>
+<p><span style="background-color: #f1f1f1;">df -h /shared</span></p>
+<p><em><strong>Impact of restarting Tomcat: </strong>Restarting the Tomcat service (bigstart restart tomcat) temporarily interrupts access to the BIG-IP Configuration Utility (GUI) and iControl REST API for the duration of the restart. Traffic processing on the data plane (LTM, AFM, ASM, etc.) is not affected, as Tomcat handles only the management plane (REST/iControl interface and GUI).</em></p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000152772: Upgrade failed in case of having missed PV (Physical Volume) reference in Volume Group</title>
+<meta name="description" content="Support Solution: Upgrade failed in case of having missed PV (Physical Volume) reference in Volume Group — info: WARNING: Device for PV DSbBKH-oc0S-SGDe-notX-LF6Q-D7IM-FK49Bz not found or rejected by a filter.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000152772">
+</head>
+<body>
+<header>
+<h1>K000152772: Upgrade failed in case of having missed PV (Physical Volume) reference in Volume Group</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-07-28</dd>
+<dt>Updated</dt><dd>2025-07-28</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.0.0, 15.X.X, 16.X.X, 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000152772">https://my.f5.com/manage/s/article/K000152772</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Upgrade attempts on <strong>BIG-IP Virtual Edition (VE)</strong> systems may fail with errors like below sample trail, in the log file &quot;<strong>/var/log/liveinstall.log</strong>&quot;:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>info:  WARNING: Device for PV DSbBKH-oc0S-SGDe-notX-LF6Q-D7IM-FK49Bz not found or rejected by a filter.
+info:  Cannot change VG vg-db-vda while PVs are missing.
+info:  Consider vgreduce --removemissing.
+info:  Cannot process volume group vg-db-vda
+info: &gt;----
+error: Disk full (volume group). See SOL#10636
+Terminal error: tm_install::VolumeSet::VolumeSet_add_planned -- error adding /:83 volume to set sda.22
+Live install end at 2025/07/25 18:44:57: failed (return code 5)</code></pre>
+<p> </p>
+<p><span dir="ltr">You may see continuous Warning logs on the <strong>Console</strong>, like below sample:</span></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>WARNING: Device for PV DSbBKH-oc0S-SGDe-notX-LF6Q-D7IM-FK49Bz not found or rejected by a filter.</code></pre>
+<p> </p>
+<p><span dir="ltr">When running the command &quot;<strong>tmsh show /sys software</strong>&quot;, you can see that the last upgrade attempt was failed, like the below sample output:</span></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>--------------------------------------------------------
+Sys::Software Status
+Volume Product Version Build Active Status
+--------------------------------------------------------
+HD1.22 BIG-IP 17.1.2.2 0.0.12 no failed (tm_install::VolumeSet::VolumeSet_add_planned -- error adding /:83 volume to set sda.22)
+HD1.2 BIG-IP 15.1.10.2 0.0.2 yes complete</code></pre>
+<p> </p>
+<p>When running the command &quot;<strong>vgdisplay -vA</strong>&quot;, you can see more than one <strong>PV (Physical Volume)</strong>, like the below sample output. One of the PVs is normally detected, but the other one is marked as &#39;<strong>unknown</strong>&#39;, and actually caused the problem:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>...
+
+--- Physical volumes ---
+
+ PV Name        /dev/sda3
+ PV UUID        4Iljxc-EVnk-vsYf-ghV5-rdIk-dFmF-uMaa9n
+ PV Status       allocatable
+ Total PE / Free PE  63945 / 56721
+
+ PV Name        [unknown]     
+ PV UUID        DSbBKH-oc0S-SGDe-notX-LF6Q-D7IM-FK49Bz
+ PV Status       allocatable
+ Total PE / Free PE  63999 / 63999
+
+ </code></pre>
+<p> </p>
+<p>When running the command &quot;<strong>vgreduce --removemissing --test vg-db-vda</strong>&quot;, you may see something like below output which confirms that there is some problem with Disk Volume consistency:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>TEST MODE: Metadata will NOT be updated and volumes will not be (de)activated.
+  WARNING: Device for PV DSbBKH-oc0S-SGDe-notX-LF6Q-D7IM-FK49Bz not found or rejected by a filter.
+  Wrote out consistent volume group vg-db-vda</code></pre>
+<h2></h2>
+<h2>Environment</h2>
+<ul><li>BIG-IP VE (Virtual Edition)</li><li>Upgrade Attempt Failed</li><li>LVM with multiple Physical Volumes (PVs) in a Volume Group (vg-db-vda)</li><li>Wrong / Missed PV reference in the Volume Group</li></ul>
+<h2></h2>
+<h2>Cause</h2>
+<p>The upgrade attempt fails because the <strong>Logical Volume Manager (LVM)</strong> volume group contains references to missing or inaccessible physical volumes. This situation can occur if virtual disks were removed or reconfigured at the Hypervisor-level without updating LVM metadata, causing the volume group to be considered &quot;<strong>full</strong>&quot; or &quot;<strong>unusable</strong>&quot; even when free space is reported.</p>
+<p> </p>
+<h2>Recommended Actions</h2>
+<p> </p>
+<p><strong>1.</strong> Create a <strong>UCS Archive</strong> file and download on your local system, before going for next steps.</p>
+<p> </p>
+<p><strong>2.</strong> Run the below command to remove the <strong>wrong / missed PV</strong> reference:<br><em><span style="font-family: &#39;courier new&#39;, courier, monospace;"># vgreduce --removemissing vg-db-vda</span></em></p>
+<p> </p>
+<p><strong>3.</strong> Run the below command to confirm that the volume group is consistent with the expected output as &#39;<strong>Volume group &quot;vg-db-vda&quot; is already consistent</strong>&#39;:<br><em><span style="font-family: &#39;courier new&#39;, courier, monospace;"># vgreduce --removemissing --test vg-db-vda</span></em></p>
+<p> </p>
+<p><strong>4.</strong> Delete the <strong>previously-failed (Inactive) Boot Location</strong> from WebUI (<strong>System  ››  Disk Management  ››  HD1</strong>)</p>
+<p> </p>
+<p><strong>5-1.</strong> Run the below command to make sure that there is at least <strong>15GB</strong> of free disk space for the new Boot Location [<strong><a href="https://my.f5.com/manage/s/article/K13636984" title="K13636984" target="_blank">K13636984</a></strong>], before starting the new round of upgrade:<br><em><span style="font-family: &#39;courier new&#39;, courier, monospace;"># vgs</span></em></p>
+<p><strong>5-2.</strong> <span dir="ltr">If you still do not have enough disk space, increase the size of the virtual disk in your Hypervisor-level.</span></p>
+<p><span dir="ltr"> </span></p>
+<p><strong>6.</strong> Once the volume group is consistent and sufficient space is available, you can start the upgrade procedure [<a href="https://my.f5.com/manage/s/article/K84205182" title="K84205182" target="_blank"><strong>K84205182</strong></a>], and check for the result.</p>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None.</p>
+</article>
+</body>
+</html>

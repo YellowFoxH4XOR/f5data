@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000136968: TCP connections are not terminating and be keep on established</title>
+<meta name="description" content="Support Solution: TCP connections are not terminating and be keep on established — The article addresses the issue on BIG-IP where connections are persistently established and do not close. These connections can be viewed using the &quot;tmsh show sys connection&quot; command, where we…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000136968">
+</head>
+<body>
+<header>
+<h1>K000136968: TCP connections are not terminating and be keep on established</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-09-27</dd>
+<dt>Updated</dt><dd>2023-09-27</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.X.X, 16.X.X, 15.X.X, 14.X.X, 13.X.X, 17.1.X, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0, 13.1.X, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.X, 13.0.1, 13.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000136968">https://my.f5.com/manage/s/article/K000136968</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Description</strong></h2>
+
+<p>The article addresses the issue on BIG-IP where connections are persistently established and do not close. These connections can be viewed using the &quot;tmsh show sys connection&quot; command, where we continually see these entries even when the client is not utilizing the given connection. This can lead to a slight increase in resource usage on the device when there is a vast number of such connections.</p>
+
+<p> </p>
+
+<h2><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Environment</strong></h2>
+
+<ul><li><span style="font-family: Arial, sans-serif;font-size: 10.5pt;">BIG-IP</span></li><li><span style="font-family: Arial, sans-serif;font-size: 10.5pt;">Virtual Server</span></li><li><span style="font-family: Arial, sans-serif;font-size: 10.5pt;">TCP profile</span></li></ul>
+
+<p> </p>
+
+<h2><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Cause</strong></h2>
+
+<p><span style="font-family: Arial, sans-serif;font-size: 10.5pt;">The root cause of this behavior might be an improperly configured TCP profile attached to the Virtual server. The most common reason might be the intent to set up a proxy, but improperly selected settings result in these connections never closing.</span></p>
+
+<p> </p>
+
+<h2><strong style="font-family: Arial, sans-serif;font-size: 10.5pt;"> </strong><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Recommended Actions</strong></h2>
+
+<p><span style="font-family: Arial, sans-serif;font-size: 10.5pt;">The actions or steps required to address the topic covered in the description. </span>You can easily check if this issue affects you:</p>
+
+<p> </p>
+
+<p class="ql-indent-1">1. Ensure the connection is definitely terminated by either enforcing it on the client or by deleting it using the command: </p>
+
+<p class="ql-indent-2"><span style="font-family: Courier New,Courier,monospace;"><span style="background-color: #dddddd;">tmsh delete /sys connection cs-client-addr &lt;client_ip&gt; cs-server-addr &lt;vs_ip&gt; cs-server-port &lt;vs_port&gt;</span></span></p>
+
+<p class="ql-indent-2"> </p>
+
+<p class="ql-indent-1">2. After removal or termination, verify if it still appears in the connection table using: </p>
+
+<p class="ql-indent-2"><span style="font-family: Courier New,Courier,monospace;"><span style="background-color: #dddddd;">tmsh show /sys connection cs-client-addr &lt;client_ip&gt; cs-server-addr &lt;vs_ip&gt; cs-server-port &lt;vs_port&gt;</span></span></p>
+
+<p class="ql-indent-2"> </p>
+
+<p class="ql-indent-1">3. If the connection still appears, but with a reduced age, this indicates that the issue might affect you.</p>
+
+<p class="ql-indent-1"> </p>
+
+<p>Here is the part of the configuration that makes connections to be proxied:</p>
+
+<p> </p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">ltm profile tcp /Common/custom-tcp-proxy {</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">fin-wait-timeout 5</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">keep-alive-interval 180 &lt;---</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">idle-timeout 300 &lt;---</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">}</span></p>
+
+<p> </p>
+
+<p>But there needs to be specified one more value: <span style="font-family: Courier New,Courier,monospace;"><strong>fin-wait-2-timeout</strong></span>.</p>
+
+<p> </p>
+
+<p>This is the reason why the connections are not terminated from the F5 side. If one of the devices on the Server or Client side does not answer for FIN flag, the connection will be still established and exist as a loop. Therefore if you would like to avoid this you can specify the fin-wait-2-timeout on your tcp profile. This FIN-wait-2 flag status is enabled when one of the devices sends the FIN flag without any answer then a second fin will be sent to terminate the connection. To do so, you need to specify fin-wait-2-timeout and it needs to be smaller than keep-alive to avoid further loops.</p>
+
+<p><span style="font-family: Calibri, sans-serif;font-size: 11pt;"> </span></p>
+
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Additional Information</strong></h2>
+
+<p><span style="font-family: Arial, sans-serif;font-size: 10.5pt;">To better understand the above behaviors please refer to the below articles:</span></p>
+
+<p><a href="https://my.f5.com/manage/s/article/K53851362" target="_blank"><span style="font-size: 10pt;font-family: Arial, sans-serif;">K53851362: Displaying and deleting BIG-IP connection table entries from the command line</span></a></p>
+
+<p><a href="https://my.f5.com/manage/s/article/K13004262" target="_blank"><span style="font-size: 10pt;font-family: Arial, sans-serif;">K13004262: Understanding Idle Timeout and Keep Alive Interval settings in the TCP profile</span></a></p>
+
+<p><a href="https://my.f5.com/manage/s/article/K39702017" target="_blank"><span style="font-size: 10pt;font-family: Arial, sans-serif;">K39702017: Connection reset after server sends FIN but client does not also send a FIN</span></a></p>
+</article>
+</body>
+</html>

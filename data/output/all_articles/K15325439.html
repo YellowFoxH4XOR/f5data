@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K15325439: nslookup fails to resolve DNS name in macOS Big Sur with APM Network Access / VPN</title>
+<meta name="description" content="Support Solution: nslookup fails to resolve DNS name in macOS Big Sur with APM Network Access / VPN — Starting on macOS Big Sur or later, macOS does not rely on and/or update /etc/resolv.conf unlike the way in previous macOS versions.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K15325439">
+</head>
+<body>
+<header>
+<h1>K15325439: nslookup fails to resolve DNS name in macOS Big Sur with APM Network Access / VPN</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-12-30</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 16.X.X, 14.X.X, 13.X.X, 12.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 13.1.0, 16.1.0, 13.0.1, 16.0.1, 13.0.0, 16.0.0, 12.1.6, 15.1.8, 12.1.5, 15.1.7, 12.1.4, 15.1.6, 12.1.3, 15.1.5, 12.1.2, 15.1.4, 12.1.1, 15.X.X, 12.1.0, 15.1.2, 12.0.0, 15.1.1, 15.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K15325439">https://my.f5.com/manage/s/article/K15325439</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>Starting on macOS Big Sur or later, macOS does not rely on and/or update /etc/resolv.conf unlike the way in previous macOS versions.<br><br>Instead of /etc/resolv.conf, macOS Big Sur uses scutil tool for DNS name resolution and utilize it to name resolution. Thus, the <strong>nslookup </strong>utility tool does not work after getting connected to the APM Network Access/VPN. Even so, the client can get connected to the host with a Fully Qualified Domain Name (FQDN), name resolution works.<br><br>From the manpage of Big Sur or later, <strong>nslookup</strong> is described as:</p>
+
+<pre>
+macOS NOTICE
+       The nslookup command does not use the host name and address resolution
+       or the DNS query routing mechanisms used by other processes running on
+       macOS.  The results of name or address queries printed by nslookup may
+       differ from those found by other processes that use the macOS native
+       name and address resolution mechanisms.  The results of DNS queries may
+       also differ from queries that use the macOS DNS routing library.</pre>
+
+<p>This change in macOS Big Sur&#39;s DNS name resolution behavior is recorded in F5 as <a href="https://cdn.f5.com/product/bugtracker/ID972685.html" target="_self">Bug ID 972685: /etc/resolv.conf file is not updated on macOS Big Sur</a>.</p>
+
+<pre>
+<span class="sectiontitle">Environment</span></pre>
+
+<ul><li>BIG-IP APM</li><li>Network Access / VPN</li><li>macOS Big Sur or later version</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br><a href="https://cdn.f5.com/product/bugtracker/ID972685.html" target="_self">Bug ID 972685</a></p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ul><li>To check the list of DNS server(s) in macOS Big Sur or later version with APM Network Access or VPN, use &#39;<strong><span class="example">scutil --dns&#39;</span></strong></li></ul>
+For example: 
+
+<pre>
+taccount@MacK ~ % <strong>scutil --dns</strong>
+DNS configuration
+
+resolver #1
+  search domain[0] : example.edu
+  nameserver[0] : 172.16.100.251
+  if_index : 15 (vlan0)
+  flags    : Request A records
+  reach    : 0x00000002 (Reachable)
+
+resolver #2
+  domain   : example.edu
+  nameserver[0] : 192.168.100.1
+  flags    : Supplemental, Request A records
+  reach    : 0x00000002 (Reachable)
+  order    : 101800
+
+resolver #3
+  domain   : local
+  options  : mdns
+  timeout  : 5
+  flags    : Request A records
+  reach    : 0x00000000 (Not Reachable)
+  order    : 300000
+
+&lt;snip&gt;
+
+DNS configuration (for scoped queries)
+
+resolver #1
+  nameserver[0] : 172.16.100.251 &lt;== The DNS server configured on the NIC (= Local DNS)
+  if_index : 15 (vlan0)
+  flags    : Scoped, Request A records
+  reach    : 0x00000002 (Reachable)
+
+resolver #2
+  nameserver[0] : 192.168.100.1  &lt;== The DNS server supplied by the access policy (= Behind the APM)
+  if_index : 20 (utun2)
+  flags    : Scoped, Request A records
+  reach    : 0x00000002 (Reachable)
+
+</pre>
+
+<ul><li>To resolve the host&#39;s DNS name behind the BIG-IP APM in macOS Big Sur or later version use &#39;<span class="example"><strong>dig&#39;</strong></span></li></ul>
+
+<pre>
+taccount@MacK ~ % <strong>dig @192.168.100.1 www.example.edu</strong> 
+
+; &lt;&lt;&gt;&gt; DiG 9.10.6 &lt;&lt;&gt;&gt; @192.168.100.1 www.example.edu
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; -&gt;&gt;HEADER&lt;&lt;- opcode: QUERY, status: NOERROR, id: 41380
+;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4000
+;; QUESTION SECTION:
+;www.example.edu.               IN      A
+
+;; ANSWER SECTION:
+www.example.edu.        3600    IN      CNAME   centos-v7x-02.example.edu.
+centos-v7x-02.example.edu. 3600 IN      A       192.168.100.251
+
+;; Query time: 3 msec
+;; SERVER: 192.168.100.1#53(192.168.100.1)
+;; WHEN: Thu Nov 25 23:13:28 PST 2021
+;; MSG SIZE  rcvd: 88
+</pre>
+
+<p><span class="sectiontitle">Additional Information</span><br>None</p>
+</article>
+</body>
+</html>

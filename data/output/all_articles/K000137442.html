@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000137442: Ansible Playbook for deploying CVE-2023-46747 mitigation script</title>
+<meta name="description" content="Support Solution: Ansible Playbook for deploying CVE-2023-46747 mitigation script — When using the F5 REST API to automate the deployment of the mitigation.sh script from K000137353 will cause the HTTPD process to not restart due to a known issue relating to Bug ID775845 .">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000137442">
+</head>
+<body>
+<header>
+<h1>K000137442: Ansible Playbook for deploying CVE-2023-46747 mitigation script</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-11-02</dd>
+<dt>Updated</dt><dd>2023-11-08</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000137442">https://my.f5.com/manage/s/article/K000137442</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2 id="description"><strong>Description</strong></h2>
+
+<p>When using the F5 REST API to automate the deployment of the mitigation.sh script from <a href="https://my.f5.com/manage/s/article/K000137353" target="_blank">K000137353</a> will cause the HTTPD process to not restart due to a known issue relating to <a href="https://cdn.f5.com/product/bugtracker/ID775845.html" target="_blank">Bug ID775845</a> . </p>
+
+<ul><li>Management UI is unavailable after restarting HTTPD with the REST API</li><li>Similar log message to &quot;commandResult&quot;: &quot;Stopping httpd: [  OK  ]\r\nStarting httpd: [FAILED]\r\n(98)Address already in use: AH00072: make_sock: could not bind to address 127.0.0.1:80\nno listening sockets available, shutting down\nAH00015: Unable to open logs\n&quot;</li></ul>
+
+<h2 id="environment"><strong>Environment</strong></h2>
+
+<ul><li>BIG-IP devices affected by <a href="https://my.f5.com/manage/s/article/K000137353" target="_blank">CVE-2023-46747</a></li><li>Ansible user with root/administrator permissions</li><li>Advanced Shell for non-root administrators</li><li>SSH Access to the BIG-IP</li><li>Ansible Client Machine (tested on Core 2.14.3)</li><li>SSH Pass installed on the Ansible client machine</li></ul>
+
+<h2 id="cause"><strong>Cause</strong></h2>
+
+<p>The last few lines of the mitigation.sh script contains the command to restart the HTTPD service. When the HTTPD service is restarted during an active REST API transaction the HTTPD service is not able to completely restart requiring manual intervention. <br> </p>
+
+<pre class="ckeditor_codeblock">
+echo &quot;Restarting httpd...&quot;
+bigstart restart httpd
+</pre>
+
+<p> </p>
+
+<h2 id="recommended-actions"><strong>Recommended Actions</strong></h2>
+Use an automation tool that has the ability to utilize SSH instead of the F5 REST API like Ansible.<br><br>A example of using Ansible to apply the mitigation script using SSH is below.<br><br>The mitigation.sh script can be downloaded from <a href="https://my.f5.com/manage/s/article/K000137353" target="_blank">K000137353</a>  under the <strong>Security Advisory Recommended Actions </strong>section. <br><br>Sample inventory file
+<pre>
+Note: Ansible Vault or the --ask-pass flag can be used instead of adding the password to the inventory file</pre>
+
+<pre class="ckeditor_codeblock">
+[all:vars]
+ansible_connection=ssh
+ansible_user=root
+ansible_ssh_pass=password
+
+[all]
+1.2.3.4</pre>
+ 
+
+<p>Sample Ansible playbook</p>
+
+<pre class="ckeditor_codeblock">
+- name: K000137353 Script Mitigation Playbook
+  hosts: all
+  connection: local
+
+  tasks:
+
+    - name: Copy the mitigation script from local directory to BIG-IP
+      ansible.builtin.copy:
+        src: mitigation.sh
+        dest: /var/tmp/mitigation.sh
+        owner: root
+        group: root
+        mode: &#39;0766&#39;
+
+    - name: Run the mitigation script
+      shell: /var/tmp/mitigation.sh
+
+    - name: Verify that the proxy_ajp.conf, proxy_ajp.conf.bak, proxy_ajp.conf.f5orig files are present
+      shell: ls -1 /config/httpd/conf.d/proxy*
+
+    - name: Verify that httpd restarted successfully (optional)
+      shell: curl -sku admin:admin https://localhost/mgmt/tm/sys/service/httpd</pre>
+
+<p> </p>
+
+<p>Running the playbook with minimal verbosity ( ansible-playbook playbook.yaml -v ) should produce similar output<br> </p>
+
+<pre class="ckeditor_codeblock">
+PLAY [K000137353 Script Mitigation Playbook] **************************************************
+
+TASK [Gathering Facts] ************************************************************************
+ok: [1.2.3.4]
+
+TASK [Copy the mitigation script from local directory to BIG-IP] ******************************
+ok: [1.2.3.4] =&gt; changed=false
+  checksum: ae42f8b2d78e53818b1329fe8373c3bc88dde429
+  dest: /var/tmp/mitigation.sh
+  gid: 0
+  group: root
+  mode: &#39;0766&#39;
+  owner: root
+  path: /var/tmp/mitigation.sh
+  secontext: unconfined_u:object_r:user_tmp_t:s0
+  size: 4160
+  state: file
+  uid: 0
+
+TASK [Run the mitigation script] **************************************************************
+changed: [1.2.3.4] =&gt; changed=true
+  cmd: /var/tmp/mitigation.sh
+  delta: &#39;0:00:06.045333&#39;
+  end: &#39;2023-11-01 10:19:05.316534&#39;
+  msg: &#39;&#39;
+  rc: 0
+  start: &#39;2023-11-01 10:18:59.271201&#39;
+  stderr: |-
+    [Wed Nov 01 10:19:02.072553 2023] [core:warn] [pid 32204] AH00114: Useless use of AllowOverride in line 283 of /etc/httpd/conf/httpd.conf.
+    [Wed Nov 01 10:19:02.076211 2023] [core:warn] [pid 32204] AH00114: Useless use of AllowOverride in line 12 of /etc/httpd/conf.d/xui.conf.
+  stderr_lines: &lt;omitted&gt;
+  stdout: |-
+    Applying ID1378329 mitigation...
+    Restarting httpd...
+    Stopping httpd: [  OK  ]
+    Starting httpd: [  OK  ]
+    Restarting tomcat...
+    Done!
+  stdout_lines: &lt;omitted&gt;
+
+TASK [Verify that the proxy_ajp.conf, proxy_ajp.conf.bak, proxy_ajp.conf.f5orig files are present] ***
+changed: [1.2.3.4] =&gt; changed=true
+  cmd: ls -1 /config/httpd/conf.d/proxy*
+  delta: &#39;0:00:00.005282&#39;
+  end: &#39;2023-11-01 10:19:07.794464&#39;
+  msg: &#39;&#39;
+  rc: 0
+  start: &#39;2023-11-01 10:19:07.789182&#39;
+  stderr: &#39;&#39;
+  stderr_lines: &lt;omitted&gt;
+  stdout: |-
+    /config/httpd/conf.d/proxy_ajp.conf
+    /config/httpd/conf.d/proxy_ajp.conf.bak
+    /config/httpd/conf.d/proxy_ajp.conf.f5orig
+  stdout_lines: &lt;omitted&gt;
+
+TASK [Verify that httpd restarted successfully (optional)] ************************************
+changed: [1.2.3.4] =&gt; changed=true
+  cmd: curl -sku admin:admin https://localhost/mgmt/tm/sys/service/httpd
+  delta: &#39;0:00:00.276794&#39;
+  end: &#39;2023-11-01 10:19:09.431690&#39;
+  msg: &#39;&#39;
+  rc: 0
+  start: &#39;2023-11-01 10:19:09.154896&#39;
+  stderr: &#39;&#39;
+  stderr_lines: &lt;omitted&gt;
+  stdout: &#39;{&quot;kind&quot;:&quot;tm:sys:service:servicestate&quot;,&quot;name&quot;:&quot;httpd&quot;,&quot;fullPath&quot;:&quot;httpd&quot;,&quot;generation&quot;:0,&quot;selfLink&quot;:&quot;https://localhost/mgmt/tm/sys/service/httpd?ver=15.1.9.1&quot;,&quot;apiRawValues&quot;:{&quot;Boot&quot;:&quot;off&quot;,&quot;Default&quot;:&quot;no&quot;}}&#39;
+  stdout_lines: &lt;omitted&gt;
+
+PLAY RECAP ************************************************************************************
+1.2.3.4               : ok=5    changed=3    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0</pre>
+
+<p> </p>
+
+<h4 id="additional-information">Additional Information</h4>
+
+<p>None</p>
+
+<h4 id="anchor-1"> </h4>
+</article>
+</body>
+</html>

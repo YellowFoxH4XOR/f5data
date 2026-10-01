@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K32917243: Unable to generate SSHd DSA key larger than 1024 bit</title>
+<meta name="description" content="Support Solution: Unable to generate SSHd DSA key larger than 1024 bit — When trying to generate new DSA key with 2048 bits - ssh-keygen reports that DSA keys must be 1024 bits">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K32917243">
+</head>
+<body>
+<header>
+<h1>K32917243: Unable to generate SSHd DSA key larger than 1024 bit</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2019-11-22</dd>
+<dt>Updated</dt><dd>2025-04-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li><li>BIG-IP</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K32917243">https://my.f5.com/manage/s/article/K32917243</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>When trying to generate new DSA key with 2048 bits - ssh-keygen reports that DSA keys must be 1024 bits</p>
+
+<ul><li>Security scan discovered that there is possible to connect to F5 device (ssh) using weak DSA cipher with 1024 bits</li><li>Attempting to generate a 2048 bit DSA key fails with message indicating the DSA key must be 1024 bits:<br>	<span class="example2"><span class="code">bash# ssh-keygen -q -f ssh_host_dsa_key -t dsa -b 2048 -N &quot;&quot; -C &quot;$hostname&quot;</span><br>	DSA keys must be 1024 bits</span></li></ul>
+OpenSSL allows generation of DSA keys bigger than 1024 bits. However, the ssh-keygen on F5 devices (BIG-IP and BIG-IQ) only allow for 1024 bit DSA keys for SSHd.
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP, BIG-IQ</li><li>SSHd Deamon</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>BIG-IP and BIG-IQ devices only support 1024 bit DSA keys for SSHd. The reasoning behind the restricting DSA keys to 1024 bits in OpenSSH is a conflict between RFC recommendations and FIPS standard:</p>
+
+<ul><li>RFC4253 section 6.6 requires the SHA1 hash (160 bits) for ssh-dss (ie DSA) authentication: &quot;Digital Signature Standard [FIPS-186-2] using the SHA-1 hash&quot;</li><li>
+	<p>In FIPS 186-1 and 186-2 L could be any number between 512 and 1024 (inclusive) that was a multiple of 64. N was fixed at 160</p>
+	</li><li>FIPS 186-3 section 4.2 requires DSA keys &gt;1024 bits to use a hash stronger than 160 bits.<br>	&quot;FIPS-186-3 section 4.2 where it mandates the hash lengths for the various DSA key sizes:
+	<p>L = 1024, N = 160<br>	L = 2048, N = 224<br>	L = 2048, N = 256<br>	L = 3072, N = 256&quot;</p>
+	</li></ul>
+
+<p><br>In order to comply with both RFC and FIPs, OpenSSH will only 1024 bit keys.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>DSA keys for OpenSSH must be exactly 1024 bits, according to the standard. If you want larger keys, you&#39;ll need to make RSA keys instead of DSA keys and disable DSA. For information refer to <a href="https://my.f5.com/manage/s/article/K26031800" target="_self">K26031800: Increasing SSH keys from 1024-bit to 2048-bit keys</a>.<br><br>Starting with the 7.0 release of OpenSSH, support for ssh-dss keys has been disabled by default at runtime due to their inherit weakness. This OpenSSH version is used in BigIP 14.x and 15.x but because of the need for backward compatibility, F5 still keeps DSA 1024 bit keys for access for SSH.</p>
+
+<p><span class="sectiontitle">Additional Information</span><br>If you need to check if your SSHd is able to use DSA key - and what is your key strength use the following bash commands on F5 (BIG-IP or BIG-IQ):</p>
+
+<p style="margin-left: 40px;"><span class="code">ssh-keygen -lf /config/ssh/ssh_host_dsa_key</span><br><span class="example2">1024 db:96:FF:1d:51:69:30:61:0f:FF:FF:c3:14:cf:d3:e7  localhost.localdomain (DSA)</span><br><br><span class="code">ssh-keyscan -t dsa 127.0.0.1</span><br><span class="example2"># 127.0.0.1 SSH-2.0-OpenSSH_6.6.1<br>127.0.0.1 ssh-dss AAAAexampleB3NzaC1kc3MAAACBAIHUpWB2Xstu3qqisi00AL8216a8ekhjCWDBZYgl487d96aNInssoIKzkanU0gPhz13MGSYszNnVYLsDS5TEqnjKEy0uL04FkHYEuCCvU/FWoVOHzszo9a8DZSkmnOQ55FXMV74+BEiDx/ijPmL+khqI3gnEeP5SIXg0EBGt4rAAAAFQD3qpDwHxBTMuGDPhY1Y0rqY+example+2b9qLJ8PGCVuadpFE6BBrzSLe05HJ3x5F6KrwLZDtV51tvHR9vNJWrS9h8jZAkHRqoO+VB1GrxaMFLQdsDoTmoQyOpB8Ki7VE25gpUgaG+19KGhxrqjRlb3BUn8XQfIJ/FbUQgyxu3HvqBiVXexampleGv8XfbOoDoa5MpAAAAIBxOQiacImjk0xanEzhuBzs81mYMN6lV7VxT27cJtbfy94example8ehDlsE4w21LmhkSWZFRqMnDsRjMrKqoOL5Imv6igrkOEc1ZuNQSuXkUZ3mhr6PPFPDFfLZNxfMngfV5EdER5ELyluAnX9F4w4zkXxnUt2iHhue/ChffOmA==</span></p>
+</article>
+</body>
+</html>

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163083: BIGIP DNS/GTM marked prober pool down causing &quot;no route&quot; errors</title>
+<meta name="description" content="Support Solution: BIGIP DNS/GTM marked prober pool down causing &quot;no route&quot; errors — BIG-IP DNS may temporarily select an LTM outside the configured prober pool to perform health-monitoring probes after maintenance or iQuery reconnection. If the LTM cannot route to the monitored…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163083">
+</head>
+<body>
+<header>
+<h1>K000163083: BIGIP DNS/GTM marked prober pool down causing &quot;no route&quot; errors</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-25</dd>
+<dt>Updated</dt><dd>2026-08-25</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163083">https://my.f5.com/manage/s/article/K000163083</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>BIG-IP DNS may temporarily select an LTM outside the configured prober pool to perform health-monitoring probes after maintenance or iQuery reconnection. If the LTM cannot route to the monitored targets, probes may fail with <strong>“no route”</strong> errors and monitored resources may be marked <strong>DOWN</strong>.</p>
+<p>Example log messages:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Prober Pool ... state change green --&gt; yellow (Establishing communication)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Prober Pool ... state change yellow --&gt; red (No communication)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Monitor instance ... UP --&gt; DOWN ... (no route)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Prober Pool ... state change yellow --&gt; green</span></p>
+<h2>Environment</h2>
+<ul><li>BIG-IP DNS systems are members of a sync group.</li><li>A specific prober pool is configured.</li><li>The prober fallback setting is <strong>any-available</strong>.</li><li>An LTM or other BIG-IP system is associated with the BIG-IP DNS configuration.</li><li>The potential fallback device does not have routing to the monitored targets.</li><li>Maintenance includes one or more of the following:
+<ul><li>Entering or leaving maintenance mode.</li><li>Disabling and re-enabling a data-plane interface.</li><li>Refreshing a license.</li><li>Reloading the configuration.</li><li>Reinitializing platform services.</li><li>Transitioning a traffic group.</li></ul>
+</li><li>iQuery connections are interrupted and re-established.</li></ul>
+<h2>Cause</h2>
+<p>Maintenance mode does not remove a BIG-IP DNS system from its sync group or configured prober-pool configuration.</p>
+<p>When iQuery connections are re-established, connections to peer systems may be established sequentially. During this period, the BIG-IP DNS system may reconnect to an associated LTM before reconnecting to any member of the configured prober pool.</p>
+<p>If the prober fallback setting is <strong>any-available</strong>, the available LTM can be selected as a fallback prober. When the LTM does not have a route to the monitored target, the probe fails with a <span style="font-family: &#39;courier new&#39;, courier, monospace;">no route</span> error and the monitored resource may temporarily change to <strong>DOWN</strong>.</p>
+<p>The resource can recover automatically after connectivity to the configured prober-pool members is restored.</p>
+<p>Removing a BIG-IP DNS system from the preferred prober pool alone is not sufficient when fallback behavior still permits another available device to perform probing.</p>
+<h2>Recommended Actions</h2>
+<ul><li><strong>Disable fallback probing</strong><br>If unrelated BIG-IP systems must not perform health monitoring, configure the relevant GTM server objects with a prober fallback setting of <strong>none</strong>:<br><span style="background-color: #f1f1f1;">tmsh modify gtm server &lt;server-name&gt; prober-fallback none</span><br><span style="background-color: #f1f1f1;">tmsh save sys config gtm-only</span><br>Apply the setting to the appropriate server objects.<br><em><strong>Impact of workaround</strong>: If all configured prober-pool members are unavailable, probe tasks pause instead of being delegated to another available device. This prevents invalid probe sources but removes the use of an external fallback prober.</em></li><li><strong>Prevent specific devices from performing service checks</strong><br>For devices that must not be selected as backup probers, set:<br><span style="background-color: #f1f1f1;">tmsh modify sys db iq-allow-service-checks value no</span><br>This prevents those devices from being selected as probers during normal operation and fallback operation.</li><li><strong>Consider Ignore Down Response</strong><br>For suitable monitors, enable <strong>Ignore Down Response</strong> to prevent a single transient <span style="font-family: &#39;courier new&#39;, courier, monospace;">no route</span> response from immediately marking a resource down when a successful response is received within the configured timeout.<br><em><strong>Impact of workaround</strong>: This setting may delay detection of resources that are genuinely unavailable.</em></li><li><strong>Validate the maintenance procedure</strong>
+<ul><li>Before maintenance:
+<ol><li>Review the configured prober pool and fallback behavior.</li><li>Identify every BIG-IP system that could be selected to perform probing.</li><li>Verify that each eligible prober has routing to the monitored targets.</li><li>Confirm iQuery connectivity between the BIG-IP DNS systems.</li><li>Consider setting prober fallback to <strong>none</strong> when fallback devices do not have equivalent routing.</li><li>Do not rely on removing the maintenance device from the preferred prober pool as the only mitigation.</li></ol>
+</li><li>After maintenance:
+<ol><li>Verify that the configured prober-pool members have returned to a healthy state.</li><li>Confirm that monitored resources are not receiving probes from an improperly routed device.</li><li>Review <span style="font-family: &#39;courier new&#39;, courier, monospace;">/var/log/gtm</span> for prober-pool state changes and <span style="font-family: &#39;courier new&#39;, courier, monospace;">no route</span> errors.</li><li>If necessary, enable debug probe logging to identify the device originating the probe:<br><span style="background-color: #f1f1f1;">tmsh modify sys db gtm.debugprobelogging value enable</span></li><li>After troubleshooting, disable debug probe logging:<br><span style="background-color: #f1f1f1;">tmsh modify sys db gtm.debugprobelogging value disable</span></li></ol>
+</li></ul>
+</li></ul>
+<h2>Additional Information</h2>
+<ul><li>The default prober fallback behavior is <strong>Any Available</strong>.</li><li>A configured prober pool controls preferred probing devices; fallback settings determine what happens when those devices are unavailable.</li><li>An LTM can be selected as a fallback prober if it is available through iQuery and fallback behavior permits any available device.</li><li>The selected prober must have network reachability to the monitored targets.</li><li>Temporary resource state changes can occur when a fallback prober has incomplete or incorrect routing.</li><li>No software defect was identified for this behavior.</li></ul>
+</article>
+</body>
+</html>
