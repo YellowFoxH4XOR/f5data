@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000157331: F5 WAF for NGINX &quot;failed opening manifest out file&quot;</title>
+<meta name="description" content="Support Solution: F5 WAF for NGINX &quot;failed opening manifest out file&quot; — When you are setting up F5 WAF for NGINX an issue occurs and it fails to load.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000157331">
+</head>
+<body>
+<header>
+<h1>K000157331: F5 WAF for NGINX &quot;failed opening manifest out file&quot;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-11-07</dd>
+<dt>Updated</dt><dd>2025-11-07</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX App Protect WAF: 5.0.0, 5.1.0, 5.0.X, 5.X.X, 5.8.X, 5.8.0, 5.7.X, 5.7.0, 5.6.X, 5.6.0, 5.5.X, 5.5.0, 5.4.X, 5.4.0, 5.3.X, 5.3.0, 5.2.X, 5.2.0, 5.1.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000157331">https://my.f5.com/manage/s/article/K000157331</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When you are setting up F5 WAF for NGINX an issue occurs and it fails to load.</p>
+<ul><li>Load failure due to a manifest failing to open.</li><li>You may see something similar to these log entries...</li></ul>
+<pre>BD_MISC|CRIT  |Oct 29 08:32:30.169|0013|/builds/t1_j2fGn9/7/waf/waf-general/secore/bd/bd/manifest_listener.cpp:0203|failed to get manifest last modification time, err: No such file or directory<br>Timeout detected while waiting for configuration. time since last config: 40 BD aborting<br>BD_MISC|WARN  |Oct 29 08:32:30.170|0013|/builds/t1_j2fGn9/7/waf/waf-general/secore/bd/bd/manifest_listener.cpp:0204|Timeout detected while waiting for configuration. time since last config: 40 BD aborting<br>BD_MISC|ERR   |Oct 29 08:32:30.170|0013|/builds/t1_j2fGn9/7/waf/waf-general/secore/bd/bd/manifest_listener.cpp:0116|failed opening manifest out file. path=/opt/app_protect/bd_config/tables/bd_cfg_manifest_load_state.json<br>2025/10/29 08:32:30 /usr/share/ts/bin/bd-socket-plugin failed: exit status 1<br>2025/10/29 08:32:30 Command exited with code: 1</pre>
+<h2>Environment</h2>
+<ul><li>NGINX App Protect WAF</li><li>All version 5.x</li></ul>
+<h2>Cause</h2>
+<p><span dir="ltr">The cause can be a missing or incorrectly mounted volumes, missing compiled policy bundles, or when the waf-enforcer container starts with all app_protect_enable directives set to OFF and no policy bundle present.</span><span dir="ltr"> </span></p>
+<p><span dir="ltr">This error sequence indicates that the NAP &quot;bd&quot; (Big Daemon) process is unable to find or access its manifest state file (commonly bd_cfg_manifest_load_state.json). The process waits for a configuration update, times out after 40 seconds, and then aborts. The final error is a failure to open the manifest output file, which causes the process to exit with a non-zero status.</span></p>
+<p><span class="uiOutputText" dir="ltr">The most common causes are:</span></p>
+<ol><li><span class="uiOutputText" dir="ltr">Missing or Unmounted Directory/Volume</span>
+<ol><li><span class="uiOutputText" dir="ltr">The directory where the manifest file should be written does not exist, is not mounted, or is not writable. This is especially common in Kubernetes or Docker environments if the required volume is not mounted or is ephemeral.</span></li></ol>
+</li><li><span class="uiOutputText" dir="ltr">Permissions Issues</span>
+<ol><li><span class="uiOutputText" dir="ltr">The directory exists but is not writable by the NGINX user.</span></li></ol>
+</li><li><span class="uiOutputText" dir="ltr">Incorrect or Missing Policy/Bundle Files</span>
+<ol><li><span class="uiOutputText" dir="ltr">For NAP v5+, you must use compiled policy bundles (.tgz files). If these are missing or not referenced correctly, the manifest cannot be generated.</span></li><li><span class="uiOutputText" dir="ltr">See </span><a target="_blank" title="https://docs.nginx.com/nginx-app-protect-waf/v5/admin-guide/compiler/" href="https://docs.nginx.com/nginx-app-protect-waf/v5/admin-guide/compiler/"><span class="uiOutputText" dir="ltr">NGINX App Protect WAF Compiler Guide</span></a><span class="uiOutputText" dir="ltr">.</span></li></ol>
+</li><li><span class="uiOutputText" dir="ltr">Startup/Deployment Race Condition</span>
+<ol><li><span class="uiOutputText" dir="ltr">In containerized environments, if the config manager or policy files are not ready when the enforcer starts, this error can occur.</span></li></ol>
+</li></ol>
+<p><span class="uiOutputText" dir="ltr">In some rare case it can also happen when the waf-enforcer container starts with all app_protect_enable directives set to OFF and no policy bundle present, it waits for a policy configuration for 40 seconds by default. If none arrives, the process times out and exits as designed unless ENFORCER_CONFIG_TIMEOUT is set to allow indefinite waiting.</span></p>
+<h2>Recommended Actions</h2>
+<p><span class="uiOutputText" dir="ltr">1. Check Volume Mounts and Directory Existence</span></p>
+<ul><li><span class="uiOutputText" dir="ltr">Ensure the directory (e.g., /opt/app_protect/bd_config/tables/) exists and is mounted in all relevant containers (waf-enforcer, waf-config-mgr).</span></li><li><span class="uiOutputText" dir="ltr">In Kubernetes, verify your volumeMounts and volumes sections in the deployment YAML.</span></li></ul>
+<p><span class="uiOutputText" dir="ltr">2. Check Permissions</span></p>
+<ul><li><span class="uiOutputText" dir="ltr">The directory and files should be owned by the nginx user and group, and be writable.</span></li><li><span class="uiOutputText" dir="ltr">Example commands:</span><span class="uiOutputText" dir="ltr"></span></li></ul>
+<pre><span class="uiOutputText" dir="ltr">chown -R nginx:nginx /opt/app_protect/bd_config<br>chmod -R 755 /opt/app_protect/bd_config<br></span></pre>
+<p>3. <span class="uiOutputText" dir="ltr">Ensure Compiled Policy Bundles Are Present</span></p>
+<ul><li><span class="uiOutputText" dir="ltr">For NAP v5+, use the waf-compiler to generate .tgz bundles and place them in the correct volume.</span></li><li><span class="uiOutputText" dir="ltr">Reference the bundle in your NGINX config as per </span><a target="_blank" title="https://docs.nginx.com/nginx-app-protect-waf/v5/admin-guide/deploy-on-kubernetes/#using-compiled-policy-and-logging-profile-bundles-in-nginx" href="https://docs.nginx.com/nginx-app-protect-waf/v5/admin-guide/deploy-on-kubernetes/#using-compiled-policy-and-logging-profile-bundles-in-nginx"><span class="uiOutputText" dir="ltr">official documentation</span></a><span class="uiOutputText" dir="ltr">.</span></li></ul>
+<p><span class="uiOutputText" dir="ltr">4. Restart the Affected Pods/Services</span></p>
+<ul><li><span class="uiOutputText" dir="ltr">After correcting the above, restart the NGINX App Protect services or pods to trigger a new configuration load.</span></li></ul>
+<p><span class="uiOutputText" dir="ltr">5. If all the app_protect_enable directives are set to OFF set the waf-enforcer to wait indefinitely by setting the ENFORCER_CONFIG_TIMEOUT env variable to 0 in the yaml deployment file.</span></p>
+<pre><span class="uiOutputText" dir="ltr">env:<br>  - name: ENFORCER_CONFIG_TIMEOUT<br>    value: &quot;0&quot;</span></pre>
+<h2>Additional Information</h2>
+<ul><li>By default, waf-enforcer waits up to 40 seconds for a policy before exiting if none is provided, or iit cannot be accessed.</li><li>Setting ENFORCER_CONFIG_TIMEOUT to &quot;0&quot; allows indefinite waiting—useful when starting containers with no initial policy.</li><li>This behavior may not be fully documented in all NGINX App Protect guides but is referenced in some related documentation.</li></ul>
+</article>
+</body>
+</html>

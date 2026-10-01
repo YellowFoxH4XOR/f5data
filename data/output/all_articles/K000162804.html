@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162804: An SSH virtual server on port 22 fails to process traffic in single-NIC AWS BIG-IP VE deployments</title>
+<meta name="description" content="Support Solution: An SSH virtual server on port 22 fails to process traffic in single-NIC AWS BIG-IP VE deployments — SSH Virtual Server on TCP/22 Does Not Receive Traffic in a Single-NIC AWS BIG-IP VE Deployment">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162804">
+</head>
+<body>
+<header>
+<h1>K000162804: An SSH virtual server on port 22 fails to process traffic in single-NIC AWS BIG-IP VE deployments</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-07</dd>
+<dt>Updated</dt><dd>2026-08-07</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162804">https://my.f5.com/manage/s/article/K000162804</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h1>SSH Virtual Server on TCP/22 Does Not Receive Traffic in a Single-NIC AWS BIG-IP VE Deployment</h1>
+<div class="metadata">
+<p><strong>Product:</strong> BIG-IP LTM VE</p>
+<p><strong>Cloud platform:</strong> Amazon Web Services</p>
+<p><strong>Deployment:</strong> Single-NIC<strong></strong></p>
+</div>
+<h2>Issue</h2>
+<p>An SSH virtual server configured on TCP/22 does not receive client traffic in a single-NIC AWS BIG-IP VE deployment.</p>
+<p>Typical symptoms include:</p>
+<ul><li>SSH connections to the BIG-IP self IP succeed.</li><li>The SSH virtual server uses TCP/22 and has a valid pool configuration.</li><li>The virtual-server IP is registered as a secondary private IP on the AWS ENI.</li><li>AWS security-group rules appear to permit the traffic.</li><li>No client SYN packets are observed arriving at the virtual server.</li></ul>
+<h2>Cause</h2>
+<p>In a single-NIC cloud deployment, management and data-plane traffic share the same interface. TCP/22 is also used by the BIG-IP management <code>sshd</code> service.</p>
+<p>When the management SSH service and an SSH virtual server both use TCP/22, the traffic is handled as management traffic instead of being delivered to the virtual server. This is a limitation of the single-NIC deployment model.</p>
+<div class="note">
+<p>The issue is not necessarily caused by an invalid virtual-server configuration, pool configuration, AWS ENI assignment, or security-group rule.</p>
+</div>
+<p>The port-handling behavior is consistent with the guidance in <strong>K27312387</strong>, which documents changing the default BIG-IP management SSH port in a single-interface cloud deployment. K27312387 is Azure-specific, but the BIG-IP management-port procedure is applicable to this configuration.</p>
+<p> </p>
+<h2>Resolution</h2>
+<p>Move the BIG-IP management SSH service from TCP/22 to an unused port, such as TCP/2222. Add the new port to the self-allow list and save the configuration.</p>
+<h3>Procedure</h3>
+<ol><li>Establish an administrative SSH session to the BIG-IP self IP.</li><li>Change the BIG-IP management SSH port:
+<pre><code>tmsh modify sys sshd port 2222</code></pre>
+</li><li>Permit the new management SSH port on the self IP:
+<pre><code>tmsh modify net self-allow defaults add { tcp:2222 }</code></pre>
+</li><li>Save the configuration:
+<pre><code>tmsh save sys config</code></pre>
+</li><li>Update the AWS security group associated with the BIG-IP ENI to permit inbound TCP/2222 from the required administrative source addresses.</li><li>Start a new SSH session to the BIG-IP self IP using TCP/2222.</li></ol>
+<div class="warning">
+<p>After the change, management SSH is no longer available on TCP/22. The SSH virtual server can continue listening on TCP/22 and forward traffic to the SSH pool members on TCP/22.</p>
+</div>
+<h2>Validation</h2>
+<h3>AWS ENI validation</h3>
+<p>Confirm that:</p>
+<ul><li>The virtual-server IP is assigned as a secondary private IP on the BIG-IP data-plane ENI.</li><li>The AWS security group permits inbound TCP/22 to the virtual-server IP from the client source range.</li><li>AWS routing and network ACL configuration permit the traffic.</li><li>The client is connecting to the virtual-server IP rather than the BIG-IP self IP.</li></ul>
+<p> </p>
+<h3>BIG-IP validation</h3>
+<p>Confirm that:</p>
+<ul><li>The virtual server is configured for TCP/22.</li><li>The virtual server has a valid SSH pool member.</li><li>The virtual-server IP is configured as an AWS secondary private IP.</li><li>TCP/2222 is permitted for management access on the self-allow list.</li><li>The management SSH service is configured to use TCP/2222.</li></ul>
+<h3>Packet capture validation</h3>
+<p>Initiate a connection to the virtual-server IP on TCP/22 while capturing traffic on BIG-IP. After the management SSH service is moved to TCP/2222, the client SYN should arrive at the SSH virtual server instead of being handled by the management SSH service.</p>
+<h2>Alternative</h2>
+<p>Use a multi-NIC BIG-IP VE deployment when separate management and data-plane paths are required. Deploying multiple interfaces avoids relying on the same interface and management-port handling for both management and application traffic.</p>
+</article>
+</body>
+</html>

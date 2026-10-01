@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K11342484: Sidecar (Envoy Proxy) request logs not showing in the istio-proxy container</title>
+<meta name="description" content="Support Solution: Sidecar (Envoy Proxy) request logs not showing in the istio-proxy container — Usually when troubleshooting a failed connection from a workload within the mesh we look at the istio-proxy container logs to understand how that connection is being established; but what happens if…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K11342484">
+</head>
+<body>
+<header>
+<h1>K11342484: Sidecar (Envoy Proxy) request logs not showing in the istio-proxy container</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-08-10</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K11342484">https://my.f5.com/manage/s/article/K11342484</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>Usually when troubleshooting a failed connection from a workload within the mesh we look at the istio-proxy container logs to understand how that connection is being established; but what happens if we don’t get any request logs after attempting the connection?</p>
+
+<p>These logs could be only ones showing:</p>
+
+<p><span class="example2">k logs nettools-59f8cdd65c-pjwxl -c istio-proxy <br><br>2022-07-19T19:37:43.772420Z    warning    envoy misc    Deprecated field: type envoy.config.listener.v3.Listener Using deprecated option &#39;en-voy.config.listener.v3.Listener.deprecated_v1&#39; from file listener.proto. This configuration will be removed from Envoy soon. Please see https://www.envoyproxy.io/docs/envoy/latest/version_history/version_history for details. If continued use of this field is absolutely necessary, see https://www.envoyproxy.io/docs/envoy/latest/configuration/operations/runtime#using-runtime-overrides-for-deprecated-features for how to apply a temporary and highly discouraged override.<br><br>2022-07-19T19:37:43.772437Z    warning    envoy misc    Deprecated field: type envoy.config.listener.v3.Listener Using deprecated option &#39;en-voy.config.listener.v3.Listener.deprecated_v1&#39; from file listener.proto. This configuration will be removed from Envoy soon. Please see https://www.envoyproxy.io/docs/envoy/latest/version_history/version_history for details. If continued use of this field is absolutely necessary, see https://www.envoyproxy.io/docs/envoy/latest/configuration/operations/runtime#using-runtime-overrides-for-deprecated-features for how to apply a temporary and highly discouraged override.<br><br>2022-07-19T20:07:09.366234Z    warning    envoy config    StreamAggregat-edResources gRPC config stream closed: 14, closing transport due to: connection error: desc = &quot;error reading from server: EOF&quot;, received prior goaway: code: NO_ERROR, debug data: <br><br>2022-07-19T20:07:09.446347Z    info    xdsproxy    connected to upstream XDS server: istiod.istio-system.svc:15012</span></p>
+
+<p>However we are expecting logs like the one below with request information:</p>
+
+<p><span class="example2">[2022-07-19T20:34:29.775Z] &quot;POST /post HTTP/1.1&quot; 502 - direct_response - &quot;-&quot; 0 0 0 - &quot;-&quot; &quot;curl/7.83.1&quot; &quot;117e0fc3-fe45-44b2-9bcd-3eb7612a049e&quot; &quot;alex.httpbin-nosidecar.com&quot; &quot;-&quot; - - 10.100.96.14:8000 192.168.27.220:35804 - block_all</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Kubernetes: 1.17.x, 1.18.x, 1.19.x, 1.20.x</li><li>Aspen Mesh: 1.11.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>The application may be using 127.0.0.x/lo to make the requests out or using one of the <a href="https://istio.io/latest/docs/ops/deployment/requirements/#ports-used-by-istio" target="_self">ports used by Istio</a>.</p>
+
+<p>Sidecar networking changed in Istio 1.10 by updating the Envoy proxy to send traffic by default to applications on eth0 rather than lo. On older versions of Istio the sidecar would intercept pod traffic and forward it to the user application on localhost. Users had to make sure their apps were listening on localhost for things to work. Starting with 1.10, the sidecar redirects traffic to eth0. This change makes Istio work out of the box with popular stateful applications, but to that end, user applications that are bound exclusively to localhost need to be modified or Sidecar resource needs to be defined as shown in the below Recommend Actions section.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ul><li>
+	<p>Make sure the application uses eth0 or 0.0.0.0.</p>
+	</li><li>
+	<p>Explicitly configure the port using the <a href="https://istio.io/latest/docs/reference/config/networking/sidecar/#IstioIngressListener" target="_self">Sidecar ingress configuration</a> to send to lo, preserving the old behavior.</p>
+
+	<p>For example, to configure request to be sent to localhost for the ratings application:</p>
+
+	<p><span class="example2">apiVersion: networking.istio.io/v1beta1<br>	kind: Sidecar<br>	metadata:<br>	  name: ratings<br>	spec:<br>	  workloadSelector:<br>	    labels:<br>	      app: ratings<br>	  ingress:<br>	  - port:<br>	      number: 8080<br>	      protocol: HTTP<br>	      name: http<br>	    defaultEndpoint: 127.0.0.1:8080</span></p>
+	</li></ul>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000138565: Error &quot;F5RST: Address in use&quot; when applying iRule to VIP if TCP profile enables Verified-Accept</title>
+<meta name="description" content="Support Solution: Error &quot;F5RST: Address in use&quot; when applying iRule to VIP if TCP profile enables Verified-Accept — iRule with SNAT command fails with an &quot;F5RST: Address in use&quot; in HTTP_REQUEST">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000138565">
+</head>
+<body>
+<header>
+<h1>K000138565: Error &quot;F5RST: Address in use&quot; when applying iRule to VIP if TCP profile enables Verified-Accept</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-02-14</dd>
+<dt>Updated</dt><dd>2024-02-14</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.X.X, 16.X.X, 15.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000138565">https://my.f5.com/manage/s/article/K000138565</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+
+<p>iRule with SNAT command fails with an &quot;F5RST: Address in use&quot; in HTTP_REQUEST</p>
+
+<p> </p>
+
+<h2>Environment</h2>
+
+<ul><li>BIG-IP LTM</li><li>irule with snat</li><li>TCP profile with Verified-Accept</li></ul>
+
+<p> </p>
+
+<h2>Cause</h2>
+
+<p>When the TCP profile enables Verified-Accept, the server-side TCP 3-way handshake is established as the client-side TCP 3-way handshake is proceeding.</p>
+
+<p>Other operations (such as TLS handshake) also proceed. This means that when the client sends a TCP request, there is already an established server-side connection.</p>
+
+<p>Attempting to change server-side connection settings (such as changing the SNAT address) will cause an error.</p>
+
+<p> </p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">ltm profile tcp /Common/tcp-verified-accept {</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">  app-service none</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">  defaults-from /Common/tcp</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">  verified-accept enabled            &lt;===</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">}</span></p>
+
+<p>We can see the effect of Verified-Accept in the following packet capture:</p>
+
+<p><span style="font-family: Courier New,Courier,monospace;"> 172.16.0.18 → 172.16.0.1 60 21096 443 TCP IN s1/tmm0 : 21096 → 443 [SYN] Seq=0 Win=26883 Len=0 MSS=1350 SACK_PERM=1 TSval=1106994682 TSecr=0 WS=128</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">10.0.0.1 → 10.0.0.100 60 21096 443 TCP OUT s1/tmm0 : 21096 → 443 [SYN] Seq=0 Win=13500 Len=0 MSS=1350 WS=1 SACK_PERM=1 TSval=2053345483 TSecr=0</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;"> 10.0.0.100 → 10.0.0.1 60 443 21096 TCP IN s1/tmm0 : 443 → 21096 [SYN, ACK] Seq=0 Ack=1 Win=26847 Len=0 MSS=1350 SACK_PERM=1 TSval=515757736 TSecr=2053345483 WS=256</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;"> 172.16.0.1 → 172.16.0.18 60 443 21096 TCP OUT s1/tmm0 : 443 → 21096 [SYN, ACK] Seq=0 Ack=1 Win=13500 Len=0 MSS=1460 WS=1 SACK_PERM=1 TSval=2053345485 TSecr=1106994682</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;"> 172.16.0.18 → 172.16.0.1 52 21096 443 TCP IN s1/tmm0 : 21096 → 443 [ACK] Seq=1 Ack=1 Win=27008 Len=0 TSval=1106994687 TSecr=2053345485</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;"> 10.0.0.1 → 10.0.0.100 52 21096 443 TCP OUT s1/tmm0 : 21096 → 443 [ACK] Seq=1 Ack=1 Win=13500 Len=0 TSval=2053345488 TSecr=515757736</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">...</span></p>
+
+<p> </p>
+
+<p>If the TCP profile does not enable <strong>Verified-Accept</strong>, the server-side TCP connection will not be established until an HTTP request is received from the client.</p>
+
+<p>In that case, the SNAT address can be changed in HTTP_REQUEST in the irule without error.</p>
+
+<p> </p>
+
+<h2>Recommended Actions</h2>
+
+<p>remove TCP profile <strong>Verified-Accept</strong> option</p>
+
+<p>or</p>
+
+<p>use <strong>LB::detach</strong> in the irule prior to changing a server-side connection option, along with a OneConnect profile.</p>
+
+<p><em><span style="color: #15891f;"><strong>Note</strong>: This option may be inefficient if SSL profiles are in use on the server-side connection.</span></em><br> </p>
+
+<h2>Additional Information</h2>
+None
+</article>
+</body>
+</html>

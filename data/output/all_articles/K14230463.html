@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K14230463: Reduce false positive violations in NGINX App Protect WAF</title>
+<meta name="description" content="Knowledge: Reduce false positive violations in NGINX App Protect WAF — You want to reduce the number false positive violations generated in NGINX App Protect WAF.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K14230463">
+</head>
+<body>
+<header>
+<h1>K14230463: Reduce false positive violations in NGINX App Protect WAF</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2021-02-01</dd>
+<dt>Updated</dt><dd>2025-04-02</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX App Protect WAF: 2.3.0, 2.2.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K14230463">https://my.f5.com/manage/s/article/K14230463</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3>
+
+<p>You should consider using this procedure under the following condition:</p>
+
+<ul><li>You want to reduce the number false positive violations generated in NGINX App Protect WAF.</li></ul>
+
+<h3>Description</h3>
+
+<p>False positives occur when the system reports and blocks legitimate requests. This article describes some of the steps you can take to tune your NGINX App Protect WAF security policy to reduce the number of false positives.</p>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisite to use this procedure:</p>
+
+<ul><li>You have administrative access to manage NGINX on the system.</li></ul>
+
+<p><span class="sectiontitle">Procedures</span></p>
+
+<p>Perform the following procedures to reduce the number of false positives:</p>
+
+<ul><li><a href="#ip_exceptions" target="_self">Add IP address exceptions</a></li><li><a href="#review_violations" target="_self">Review potential false positive violations</a></li><li><a href="#log" target="_self">Configure security violation logging</a></li><li><a href="#transparent_mode" target="_self">Use transparent enforcement mode</a></li></ul>
+
+<p><a id="ip_exceptions" name="ip_exceptions"></a><span class="subsectiontitle">Add IP address exceptions</span></p>
+
+<p>NGINX App Protect WAF lets you add IP addresses or a range of IP addresses that come from trusted sources to an exception list to overwrite configuration settings from other parts of the security policy. You can configure specific rules, such as one to reduce false positives by not blocking requests from IP addresses in the list. To do so, you use the <strong>whitelist-ips</strong> entity in the security policy. The <strong>blockRequests </strong>attribute lets you configure the associated action with the following allowed values:</p>
+
+<p><span class="note"><strong>Note</strong>: F5 is working to eliminate exclusionary language in our products and documentation. For more information, refer to <a href="https://my.f5.com/manage/s/article/K34150231" target="_blank">K34150231: Exclusionary language in F5 products and documentation</a>.</span></p>
+
+<ul><li><strong>policy-default</strong> specifies that the policy&#39;s blocking-settings configuration is used for requests from this IP address.</li><li><strong>never</strong> specifies that the system does not block requests sent from this IP address, even if your security policy is configured to block all traffic.</li><li><strong>always</strong> specifies that the system blocks requests sent from this IP address.</li></ul>
+
+<p>The following example rule defines IP addresses in the range 10.10.0.0/16 as trusted and prevents the system from blocking requests originating from them, despite the violation blocking settings:</p>
+
+<p><span class="example2">{<br>    &quot;name&quot;: &quot;security_policy&quot;,<br>    &quot;template&quot;: {<br>        &quot;name&quot;: &quot;POLICY_TEMPLATE_NGINX_BASE&quot;<br>    },<br><br>    [...]<br><br>    &quot;blocking-settings&quot;: {<br>        &quot;violations&quot;: [<br>            {<br>                &quot;name&quot;: &quot;VIOL_RATING_THREAT&quot;,<br>                &quot;alarm&quot;: true,<br>                &quot;block&quot;: true<br>            }<br>        ]<br>    },<br>    &quot;whitelist-ips&quot;: [<br>            {<br>                &quot;blockRequests&quot;: &quot;never&quot;,<br>                &quot;neverLogRequests&quot;: false,<br>                &quot;ipAddress&quot;: &quot;10.10.0.0&quot;,<br>                &quot;ipMask&quot;: &quot;255.255.0.0&quot;<br>            }<br>    ]<br>}</span></p>
+
+<p><a id="review_violations" name="review_violations"></a><span class="subsectiontitle">Review potential false positive violations</span></p>
+
+<p>Investigating application traffic trends and statistics in your environment to determine false positives is an ongoing and integral part of security policy tuning. In particular, you should review the violation ratings of illegal requests in the security logs. NGINX App Protect WAF algorithms rate its violations to help distinguish between attacks and potential false positive alerts. Requests with a low violation rating (<strong>1</strong> to <strong>2</strong>) are more likely to be false positives, and an administrator should review and appropriately tune these.</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1"><tbody><tr><td colspan="1" rowspan="1">Violation rating</td><td colspan="1" rowspan="1">Action</td></tr><tr><td colspan="1" rowspan="1">4 - 5</td><td colspan="1" rowspan="1">The request is most likely a threat and unlikely to be a false positive.</td></tr><tr><td colspan="1" rowspan="1">3</td><td colspan="1" rowspan="1">The request requires examination before classifying it as a false positive.</td></tr><tr><td colspan="1" rowspan="1">2</td><td colspan="1" rowspan="1">The request looks like a false positive and requires examination before you appropriately tune your security policy.</td></tr><tr><td colspan="1" rowspan="1">1</td><td colspan="1" rowspan="1">The request is most likely a false positive, and you should review and appropriately tune your security policy.</td></tr><tr><td colspan="1" rowspan="1">0</td><td colspan="1" rowspan="1">There is no violation.</td></tr></tbody></table>
+
+<p>In the default security policy, the system logs and blocks violations with rating <strong>4</strong> or <strong>5</strong>, but does not log or block violations with rating <strong>3</strong>. When troubleshooting, you can override these settings using the <strong>VIOL_RATING_THREAT</strong> and <strong>VIOL_RATING_NEED_EXAMINATION</strong> settings, respectively. For example in the following configuration example, the <strong>/etc/nginx/NginxStrictPolicy.json</strong> strict policy causes the system to block requests that have a <strong>Violation Rating</strong> of <strong>3, Needs examination</strong> rating.</p>
+
+<p><span class="example2">[...]<br>      &quot;blocking-settings&quot; : {<br>         &quot;violations&quot; : [<br>     [...]<br>            {<br>               &quot;block&quot; : true,<br>               &quot;description&quot; : &quot;Violation Rating Need Examination detected&quot;,<br>               &quot;name&quot; : &quot;VIOL_RATING_NEED_EXAMINATION&quot;<br>            }<br>         ]<br>      },<br>[...]</span></p>
+
+<p><span class="subsectiontitle"><a id="log" name="log"></a>Configure security violation logging</span></p>
+
+<p>To review the violation ratings of the application traffic in your environment, you need to log the appropriate information in the security log file. To log security violations with the appropriate details, perform the following procedures:</p>
+
+<ul><li><a href="#log_directive" target="_self">Define the security log directive file</a></li><li><a href="#reference_logdirective" target="_self">Declare the log directive file with a log destination</a></li><li><a href="#restart_nginx" target="_self">Restart NGINX</a></li></ul>
+
+<p><span class="subsubsectiontitle"><a id="log_directive" name="log_directive"></a>Define the security log directive file</span></p>
+
+<p>You define the filter and content format in the NGINX App Protect WAF security log directive file. The default NGINX App Protect WAF security log directive file is <strong>/etc/app_protect/conf/log_default.json</strong>. Using an editor, create a second file <strong>/etc/app_protect/conf/illegal_violations.json</strong> and save the following:</p>
+
+<p><span class="note"><strong>Note</strong>: The <strong>request_type</strong> in the filter can use any of the following values: <strong>all</strong>, <strong>illegal</strong>, or <strong>blocked</strong>. The format attribute in the <strong>content </strong>entity can be <strong>splunk</strong>, <strong>arcsight</strong>, <strong>default </strong>, or <strong>user-defined</strong>. For the full list of filter, content format, and other entity values, refer to <a href="https://docs.nginx.com/nginx-app-protect/configuration/#security-log-configuration-file" target="_self">Security Log Configuration File</a> in the NGINX documentation.</span></p>
+
+<p><span class="example2">{<br>    &quot;filter&quot;: {<br>        &quot;request_type&quot;: &quot;illegal&quot;<br>    },<br><br>    &quot;content&quot;: {<br>        &quot;format&quot;: &quot;user-defined&quot;,<br>        &quot;format_string&quot;: &quot;Request ID %support_id%: %method% %uri% received on %date_time% from IP %ip_client% had the following violations: %violations%. attack_type=%attack_type% sub_violations=%sub_violations% severity=%severity% threat_campaign_names=%threat_campaign_names% violation_rating=%violation_rating% outcome=%outcome% outcome_reason=%outcome_reason% violation_details=%violation_details% request=%request%&quot; request_status=%request_status%,<br>        &quot;max_request_size&quot;: &quot;any&quot;,<br>        &quot;max_message_size&quot;: &quot;5k&quot;<br>    }<br>}</span></p>
+
+<p>In the previous example, the system only logs illegal requests, and each log entry contains a user defined format that includes useful information to determine whether a violation is a false positive. In particular, it includes the violation rating <strong>%violation_rating%</strong>.</p>
+
+<p><a id="reference_logdirective" name="reference_logdirective"></a><span class="subsubsectiontitle">Declare the log directive file with a log destination</span></p>
+
+<p>To use the security log directive file created in the previous procedure, define the <strong>app_protect_security_log_enable</strong> and <strong>app_protect_security_log</strong> directives in the <strong>nginx.conf </strong>file, as well as the log destination. You can configure targeted logging by setting the directives at any of the following contexts: <strong>http</strong>, <strong>server </strong>, or <strong>location</strong>. The following example configures logging at the <strong>http </strong>context and logs security information in <strong>/var/log/app_protect/class_illegal_security.log</strong>:</p>
+
+<p><span class="note"><strong>Note</strong>: For more information on configuring NGINX logging, refer to <a href="https://docs.nginx.com/nginx-app-protect/configuration/#directives-in-nginx-conf" target="_self">Directives in nginx.conf </a>in the NGINX documentation.</span></p>
+
+<p><span class="example2">http {<br>    include       /etc/nginx/mime.types;<br>    app_protect_enable on;<br>    app_protect_policy_file &quot;/etc/nginx/nap.d/local-policy.json&quot;;<br><br><strong>    app_protect_security_log_enable on;<br>    app_protect_security_log &quot;/etc/app_protect/conf/illegal_violations.json&quot; /var/log/app_protect/class_illegal_security.log;</strong><br>    [...]<br>}</span> </p>
+
+<p><a id="restart_nginx" name="restart_nginx"></a><span class="subsubsectiontitle">Restart NGINX</span></p>
+
+<p>Restart the <strong>nginx </strong>process by entering one of the following commands, as appropriate for your initial NGINX installation method and operating system:</p>
+
+<ul><li><span class="code">nginx -s reload</span></li><li><span class="code">systemctl restart nginx</span></li></ul>
+
+<p>Enter the following command to follow the security logs and review illegal requests with violations:</p>
+
+<p><span class="code">tail -f /var/log/app_protect/class_illegal_security.log</span></p>
+
+<p><span class="subsectiontitle"><a id="transparent_mode" name="transparent_mode"></a>Use transparent enforcement mode</span></p>
+
+<p>The <strong>Enforcement Mode</strong> setting allows you to introduce a security policy to your application environment in stages. When set to <strong>Transparent</strong>, the system does not block any requests. You can configure multiple security policies at different contexts (<strong>http</strong>, <strong>server</strong>, or <strong>location</strong>) in the <strong>nginx.conf</strong> file, which is useful when you want to observe traffic patterns for a virtual server, URI, or path for an application or gather statistics and trends to determine false positives before actual implementation. The following values are available for <strong>Enforcement Mode</strong>:</p>
+
+<ul><li><strong>Blocking</strong>: The system blocks and logs illegal or suspicious requests, depending on configurations in the rest of the security policy.</li><li><strong>Transparent</strong>: The system does not block any illegal or suspicious requests. Logging depends on other settings in the security policy.</li></ul>
+
+<p>When configuring <strong>Enforcement Mode</strong>, you should enable appropriate logging, as described in the <strong> Configure security violation logging</strong> procedure in this article, to review potential false positives.</p>
+</article>
+</body>
+</html>

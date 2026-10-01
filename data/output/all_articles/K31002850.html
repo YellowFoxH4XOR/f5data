@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K31002850: ASM Bot Defense Search Engine Verification Failed</title>
+<meta name="description" content="Support Solution: ASM Bot Defense Search Engine Verification Failed — Bot Defense logs show that BIG-IP cannot confirm that the request came from a search engine.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K31002850">
+</head>
+<body>
+<header>
+<h1>K31002850: ASM Bot Defense Search Engine Verification Failed</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-03-09</dd>
+<dt>Updated</dt><dd>2026-08-01</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.6, 16.1.5, 16.1.4, 15.1.10, 15.1.9, 15.1.0, 15.X.X, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.1, 16.X.X, 15.0.1, 16.0.0, 14.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K31002850">https://my.f5.com/manage/s/article/K31002850</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+<p>Bot Defense logs show that BIG-IP cannot confirm that the request came from a search engine.</p>
+<p><span class="example2">Search Engine Verification Failed.<br>The system detected a bot that presented as a known search engine. Source IP Address reverse DNS checked failed.</span></p>
+<p style="margin-left: 40px;"> </p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000otNt&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000VwpJe" alt=""></img></p>
+<p>A manual reverse lookup of the IP using <strong>nslookup</strong> or similar confirms that the bot is in fact a legitimate search engine bot.</p>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>Bot Defense</li></ul>
+<p><span class="sectiontitle">Cause</span></p>
+<p>Search Engine Verification can fail under any of the following conditions:</p>
+<ul><li>No <strong>forward zone</strong> is configured in the <strong>DNS resolver</strong>.</li><li>The nameserver is not reachable through a <strong>TMM interface</strong>.</li><li>The DNS resolver is not configured for the <strong>route domain</strong> associated with incoming traffic or in the default route domain.</li></ul>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<p>The DNS resolver object configured at <strong>Network </strong>&gt; <strong>DNS Resolvers</strong> does not use the system&#39;s configured DNS servers. You must configure a <strong>forward zone</strong> in the resolver itself, and list your name server there.</p>
+<p>For systems using multiple <strong>route domains</strong>, you can configure a DNS Resolver on the route domain associated with incoming traffic, or configure a DNS resolver on default route domain. Bot Defense selects the DNS resolver based on the incoming traffic route domain. If no resolver is configured for that route domain, Bot Defense attempts to use a resolver configured on the default route domain.</p>
+<p>Here is an example of an incomplete DNS resolver configuration:</p>
+<p><span class="example2">net dns-resolver /Common/scott-resolver {<br>    route-domain /Common/0<br>    randomize-query-name-case no<br>}</span></p>
+<p>Now the forward zone is added:</p>
+<p><span class="example2">tmsh modify net dns-resolver scott-resolver forward-zones replace-all-with { . { nameservers add { 9.9.9.9:53 } } }</span></p>
+<p>The DNS resolver is now complete, and functional:</p>
+<p><span class="example2">net dns-resolver /Common/scott-resolver {<br>    forward-zones {<br>        . {                             &lt;---- Note the &#39;.&#39; name, this allows DNS queries for all names<br>            nameservers {<br>                9.9.9.9:53 { }          &lt;---- This must be reachable via a TMM route<br>            }<br>        }<br>    }<br>    randomize-query-name-case no<br>    route-domain /Common/0<br>}</span></p>
+<h3>Verify the resolver conifguration</h3>
+<p>Run:</p>
+<pre><code>tmsh list net dns-resolver &lt;/Partition/dns-resolver_name&gt;
+</code></pre>
+<p>After configuring the DNS resolver, you must ensure that the name server is accessed via a TMM route. It cannot use a management route.</p>
+<h3>Verify the route to the nameserver</h3>
+<p>For default route domain:</p>
+<pre><code>ip route get &lt;name server ip&gt;
+</code></pre>
+<p>For a non-default route domain, run the command in the specific route-domain context:</p>
+<pre><code>rdexec &lt;route-domain id&gt; ip route get &lt;name server ip&gt;</code></pre>
+<h3>Verify DNS traffic</h3>
+<p>Ensure DNS Traffic is using a TMM route and not management interface. Run tcpdump from default route-domain to capture traffic from all configured VLANs and route-domains:</p>
+<pre><code>tcpdump -nni 0.0 host &lt;name server ip&gt;<br>tcpdump -nni eth0 host &lt;name server ip&gt;</code></pre>
+<p>Review dns-resolver statistics:</p>
+<pre><code>tmsh show net dns-resolver &lt;/Partition/dns-resolver_name&gt;
+</code></pre>
+<div class="article-text-block" style="box-sizing: border-box;display: block;padding-bottom: 20px;font-family: ProximaNova-Reg, Arial, Helvetica, sans-serif;font-size: 14px;line-height: 21px;color: #222222;white-space: normal;background-color: #ffffff;"> </div>
+<p>You may need to add an explicit TMM route in order to correctly route the reverse lookup queries via a TMM route. For information about managing static routes, refer to:</p>
+<ul><li><a href="https://my.f5.com/manage/s/article/K13833" target="_self">K13833: Managing static routes in BIG-IP and BIG-IQ</a></li></ul>
+<p><span class="sectiontitle">Additional Information</span></p>
+<p>None</p>
+</article>
+</body>
+</html>

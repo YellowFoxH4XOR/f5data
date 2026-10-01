@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K47613534: BIG-IP is not sending ASM log events to the remote server</title>
+<meta name="description" content="Support Solution: BIG-IP is not sending ASM log events to the remote server — When you configure a new ASM logging profile and set up remote logging, the BIG-IP system appears to be not sending any log messages to the configured remote log server.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K47613534">
+</head>
+<body>
+<header>
+<h1>K47613534: BIG-IP is not sending ASM log events to the remote server</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-03-10</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP Platforms</li><li>BIG-IP</li><li>Virtual Editions</li><li>BIG-IP ASM: 14.X.X, 13.0.0, 16.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 16.0.1, 12.1.0, 12.0.0, 12.1.1, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3, 13.1.3, 16.X.X, 13.1.1, 16.1.1, 13.1.0, 16.1.0, 13.0.1, 16.1.2, 15.X.X, 13.X.X, 12.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 15.1.8, 15.1.7</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K47613534">https://my.f5.com/manage/s/article/K47613534</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>When you configure a new ASM logging profile and set up remote logging, the BIG-IP system appears to be not sending any log messages to the configured remote log server. </p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP ASM</li><li>ASM logging profile with remote logging enabled</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>The problem is due to inconsistency among DCC/guishell and tmsh databases. The profile is missing in one of the mentioned places.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span><br><br><span class="impact">Impact: this procedure should not cause a negative impact on production traffic.</span><br><br>1.  Check if the profile is present in the TMSH config file:</p>
+
+<div><span class="example2">[root@logging:Active:In Sync (Sync Only)] ts # <strong>tmsh list security log profile test_logging | grep servers -A 7</strong><br>            servers {<br>                192.0.2.1:514 { }<br>                192.0.2.2:514 { }<br>                192.0.2.3:514 { }<br>                <strong>192.0.2.4:514 </strong>{ }<br>            }<br>        }<br>    }</span><br><br>2.  check if the profile is present in the guishell DB:</div>
+
+<div><span class="example2">[root@logging:Active:In Sync (Sync Only)] ts # <strong>guishell -c &quot;select LEAF_NAME,ADDRESS,PORT from fw_log_server_address&quot;</strong></span></div>
+
+<div><span class="example2">---------------------------------<br>|    LEAF_NAME | ADDRESS | PORT |</span></div>
+
+<div><span class="example2">---------------------------------<br>| test_logging | 192.0.2.1 |  514 |<br>| test_logging | 192.0.2.2 |  514 |<br>| test_logging | 192.0.2.3 |  514 |<br>|<strong> test_logging | 192.0.2.4</strong> <strong>|  514</strong> |</span></div>
+
+<div><span class="example2">---------------------------------</span><br><br>3.  check if the profile is present in the DCC DB:<br> </div>
+
+<div><span class="example2">[root@logging:Active:In Sync (Sync Only)] ts # <strong>mysql -u root -p$(perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw) -e &quot;use DCC; select log_profile_name,server_ip from REMOTE_STORAGE_CONFIGURATION&quot;</strong><br>+----------------------+-----------+<br>| log_profile_name     | server_ip |<br>+----------------------+-----------+<br>| /Common/test_logging | 192.0.2.1  |<br>| /Common/test_logging | 192.0.2.2  |<br>| /Common/test_logging<strong> </strong>|<strong> </strong>192.0.2.3  |<br>|                                   |&lt;------- !!!! <strong>| /Common/test_logging | 192.0.2.4 |</strong> is missing<br>+----------------------+-----------+</span></div>
+
+<div>4. If the profile is not present in one of the listed outputs, it means you are affected. To fix this problem, restart asm config services:</div>
+
+<div> </div>
+
+<div><span class="code">pkill -f asm_config_server<br>pkill -f dcc<br>pkill -f tsconfd</span><br> </div>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None.</p>
+</article>
+</body>
+</html>

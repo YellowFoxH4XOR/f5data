@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000148451: TCP DNS query failed when sidecar/istio enabled</title>
+<meta name="description" content="Support Solution: TCP DNS query failed when sidecar/istio enabled — When attempting to perform DNS queries using the dig command to resolve a domain managed by an external CoreDNS instance, the queries fail with a connection reset. This occurs even though a…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000148451">
+</head>
+<body>
+<header>
+<h1>K000148451: TCP DNS query failed when sidecar/istio enabled</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-06-22</dd>
+<dt>Updated</dt><dd>2025-06-22</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.14, 1.11</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000148451">https://my.f5.com/manage/s/article/K000148451</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When attempting to perform DNS queries using the dig command to resolve a domain managed by an external CoreDNS instance, the queries fail with a connection reset. This occurs even though a ServiceEntry is defined to route TCP traffic on port 53. The intention is to allow services within the mesh to reach an external DNS service via TCP. </p>
+<p>The Service Entry used to reach the TCP DNS was applied at the istio-system namespace so it will be applied globally to all workloads:</p>
+<pre class="ckeditor_codeblock" style="box-sizing: border-box;overflow: auto;font-family: Menlo, Monaco, Consolas, &#39;Courier New&#39;, monospace;font-size: 14px;white-space: pre-wrap;overflow-wrap: break-word;background: none 0% 0% / auto repeat scroll padding-box border-box rgb(245, 245, 245);display: block;padding: 8px;border-image: none 100% / 1 / 0 stretch;margin: 10px 0px;color: #222222;border: 0.727273px solid #cccccc;">apiVersion: networking<strong>.</strong>istio<strong>.</strong>io/v1beta1<br>kind: ServiceEntry<br>metadata:<br>  name: tcp-dns-default-se<br>  namespace: istio-system<br>spec:<br>  exportTo:<br>  - <strong>.</strong><br>  hosts:<br>  - &#39;*<strong>.</strong>coredns<strong>.</strong>cluster<strong>.</strong>dns&#39;<br>  location: MESH_EXTERNAL<br>  ports:<br>  - name: tcp-53<br>    number: 53<br>    protocol: TCP<br>  resolution: NONE</pre>
+<p>When using this Service Entry, we get the following error when using the dig command to resolve a domain managed:</p>
+<pre class="ckeditor_codeblock" style="box-sizing: border-box;overflow: auto;font-family: Menlo, Monaco, Consolas, &#39;Courier New&#39;, monospace;font-size: 14px;white-space: pre-wrap;overflow-wrap: break-word;background: none 0% 0% / auto repeat scroll padding-box border-box rgb(245, 245, 245);display: block;padding: 8px;border-image: none 100% / 1 / 0 stretch;margin: 10px 0px;color: #222222;border: 0.727273px solid #cccccc;">#dig test<strong>.</strong>httpbin<strong>.</strong>com NAPTR +tcp<br><br>;; communications error to 198<strong>.</strong>223<strong>.</strong>98<strong><em>.</em></strong>49#53: connection reset </pre>
+<p> </p>
+<h2>Environment</h2>
+<ul><li>Aspen Mesh 1<strong>.</strong>11<strong>.</strong>X 1<strong>.</strong>14<strong>.</strong>X 1<strong>.</strong>18<strong>.</strong>X 1<strong>.</strong>21<strong>.</strong>X</li><li style="box-sizing: border-box;font-family: ProximaNova-Reg, Arial, Helvetica, sans-serif;font-size: 14px;line-height: 21px;margin-bottom: 0px;">Istio Service Entry</li><li>Core DNS</li></ul>
+<h2>Cause</h2>
+<p>The root cause is the usage of <strong>exportTo: [&quot;.&quot; ]</strong> in the ServiceEntry. This configuration limits the visibility of the service entry to the istio-system namespace only. As a result, workloads in other namespaces are unable to route traffic through the service entry to reach the external DNS service, which leads to the failed TCP resolution attempt.</p>
+<h2>Recommended Actions</h2>
+<p>To ensure the ServiceEntry is accessible by workloads in all namespaces:<br><br></p>
+<ol><li>Edit the existing ServiceEntry and remove the exportTo field entirely or set it to [&quot;*&quot;]:<br><pre class="ckeditor_codeblock" style="box-sizing: border-box;overflow: auto;font-family: ProximaNova-Reg, Arial, Helvetica, sans-serif;font-size: 13px;white-space: pre-wrap;overflow-wrap: break-word;background: none 0% 0% / auto repeat scroll padding-box border-box rgb(245, 245, 245);display: block;padding: 8px;border-image: none 100% / 1 / 0 stretch;margin: 10px 0px;color: #181818;border: 0.727273px solid #cccccc;">apiVersion: networking<strong>.</strong>istio<strong>.</strong>io/v1beta1<br>kind: ServiceEntry<br>metadata:<br>  name: tcp-dns-default-se<br>  namespace: istio-system<br>spec:<br>  hosts:<br>  - &#39;*<strong>.</strong>coredns<strong>.</strong>cluster<strong>.</strong>dns&#39;<br>  location: MESH_EXTERNAL<br>  ports:<br>  - name: tcp-53<br>    number: 53<br>    protocol: TCP<br>  resolution: NONE</pre>
+</li><li>
+<p>Validate with the dig command from a workload in a different namespace:</p>
+<pre class="ckeditor_codeblock" style="box-sizing: border-box;overflow: auto;font-family: Menlo, Monaco, Consolas, &#39;Courier New&#39;, monospace;font-size: 14px;white-space: pre-wrap;overflow-wrap: break-word;background: none 0% 0% / auto repeat scroll padding-box border-box rgb(245, 245, 245);display: block;padding: 8px;margin: 10px 0px;color: #222222;border: 0.727273px solid rgb(204, 204, 204);"># dig test<strong>.</strong>httpbin<strong>.</strong>com NAPTR +tcp<br> &lt;&lt;&gt;&gt; DiG 9<strong>.</strong>16<strong>.</strong>1-Ubuntu &lt;&lt;&gt;&gt; test<strong>.</strong>httpbin<strong>.</strong>com NAPTR +tcp<br> global options: +cmd<br> Got answer:<br>-&gt;&gt;HEADER&lt;&lt;- opcode: QUERY, status: NOERROR, id: 12345<br>flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1<br><br>QUESTION SECTION:<br>test<strong>.</strong>httpbin<strong>.</strong>com.          IN      NAPTR<br><br>Query time: 20 msec<br> SERVER: 198<strong>.</strong>223<strong>.</strong>98<strong>.</strong>49#53(TCP)<br> WHEN: Thu Jun 20 13:30:42 UTC 2025<br> MSG SIZE  rcvd: 45</pre>
+<p> </p>
+</li></ol>
+<h2>Additional Information</h2>
+<p>dig, nslookup, and kdig can be used to validate DNS resolution modes. Make sure the query protocol (UDP/TCP) matches the expected routing behavior (e<strong>.</strong>g<strong>.</strong>, dig +tcp vs default UDP).</p>
+</article>
+</body>
+</html>

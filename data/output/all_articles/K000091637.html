@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000091637: Creating a default upstream error pod for all namespaces</title>
+<meta name="description" content="Support Solution: Creating a default upstream error pod for all namespaces — The scenario here is; you have a Kubernetes cluster with an Nginx Ingress Controller, and many Ingress or Virtualserver resources, each in their own namespaces, processing inbound requests. Instead…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000091637">
+</head>
+<body>
+<header>
+<h1>K000091637: Creating a default upstream error pod for all namespaces</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-08-31</dd>
+<dt>Updated</dt><dd>2022-10-19</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000091637">https://my.f5.com/manage/s/article/K000091637</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Description</strong></h2>
+
+<p>The scenario here is; you have a Kubernetes cluster with an Nginx Ingress Controller, and many Ingress or Virtualserver resources, each in their own namespaces, processing inbound requests. Instead of configuring each upstream service/application with it&#39;s own error response page, you can simply configure the ingress controller to intercept specific error responses and then fetch a default error response page from a completely different upstream pod to be returned to the end user.<br><br>If this sounds like a configuration you want to implement, here is a solution to apply the necessary configuration to your Nginx Ingress Controller that will intercept these errors and then fetch a page from another pod that you specify.</p>
+
+<h2><br><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Environment</strong></h2>
+
+<p>Kubernetes<br>Nginx+ Ingress Controller<br> </p>
+
+<h2><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Cause</strong></h2>
+
+<p>You are looking to simplify your error handling in your cluster. Additionally, cross namespace routing is usually only available by mapping a virtualserver to a virtualserverroute resource on a one-to-one basis. If you have hundreds of virtualservers, and don&#39;t want to have to create and manage the same number of virtualserverroutes for a single upstream error service, consider using this solution.<br> </p>
+
+<h2><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Recommended Actions</strong></h2>
+
+<p><span style="font-size: 14px;"><em>Keep in mind that this config solution will not create the upstream error pod, service, or namespace for that pod. These must already exist in your environment to reference them in the config solution below. In the example below, I used a namespace called &quot;error-ns&quot; to put my custom error pod and service into.</em></span></p>
+
+<p><br>Add this http-snippet to the ingress controller&#39;s configmap:<br>   # The server IP below is based on your error service&#39;s IP created in the cluster<br>   # &quot;kubectl get svc&quot; can be used to find this IP address for your cluster</p>
+
+<p><span style="font-size: 10.5pt;font-family: Arial, sans-serif;">===========================================================================</span></p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: nginx-ingress
+data:
+  http-snippets: |
+    upstream error-ns_error_error {
+      zone error-ns_error_error 512k;
+      random two least_conn;
+      server 10.10.10.10:80 max_fails=1 fail_timeout=10s max_conns=0;  # update the IP:port here to your correct upstream service
+    }
+    proxy_intercept_errors on;
+    error_page 501 502 503 = @error;</pre>
+
+<p>The end result of this snippet is the Nginx Ingress Controller will now have a global upstream config block that can be referenced by any other Ingress/Virtualserver resource.<br><br><br><br><br>Next, add this server-snippet to each Ingress/Virtualserver so they can point to the global error upstream that was created above:</p>
+
+<p><span style="font-size: 10.5pt;font-family: Arial, sans-serif;">==================================================================================================</span></p>
+
+<pre class="ckeditor_codeblock">
+server-snippets: |
+  location @error {
+    proxy_pass http://error-ns_error_error;
+  }</pre>
+
+<p> </p>
+
+<p> </p>
+
+<h2><span style="font-family: Calibri, sans-serif;font-size: 11pt;"> </span><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Additional Information</strong></h2>
+
+<p>Using snippets: <br>  https://docs.nginx.com/nginx-ingress-controller/configuration/virtualserver-and-virtualserverroute-resources/#using-snippets <br>  https://docs.nginx.com/nginx-ingress-controller/configuration/ingress-resources/advanced-configuration-with-snippets/<br> </p>
+
+<p>VS/VSR examples listed here for typical cross namespace routing:<br>  https://github.com/nginxinc/kubernetes-ingress/tree/v2.1.2/examples/custom-resources/cross-namespace-configuration</p>
+</article>
+</body>
+</html>

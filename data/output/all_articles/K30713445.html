@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K30713445: APM Client Certificate Authentication fingerprint checking from session variable</title>
+<meta name="description" content="Support Solution: APM Client Certificate Authentication fingerprint checking from session variable — There is BIG-IP APM Client Certificate Authentication agent exists. And some APM Administrators may want to retrieve the client&#x27;s certificate fingerprint from session variable value (and then, for…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K30713445">
+</head>
+<body>
+<header>
+<h1>K30713445: APM Client Certificate Authentication fingerprint checking from session variable</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-06-09</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Virtual Editions</li><li>rSeries Platforms</li><li>BIG-IP Platforms</li><li>VIPRION Platforms</li><li>Public Cloud</li><li>BIG-IP</li><li>BIG-IP APM: 14.X.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 15.X.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 14.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K30713445">https://my.f5.com/manage/s/article/K30713445</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+There is BIG-IP APM Client Certificate Authentication agent exists. And some APM Administrators may want to retrieve the client&#39;s certificate fingerprint from session variable value (and then, for example, confirm if it&#39;s legitimate and correct or if it matches with some correct client certificates fingerprints database values). And this procedure describes how to get the certificate fingerprint value in iRule from session variable value.
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>APM</li><li>Client Certificate Authentication</li><li>Certificate fingerprint (thumbprint)</li><li>iRule</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+None
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ul><li>Get the expected client&#39;s certificate fingerprint </li></ul>
+<span class="example2"># openssl x509 -in client_cert_auth_user.crt -noout -fingerprint<br>SHA1 Fingerprint=<strong>3B:4A:73:12:DA:4A:E4:E2:13:57:B3:45:99:F8:A9:16:38:D3:54:5B</strong></span>
+
+<ul><li>Configure the testing virtual server with apm profile and irule. For example:</li></ul>
+<span class="example2">ltm virtual vs_client_cert_auth {</span><br><span class="example2">[...]<br>    profiles {<br>        ap_client-cert_insp_auth { } &lt;&lt;&lt; (!) the Access-Profile with Client Cert Auth (mode require) agent plus Irule Event Agent &#39;HASH&#39;<br>        cs_profile_client_cert { &lt;&lt;&lt; (!) the client-ssl profile with the corresponding &#39;peer-cert-mode require&#39;<br>            context clientside<br>        }<br>[...]<br>    rules {<br>        case1-7772780341v2 &lt;&lt;&lt; (!) the irule logic which is invoked for VPE&#39;s Irule Event Agent &#39;HASH&#39;<br>    }<br>[...]<br><br>ltm profile client-ssl cs_profile_client_cert {<br>    app-service none<br>    ca-file client_cert_authCA<br>    cert-key-chain {<br>        client_cert_auth_bigip_0 {<br>            cert client_cert_auth_bigip<br>            key client_cert_auth_bigip<br>        }<br>    }<br>    defaults-from clientssl<br>    inherit-ca-certkeychain true<br>    inherit-certkeychain false<br>    peer-cert-mode require &lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt; (!)<br>}</span>
+
+<ul><li>In VPE,  for example, there is the below sequence of agents created:</li></ul>
+Start -&gt; Client Cert Auth agent -&gt; Irule Event (HASH) agent -&gt; Allow
+
+<ul><li>The irule syntax</li></ul>
+<span class="example2"># tmsh list ltm rule irule-article<br>ltm rule irule-article {<br>when ACCESS_POLICY_AGENT_EVENT {<br>switch [ACCESS::policy agent_id] {<br>        &quot;HASH&quot; {<br># getting the whole cert in PEM format from session.ssl.cert.whole which is base64 encoded<br>  set wholecertpem [ACCESS::session data get &quot;session.ssl.cert.whole&quot;]<br>  #log local0. $wholecertpem<br><br># removing PEM format related  &#39;-----BEGIN CERTIFICATE-----&#39;/&#39;-----END CERTIFICATE-----&#39;<br>  set wholecertpem [string map {&quot;-----BEGIN CERTIFICATE-----&quot; &quot;&quot;} $wholecertpem]<br>  set wholecertpem [string map {&quot;-----END CERTIFICATE-----&quot; &quot;&quot;} $wholecertpem]<br><br># removing end of line character &#39;\n&#39; from certificate string<br>  set wholecertpem [string map {&quot;\n&quot; &quot;&quot;} $wholecertpem]<br>  #log local0. $wholecertpem<br><br># bas64 decoding the certificate string<br>  set wholecertbin [b64decode $wholecertpem]<br><br># getting sha1 digest from wholecertbin variable which is the result of apm&#39;s session.ssl.cert.whole<br>  binary scan [sha1 $wholecertbin] H* APMthumbprint<br>  log local0. &quot;APM thumbprint: $APMthumbprint&quot;<br>}<br>}<br>}<br>}</span>
+
+<ul><li>As the result, in LTM Logs, you should get something similar to</li></ul>
+<span class="example2"># tailf /var/log/ltm | grep &#39;irule-article&#39;<br>Nov  4 12:07:37 bigip.local info tmm1[5238]: Rule /Common/irule-article &lt;ACCESS_POLICY_AGENT_EVENT&gt;: APM thumbprint: <strong>3b4a7312da4ae4e21357b34599f8a91638d3545b</strong></span><br> 
+<p><span class="sectiontitle">Additional Information</span></p>
+None
+</article>
+</body>
+</html>

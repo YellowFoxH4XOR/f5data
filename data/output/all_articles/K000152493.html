@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000152493: HTTPS Health Monitor down or flapping after certificate update with encrypted key</title>
+<meta name="description" content="Support Solution: HTTPS Health Monitor down or flapping after certificate update with encrypted key — Jun 12 03:29:31 &lt;hostname&gt; notice mcpd[&lt;pid&gt;]: Pool &lt;pool_name&gt; member &lt;member_name&gt; monitor status up. [ &lt;monitor_name&gt; up ] [ was down for 0hr:2mins:16sec ]">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000152493">
+</head>
+<body>
+<header>
+<h1>K000152493: HTTPS Health Monitor down or flapping after certificate update with encrypted key</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-07-14</dd>
+<dt>Updated</dt><dd>2025-07-14</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.0.0, 15.0.X, 15.0.1, 17.X.X, 16.X.X, 15.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000152493">https://my.f5.com/manage/s/article/K000152493</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>HTTPS health monitors with SSL profiles on BIG-IP LTM, pool members may be incorrectly marked down or experience monitor flapping after updating the SSL certificate. This issue comes with log errors like:</p>
+<p>LTM logs: var/log/ltm</p>
+<p><span style="font-size: 13px;font-family: &#39;courier new&#39;, courier, monospace;">Jun 12 03:29:31 &lt;hostname&gt; notice mcpd[&lt;pid&gt;]: Pool &lt;pool_name&gt; member &lt;member_name&gt; monitor status up. [ &lt;monitor_name&gt; up ]  [ was down for 0hr:2mins:16sec ]<br>Jun 12 03:29:50 &lt;hostname&gt; notice mcpd[&lt;pid&gt;]: Pool &lt;pool_name&gt; member &lt;member_name&gt; monitor status down. [ &lt;monitor_name&gt; down; last error: &lt;monitor_name&gt; Response matched regex @&lt;timestamp&gt;. ]  [ was up for 0hr:0min:19sec ]<br>Jun 12 03:31:02 &lt;hostname&gt; notice mcpd[&lt;pid&gt;]: Pool &lt;pool_name&gt; member &lt;member_name&gt; monitor status up. [ &lt;monitor_name&gt; up ]  [ was down for 0hr:1min:12sec ]<br>Jun 12 03:31:20 &lt;hostname&gt; notice mcpd[&lt;pid&gt;]: Pool &lt;pool_name&gt; member &lt;member_name&gt; monitor status down. [ &lt;monitor_name&gt; down; last error: &lt;monitor_name&gt; Response matched regex @&lt;timestamp&gt;. ]  [ was up for 0hr:0min:18sec ]</span></p>
+<p>When you enable Monitor logging on the node, you will observe log entries similar to the following:</p>
+<p>var/log/monitors/&lt;monitor_name_IP_address&gt;.log</p>
+<p><span style="font-size: 13px;font-family: &#39;courier new&#39;, courier, monospace;">:Cannot load private key from file /config/filestore/files_d/Common_d/certificate_key_d/Common:&lt;...&gt;</span><br><span style="font-size: 13px;font-family: &#39;courier new&#39;, courier, monospace;">:Open SSL error - error:...:digital envelope routines:EVP_DecryptFinal_ex:bad decrypt.</span><br><span style="font-size: 13px;font-family: &#39;courier new&#39;, courier, monospace;">:Open SSL error - error:23077074:PKCS12 routines:PKCS12_pbe_crypt:pkcs12 cipherfinal error.</span><br><span style="font-size: 13px;font-family: &#39;courier new&#39;, courier, monospace;">:Open SSL error - error:2306A075:PKCS12 routines:PKCS12_item_decrypt_d2i:pkcs12 pbe crypt error.</span><br><span style="font-size: 13px;font-family: &#39;courier new&#39;, courier, monospace;">:Open SSL error - error:0907B00D:PEM routines:PEM_READ_BIO_PRIVATEKEY:ASN1 lib.</span></p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>HTTPS Health Monitor
+<ul><li>SSL Profiles</li><li>SSL key is encrypted with a passphrase</li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p>The external monitoring process (bigd) does not support loading or using encrypted (passphrase-protected) private keys for HTTPS monitors. bigd relies on OpenSSL, which cannot access an encrypted key without manual passphrase entry at runtime. In contrast, in-TMM monitoring can use encrypted keys because it leverages TMM, which has access to decrypted key material in memory.</p>
+<h2>Recommended Actions</h2>
+<p>To resolve this issue, choose one of the following solutions:</p>
+<p><strong>Option 1: </strong>Enable in-TMM monitoring for HTTPS monitors that use SSL profiles with encrypted private keys. In-TMM monitoring natively supports server-SSL profiles and can handle encrypted keys. </p>
+<p><em><span style="color: #15891f;"><strong>Note: </strong>If you have a large number of HTTPS monitors with custom cipher strings, review compatibility before enabling in-TMM monitoring, as cipher string syntax differs between OpenSSL (bigd) and TMM.</span></em></p>
+<p>To enable in-TMM monitoring:</p>
+<p><span style="background-color: #f1f1f1;">tmsh modify sys db bigd.tmm value enable</span></p>
+<p><strong>Option 2: </strong>Remove the passphrase from the private key before importing it into BIG-IP. This allows the bigd process to load the key successfully. Perform the following procedure:</p>
+<p><strong>Impact of procedure: </strong>If you add a passphrase to a key that a virtual server is currently using, SSL connections to the virtual server may fail until the system updates the related SSL profile configuration with the newly added passphrase and loads the changes into memory. To avoid service disruption, perform this procedure during a scheduled outage.</p>
+<p>1. Log in to the command line.</p>
+<p>2. Change directories to </p>
+<p><span style="background-color: #f1f1f1;">cd /config/filestore/files_d/Common_d/certificate_key_d/</span></p>
+<p>3. Locate the private SSL key that you want to remove a passphrase from, and then use the following command syntax:</p>
+<p><span style="background-color: #f1f1f1;">openssl rsa -in &lt;encrypted name&gt;.key -out &lt;unencrypted name&gt;.key</span></p>
+<p>4. Install the unencrypted SSL private key into the BIG-IP filestore by using the following command syntax<span style="background-color: #f1f1f1;">:</span></p>
+<p><span style="background-color: #f1f1f1;">tmsh install /sys crypto key &lt;key_name&gt; from-local-file &lt;key_path_and_name&gt;</span></p>
+<p>5. Save your changes by entering the following command:</p>
+<p><span style="background-color: #f1f1f1;">tmsh save sys config</span></p>
+<p>6. Update the corresponding SSL profiles and remove the passphrase for the SSL keys that are no longer encrypted.</p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

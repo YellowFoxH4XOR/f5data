@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K09533675: Upgrading a VIPRION to version 16.1.2.2 all secondary blades remain offline.</title>
+<meta name="description" content="Support Solution: Upgrading a VIPRION to version 16.1.2.2 all secondary blades remain offline. — After upgrade a VIPRION to 16.1.2.2 all secondary blades status stayed on offline state. Prompt in CLI shows inoperative.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K09533675">
+</head>
+<body>
+<header>
+<h1>K09533675: Upgrading a VIPRION to version 16.1.2.2 all secondary blades remain offline.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-06-14</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>VIPRION Platforms</li><li>BIG-IP</li><li>BIG-IP FPS: 16.1.2</li><li>BIG-IP LTM: 16.1.2</li><li>BIG-IP DNS: 16.1.2</li><li>BIG-IP AFM: 16.1.2</li><li>BIG-IP Analytics: 16.1.2</li><li>BIG-IP APM: 16.1.2</li><li>BIG-IP ASM: 16.1.2</li><li>BIG-IP PEM: 16.1.2</li><li>BIG-IP Link Controller: 16.1.2</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K09533675">https://my.f5.com/manage/s/article/K09533675</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>After upgrade a VIPRION to 16.1.2.2 all secondary blades status stayed on offline state. Prompt in CLI shows inoperative.</p>
+
+<pre style="margin-left: 40px;">
+<span class="code"># tmsh show /sys cluster
+
+-----------------------------------------
+Sys::Cluster: default
+-----------------------------------------
+Address                 10.10.10.1/24
+Alt-Address             ::
+Availability            available
+State                   enabled
+Reason                  Cluster Enabled
+Primary Slot ID         1
+Primary Selection Time  06/04/22 21:11:02
+
+  ------------------------------------------------------------------------------------------------------------
+  | Sys::Cluster Members
+  | ID  Address     Alt-Address  Availability  State    Licensed  HA       Clusterd  Reason
+  ------------------------------------------------------------------------------------------------------------
+  | 1   10.10.10.2  ::           available     enabled  true      active   running   Run
+  | 2   10.10.10.3  ::           offline       enabled  false     offline  running   Run, HA TABLE offline
+  | 3   10.10.10.4  ::           offline       enabled  false     offline  running   Run, HA TABLE offline
+  | 4   ::          ::           unknown       enabled  false     unknown  shutdown  Slot powered off or empty</span></pre>
+
+<p style="margin-left: 40px;"> </p>
+
+<p>In <strong>/var/log/ltm</strong> log, you would see similar messages as below are logged.</p>
+
+<pre style="margin-left: 40px;">
+<span class="example2">notice sod[7438]: 010c0063:5: Waiting for Mcpd without a response. Try again...
+notice sod[7438]: 010c0063:5: Waiting for Mcpd without a response. Try again...
+notice sod[7438]: 010c0063:5: Waiting for Mcpd without a response. Try again...
+notice sod[7438]: 010c0063:5: Waiting for Mcpd without a response. Try again...
+notice sod[7438]: 010c0063:5: Waiting for Mcpd without a response. Try again...
+notice sod[7438]: 010c0064:5: Waiting for Mcpd without a response. Happened 5 times. Reconnect.
+warning diskmonitor[12378]: 011d0002:4: Cannot access the database because mcpd is not running.
+err syscalld[8480]: 0127000a:3: OPERATION_TIMEOUT -- the operation /usr/bin/mprov.pl (pid 9887) may be hung or taking a long time.
+err syscalld[8480]: 0127000a:3: OPERATION_TIMEOUT -- the operation /usr/bin/mprov.pl (pid 9887) timed out, so we are no longer monitoring it.
+warning diskmonitor[14160]: 011d0002:4: Cannot access the database because mcpd is not running.
+warning diskmonitor[16336]: 011d0002:4: Cannot access the database because mcpd is not running.
+warning diskmonitor[18075]: 011d0002:4: Cannot access the database because mcpd is not running.</span></pre>
+
+<pre>
+ </pre>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>VIPRION</li><li>Upgrade to version 16.1.2.2</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br><a href="https://cdn.f5.com/product/bugtracker/ID1083977.html" target="_self">Bug ID 1083977: MCPD crashes when changing HTTPD configuration, all secondary blades of clustered system remain offline</a></p>
+For the issue described in this article, the following change to the HTTPD configuration caused the issue:
+
+<pre>
+<span class="code">sys httpd {
+    auth-pam-dashboard-timeout on
+    <strong>redirect-http-to-https enabled</strong>   &lt;---!!!
+    ssl-protocol &quot;ALL -TLSv1 -TLSv1.1 -SSLv2 -SSLv3&quot;
+}
+</span></pre>
+
+<p>You can view this output by viewing the <strong>/config/bigip_base.conf</strong> file or entering the following command on the bash shell:</p>
+
+<pre>
+<span class="code">tmsh list sys httpd</span>
+</pre>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+To work around the issue, you may follow the following procedures:
+
+<ol><li>Log in to the CLI of the primary blade</li><li>Verify if the affected HTTP configuration is made either by viewing the <strong>/config/bigip_base.conf</strong> file or entering the <strong>tmsh list sys httpd</strong> command:
+	<p>Do not proceed further if this is not configured. This article applies only when this is configured.</p>
+
+	<p><span class="code">redirect-http-to-https enabled </span></p>
+	</li><li>Make a backup of the /config/bigip.conf file by typing the following command: 
+	<p><span class="code"># cp /config/bigip_base.conf /config/bigip_base.conf_backup</span></p>
+	</li><li>Edit <strong>/config/bigip_base.conf</strong>  using text editor, such as pico or vi.</li><li>Remove the following line:
+	<p><strong>redirect-http-to-https enabled</strong></p>
+	</li><li>Save the file, If using vi, select ESC and enter the following command:
+	<p><span class="code">:wq!</span></p>
+	</li><li>Load the config   
+	<p><span class="code">tmsh load sys config</span></p>
+	</li><li>SSH to secondary slot straight away, reboot it
+	<p><span class="code">reboot</span></p>
+	</li><li>Wait for both slots to come back up.</li><li>Move the VCMP to <strong>Configured</strong> and back to <strong>Deployed</strong> to give it another proper reboot</li><li>Ensure all VCMP host-to-guest services work.</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+None
+</article>
+</body>
+</html>

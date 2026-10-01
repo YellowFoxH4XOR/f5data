@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K75549932: IPSec Event not Displaying in BIG-IQ CM</title>
+<meta name="description" content="Support Solution: IPSec Event not Displaying in BIG-IQ CM — Even after configuring all necessary data needed to view IPecs Event log in BIG-IQ, Configuration utility (GUI) pane will still not show any data.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K75549932">
+</head>
+<body>
+<header>
+<h1>K75549932: IPSec Event not Displaying in BIG-IQ CM</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-11-01</dd>
+<dt>Updated</dt><dd>2025-02-07</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Virtual Editions</li><li>BIG-IQ</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K75549932">https://my.f5.com/manage/s/article/K75549932</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<div>Even after configuring all necessary data needed to view IPecs Event log in BIG-IQ, Configuration utility (GUI) pane will still not show any data. </div>
+
+<div>The same is true when you run below on CLI:<br>      #curl localhost:9200/ipsec* -s   | jq .</div>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>
+	<div>BIG-IQ</div>
+	</li><li>
+	<div>BIG-IP</div>
+	</li><li>
+	<div>IPSec event logs</div>
+	</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<div>IPSec event logs are normally processed as follows:<br><br>1. BIG-IP is configured to send the IPSec logs to DCD (port 9997).<br>2. DCD formats logs, and store them on ElasticSearch.<br>3. When user launches BIG-IQ CM GUI (at /ui/monitoring/events/ipsec/events), it queries elastic search for the events<br> </div>
+
+<div>The problem is at step 2, BIG-IP data pump via POST is failing to store data into elastic search. The restjavad service on the DCD is getting an incorrect configuration from the CM, and it&#39;s trying to store the logs in an index/type that doesn&#39;t exist.<br><br>This is currently a known issue and is tracked under ID 935941.</div>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+To address the above mentioned issue, the either of the following is recommended:<br><br>1. Change the listener config on every DCD. This will update the listener configuration to store the events in the correct index. To do so, you can run the following commands on every DCD:<br><br>ID=$(restcurl /cm/shared/hsl/listener-tasks | jq .items[]  -c | grep ipsec-event-logs | jq .id -r )  ;<br>restcurl /cm/shared/hsl/listener-tasks/$ID | jq &#39;.|{eventParserConfigs:.eventParserConfigs}&#39; &gt; /var/tmp/eventparser.json ;<br>cat /var/tmp/eventparser.json | jq . | sed   &#39;s/\&quot;esKeyValueIndexName\&quot;: \&quot;ipsec-event-logs\&quot;/\&quot;esKeyValueIndexName\&quot;: \&quot;ipsec-event-logs_writer\/eventlog\&quot;/g&#39; &gt; /var/tmp/eventparser_final.json ;<br>curl &quot;localhost:8100/cm/shared/hsl/listener-tasks/$ID&quot; -X PATCH -d @/var/tmp/eventparser_final.json -s | jq .  ;<br>bigstart restart restjavad  ;<br><br>2. Contact support and check if hotfix can be provided for ID 935941.
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p> </p>
+</article>
+</body>
+</html>

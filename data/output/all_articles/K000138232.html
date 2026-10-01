@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000138232: Replaced VELOS System Controller does not join cluster when Internal Chassis Networking configured to RFC1918</title>
+<meta name="description" content="Support Solution: Replaced VELOS System Controller does not join cluster when Internal Chassis Networking configured to RFC1918 — If a VELOS system is configured to use RFC1918 address space for the Internal Chassis Networking, a new system controller will fail to automatically join the cluster. This can occur if a clean…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000138232">
+</head>
+<body>
+<header>
+<h1>K000138232: Replaced VELOS System Controller does not join cluster when Internal Chassis Networking configured to RFC1918</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-01-15</dd>
+<dt>Updated</dt><dd>2026-02-12</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS</li><li>VELOS Platforms</li><li>F5OS-C</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000138232">https://my.f5.com/manage/s/article/K000138232</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<p>If a VELOS system <a href="https://clouddocs.f5.com/training/community/velos-training/html/initial_setup_of_velos_system_controllers.html#internal-chassis-ip-ranges" target="_blank">is configured to use RFC1918 address space</a> for the Internal Chassis Networking, a new system controller will fail to automatically join the cluster.  This can occur if a clean install is performed on a VELOS system controller, or if the controller is replaced via a Return Materials Authorization (RMA).</p>
+<p><em><span style="color: #15891f;"><strong>Note</strong>: For information on replacing a system controller in a VELOS chassis, refer to </span></em><em><a href="https://my.f5.com/manage/s/article/K000133249" target="_blank">K000133249: Replacing VELOS system controller after a Return Materials Authorization</a><span style="color: #15891f;">.</span></em></p>
+<p>The active system controller will report in the &quot;<span style="font-family: &#39;courier new&#39;, courier, monospace;">show cluster</span>&quot; output that a controller is present in the cluster, but it is not able to ping it:</p>
+<p><code>syscon-1-active# show cluster<br>                                                               ABLE   ABLE<br>                                             IN       READY    TO     TO<br>INDEX  NAME                        INSERTED  CLUSTER  CLUSTER  PING   SSH    STATE<br>-----------------------------------------------------------------------------------------<br>1      controller-1.chassis.local  true      true     false    false  false  In Cluster<br>2      controller-2.chassis.local  true      true     true     true   true   In Cluster</code></p>
+<p>The two system controllers will have IP addresses in different subnets assigned on the &quot;ccpeer&quot; network interface, which can be examined by logging into each system controller as root and running &quot;<span style="font-family: &#39;courier new&#39;, courier, monospace;">ip -4 addr show dev ccpeer</span>&quot;:</p>
+<p><code>[root@controller-<strong>1</strong>(VELOS):Active ~]# ip -4 addr show dev ccpeer<br>3: ccpeer: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc mq state UP group default qlen 1000<br>    inet <strong>10.225.7.51/24</strong> brd 10.225.7.255 scope global noprefixroute ccpeer<br>       valid_lft forever preferred_lft forever<br>    inet 10.225.7.50/24 brd 10.225.7.255 scope global secondary noprefixroute ccpeer<br>       valid_lft forever preferred_lft forever<br><br>[root@controller-<strong>2</strong> ~]# ip -4 addr show dev ccpeer<br>3: ccpeer: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc mq state UP group default qlen 1000<br>    inet <strong>100.65.7.52/24</strong> brd 100.65.7.255 scope global noprefixroute ccpeer<br>       valid_lft forever preferred_lft forever</code></p>
+<p>On the replaced system controller, there will be logs similar to the following repeating:</p>
+<p><strong>/var/log/messages</strong><br><span style="font-family: Courier New,Courier,monospace;">journal: DEBUG Failed to connect to ConfD: No route to host</span></p>
+<p><strong>/var/log_controller/cc-confd</strong><br><span style="font-family: Courier New,Courier,monospace;">&lt;err&gt; Mmm DD HH:MM:SS maintain_confd: confd --start-phase1: failed (exited code 1)<br>&lt;emerg&gt; Mmm DD HH:MM:SS clear_config: failed to upgrade, will try restore last version</span></p>
+<p> </p>
+<h2><strong>Environment</strong></h2>
+<ul><li>Velos</li><li>F5OS-C</li><li>System Controller</li><li>Configured with RFC1918 Internal IP range</li><li>RMA or clean install</li></ul>
+<p> </p>
+<h2><strong>Cause</strong></h2>
+<ul><li><a href="https://cdn.f5.com/product/bugtracker/ID1067757.html" target="_blank">Bug ID 1067757</a></li></ul>
+<p> </p>
+<h2><strong>Recommended Actions</strong></h2>
+<p><br>To fix this issue, perform the following steps:</p>
+<ol><li>Log into the active (healthy) system controller as root, and run the following command:<br><code>grep -vE &#39;^(#|$)&#39; /etc/sysconfig/chassis_network_config.txt<br></code><br>The output should look similar to this:<br><br><code>[root@controller-1(VEL410) ~]# grep -vE &#39;^(#|$)&#39; /etc/sysconfig/chassis_network_config.txt<br>network_range_type=RFC1918<br>chassis_network_selection=14<br>chassis_id=4<br>network_prefix=10.228<br>[root@controller-1(VEL410) ~]#</code></li><li>Log into the newly-installed (unhealthy) system controller as root, and run the following command:<br><code>grep -vE &#39;^(#|$)&#39; /etc/sysconfig/chassis_network_active.txt</code><br><br>On a functioning system, the output should match the output from the active system controller, but it is likely it will be different, e.g.:<br><code>[root@controller-2(VEL410) ~]# grep -vE &#39;^(#|$)&#39; /etc/sysconfig/chassis_network_config.txt<br>network_range_type=RFC6598<br>chassis_network_selection=0<br>chassis_id=1<br>network_prefix=100.65<br>[root@controller-2(VEL410) ~]#</code></li><li>If the output from the two commands do not match, edit the command does not match the healthy system controller, then on the <em>unhealthy</em> system controller, create the file <strong>/etc/sysconfig/chassis_network_override.txt</strong> and copy the contents from the <em>healthy</em> system controller.</li><li>On the <em>unhealthy</em> system controller, wait for platform-services-deployment to finish starting up before proceeding by monitoring one of the following commands:<br><code>systemctl status -l platform-services-deployment<br>journalctl -f -u platform-services-deployment</code><br>When it&#39;s finished (which should take about 15 minutes), the output should look similar to this:<br><code>[root@controller-2 ~]# systemctl status -l platform-services-deployment<br>● platform-services-deployment.service - Launch platform service containers through Docker Compose
+   Loaded: loaded (/usr/lib/systemd/system/platform-services-deployment.service; static; vendor preset: disabled)
+   Active: active (exited) since Thu 2025-11-13 15:27:37 PST; 1min 30s ago       &lt;-----
+ Main PID: 21758 (code=exited, status=0/SUCCESS)
+    Tasks: 0
+   Memory: 0B
+   CGroup: /system.slice/platform-services-deployment.service
+[...]
+Nov 13 15:27:37 controller-2.chassis.local platform-deployment[21758]: Platform services done
+Nov 13 15:27:37 controller-2.chassis.local systemd[1]: Started Launch platform service containers through Docker Compose.
+[root@controller-2 ~]#</code></li><li>After the file has been created and platform-services-deployment has started, reboot the unhealthy system controller:<br><code>reboot</code></li></ol>
+<p><em><span style="color: #15891f;"><strong>Note</strong>: Once this workaround has been applied, it may take up to 1.5 hours for the system controllers to cluster.  Monitor <strong>/var/log/openshift.log</strong> on the active system controller to see the progress.</span></em></p>
+<p> </p>
+<h2><strong>Additional Information</strong></h2>
+</article>
+</body>
+</html>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161411: Post-Quantum Cryptography (PQC) failing with Qualys SSL Labs</title>
+<meta name="description" content="Support Solution: Post-Quantum Cryptography (PQC) failing with Qualys SSL Labs — This is a day-1 issue affecting any PQC-supported BIG-IP build where the cipher rule ordering places hybrid KEM first.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161411">
+</head>
+<body>
+<header>
+<h1>K000161411: Post-Quantum Cryptography (PQC) failing with Qualys SSL Labs</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-05-25</dd>
+<dt>Updated</dt><dd>2026-05-25</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161411">https://my.f5.com/manage/s/article/K000161411</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2 style="box-sizing: border-box;margin: 0px 0px 12px;padding: 0px;font-family: NeusaNextProWideMedium-normal-expanded, Arial, Helvetica, sans-serif;font-size: 22px;line-height: 33px;color: #222222;white-space: normal;background-color: #ffffff;">Description</h2>
+<p>This is a day-1 issue affecting any PQC-supported BIG-IP build where the cipher rule ordering places hybrid KEM first. <br>Client-side tools (e.g., OpenSSL, curl with OpenSSL backend) report:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>root@test_ubuntu:~$ curl -skv --tlsv1.2 --tls-max 1.2 https://10.10.10.100/
+Trying 10.10.10.100:443...
+Connected to 10.10.10.100 (10.10.10.100) port 443
+ALPN: curl offers h2,http/1.1
+TLSv1.2 (OUT), TLS handshake, Client hello (1):
+TLSv1.2 (IN), TLS handshake, Server hello (2):
+TLSv1.2 (IN), TLS handshake, Certificate (11):
+TLSv1.2 (IN), TLS handshake, Server key exchange (12):
+TLSv1.2 (OUT), TLS alert, illegal parameter (559):
+OpenSSL/3.0.13: error:0A00017A:SSL routines::wrong curve        ### &lt;&lt;&lt;===---!!!  This is the problem. 
+Closing connection</code></pre>
+<h2 style="line-height: 33px;">Environment</h2>
+<ul><li>BIG-IP TMOS 17.5.1 or later (X25519MLKEM768 support requires 17.5.1+)</li><li>TLS 1.2 enabled on the Client-SSL profile</li><li>Virtual Server</li></ul>
+<h2 style="line-height: 33px;">Cause</h2>
+<p>When a cipher rule is configured with hybrid KEM (Post-Quantum) algorithms listed before their corresponding classic DH-group algorithms, BIG-IP incorrectly selects the DH group ID during TLS 1.2 handshakes. The BIG-IP sends an invalid/unknown elliptic curve value in the ServerKeyExchange message, causing the client to terminate the connection with a fatal <span style="font-family: &#39;courier new&#39;, courier, monospace;">illegal_parameter</span> alert. <a href="https://cdn.f5.com/product/bugtracker/ID2064505.html" target="_self">Bug ID 2064505</a></p>
+<h2 style="line-height: 33px;">Answer/Recommended Actions</h2>
+<p>Upgrade to version 21.x.x or apply the work around below.</p>
+<p>Use the <strong>classic DH-group algorithms</strong> first, before the <strong>hybrid KEM algorithms</strong>.</p>
+<ol><li>Navigate to <strong>Local Traffic</strong> &gt; <strong>Ciphers</strong> &gt; <strong>Rules</strong></li><li>Select the existing PQC Cipher Rule you configured</li><li>Set DH Groups to:<strong> X25519:X25519MLKEM768</strong></li><li>Click <strong>Update</strong></li></ol>
+<h2 style="line-height: 33px;">Additional Information</h2>
+<p>Failing configuration example:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ltm cipher rule group1 {
+  cipher rule1
+  dh-groups X25519MLKEM768:X25519       ### &lt;&lt;&lt;===---!!! Hybrid KEM first = BUG TRIGGERED
+}</code></pre>
+<p>Working configuration example:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ltm cipher rule group1 {
+  cipher rule1
+  dh-groups X25519:X25519MLKEM768       ### &lt;&lt;&lt;===---!!! Classic first = No issue
+}</code></pre>
+</article>
+</body>
+</html>

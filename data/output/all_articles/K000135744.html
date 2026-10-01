@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000135744: Disable X-Envoy-Peer-Metadata and X-Envoy-Peer-Metadata-Id request headers</title>
+<meta name="description" content="Support Solution: Disable X-Envoy-Peer-Metadata and X-Envoy-Peer-Metadata-Id request headers — Envoy sidecar (istio-proxy container) adds headers x-envoy-peer-metadata and x-envoy-peer-metadata-id to requests. These headers are incurring extra bytes for each packet and contain sensitive…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000135744">
+</head>
+<body>
+<header>
+<h1>K000135744: Disable X-Envoy-Peer-Metadata and X-Envoy-Peer-Metadata-Id request headers</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-08-04</dd>
+<dt>Updated</dt><dd>2023-08-23</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.11</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000135744">https://my.f5.com/manage/s/article/K000135744</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>Envoy sidecar (istio-proxy container) adds headers <em>x-envoy-peer-metadata</em> and <em>x-envoy-peer-metadata-id </em>to requests. These headers are incurring extra bytes for each packet and contain sensitive information about the Kubernetes environment.</p>
+
+<h2><br><strong>Environment</strong></h2>
+
+<p>Aspen Mesh 1.11.x<br> </p>
+
+<h2><strong>Cause</strong></h2>
+
+<p>Envoy adds these headers to requests with base64 encoded information as the header value.<br> </p>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>These headers can be removed using a VirtualService (preferred way) or using an EnvoyFilter.<br><br>VirtualService - <em>Preferred Way</em></p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: networking<strong>.</strong>istio<strong>.</strong>io/v1beta1
+kind: VirtualService
+metadata:
+  name: remove-headers
+spec:
+  hosts:
+  - httpbin<strong>.</strong>org
+  http:
+  - match:
+    - uri:
+        prefix: /headers
+        ignoreUriCase: true
+    route:
+    - destination:
+        host: httpbin<strong>.</strong>org
+        port:
+          number: 80
+      headers:
+        request:
+          remove:
+          - X-Envoy-Peer-Metadata
+          - X-Envoy-Peer-Metadata-Id</pre>
+
+<p><br>EnvoyFilter - <em>Keep in mind that EnvoyFilter configuration and features may change in future versions and these EnvoyFilter may not work or provide the desired results. Likewise, the EnvoyFilter needs to be tested thoroughly to prevent unexpected behavior on a production environment.</em></p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: networking<strong>.</strong>istio<strong>.</strong>io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: remove-headers-filter
+  namespace: istio-system
+spec:
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      listener:
+        filterChain:
+          filter:
+            name: &quot;envoy<strong>.</strong>filters<strong>.</strong>network<strong>.</strong>http_connection_manager&quot;
+            subFilter:
+              name: &quot;envoy<strong>.</strong>filters<strong>.</strong>http.router&quot;
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy<strong>.</strong>lua
+        typed_config:
+          &quot;@type&quot;: &quot;type<strong>.</strong>googleapis<strong>.</strong>com/envoy<strong>.</strong>extensions<strong>.</strong>filters<strong>.</strong>http<strong>.</strong>lua<strong>.</strong>v3<strong>.</strong>Lua&quot;
+          inlineCode: |
+            function envoy_on_request(request_handle)
+              request_handle:headers():remove(&quot;X-Envoy-Peer-Metadata&quot;)
+              request_handle:headers():remove(&quot;X-Envoy-Peer-Metadata-Id&quot;)
+            end</pre>
+
+<p>or</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: networking<strong>.</strong>istio<strong>.</strong>io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: remove-headers
+  namespace: istio-system
+spec:
+  configPatches:
+  - applyTo: NETWORK_FILTER
+    match:
+      listener:
+        filterChain:
+          filter:
+            name: &quot;envoy<strong>.</strong>filters<strong>.</strong>network<strong>.</strong>http_connection_manager&quot;
+    patch:
+      operation: MERGE
+      value:
+        typed_config:
+          &quot;@type&quot;: &quot;type<strong>.</strong>googleapis<strong>.</strong>com/envoy<strong>.</strong>extensions<strong>.</strong>filters<strong>.</strong>network<strong>.</strong>http_connection_manager<strong>.</strong>v3<strong>.</strong>HttpConnectionManager&quot;
+  - applyTo: ROUTE_CONFIGURATION
+    patch:
+      operation: MERGE
+      value:
+        request_headers_to_remove:
+        - &quot;X-Envoy-Peer-Metadata&quot;
+        - &quot;X-Envoy-Peer-Metadata-Id&quot;</pre>
+
+<p> </p>
+
+<h2><strong>Additional Information</strong></h2>
+
+<p>Before applying the VS or any of the EnvoyFilter</p>
+
+<pre class="ckeditor_codeblock">
+nettools-69c48ffbd9-fpqrx:~#  curl -sSvv http<strong>:</strong>//httpbin<strong>.</strong>org/headers
+*   Trying 54.204.94.184:80...
+* Connected to httpbin<strong>.</strong>org (54.204.94.184) port 80 (#0)
+&gt; GET /headers HTTP/1.1
+&gt; Host: httpbin<strong>.</strong>org
+&gt; User-Agent: curl/8.0.1
+&gt; Accept: */*
+&gt;
+&lt; HTTP/1.1 200 OK
+&lt; date: Wed, 02 Aug 2023 23:52:11 GMT
+&lt; content-type: application/json
+&lt; content-length: 1223
+&lt; server: envoy
+&lt; access-control-allow-origin: *
+&lt; access-control-allow-credentials: true
+&lt; x-envoy-upstream-service-time: 213
+&lt;
+{
+  &quot;headers&quot;: {
+    &quot;Accept&quot;: &quot;*/*&quot;,
+    &quot;Host&quot;: &quot;httpbin<strong>.</strong>org&quot;,
+    &quot;User-Agent&quot;: &quot;curl/8.0.1&quot;,
+    &quot;X-Amzn-Trace-Id&quot;: &quot;Root=1-64caec2b-2676a777598d311b11b22c65&quot;,
+    &quot;X-B3-Sampled&quot;: &quot;0&quot;,
+    &quot;X-B3-Spanid&quot;: &quot;2fb1d01b1b7a01d8&quot;,
+    &quot;X-B3-Traceid&quot;: &quot;361037982c069e392fb1d01b1b7a01d8&quot;,
+    &quot;X-Envoy-Attempt-Count&quot;: &quot;1&quot;,
+    &quot;X-Envoy-Decorator-Operation&quot;: &quot;httpbin<strong>.</strong>org:80/*&quot;,
+<strong>    &quot;X-Envoy-Peer-Metadata&quot;: &quot;ChwKDkFQUF9DT05UQUlORVJTEgoaCG5ldHNob290ChoKCkNMVVNURVJfSUQSDBoKS3ViZXJuZXRlcwodCg1JU1RJT19WRVJTSU9OEgwaCjEuMTEuOC1hbTEKygEKBkxBQkVMUxK/ASq8AQoRCgNhcHASChoIbmV0dG9vbHMKIQoRcG9kLXRlbXBsYXRlLWhhc2gSDBoKNjljNDhmZmJkOQokChlzZWN1cml0eS5pc3Rpby5pby90bHNNb2RlEgcaBWlzdGlvCi0KH3NlcnZpY2UuaXN0aW8uaW8vY2Fub25pY2FsLW5hbWUSChoIbmV0dG9vbHMKLwojc2VydmljZS5pc3Rpby5pby9jYW5vbmljYWwtcmV2aXNpb24SCBoGbGF0ZXN0ChoKB01FU0hfSUQSDxoNY2x1c3Rlci5sb2NhbAojCgROQU1FEhsaGW5ldHRvb2xzLTY5YzQ4ZmZiZDktZnBxcngKFgoJTkFNRVNQQUNFEgkaB2RlZmF1bHQKTAoFT1dORVISQxpBa3ViZXJuZXRlczovL2FwaXMvYXBwcy92MS9uYW1lc3BhY2VzL2RlZmF1bHQvZGVwbG95bWVudHMvbmV0dG9vbHMKFwoRUExBVEZPUk1fTUVUQURBVEESAioAChsKDVdPUktMT0FEX05BTUUSChoIbmV0dG9vbHM=&quot;,
+    &quot;X-Envoy-Peer-Metadata-Id&quot;: &quot;sidecar~10.244.1.5~nettools-69c48ffbd9-fpqrx.default~default.svc.cluster.local&quot;</strong>
+  }
+}
+* Connection #0 to host httpbin<strong>.</strong>org left intact</pre>
+
+<p><br>After Applying the VS or any of the EnvoyFilter</p>
+
+<pre class="ckeditor_codeblock">
+nettools-69c48ffbd9-fpqrx:~#  curl -sSvv http<strong>:</strong>//httpbin<strong>.</strong>org/headers
+*   Trying 54.204.94.184:80...
+* Connected to httpbin<strong>.</strong>org (54.204.94.184) port 80 (#0)
+&gt; GET /headers HTTP/1.1
+&gt; Host: httpbin<strong>.</strong>org
+&gt; User-Agent: curl/8.0.1
+&gt; Accept: */*
+&gt;
+&lt; HTTP/1.1 200 OK
+&lt; date: Wed, 02 Aug 2023 23:57:35 GMT
+&lt; content-type: application/json
+&lt; content-length: 393
+&lt; server: envoy
+&lt; access-control-allow-origin: *
+&lt; access-control-allow-credentials: true
+&lt; x-envoy-upstream-service-time: 470
+&lt;
+{
+  &quot;headers&quot;: {
+    &quot;Accept&quot;: &quot;*/*&quot;,
+    &quot;Host&quot;: &quot;httpbin<strong>.</strong>org&quot;,
+    &quot;User-Agent&quot;: &quot;curl/8.0.1&quot;,
+    &quot;X-Amzn-Trace-Id&quot;: &quot;Root=1-64caed6e-256ada0d2291bb781b2a5f47&quot;,
+    &quot;X-B3-Sampled&quot;: &quot;0&quot;,
+    &quot;X-B3-Spanid&quot;: &quot;dc7118a7133b63f2&quot;,
+    &quot;X-B3-Traceid&quot;: &quot;adc9a8f07332735ddc7118a7133b63f2&quot;,
+    &quot;X-Envoy-Attempt-Count&quot;: &quot;1&quot;,
+    &quot;X-Envoy-Decorator-Operation&quot;: &quot;httpbin<strong>.</strong>org:80/headers*&quot;
+  }
+}
+* Connection #0 to host httpbin<strong>.</strong>org left intact</pre>
+
+<p><br>Remember for external traffic you may need a ServiceEntry</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: networking<strong>.</strong>istio<strong>.</strong>io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: se-httpbin-org
+spec:
+  hosts:
+  - httpbin<strong>.</strong>org
+  location: MESH_EXTERNAL
+  ports:
+  - name: http
+    number: 80
+    protocol: HTTP
+  resolution: DNS
+</pre>
+</article>
+</body>
+</html>

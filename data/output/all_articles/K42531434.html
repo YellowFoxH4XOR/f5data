@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K42531434: Replacing the Configuration utility&#x27;s self-signed device certificate with a CA-signed device certificate</title>
+<meta name="description" content="Knowledge: Replacing the Configuration utility&#x27;s self-signed device certificate with a CA-signed device certificate — You want to avoid SSL certificate alert messages when connecting to the Configuration utility.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K42531434">
+</head>
+<body>
+<header>
+<h1>K42531434: Replacing the Configuration utility&#x27;s self-signed device certificate with a CA-signed device certificate</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2019-08-28</dd>
+<dt>Updated</dt><dd>2026-02-10</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K42531434">https://my.f5.com/manage/s/article/K42531434</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3>
+<p>This article covers how to create your own local Root CA to sign the certificate for the Configuration utility. To create a certificate signed by your organization&#39;s CA for the Configuration utility instead, refer to the following article:</p>
+<ul><li><a href="https://my.f5.com/manage/s/article/K51035715" target="_self">K51035715: Replace the Configuration utility&#39;s self-signed device certificate with a certificate signed by your organization&#39;s CA</a></li></ul>
+<p>You should consider using this procedure under the following conditions:</p>
+<ul><li>You want to avoid SSL certificate alert messages when connecting to the Configuration utility.</li><li>You have a Certificate Authority (CA)-signed SSL certificate or want to create a local CA to sign SSL certificates.</li></ul>
+<h3>Description</h3>
+<p>The Configuration utility uses a self-signed SSL device certificate by default. When you access the Configuration utility, most web browsers generate an alert message and pause the connection until a web browser security exception is made. You can make a single security exception and access the Configuration utility without future alerts. The web browser security icon continues to show the Configuration utility as an insecure site. However, if you prefer to not make a web browser security exception and have the web browser security icon indicate a secure site, you can do the following:</p>
+<ul><li>Replace the Configuration utility&#39;s self-signed device certificate with a CA-signed SSL certificate.</li><li>Import the CA signing certificate into the client Web browser&#39;s Trusted Root CA certificate store.</li></ul>
+<p><span class="note"><strong>Note</strong>: If you already have the CA-signed certificate and chain certificate (when required) from a Trusted Root CA, read through the first procedure to ensure that the SSL certificate properties are configured correctly.</span></p>
+<p><span class="note"><strong>Note</strong>: If your BIG-IP system is managed by a BIG-IQ system, replacing the BIG-IP Configuration utility&#39;s self-signed SSL certificate does not affect the trust between the managed BIG-IP system and the BIG-IQ system.</span></p>
+<p><span class="sectiontitle">Prerequisites</span></p>
+<p>You must meet the following prerequisites to use these procedures:</p>
+<ul><li>Have access to either a workstation with the OpenSSL package installed or access to the Advanced Shell (<strong>bash</strong>).</li><li>Are familiar with basic Linux commands.</li></ul>
+<p><span class="sectiontitle">Procedures</span></p>
+<ul><li><a href="#create">Create a local Root CA and sign a new SSL certificate</a></li><li><a href="#replace">Replace the BIG-IP system self-signed device certificate</a></li><li><a href="#install">Update the web browser Trusted Root CA certificate store</a></li></ul>
+<p><span class="subsectiontitle"><a name="create"></a>Create a local Root CA and sign a new SSL certificate</span></p>
+<p>This procedure uses OpenSSL to help you create a local Root CA and sign an SSL device certificate that the Configuration utility uses. You can use the Root CA to create signed SSL certificates for multiple BIG-IP systems.</p>
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+<ol><li>Log in to the workstation command line or <strong>bash</strong>.</li><li>To create a working directory to store the CA Root certificate and key, use the following command syntax:
+<p><span class="code">mkdir &lt;directory_name&gt;</span></p>
+<p>For example, to create a directory named <strong>bigip_ca</strong>, enter the following command:</p>
+<p><span class="example2">mkdir bigip_ca</span></p>
+</li><li>To change into the directory, use the following command syntax:
+<p><span class="code">cd &lt;directory_name&gt;</span></p>
+<p>For example, to change into the <strong>bigip_ca</strong> directory, enter the following command:</p>
+<p><span class="example2">cd bigip_ca</span></p>
+</li><li>To determine the OpenSSL configuration directory, enter the following command:
+<p><span class="code">openssl version -a</span></p>
+<p>In the following example, the OpenSSL configuration directory is in <strong>/etc/pki/tls</strong> directory:</p>
+<p><span class="example2">OPENSSLDIR: &quot;/etc/pki/tls&quot;</span></p>
+</li><li>To copy the OpenSSL configuration file, <strong>openssl.cnf</strong>, to the current working directory, <strong>bigip_ca</strong>, use the following command syntax:
+<p><span class="code">cp &lt;/path&gt;/openssl.cnf .</span></p>
+<p>For example, to copy the <strong>openssl.cnf</strong> file to your working directory using the path <strong>/etc/pki/tls</strong>, enter the following command:</p>
+<p><span class="example2">cp /etc/pki/tls/openssl.cnf .</span></p>
+</li><li>Using a text editor, edit the copy of <strong>openssl.cnf</strong> in your <strong>bigip_ca</strong> directory to update the existing configuration to match the following modified directives. The following example does not show the entire OpenSSL configuration file so the <strong>[section]</strong> information is included to help you navigate the file. Do not remove any of the existing configuration directives.
+<p><span class="note"><strong>Note</strong>: To avoid encoding issues, F5 recommends that you manually edit the <strong>openssl.cnf</strong> file rather than using copy / paste.</span></p>
+<p><span class="warning"><strong>Important</strong>: The CA <strong>certificate</strong> and <strong>private_key</strong> are created in step 11. If you prefer a different name than <strong>bigip_ca</strong>, modify the configuration file accordingly and use the same names in step 11.</span></p>
+<p><span class="example2">[ CA_default ]<br>dir             = .                                               <br>certificate     = $dir/bigip_ca.crt                                                  <br>private_key     = $dir/bigip_ca.key  <br>new_certs_dir   = $dir<br><br>default_days = 3650 <br>default_md   = sha256<br><br>policy = policy_anything<br><br>[ policy_anything ]<br>countryName             = optional<br>stateOrProvinceName     = optional<br>localityName            = optional<br>organizationName        = optional<br>organizationalUnitName  = optional<br>commonName              = supplied<br>emailAddress            = optional<br><br>[ req ]<br>default_bits            = 2048<br>default_md              = sha256</span><br>...</p>
+</li><li>(Optional) To restrict the usage of certificates you sign, you can uncomment the <strong>extendedKeyUsage</strong> directive in the <strong>[ usr_cert ]</strong> section in your copy of <strong>openssl.conf</strong> and specify purposes. Otherwise you can leave the directive commented out so the certificate defaults to all purposes except time stamp signing.</li><li>(Optional) To include SAN details when signing a CSR, add the sections below to the end of the  <strong>[ usr_cert ]</strong> section in your copy of the <strong>openssl.conf</strong> file using the following command syntax:
+<p><span class="warning"><strong>Important</strong>: Specify the fully-qualified domain name (FQDN) of your BIG-IP as the first name in the <strong>alt_names</strong> section then add your alternative names.<span class="example2"> </span>Additionally, you need to update the names or comment out the <strong>subjectAltName</strong> directive for each new certificate you sign depending on the requirements.</span></p>
+<p><span class="example2">subjectAltName = @alt_names<br><br>[ alt_names ]<br>DNS.1 = &lt;FQDN 1&gt;<br>DNS.2 = &lt;FQDN 2&gt;<br>DNS.3 = &lt;FQDN 3&gt;<br>...<br>DNS.x = &lt;FQDN x&gt;<br>...<br>IP.1 = &lt;IP_addr 1&gt;<br>IP.1 = &lt;IP_addr 2&gt;<br>IP.1 = &lt;IP_addr 3&gt;<br>...<br>IP.x = &lt;IP_addr x&gt;</span></p>
+<p>For example:</p>
+<p><span class="example2">subjectAltName = @alt_names<br><br>[ alt_names ]<br>DNS.1 = www.example.com<br>DNS.2 = test.example.com<br>DNS.3 = mail.example.com<br>IP.1 = 192.0.2.1<br>IP.2 = 198.51.100.254<br>IP.3 = 2001:DB8::1</span></p>
+</li><li>Save the file.</li><li>To create the necessary CA <strong>serial</strong> and <strong>index.txt</strong> files, enter the following commands:
+<p><span class="note"><strong>Note</strong>: The <strong>index.txt</strong> file contains the list of signed SSL certificates. The <strong>serial</strong> file is the source of the SSL certificate serial number. The number increments by 1 with each signing.</span></p>
+<p><span class="code">echo 100000 &gt; serial<br>touch index.txt</span></p>
+</li><li>To create the Root CA certificate and key, use the following command syntax:
+<p><span class="code">openssl req -new -x509 -newkey rsa:&lt;Key Size&gt; -keyout &lt;key_name&gt;.key -out &lt;cert_name&gt;.crt -days 3650 -config ./openssl.cnf</span></p>
+<p>For example, to create a Root CA certificate named <strong>bigip_ca.crt</strong> with RSA key size of 4096 and a key named <strong>bigip_ca.key</strong>, enter the following command:</p>
+<p><span class="note"><strong>Note</strong>: This command requires that you answer the questions in the following table.</span></p>
+<p><span class="example2">openssl req -new -x509 -newkey rsa:4096 -keyout bigip_ca.key -out bigip_ca.crt -days 3650 -config ./openssl.cnf</span></p>
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1"><tbody><tr><td colspan="1" rowspan="1">Question</td><td colspan="1" rowspan="1">Description</td><td colspan="1" rowspan="1">Example</td></tr><tr><td colspan="1" rowspan="1">Enter PEM pass phrase:</td><td colspan="1" rowspan="1">The pass phrase used to protect the CA key. This pass phrase is required each time you sign a certificate. Store it in a safe place.</td><td colspan="1" rowspan="1">Choose a strong passphrase</td></tr><tr><td colspan="1" rowspan="1">Country Name</td><td colspan="1" rowspan="1">A two-letter abbreviation for your country.</td><td colspan="1" rowspan="1">US</td></tr><tr><td colspan="1" rowspan="1">State or Province Name </td><td colspan="1" rowspan="1">The full state or province name where your organization is located. </td><td colspan="1" rowspan="1">Washington</td></tr><tr><td colspan="1" rowspan="1">Locality Name</td><td colspan="1" rowspan="1">The full city name where your organization is located.</td><td colspan="1" rowspan="1">Seattle</td></tr><tr><td colspan="1" rowspan="1">Organization Name</td><td colspan="1" rowspan="1">The full legal name of your organization.</td><td colspan="1" rowspan="1">F5, Inc.</td></tr><tr><td colspan="1" rowspan="1">Organizational Unit Name</td><td colspan="1" rowspan="1">Optional for additional organization information.</td><td colspan="1" rowspan="1">BIG-IP Admin</td></tr><tr><td colspan="1" rowspan="1">Common Name</td><td colspan="1" rowspan="1">This identifies the BIG-IP root certificate.</td><td colspan="1" rowspan="1">BIG-IP Root Certificate</td></tr><tr><td colspan="1" rowspan="1">Email Address</td><td colspan="1" rowspan="1">The email address for the CA contact (optional).</td><td colspan="1" rowspan="1">f5admin@example.com</td></tr></tbody></table>
+</li><li>To create a directory to store the new signed SSL device certificate and key, use the following command syntax:
+<p><span class="note"><strong>Note</strong>: Separate directories are helpful when you manage SSL keys and certificates for multiple BIG-IP systems.</span></p>
+<p><span class="code">mkdir &lt;name&gt;</span></p>
+<p>For example, to create a directory that stores the SSL device certificate and key for a BIG-IP system named <strong>bigip1.example.com</strong>, enter the following command:</p>
+<p><span class="example2">mkdir bigip1.example.com</span></p>
+</li><li>To create a certificate signing request (CSR) and key in the proper directory, use the following command syntax:
+<p><span class="code">openssl req -new -nodes -out &lt;directory&gt;/&lt;request_name&gt;.req -keyout &lt;directory&gt;/&lt;key_name&gt;.key -config ./openssl.cnf</span></p>
+<p>For example, to create a CSR named <strong>bigip1_device.req</strong> and an SSL key named <strong>bigip1_device.key</strong> in the directory <strong>bigip1.example.com</strong>, enter the following command:</p>
+<p><span class="note"><strong>Note</strong>: This command requires that you answer the questions in the following table. When prompted for a <strong>challenge password</strong>, select Enter for no password.</span></p>
+<p><span class="warning"><strong>Important</strong>: The <strong>Common Name</strong> must match what you enter in the Web browser&#39;s URL box when accessing the Configuration utility.</span></p>
+<p><span class="example2">openssl req -new -nodes -out bigip1.example.com/bigip1_device.req -keyout bigip1.example.com/bigip1_device.key -config ./openssl.cnf</span></p>
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1"><tbody><tr><td colspan="1" rowspan="1">Question</td><td colspan="1" rowspan="1">Description</td><td colspan="1" rowspan="1">Example</td></tr><tr><td colspan="1" rowspan="1">Country Name</td><td colspan="1" rowspan="1">A two-letter abbreviation for your country.</td><td colspan="1" rowspan="1">US</td></tr><tr><td colspan="1" rowspan="1">State or Province Name</td><td colspan="1" rowspan="1">The full state or province name where your organization is located. Not abbreviated.</td><td colspan="1" rowspan="1">Washington</td></tr><tr><td colspan="1" rowspan="1">Locality Name</td><td colspan="1" rowspan="1">The full city name where your organization is located.</td><td colspan="1" rowspan="1">Seattle</td></tr><tr><td colspan="1" rowspan="1">Organization Name</td><td colspan="1" rowspan="1">The full legal name of your organization.</td><td colspan="1" rowspan="1">F5 Networks, Inc.</td></tr><tr><td colspan="1" rowspan="1">Organizational Unit Name</td><td colspan="1" rowspan="1">Optional for additional organization information.</td><td colspan="1" rowspan="1">BIG-IP admin</td></tr><tr><td colspan="1" rowspan="1">Common Name</td><td colspan="1" rowspan="1">The fully qualified hostname or IP address used to access the BIG-IP system.</td><td colspan="1" rowspan="1">bigip1.example.com<br>192.168.10.100</td></tr><tr><td colspan="1" rowspan="1">Email Address</td><td colspan="1" rowspan="1">The email address for the CA contact (optional).</td><td colspan="1" rowspan="1">f5admin@example.com</td></tr><tr><td colspan="1" rowspan="1">A challenge password []:</td><td colspan="1" rowspan="1">Not required since the request is not being sent to a remote CA.</td><td colspan="1" rowspan="1">Enter</td></tr><tr><td colspan="1" rowspan="1">An optional company name:</td><td colspan="1" rowspan="1">Not required.</td><td colspan="1" rowspan="1">Enter</td></tr></tbody></table>
+</li><li>To sign the CSR with the Root CA certificate, use the following command syntax:
+<p><span class="code">openssl ca -out &lt;directory&gt;/&lt;cert_name&gt;.crt -config ./openssl.cnf -infiles &lt;directory&gt;/&lt;request_name&gt;.req</span></p>
+<p>For example, to sign a request named <strong>bigip1_device.req</strong> in the <strong>bigip1.example.com</strong> directory, enter the following command:</p>
+<p><span class="note"><strong>Note</strong>: You must provide the CA private key pass phrase. Answer <strong>Y</strong> to the questions that follow.</span></p>
+<p><span class="example2">openssl ca -out bigip1.example.com/bigip1_device.crt -config ./openssl.cnf -infiles bigip1.example.com/bigip1_device.req</span></p>
+<p>The command output appears similar to the following example:</p>
+<p><span class="example2">Enter pass phrase for ./bigip_ca.key:</span></p>
+<p><span class="example2">Certificate is to be certified until Jan 01 12:34:56 2030 GMT (3650 days)</span></p>
+<p><span class="example2">Sign the certificate? [y/n]:y</span></p>
+<p><span class="example2">1 out of 1 certificate requests certified, commit? [y/n]y</span></p>
+</li><li>You can repeat steps 7 and 8 followed by 12 through 14 for additional BIG-IP systems. Be certain to create a separate directory and change the <strong>Common Name</strong> for each of the BIG-IP systems. Once completed, continue to the next procedure.</li></ol>
+<p><span class="subsectiontitle"><a name="replace"></a>Replace the BIG-IP system self-signed device certificate</span></p>
+<p>You can use this procedure to back up and replace the BIG-IP system&#39;s self-signed device certificate. In this procedure, F5 assumes that you are working remotely and have SSH access to the BIG-IP system being updated. Working remotely allows you to update multiple systems from one local Root CA.</p>
+<p>If the target device is a BIG-IP DNS system, connectivity between remote BIG-IP systems fail until the new signed certificate is exchanged. You should perform this procedure during a planned maintenance period. For more information on exchanging certificates, refer to the <strong>DNS sync group peer</strong> procedures of <a href="https://my.f5.com/manage/s/article/K16951115" target="_blank">K16951115: Changing the BIG-IP DNS system device certificate using the Configuration utility</a>.</p>
+<p><span class="note"><strong>Note</strong>: SSL certificates signed by a third-party CA must include both the client authentication (clientAuth) and server authentication (serverAuth) extended key usage (EKU) extensions, to allow use by both server and client applications. For example, the <strong>big3d </strong>process operates as a server (serverAuth), while the <strong>gtmd </strong>process operates as a client (clientAuth). For information, refer to </span><a href="https://my.f5.com/manage/s/article/K7717" target="_blank">K7717: BIG-IP DNS and Link Controller support for third-party SSL certificates</a>.</p>
+<p><span class="note"><strong>Note</strong>: For information about the deprecation of clientAuth EKU for public certificates generated by Public Key Infrastructure (PKI) certificate authorities (CA) and what you can do to prepare, you may want to refer to the F5 DevCentral article: <a href="https://community.f5.com/kb/technicalarticles/the-end-of-clientauth-eku%E2%80%A6oh-mercy%E2%80%A6what-to-do/344363" target="_blank">The End of ClientAuth EKU…Oh Mercy…What to do?</a>.</span></p>
+<p><span class="impact"><strong>Impact of procedure</strong>: Communication with other BIG-IP devices fail until the new certificate is exchanged. There is no impact to high availability (HA) features such as traffic groups and device groups.</span></p>
+<ol><li>From the workstation command line or <strong>bash</strong>, change into the directory that you created for the BIG-IP system that is being updated, using the following command syntax:
+<p><span class="code">cd &lt;directory&gt;</span></p>
+<p>For example, to change into the directory for the BIG-IP system named <strong>bigip1.example.com</strong>, created in step 10 of the previous procedure, enter the following command:</p>
+<p><span class="example2">cd bigip1.example.com</span></p>
+</li><li>Back up the current BIG-IP system self-signed device certificate and key to the local system because you overwrite them in the next step. To back up, use the following command syntax:
+<p><span class="note"><strong>Note</strong>: Ensure you include the dot (.) which represents the current working directory.</span></p>
+<p><span class="code">scp &lt;admin_user&gt;@&lt;IP_address&gt;:/config/httpd/conf/ssl.crt/server.crt .</span></p>
+<p><span class="code">scp &lt;admin_user&gt;@&lt;IP_address&gt;:/config/httpd/conf/ssl.key/server.key .</span></p>
+<p>For example, to save the current SSL certificate and key from a BIG-IP system with IP address <strong>192.168.10.100</strong> using the <strong>root</strong> account, enter the following command:</p>
+<p><span class="example2">scp root@192.168.10.100:/config/httpd/conf/ssl.crt/server.crt .</span></p>
+<p><span class="example2">scp root@192.168.10.100:/config/httpd/conf/ssl.key/server.key .</span></p>
+</li><li>When replacing the device certificate in this step, you overwrite the default self-signed device certificate files, <strong>/config/httpd/conf/ssl.crt/server.crt</strong> and <strong>/config/httpd/conf/ssl.key/server.key</strong>. Overwriting the files ensures the system is compatible with iQuery and ensures there are no ConfigSync conflicts. To overwrite the existing self-signed SSL certificate and key with the new CA-signed SSL certificate, key, and when applicable copy a chain certificate, on the BIG-IP system, use the following command syntax: 
+<p><span class="code">scp &lt;cert_name&gt;.crt &lt;admin_user&gt;@192.168.10.100:/config/httpd/conf/ssl.crt/server.crt<br>scp &lt;key_name&gt;.key &lt;admin_user&gt;@192.168.10.100:/config/httpd/conf/ssl.key/server.key</span><br> </p>
+<p>In versions 13.1.x and earlier:</p>
+<span class="code">scp &lt;chain_cert_name&gt;.crt &lt;admin_user&gt;@192.168.10.100:/config/httpd/conf/ssl.crt/</span>  
+<p>In versions 14.1.x and later:</p>
+<span class="code">scp &lt;chain_cert_name&gt;.crt &lt;admin_user&gt;@192.168.10.100:/config/httpd/conf/ssl.crt/chain.crt</span>
+<p>For example, to upload the new CA-signed SSL certificate and chain certificate named <strong>bigip1_device.crt,</strong> <strong>bigip1_device.key,</strong> and <strong>bigip1_device-chain.crt</strong> to a BIG-IP system with IP address <strong>192.168.10.100</strong>, using the <strong>root</strong> account, enter the following command:</p>
+<p><span class="example2">scp bigip1_device.crt root@192.168.10.100:/config/httpd/conf/ssl.crt/server.crt<br>scp bigip1_device.key root@192.168.10.100:/config/httpd/conf/ssl.key/server.key</span><br> </p>
+<p>In versions 13.1.x and earlier:</p>
+<span class="example2">scp bigip1_device-chainfile.crt root@192.168.10.100:/config/httpd/conf/ssl.crt/bigip1_device-chainfile.crt</span><br> 
+<p>In versions 14.1.x and later:</p>
+<span class="example2">scp bigip1_device-chainfile.crt root@192.168.10.100:/config/httpd/conf/ssl.crt/chain.crt</span>
+<p><span class="note"><strong>Note</strong>: The SSL chain certificate chain is not a required component unless you are configuring in an environment that requires a chain certificate such as a BIG-IP DNS environment.</span></p>
+</li><li>Log into the BIG-IP command line.</li><li>If applicable, for proper iQuery communication you must append any chain or root certificates in the <strong>/config/httpd/conf/ssl.crt/server.crt </strong>file. To do so, use the following command syntax:
+<p><span class="code">cat /config/httpd/conf/ssl.crt/&lt;chain_cert_name&gt;.crt &gt;&gt; /config/httpd/conf/ssl.crt/server.crt</span></p>
+For example:
+<p><span class="example2">cat /config/httpd/conf/ssl.crt/bigip1_device-chainfile.crt &gt;&gt; /config/httpd/conf/ssl.crt/server.crt</span><br>(this step is only required in v13.1.x and earlier)</p>
+</li><li>If applicable, configure <strong>httpd</strong> to use the new combined chain certificate file to secure the Configuration utility. To do so, use the following command syntax:
+<p>In versions 13.1.x and earlier:</p>
+<span class="code">tmsh modify sys httpd ssl-certchainfile /config/httpd/conf/ssl.crt/server.crt</span>
+<p>In versions 14.1.x and later:</p>
+<span class="code">tmsh modify sys httpd ssl-certchainfile /config/httpd/conf/ssl.crt/chain.crt</span></li><li>
+<p>Restart the <strong>httpd</strong> process to load the new certificates into the running configuration. To do so, use the following command syntax:</p>
+<p><span class="code">tmsh restart sys service httpd</span></p>
+</li></ol>
+<p><span class="subsectiontitle"><a name="install"></a>Update the web browser Trusted Root CA certificate store</span></p>
+<p>Before you connect to the Configuration utility, you must import the BIG-IP Root CA certificate into the Web browser&#39;s Trusted Root CA certificate store. The steps to accomplish this may vary depending upon the type of Web browser in use. </p>
+<p><span class="note"><strong>Note</strong>: The following procedures describe third-party software and may change without our knowledge. Refer to each browser&#39;s documentation for more information.</span></p>
+<p><span class="note"><strong>Note</strong>: You do not need to complete the following steps when the BIG-IP certificate modifications include the use of a chain certificate that ultimately references a browser-Trusted Root CA.</span></p>
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing either of the following procedures should not have a negative impact on your system.</span></p>
+<p><span class="subsubsectiontitle">Microsoft Edge</span></p>
+<ol><li>Copy the BIG-IP CA Root certificate to your workstation.</li><li>Open the web browser.</li><li>Enter <strong>edge://settings</strong> in the browser address bar.</li><li>Select <strong>Privacy, search, and services</strong>.</li><li>Under <strong>Security</strong>, select <strong>Manage Certificates</strong>.</li><li>Select the <strong>Trusted Root Certificate Authorities</strong> tab.</li><li>Select <strong>Import</strong>.</li><li>Browse to and select the BIG-IP Trusted Root CA certificate.
+<p><span class="note"><strong>Note</strong>: If the file does not appear, change <strong>Certificate Files</strong> to <strong>All Files</strong>.</span></p>
+</li><li>The BIG-IP Trusted Root CA certificate should be placed in the <strong>Trusted Root Certificate Authorities</strong> store.</li><li>Select <strong>Next</strong>.</li><li>Select <strong>Yes</strong> to install the Root certificate.</li><li>Select <strong>OK</strong>.</li></ol>
+<p><span class="subsubsectiontitle">Chrome</span></p>
+<ol><li>Copy the BIG-IP CA Root certificate to your workstation.</li><li>Open the web browser.</li><li>Enter <strong>chrome://settings</strong> in the browser address bar.</li><li>Select <strong>Privacy and Security</strong>.</li><li>Select <strong>Security</strong>.</li><li>Select <strong>Manage Certificates</strong>.</li><li>Select the <strong>Trusted Root Certificate Authorities</strong> tab.</li><li>Select <strong>Import</strong>.</li><li>Browse to and select the BIG-IP Trusted Root CA certificate.
+<p><span class="note"><strong>Note</strong>: If the file does not appear, change <strong>Certificate Files</strong> to <strong>All Files</strong>.</span></p>
+</li><li>The BIG-IP Trusted Root CA certificate should be placed in the <strong>Trusted Root Certificate Authorities</strong> store.</li><li>Select <strong>Next</strong>.</li><li>Select <strong>Yes</strong> to install the Root certificate.</li><li>Select <strong>OK</strong>.</li></ol>
+<p><span class="subsubsectiontitle">Firefox</span></p>
+<ol><li>Copy the BIG-IP CA Root certificate to your workstation.</li><li>Open the web browser.</li><li>Enter <strong>about:preferences#privacy</strong> as the browser address.</li><li>Under <strong>Security</strong>, for <strong>Certificates</strong>, select <strong>View Certificates</strong>.</li><li>Select the <strong>Authorities</strong> tab.</li><li>Select <strong>Import</strong>.</li><li>Browse to and select the BIG-IP Trusted Root CA certificate.
+<p><span class="note"><strong>Note</strong>: If the file does not appear, change <strong>Certificate Files</strong> to <strong>All Files</strong>.</span></p>
+</li><li>Select the <strong>Trust this CA to identify Websites</strong> check box.</li><li>Select <strong>OK</strong>.</li></ol>
+<p><span class="subsubsectiontitle">Internet Explorer</span></p>
+<p><span class="note">Note:<span class="subsubsectiontitle"> </span>Microsoft announced the end of support for Internet Explorer on June 15, 2022. You should use supported browsers such as Microsoft Edge, Google Chrome, or Mozilla Firefox.</span></p>
+<ol><li>Copy the BIG-IP CA Root certificate to your workstation.</li><li>Open the Web browser.</li><li>Go to <strong>Tools</strong> &gt; <strong>Internet Options</strong>.</li><li>Select the <strong>Content</strong> tab.</li><li>Select <strong>Certificates</strong>.</li><li>Select the <strong>Trusted Root Certification Authorities</strong> tab.</li><li>Select <strong>Import</strong> and <strong>Next</strong>.</li><li>Browse to and select the BIG-IP Trusted Root CA certificate.
+<p><span class="note"><strong>Note</strong>: If the file does not appear, change <strong>Certificate Files</strong> to <strong>All Files</strong>.</span></p>
+</li><li>Select <strong>Open</strong>.</li><li>Select <strong>Next</strong>.</li><li>Select <strong>Next</strong>.</li><li>Select <strong>Finished</strong>.</li></ol>
+</article>
+</body>
+</html>

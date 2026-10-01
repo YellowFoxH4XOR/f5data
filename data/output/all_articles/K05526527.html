@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K05526527: External https health monitor for SNI-enabled pool</title>
+<meta name="description" content="Support Solution: External https health monitor for SNI-enabled pool — The legacy (non-tmm) HTTPS monitor does not provide support for sending SNI (Server Name Indication) in the TLS handshake for monitor probes, but this limitation can be worked around by using an…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K05526527">
+</head>
+<body>
+<header>
+<h1>K05526527: External https health monitor for SNI-enabled pool</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-01-21</dd>
+<dt>Updated</dt><dd>2026-09-09</dd>
+<dt>Applies to</dt><dd><ul><li>Virtual Editions</li><li>BIG-IP</li><li>BIG-IP DNS: 16.X.X, 15.X.X, 14.X.X, 13.X.X, 12.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0</li><li>BIG-IP LTM: 16.X.X, 15.X.X, 14.X.X, 13.X.X, 12.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0</li><li>BIG-IP GTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K05526527">https://my.f5.com/manage/s/article/K05526527</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><b>Description</b></h2>
+<p>The legacy (non-tmm) HTTPS monitor does not provide support for sending SNI (Server Name Indication) in the TLS handshake for monitor probes, but this limitation can be worked around by using an external monitor that runs curl to monitor the status of pool members that require the SNI extention in the TLS handshake.<br><br>Note that if &quot;in-tmm&quot; monitoring is enabled, SNI can be defined in the ssl-profile associated with the HTTPs monitor - see <a href="https://my.f5.com/manage/s/article/K65219243" target="_blank" rel="noopener noreferrer">K65219243</a></p>
+<h2><b>Environment</b></h2>
+<ul><li>BIG-IP LTM / DNS (GTM)</li><li>External SNI monitor</li><li>Curl </li></ul>
+<h2><b>Cause</b></h2>
+<p>None</p>
+<h2><b>Recommended Actions</b></h2>
+<p>Follow the below procedures to configure a custom external monitor using Curl. </p>
+<ol><li style="text-align: justify;">Save the script (shown below) into a file using any text editor such as notepad. example, <strong>myExtMon.txt</strong>
+<pre class="ckeditor_codeblock">#!/bin/sh
+# these arguments supplied automatically for all external pingers:
+# $1 = IP (::ffff:nnn.nnn.nnn.nnn notation or hostname)
+# $2 = port (decimal, host byte order)
+#
+if [ -z &quot;${RECV}&quot; ]
+then
+   RECV=&quot;html&quot;
+fi
+if [ -z &quot;${MON_NAME}&quot;]
+then
+   MON_NAME=&quot;MyExtMon$$&quot;
+fi
+# Name of the pidfile
+pidfile=&quot;/var/run/$MON_NAME.$1..$2.pid&quot;
+
+# 1 = debug on
+DEBUG=0
+
+# Send signal to the process group to kill our former self and any children
+# as external monitors are run with SIGHUP blocked
+if [ -f $pidfile ]
+then
+   kill -9 -`cat $pidfile` &gt; /dev/null 2&gt;&amp;1
+fi
+
+echo &quot;$$&quot; &gt; $pidfile
+
+# Remove the IPv6/IPv4 compatibility prefix
+node_ip=`echo $1 | sed &#39;s/::ffff://&#39;`
+
+#set hostname with ip for now but SSL SNI will fail
+hostn=${node_ip}
+
+# Get the hostname for $node_ip
+if [ -n &quot;${POOL}&quot; ]
+then
+   for val in ${POOL}; do
+      if [[ ${val} == &quot;${node_ip}:&quot;* ]]
+      then
+         hostn=`echo &quot;${val}&quot;|cut -d&#39;:&#39; -f2`
+         break
+      fi
+   done
+   # Using the curl utility to get data from the server.
+   # Search the data received for the expected expression.
+   # Check `man curl` for more details regarding this
+   curl -lvk --resolve ${hostn}:${2}:${node_ip} <a href="https://%24/" target="_blank" rel="noopener noreferrer">https://$</a>{hostn}:${2}/${URI} | grep -E -i ${RECV} &gt; /dev/null 2&gt;&amp;1
+   status=$?
+fi
+
+# Remove the pidfile before the script ends
+rm -f $pidfile &gt; /dev/null 2&gt;&amp;1
+
+if [[ $status -eq 0 ]]
+then
+# Remove the pidfile before the script echoes anything to stdout and is killed by bigd
+    echo &quot;up&quot;
+fi
+
+# For troubleshooting, enable debugging
+if [ ${DEBUG} -eq 1 ]
+then
+echo &quot;Debugging on...&quot;
+echo &quot;SNI=${hostn}&quot;
+echo &quot;RECV=${RECV}&quot;
+echo &quot;URI=${URI}&quot;
+echo &quot;IP=${node_ip}&quot;
+echo &quot;PORT=${2}&quot;
+echo &quot;MON_NAME=${MON_NAME}&quot;
+echo &quot;POOL=${POOL}&quot;
+echo &quot;curl -lvk --resolve ${hostn}:${2}:${node_ip} <a href="https://%24/" target="_blank" rel="noopener noreferrer">https://$</a>{hostn}:${2}${URI} | grep -E -i ${RECV} &gt; /dev/null 2&gt;&amp;1&quot;
+fi
+
+</pre>
+</li><li>Navigate to &quot;<strong>System  ››  File Management: External Monitor Program File List</strong>&quot;. Import the file created in step 1 and name the External Monitor Program. example, myExtMonProg</li><li>Navigate to &quot;<strong>Local Traffic  ››  Monitors</strong>&quot; and create an external health monitor type with the following options:</li></ol>
+<div style="margin-left: 40px;">Name                  : &lt;put a name&gt;.<br>External Program: the program that was created in step 2.<br>Add the below variables:</div>
+<ul style="margin-left: 80px;"></ul>
+<div style="margin-left: 80px;"><u>Name  =    Value</u></div>
+<div style="margin-left: 80px;">RECV  =  &lt;receive string&gt;<br>URI  =  &lt;uri to monitor&gt;<br>POOL  =  (format is IP address1:hostname1 address2:hostname2 ... addressN:hostnameN)<br>MON_NAME  =  &lt;put the name of the monitor&gt; (this is optional. the monitor will still work even without this variable/value)<br> </div>
+<div style="margin-left: 40px;">For example:<br><img alt="EXTERNAL_MONITOR_EXAMPLE_SCREENSHOT.png" src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000rAIz&amp;feoid=00N1T00000AOnlF&amp;refid=0EM1T000005LUYU" style="width: 629px;height: 481px;"></img></div>
+<p> </p>
+<ol start="4"><li>Assign this new external monitor to the pool.</li></ol>
+<p> </p>
+<h2><b>Additional Information</b></h2>
+<p>If after applying the external monitor seems like it is not running, particularly if messages like &#39;<em>EAV execve: No such file or directory</em>&#39; are seen in /var/log/bigdlog when bigd.debug=enable, it may be due to windows line feeds in the file. Please refer to <a href="https://my.f5.com/manage/s/article/K41251003" target="_self">K41251003: External monitor fails to run</a> as extra line feed characters may be added when saving files on Windows.</p>
+</article>
+</body>
+</html>

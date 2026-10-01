@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160126: SSLO Traffic hits incorrect Virtual Server when sys db connection.vlankeyed is disabled</title>
+<meta name="description" content="Support Solution: SSLO Traffic hits incorrect Virtual Server when sys db connection.vlankeyed is disabled — In a BIG-IP SSL Orchestrator (SSLO) deployment with an inline Layer 3 service, return traffic from the Layer 3 firewall may hit an incorrect virtual server on the SSLO device when the system database…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160126">
+</head>
+<body>
+<header>
+<h1>K000160126: SSLO Traffic hits incorrect Virtual Server when sys db connection.vlankeyed is disabled</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-24</dd>
+<dt>Updated</dt><dd>2026-02-24</dd>
+<dt>Applies to</dt><dd><ul><li>F5 App Protect</li><li>BIG-IP SSL Orchestrator: 17.5.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160126">https://my.f5.com/manage/s/article/K000160126</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>In a BIG-IP SSL Orchestrator (SSLO) deployment with an inline Layer 3 service, return traffic from the Layer 3 firewall may hit an incorrect virtual server on the SSLO device when the system database variable <span style="font-size: 13.5px;font-family: monospace;">connection.vlankeyed</span> is set to &quot;disable&quot;. This results in failed SSLO traffic flows as packets are not processed by the expected service virtual server.</p>
+<p>Symptoms include:</p>
+<ul><li>SYN packet retransmissions observed in packet captures</li><li>Return traffic from Layer 3 services matching the wrong virtual server</li><li>Traffic failing to complete the service chain properly</li><li>Packet captures showing &quot;tcp port numbers reused&quot; and &quot;tcp retransmission&quot; messages in analysis tools</li></ul>
+<p>Error/Log Messages:</p>
+<ul><li>F5 Ethernet Trailer in packet captures shows traffic hitting an unexpected virtual server</li><li>Connection failures through the SSLO topology</li></ul>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP SSL Orchestrator (SSLO)</li><li>Version: 17.5.0 (affects all versions)</li><li>Platform: F5-BIG-R4800, C131, and other platforms</li><li>Configuration:
+<ul><li>SSLO topology with inline Layer 3 service</li><li>Multiple VLANs: client-side VLANs and service-side VLANs (to-service and from-service)</li><li>BGP routing or other configurations requiring <span style="font-size: 13.5px;font-family: monospace;">sys db connection.vlankeyed</span> set to &quot;disable&quot;</li><li>Service virtual server source port setting configured as &quot;preserve&quot; (default)</li></ul>
+</li><li>Conditions:
+<ul><li><span style="font-size: 13.5px;font-family: monospace;">sys db connection.vlankeyed</span> is set to &quot;disable&quot; (non-default setting)</li><li>Same TCP 4-tuple (source IP, source port, destination IP, destination port) appears on multiple VLANs</li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p>When <span style="font-size: 13.5px;font-family: monospace;">sys db connection.vlankeyed</span> is set to &quot;disable&quot;, BIG-IP matches connections based solely on the TCP 4-tuple (source IP, source port, destination IP, destination port), ignoring VLAN context. By default, this setting is &quot;enable&quot;, which includes VLAN ID as part of the connection key.</p>
+<p>In SSLO deployments with inline Layer 3 services, the same TCP connection traverses multiple VLANs:</p>
+<ol><li>Client-side VLAN → SSLO</li><li>SSLO → to-service VLAN → Layer 3 firewall</li><li>Layer 3 firewall → from-service VLAN → SSLO</li><li>SSLO → Client-side VLAN</li></ol>
+<p>When return traffic from the Layer 3 service arrives on the from-service VLAN with the same 4-tuple, BIG-IP incorrectly associates it with the original client-side connection instead of the service virtual server, causing the traffic to hit the wrong virtual server and fail.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>Primary Solution:</p>
+<p>Modify the SSLO service virtual server configuration to change the source port behavior from &quot;preserve&quot; to &quot;change&quot;. This ensures unique 4-tuples across VLANs and prevents connection collisions.</p>
+<p>Configuration Steps:</p>
+<ol><li>Navigate to Local Traffic &gt; Virtual Servers</li><li>Locate the SSLO service virtual servers (typically named <span style="font-size: 13.5px;font-family: monospace;">ssloS_&lt;service-name&gt;-t-&lt;number&gt;</span> and <span style="font-size: 13.5px;font-family: monospace;">ssloS_&lt;service-name&gt;-u-&lt;number&gt;</span>)</li><li>For each service virtual server:</li></ol>
+<ul><ul><li>Edit the virtual server configuration</li><li>Change the Source Port setting from &quot;Preserve&quot; to &quot;Change&quot;</li><li>Save the configuration</li></ul></ul>
+<ol><li>Test traffic flow through the SSLO topology</li></ol>
+<p>Alternative Solution (if applicable):</p>
+<p>If your environment does not require <span style="font-size: 13.5px;font-family: monospace;">connection.vlankeyed</span> to be disabled:</p>
+<ol><li>Enable VLAN-keyed connections:</li><li><span style="font-size: 11.8125px;font-family: monospace;">tmsh modify sys db connection.vlankeyed value enable</span></li><li><span style="font-size: 11.8125px;font-family: monospace;">tmsh save sys config</span></li><li>This restores the default behavior where BIG-IP includes VLAN context in connection matching</li></ol>
+<p>Verification:</p>
+<ul><li>Capture traffic using: <span style="font-size: 13.5px;font-family: monospace;">tcpdump -s0 -i 0.0:nnn -w /var/tmp/capture.pcap --f5 ssl</span></li><li>Verify that return traffic from Layer 3 services hits the correct service virtual server</li><li>Confirm no SYN retransmissions or connection failures</li></ul>
+<h2>Additional Information</h2>
+<p>Understanding connection.vlankeyed:</p>
+<ul><li>Default value: &quot;enable&quot; - BIG-IP includes VLAN ID as part of the connection key, allowing the same 4-tuple on different VLANs to be treated as separate connections</li><li>When disabled: BIG-IP matches connections only by 4-tuple, which can cause issues in multi-VLAN architectures like SSLO</li></ul>
+<p>Why this setting might be disabled:</p>
+<ul><li>BGP routing configurations where traffic may arrive from different VLANs</li><li>Advanced routing scenarios requiring VLAN-agnostic connection handling</li><li>Legacy configurations or specific architectural requirements</li></ul>
+<p>SSLO-specific considerations:</p>
+<ul><li>SSLO requires multiple independent connections on different VLANs to function properly</li><li>Inline Layer 3 services are most affected by this issue</li><li>Service types using SNAT may not experience this issue as the 4-tuple is modified</li><li>Ensure adequate memory allocation for restjavad/restnoded processes:</li><li><span style="font-size: 11.8125px;font-family: monospace;">tmsh modify sys db provision.extramb value 4000</span></li><li><span style="font-size: 11.8125px;font-family: monospace;">tmsh modify sys db provision.restjavad.extramb value 2227</span></li><li><span style="font-size: 11.8125px;font-family: monospace;">tmsh modify sys db provision.tomcat.extramb value 300</span></li><li><span style="font-size: 11.8125px;font-family: monospace;">tmsh modify sys db restnoded.timeout value 600</span></li><li><span style="font-size: 11.8125px;font-family: monospace;">tmsh modify sys db restjavad.timeout value 600</span></li><li><span style="font-size: 11.8125px;font-family: monospace;">tmsh modify sys db icrd.timeout value 600</span></li></ul>
+<p>Expected behavior:</p>
+<ul><li>With <span style="font-size: 13.5px;font-family: monospace;">connection.vlankeyed</span> enabled (default), traffic flows correctly through SSLO service chains</li><li>With the workaround applied (source port set to &quot;change&quot;), unique 4-tuples prevent connection collisions even when <span style="font-size: 13.5px;font-family: monospace;">connection.vlankeyed</span> is disabled</li></ul>
+<h2>Related Content</h2>
+<ul><li>F5 SSL Orchestrator Deployment Guide - Packet Flow in an SSL Orchestrator Forward Proxy: <a href="https://clouddocs.f5.com/sslo-deployment-guide/" target="_blank">https://clouddocs.f5.com/sslo-deployment-guide/</a></li><li>K13030: Rebuilding the mcpd database</li><li>iHealth qkview analysis tool: <a href="https://ihealth.f5.com/" target="_blank">https://ihealth.f5.com/</a></li></ul>
+<p> </p>
+</article>
+</body>
+</html>

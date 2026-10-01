@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000134712: Prometheus is not able to scrape endpoints within the mesh</title>
+<meta name="description" content="Support Solution: Prometheus is not able to scrape endpoints within the mesh — Can&#x27;t scrape the application metric endpoints with Prometheus while using Aspen Mesh. Prometheus is not able to reach the endpoint displaying the error message &quot;connection reset by peer&quot;.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000134712">
+</head>
+<body>
+<header>
+<h1>K000134712: Prometheus is not able to scrape endpoints within the mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-05-19</dd>
+<dt>Updated</dt><dd>2023-05-19</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.14</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000134712">https://my.f5.com/manage/s/article/K000134712</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>Can&#39;t scrape the application metric endpoints with Prometheus while using Aspen Mesh. Prometheus is not able to reach the endpoint displaying the error message &quot;connection reset by peer&quot;.</p>
+
+<h2><br><strong>Environment</strong></h2>
+
+<p>Aspen Mesh 1.14.x</p>
+
+<h2><br><strong>Cause</strong></h2>
+
+<p>In Aspen Mesh, each component exposes an endpoint that emits metrics. Port 15090 is used to expose Envoy Prometheus telemetry only whereas port 15020 exposes merged Prometheus telemetry from Istio agent, Envoy, and application if enabled in the overrides value file with</p>
+
+<pre class="ckeditor_codeblock">
+meshConfig:
+  enablePrometheusMerge: true</pre>
+
+<p>Prometheus needs to be configured to scrape either of these ports based on your needs.</p>
+
+<h2><br><strong>Recommended Actions</strong></h2>
+
+<p>The following <strong>example</strong> located in the file <strong>prometheus-operator.yaml </strong>in the <strong>samples/addons/extras</strong> folder of the Aspen Mesh package could be used to set up Prometheus to scrape Aspen Mesh merged metrics (:<em>15020/stats/prometheus</em>).</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: envoy-stats-monitor
+  namespace: istio-system
+  labels:
+    monitoring: istio-proxies
+    release: istio
+spec:
+  selector:
+    matchExpressions:
+    - {key: istio-prometheus-ignore, operator: DoesNotExist}
+  namespaceSelector:
+    any: true
+  jobLabel: envoy-stats
+  podMetricsEndpoints:
+  - path: /stats/prometheus
+    interval: 15s
+    relabelings:
+    - action: keep
+      sourceLabels: [__meta_kubernetes_pod_container_name]
+      regex: &quot;istio-proxy&quot;
+    - action: keep
+      sourceLabels: [__meta_kubernetes_pod_annotationpresent_prometheus_io_scrape]
+    - sourceLabels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+      action: replace
+      regex: ([^:]+)(?::\d+)?;(\d+)
+      replacement: $1:$2
+      targetLabel: __address__
+    - action: labeldrop
+      regex: &quot;__meta_kubernetes_pod_label_(.+)&quot;
+    - sourceLabels: [__meta_kubernetes_namespace]
+      action: replace
+      targetLabel: namespace
+    - sourceLabels: [__meta_kubernetes_pod_name]
+      action: replace
+      targetLabel: pod_name
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: istio-component-monitor
+  namespace: istio-system
+  labels:
+    monitoring: istio-components
+    release: istio
+spec:
+  jobLabel: istio
+  targetLabels: [app]
+  selector:
+    matchExpressions:
+    - {key: istio, operator: In, values: [pilot]}
+  namespaceSelector:
+    any: true
+  endpoints:
+  - port: http-monitoring
+    interval: 15s</pre>
+
+<p> </p>
+
+<h2><strong>Additional Information</strong></h2>
+
+<p>The above recommended action is only an <strong>example</strong> and it&#39;s not meant to cover all scenarios. For more information regarding Prometheus configuration please go to this <a href="https://prometheus.io/docs/prometheus/latest/configuration/configuration/" target="_blank">link</a>. For more information regarding the Prometheus operator please go to this <a href="https://github.com/prometheus-operator/prometheus-operator/tree/main" target="_blank">link</a>.<br>Prometheus is an open source monitoring system and time series database. You can use Prometheus with Aspen Mesh to record metrics that track the health of Aspen Mesh and of applications within the service mesh.<br>The Aspen Mesh support team does not support Prometheus or its configuration however they can provide limited guidance based on the documentation available.</p>
+</article>
+</body>
+</html>

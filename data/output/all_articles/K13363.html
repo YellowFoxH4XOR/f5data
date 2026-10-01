@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K13363: Web Scraping detection may incorrectly reset connections</title>
+<meta name="description" content="Known Issue: Web Scraping detection may incorrectly reset connections — The Web Scraping Detected violation is set to Block in the security policy Blocking Settings.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K13363">
+</head>
+<body>
+<header>
+<h1>K13363: Web Scraping detection may incorrectly reset connections</h1>
+<dl>
+<dt>Type</dt><dd>Known Issue</dd>
+<dt>Published</dt><dd>2012-02-03</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 11.1.0, 11.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K13363">https://my.f5.com/manage/s/article/K13363</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Known Issue</h3><p>The Web Scraping Detection feature may cause connections to be incorrectly reset, or in some cases generate TCL error messages. These issues are described in the following sections:</p>
+
+<p><strong>Web Scraping Detection with standard (non-iRule based) load balancing:</strong></p>
+
+<p>This issue occurs when all of the following conditions are met:</p>
+
+<ul><li>Web Scraping Detection is <strong>enabled</strong>.</li><li>The Web Scraping Detected violation is set to <strong>Block</strong> in the security policy <strong>Blocking Settings</strong>.</li></ul>
+
+<p>When Web Scraping is enabled, the BIG-IP ASM system replies to client requests with an HTTP response that is generated directly by the BIG-IP ASM system and is not a response from the origin web server (OWS). This response generates a second request from the client (an HTTP POST), which is normally then passed to the OWS if it otherwise meets the criteria defined in the security policy. The BIG-IP ASM system may incorrectly terminate this second HTTP request with a TCP reset.</p>
+
+<p><strong>Web Scraping Detection with iRule based load balancing:</strong></p>
+
+<p>Under a separate set of conditions, this issue may cause TCL error messages, but the connection may not be reset. This behavior occurs when all of the following conditions are met:</p>
+
+<ul><li>Web Scraping Detection is <strong>enabled</strong>.</li><li>The Web Scraping Detected violation is set to <strong>Block</strong> in the security policy <strong>Blocking Settings</strong>.</li><li>A load balancing pool member is selected by an iRule using the <strong>HTTP_REQUEST</strong> event<strong>.</strong></li></ul>
+
+<p>For example, the following iRule makes the load balancing decision in the <strong>HTTP_REQUEST</strong> event, and would be susceptible to this issue:</p>
+
+<p><span class="code">when HTTP_REQUEST {<br>    if { [HTTP::uri] starts_with &quot;/somepath&quot; } {<br>        pool MyPool member 10.0.0.10 80<br>    } else {<br>        pool MyPool member 10.0.0.11 80<br>    }<br>}</span></p>
+
+<p><span class="sectiontitle">Impact</span></p>
+
+<p>Client connections may be reset.<br><br><span class="sectiontitle">Symptoms</span></p>
+
+<p>As a result of this issue occurring due to the first set of conditions, you may encounter the following symptoms:</p>
+
+<ul><li>After an HTTP GET request has received a response, a subsequent HTTP POST request are terminated by the BIG-IP ASM system with a TCP RST.</li></ul>
+
+<p>As a result of this issue occurring due to the second set of conditions, you may encounter the following symptoms:</p>
+
+<ul><li>After an HTTP GET request has received a response, a subsequent HTTP POST request will cause error messages in the <strong>/var/log/ltm</strong> file that appear similar to the following example:<br>	<br>	<span class="example2">01220001:3: TCL error: /Common/MyASM &lt;HTTP_REQUEST&gt; - Address in use (line 5) (line 5) invoked from within &quot;pool MyPool member 10.0.0.11 80&quot;</span></li></ul>
+<h3>Resolution</h3><p><span class="sectiontitle"><strong>Status</strong></span></p>
+
+<p>F5 Product Development has assigned ID 365450 to this issue, and has confirmed that this issue exists in the products listed in the <strong>Applies To</strong> box. For information about releases, point releases, or hotfixes that resolve this issue, refer to the following table.</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1" style="line-height: 20.8px;width: 100%;"><tbody><tr><td colspan="1" rowspan="1">Type of fix</td><td colspan="1" rowspan="1">Fixes introduced in</td><td colspan="1" rowspan="1">Related articles</td></tr><tr><td colspan="1" rowspan="1">Release</td><td colspan="1" rowspan="1">11.2.0</td><td colspan="1" rowspan="1"><a href="https://my.f5.com/manage/s/article/K2200" target="_blank">K2200: Most recent versions of F5 software</a></td></tr><tr><td colspan="1" rowspan="1">Point release/hotfix</td><td colspan="1" rowspan="1">11.1.0 HF2</td><td colspan="1" rowspan="1"><a href="https://my.f5.com/manage/s/article/K9502" target="_blank">K9502: BIG-IP hotfix and point release matrix</a></td></tr></tbody></table>
+
+<p><span class="sectiontitle"><strong>Workaround</strong></span></p>
+
+<p>To work around this issue, you can disable Web Scraping Detection Blocking, or redesign the iRule using the <strong>LB:detach</strong> command, depending on the conditions under which you experience the issue.</p>
+
+<p><span class="impact"><strong>Impact of workaround:</strong> Web Scraping Detection violations will no longer be blocked. Ensure this is an acceptable change to the security policy for your environment.</span></p>
+
+<p><span class="subsectiontitle">Disable Web Scraping Detection Blocking</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Navigate to Application <strong>Security</strong> &gt; <strong>Policy</strong> &gt; <strong>Policy Properties</strong> for the active security policy you want to modify.</li><li>From the <strong>Blocking</strong> menu, select <strong>Settings</strong>.</li><li>Set the blocking mask for the <strong>Web Scraping Detection</strong> violation to <strong>Alarm.</strong></li><li>Click <strong>Save.</strong></li><li>Click <strong>Apply Policy</strong>.</li></ol>
+
+<p><strong>Using LB:detach in an iRule</strong></p>
+
+<p>Use this workaround if you are using the Web Scraping Detection feature with iRules-based load balancing.</p>
+
+<p>The example iRule shown above can be modified to detach the connection flow before the pool member selection occurs. For example:</p>
+
+<p><span class="example2">when HTTP_REQUEST {<br>    if { [HTTP::uri] starts_with &quot;/somepath&quot; } {<br>        LB::detach<br>        pool MyPool member 10.0.0.10 80<br>    } else {<br>        LB::detach<br>        pool MyPool member 10.0.0.11 80<br>    }<br>}</span></p>
+</article>
+</body>
+</html>

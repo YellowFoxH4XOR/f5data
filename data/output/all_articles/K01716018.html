@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K01716018: Configuring Kerberos end-user logon authentication for multiple applications by merging keytab files</title>
+<meta name="description" content="Knowledge: Configuring Kerberos end-user logon authentication for multiple applications by merging keytab files — You want to configure Kerberos end-user logon authentication to authenticate Windows domain users to multiple applications.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K01716018">
+</head>
+<body>
+<header>
+<h1>K01716018: Configuring Kerberos end-user logon authentication for multiple applications by merging keytab files</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2019-01-29</dd>
+<dt>Updated</dt><dd>2024-12-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 16.1.0, 16.1.2, 16.1.1, 17.1.X, 16.1.X, 17.1.1, 17.1.0, 16.1.5, 16.1.4, 16.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K01716018">https://my.f5.com/manage/s/article/K01716018</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3>
+
+<p>You should consider using this procedure under the following conditions:</p>
+
+<ul><li>You want to configure Kerberos end-user logon authentication to authenticate Windows domain users to multiple applications.</li><li>You are using Windows Active Directory (AD) as your key distribution center (KDC).</li><li>You have configured a virtual server with a BIG-IP APM access policy that includes Kerberos authentication.</li><li>Your client devices are joined to the domain and users are logged in with their domain-user accounts.</li></ul>
+
+<h3>Description</h3>
+
+<p>Kerberos end-user logon authentication provides a method for the BIG-IP APM system to authenticate domain users without the need to explicitly enter in login credentials and without user password transmission.</p>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisites to use this procedure:</p>
+
+<ul><li>You have command line access to the BIG-IP APM system.</li><li>You have administrative access to the Windows domain controller (DC).</li></ul>
+
+<p><span class="sectiontitle">Procedures</span></p>
+
+<p>To create and merge multiple keytab files to configure Kerberos end-user logon authentication for multiple applications, perform the following procedures:</p>
+
+<ul><li><a href="#ConfigureBrowser">Configure the client browser for Kerberos</a></li><li><a href="#CreateKeytabKtpass">Create a new keytab file with the ktpass command</a></li><li><a href="#VerifyingServiceAccount">Verify the service account name configuration on the AD/KDC</a></li><li><a href="#MergeKeytabKtutil">Merge the keytab files with the ktutil utility</a></li><li><a href="#UploadKeytab">Upload a keytab file to a Kerberos authentication server object</a></li><li><a href="#VerifyKeytabKlist">Use the klist command to verify the contents of a keytab file on the BIG-IP APM system </a></li></ul>
+
+<p><span class="subsectiontitle"><a id="ConfigureBrowser" name="ConfigureBrowser"></a>Configure the client browser for Kerberos</span></p>
+
+<p>On the client side, you must first join the domain and be logged in as a domain user. In addition, you must configure your browser so that it contacts the DC after the you access the HTTP URL from the browser. The following procedure shows this process using Internet Options:</p>
+
+<p><span class="note"><strong>Note</strong>: For other browsers, refer to the relevant documentation for how to add a local intranet site.</span></p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Start <strong>Control Panel </strong>on Windows.</li><li>Select <strong>Internet options</strong>.</li><li>Select the <strong>Security </strong>tab.</li><li>Select <strong>Local intranet</strong>.</li><li>Select <strong>Sites</strong>.</li><li>Select <strong>Advanced</strong>.</li><li>For <strong>Add this website to the zone</strong>, enter the URL of the HTTP site you are configuring for Kerberos. For example <strong>https://app1.example.com</strong>.</li><li>Select <strong>Add</strong>.</li></ol>
+
+<p><span class="subsectiontitle"><a id="CreateKeytabKtpass" name="CreateKeytabKtpass"></a>Create a new keytab file with the ktpass command</span></p>
+
+<p>To create a new keytab file on the Windows DC, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Using the <strong>ktpass </strong>command with certain parameters on a domain controller may modify the AD service account. F5 recommends that you perform this procedure during a scheduled maintenance window for the specific service.</span></p>
+
+<ol><li>Log in to the Windows DC as an administrator.</li><li>Open <strong>Active Directory Users and Computers </strong>and create a new user account for each HTTP service account. For example, you can create the new account with the following values:
+	<p><span class="note"><strong>Note</strong>: For security purposes, F5 recommends selecting the <strong>This account supports Kerberos AES 256 bit encryption </strong>check box on the <strong>Account</strong> tab in the user <strong>Properties</strong> after the account is created.</span></p>
+
+	<ul><li>First name: <strong>firstname_app1</strong></li><li>Full name: <strong>http_app1</strong></li><li>User logon name: upn_app1</li><li>User logon name (pre-Windows 2000): <strong>samaccountname1</strong></li><li><strong>Account tab &gt; This account supports Kerberos AES 256 bit encryption </strong>check box selected</li></ul>
+	</li><li>
+	<p>Open a command prompt and create a new keytab file using the following syntax:</p>
+
+	<p><span class="code">ktpass -princ &lt;userPrincipalName&gt; -mapuser &lt;service account name&gt; -crypto &lt;encryption type&gt; -ptype KRB5_NT_PRINCIPAL -pass &lt;password&gt; -out &lt;keytab filename&gt;</span></p>
+
+	<p>For example:</p>
+	<span class="warning"><strong>Important</strong>: The following command uses AES256-SHA1 encryption. You must therefore select the <strong>This account supports Kerberos AES 256 bit encryption </strong>check box for the user you created in step 2.</span>
+
+	<p><span class="example2">ktpass -princ HTTP/app1.example.com@EXAMPLE.COM -mapuser http_app1 -crypto AES256-SHA1 -ptype KRB5_NT_PRINCIPAL -pass pass1234 -out app1example.keytab</span></p>
+
+	<p><span class="note"><strong>Note</strong>: The<strong> -princ</strong> parameter is case-sensitive. <strong>app1.example.com </strong>is the URL that you enter into the browser to access the HTTP service. For more information, refer to <a href="https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/ktpass#BKMK_remarks" target="_blank">ktpass</a>. This link takes you to a resource outside of AskF5. The third party could remove the document without our knowledge. </span></p>
+
+	<p>In this example, the <strong>ktpass</strong> command performs the following changes to the account specified by the <strong>-mapuser</strong> parameter.</p>
+
+	<ul><li>Overwrites the original user principal name (UPN) value, <strong>upn_app1</strong> with <strong>HTTP/app1.example.com</strong></li><li>Adds <strong>HTTP/app1.example.com</strong> to the list of service principal name (SPN) of the service account</li><li>Sets the password of the account</li><li>Increases the KVNO of the account by 1</li><li>Generates a keytab file <strong>app1example.keytab </strong>that supports the <strong>AES256-SHA1 </strong>encryption type</li></ul>
+	</li><li>Review the contents of the keytab file using the following command syntax:
+	<p><span class="code">ktpass /in &lt;keytab filename&gt;</span></p>
+
+	<p>For example:</p>
+
+	<p><span class="example2">ktpass /in app1example.keytab</span></p>
+	</li><li>You can repeat steps 2 and 3 to create another keytab file for another AD service account for another application.</li></ol>
+
+<p><span class="subsectiontitle"><a id="VerifyingServiceAccount" name="VerifyingServiceAccount"></a>Verify the service account name configuration on the AD/KDC</span></p>
+
+<p>Perform the following procedure to verify the service account name&#39;s configuration on AD with the <strong>adtest </strong>and <strong>ldapsearch </strong>commands.</p>
+
+<p><span class="note"><strong>Note</strong>: If your BIG-IP APM system does not have connectivity to AD, you can also view the same configuration directly on the DC.</span></p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to Advanced shell (<strong>bash</strong>) of the BIG-IP APM system.</li><li>To query AD for the names of the AD service account, use the following command syntax:
+	<p><span class="code">adtest -t query -h &quot;&lt;IP address of domain controller&gt;&quot; -r &quot;&lt;REALM&gt;&quot; -A &lt;username&gt; -W &#39;&lt;password&gt;&#39; -u &lt;sAMAccountName&gt; -d 4</span></p>
+
+	<p><span class="note"><strong>Note</strong>: You need to include the single quotation marks around the password <strong>parameter</strong>.</span></p>
+
+	<p>For example:</p>
+
+	<p><span class="example2">adtest -t query -h &quot;192.0.2.2&quot; -r &quot;EXAMPLE.COM&quot; -A user1 -W &#39;pass1234&#39; -u samaccountname1 -d 4</span></p>
+
+	<p>In this example, <strong>user1 </strong>is any AD user that has read access to query AD.</p>
+
+	<p>You may observe an output that has values similar to the following example:</p>
+
+	<p><span class="example2">distinguishedName: CN=http_app1,CN=Users,DC=example,DC=com<br>	msDS-SupportedEncryptionTypes: 16<br>	sAMAccountName: samaccountname1<br>	servicePrincipalName: HTTP/app1.example.com@EXAMPLE.COM<br>	userPrincipalName: HTTP/app1.example.com@EXAMPLE.COM</span></p>
+
+	<p><span class="note"><strong>Note</strong> In this example, verify that the HTTP service account <strong>http_app1</strong> has the SPN and UPN <strong>HTTP/app1.example.com@EXAMPLE.COM</strong> and supports Kerberos AES 256 bit encryption.</span></p>
+	</li><li>Verify the KVNO of the HTTP service account using the following command syntax:
+	<p><span class="code">ldapsearch -xLLL -H ldap://&lt;AD server IP address&gt;:&lt;ldap port number&gt; -b &#39;&lt;searchbase&gt;&#39; -D &#39;&lt;username&gt;&#39; -w &#39;&lt;password&gt;&#39; &#39;(sAMAccountName=&lt;service account username&gt;)&#39; msDS-KeyVersionNumber</span></p>
+
+	<p>For example:</p>
+
+	<p><span class="example2">ldapsearch -xLLL -H ldap://192.0.2.2:389 -b &#39;dc=example,dc=com&#39; -D &#39;user1&#39; -w &#39;pass&#39; &#39;(sAMAccountName=samaccountname1 )&#39; msDS-KeyVersionNumber</span></p>
+
+	<p>In this example, the service account name is <strong>samaccountname1 </strong>and uses the read privileges of <strong>user1</strong> to perform an Lightweight Directory Access Protocol (LDAP) search (<strong>ldapsearch</strong>). You should observe an output similar to the following:</p>
+
+	<p><span class="example2">dn: CN=http_app1,CN=Users,DC=example,DC=com<br>	 msDS-KeyVersionNumber: 3</span></p>
+
+	<p>In this output example, the KVNO of the service account named <strong>http_app1 </strong>is <strong>3</strong>. This KVNO must be the same as the KVNO in the keytab file.</p>
+	</li><li>If your BIG-IP APM does not have connectivity to AD, you can also verify the same values by using the following command syntax on AD:
+	<p><span class="code">ldifde -d &lt;RootDN&gt;  -f &lt;output filename&gt; -p subtree -l *,msDS-KeyVersionNumber</span></p>
+
+	<p>For example:</p>
+
+	<p><span class="example2">ldifde -d CN=http_app1,CN=Users,DC=example,DC=com  -f c:\output.txt -p subtree -l *,msDS-KeyVersionNumber</span></p>
+
+	<p>Verify the values from the output file specified by the<strong> -f</strong> parameter.</p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="MergeKeytabKtutil" name="MergeKeytabKtutil"></a>Merge the keytab files with the ktutil utility</span></p>
+
+<p>You can use the <strong>ktutil </strong>utility, available on the BIG-IP APM, to merge multiple keytab files into a single keytab file with individual entries for each service.</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Using a utility like <strong>scp </strong>or <strong>winscp</strong>, upload all your keytab files you created in the <strong>Creating a new keytab file with the ktpass command</strong> procedure to the BIG-IP APM system for merging. For example, you can upload them to the <strong>/var/tmp </strong>directory.</li><li>Log in to the BIG-IP command line.</li><li>Start the <strong>ktutil </strong>utility by entering the following command:
+	<p><span class="code">ktutil</span></p>
+	</li><li>To read each keytab file you uploaded in step 1, use the following command syntax in <strong>ktutil</strong>:
+	<p><span class="code">read_kt &lt;keytab filename&gt;</span></p>
+
+	<p>For example, if you uploaded your keytab files to the <strong>/var/tmp </strong>directories, enter the following commands:</p>
+
+	<p><span class="example2">read_kt /var/tmp/app1example.keytab<br>	read_kt /var/tmp/app2example.keytab<br>	read_kt /var/tmp/app3example.keytab</span><br>	 </p>
+	</li><li>To merge and write the multiple keytab files, use the following command syntax in <strong>ktutil</strong>:
+	<p><span class="code">write_kt &lt;merged keytab filename&gt;</span></p>
+
+	<p>For example, enter the following command to write and save the merged keytab file:</p>
+
+	<p><span class="example2">write_kt /var/tmp/appservice.keytab</span></p>
+	</li><li>To quit the <strong>ktutil</strong> utility, enter the following command:
+	<p><span class="code">quit</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="UploadKeytab" name="UploadKeytab"></a>Upload a keytab file to a Kerberos authentication server object</span></p>
+
+<p>After generating the keytab file in the previous procedure, download it to your computer. To upload it to the Kerberos authentication server object using the Configuration utility, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Uploading an incorrect keytab file can cause Kerberos authentication failure. F5 recommends that you perform this procedure during a scheduled maintenance window for the specific service.</span></p>
+
+<ol><li>Log in to the BIG-IP Configuration utility.</li><li>Go to <strong>Access  </strong>&gt; <strong>Authentication</strong> &gt; <strong>Kerberos</strong>.
+	<p><span class="note"><strong>Note</strong>: For versions prior to BIG-IP 13.x, Go to <strong>Access Policy  </strong>&gt; <strong>AAA Servers</strong> &gt; <strong>Kerberos</strong></span>.</p>
+	</li><li>Select the name of the Kerberos server</li><li>For <strong>Keytab File </strong>, select <strong>Upload New File </strong>.</li><li>Select <strong>Choose File</strong>, then browse to and choose the merged keytab file you created in the <strong>Merging the keytab files with the ktutil utility </strong>procedure.</li><li>Select <strong>Update</strong>.</li></ol>
+
+<p><span class="subsectiontitle"><a id="VerifyKeytabKlist" name="VerifyKeytabKlist"></a>Use the klist command to verify the contents of a keytab file on the BIG-IP APM system</span></p>
+
+<p>You may want to verify the contents of your keytab files. To do that, perform the following procedures:</p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the BIG-IP command line.</li><li>To find the full path name of your keytab file, use the following command syntax:
+	<p><span class="code">grep kerberos_keytab /config/partitions/&lt;partition_name&gt;/bigip.conf</span></p>
+
+	<p>For example, if you do not have any partitions, enter the following command:</p>
+
+	<p><span class="example2">grep kerberos_keytab /config/bigip.conf</span></p>
+
+	<p>You may observe an output similar to the following example:</p>
+
+	<p><span class="example2">cache-path /config/filestore/files_d/Common_d/kerberos_keytab_file_d/:Common:kerbAuth_key_file_64525_1</span></p>
+	</li><li>To verify the contents of a keytab file, use the following command syntax:
+	<p><span class="code">klist -Kket &lt;keytab filename&gt;</span></p>
+
+	<p>For example:</p>
+
+	<p><span class="example2">klist -Kket /var/tmp/appservice.keytab</span></p>
+
+	<p>or</p>
+
+	<p><span class="example2">klist -kKet /config/filestore/files_d/Common_d/kerberos_keytab_file_d/:Common:kerbAuth_key_file_64525_1</span></p>
+
+	<p>Verify all of the values from the output.</p>
+	</li></ol>
+</article>
+</body>
+</html>

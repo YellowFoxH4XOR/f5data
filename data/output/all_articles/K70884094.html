@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K70884094: Istio support for WebSocket protocol</title>
+<meta name="description" content="Support Solution: Istio support for WebSocket protocol — WebSocket is a protocol used for bidirectional communication between the client and the server. It is standardized by RFC 6455 and widely used by applications and API implementations. WebSocket is…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K70884094">
+</head>
+<body>
+<header>
+<h1>K70884094: Istio support for WebSocket protocol</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-12-10</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K70884094">https://my.f5.com/manage/s/article/K70884094</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>WebSocket is a protocol used for bidirectional communication between the client and the server. It is standardized by RFC 6455 and widely used by applications and API implementations. WebSocket is distinct from HTTP, but it uses HTTP Upgrade header to establish a connection between parties. Istio cannot recognize WebSocket protocol, but the WebSocket is supported by Istio Proxy sidecars out of the box and there is no need for additional configuration. In this article we will show the WebSocket application in action and check Envoy configuration configuring WebSocket protocol.</p>
+
+<p>Envoy support for WebSocket is documented in the below links:</p>
+
+<ul><li><a href="https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/http/upgrades" target="_self">HTTP Upgrades</a></li><li><a href="https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#envoy-v3-api-field-extensions-filters-network-http-connection-manager-v3-httpconnectionmanager-upgrade-configs" target="_self">HTTP connection manager</a></li></ul>
+
+<p>Istio protocol selection and discovery is described in the linked article below:</p>
+
+<ul><li><a href="https://istio.io/latest/docs/ops/configuration/traffic-management/protocol-selection/ " target="_self">Protocol Selection</a></li></ul>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Kubernetes: 1.17x, 1.18.x, 1.19.x, 1.20.x</li><li>Aspen Mesh: 1.6.x, 1.9.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>N/A</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>We will use WebSocket&#39;s Python library to deploy WebSocket applications in our cluster. WebSocket&#39;s documentation contains an example code and yaml manifest we can use to create a WebSocket application in our cluster. Please follow the steps from the <strong>Containerize application</strong> section in the linked article below to create a Python application and build an image we will use later:</p>
+
+<p><span class="note"><strong>Note</strong>: You may want to push your image to a public repository like dockerhub or quay so our Kubernetes cluster can pull the image from that remote repo. Use <strong>docker push &lt;image&gt;</strong> command to push the image if you use Docker to build the image.</span></p>
+
+<ul><li>
+	<p><a href="https://websockets.readthedocs.io/en/latest/howto/kubernetes.html#" target="_self">Deploy to Kubernetes</a></p>
+	</li></ul>
+
+<p>We may want to modify the deployment configuration from the example above to run the WebSocket server in Istio mesh.</p>
+
+<p>Below is the yaml file you can use to deploy:</p>
+
+<p><span class="example2">apiVersion: v1<br>kind: Service<br>metadata:<br>  name: websockets-test<br>spec:<br>  type: ClusterIP<br>  ports:<br>    - port: 8001<br>      targetPort: 80<br>      name: http-websocket<br>  selector:<br>    app: websockets-test<br>---<br>apiVersion: apps/v1<br>kind: Deployment<br>metadata:<br>  name: websockets-test<br>spec:<br>  selector:<br>    matchLabels:<br>      app: websockets-test<br>  template:<br>    metadata:<br>      labels:<br>        app: websockets-test<br>    spec:<br>      containers:<br>      - name: websockets-test<br>        image: quay.io/&lt;path to your repo&gt;/websocket-server:latest<br>        livenessProbe:<br>          httpGet:<br>            path: /healthz<br>            port: 80<br>          periodSeconds: 1<br>        ports:<br>        - containerPort: 80</span></p>
+
+<p>Having the server image and above deployment manifest we need to deploy the application to the namespace being a part of the Istio mesh (where Istio injects istio-proxy sidecar).</p>
+
+<p>Now we will deploy Client WebSocket application we can use to open a WebSocket interactive echo communication.</p>
+
+<p>We will use the same WebSockets Python library to test our application but we will need to build an image with a preinstalled library. You can use the below simple Dockerfile to create the image we will use:</p>
+
+<p><span class="example2">FROM python:3.9-alpine<br>RUN pip install websocket</span></p>
+
+<p>Use Docker to build and push the image. The below yaml manifest can be used to deploy the image to our cluster:</p>
+
+<p><span class="example2">apiVersion: apps/v1<br>kind: Deployment<br>metadata:<br>  name: websockets-client-sleep<br>spec:<br>  selector:<br>    matchLabels:<br>      app: websockets-client<br>  template:<br>    metadata:<br>      labels:<br>        app: websockets-client<br>    spec:<br>      containers:<br>      - name: websockets-client<br>        image: quay.io/&lt;path-to-yourrepo&gt;/websocket-client:latest<br>        command: [&quot;sleep&quot;, &quot;14d&quot;]</span></p>
+
+<p>Deploy above yaml file to the same namespace where you deployed WebSocket server application.</p>
+
+<p>To test the application, we need to open a shell command to the client POD:</p>
+
+<p><span class="code">kubectl exec -it -n &lt;namespace&gt; websockets-client-sleep-&lt;xxxx&gt; -- sh</span></p>
+
+<p>To open a WebSocket interactive echo connection to our server we can use the command from the below example: </p>
+
+<p><span class="example2">/ # python3 -m websockets ws://websockets-test.&lt;namespace&gt;.svc.cluster.local:8001<br>Connected to ws://websockets-test.ws.svc.cluster.local:8001.<br>&gt; test<br>&lt; test<br>&gt;test2<br>&lt;test2<br>Connection closed: 1000 (OK).<br>/ #</span></p>
+
+<p>Below examples show how the WebSocket connection may appear in the <strong>istio-proxy</strong> access logs:</p>
+
+<ul><li>On client side
+	<p><span class="example2">? kubectl logs websockets-client-sleep-68b894bd4-d9w8x -n ws -c istio-proxy | tail -2<br>	[2021-11-24T11:58:17.090Z] &quot;GET / HTTP/1.1&quot; 101 UC upstream_reset_after_response_started{connection_termination} - &quot;-&quot; 19 11 3933 - &quot;-&quot; &quot;Python/3.9 websockets/10.1&quot; &quot;4e1f2a9e-bff2-4aa6-8acc-3353f8b476b0&quot; &quot;websockets-test.ws.svc.cluster.local:8001&quot; &quot;192.0.2.4:80&quot; outbound|8001||websockets-test.ws.svc.cluster.local 192.0.2.184:34506 192.0.2.39:8001 192.0.2.184:41664 - default</span></p>
+	</li><li>On server side
+	<p><span class="example2">? kubectl logs websockets-test-dbf7d79f4-62t78 -n ws -c istio-proxy | tail -1<br>	[2021-11-24T11:58:17.091Z] &quot;GET / HTTP/1.1&quot; 101 UC upstream_reset_after_response_started{connection_termination} - &quot;-&quot; 19 11 2931 - &quot;-&quot; &quot;Python/3.9 websockets/10.1&quot; &quot;4e1f2a9e-bff2-4aa6-8acc-3353f8b476b0&quot; &quot;websockets-test.ws.svc.cluster.local:8001&quot; &quot;127.0.0.1:80&quot; inbound|80|| 127.0.0.1:53064 192.0.2.4:80 192.0.2.184:34506 - default</span></p>
+	</li></ul>
+
+<p>As you can see above, we have only one Access Log entry for the WebSocket connection even though we sent two requests to the echo server (test and test2). Envoy will create that access log entry only after the connection is closed and we will not see any message for every tcp request. This is because Envoy sees a WebSocket connection as a TCP bytes flow and only HTTP Upgrade request/response is understood by the proxy.</p>
+
+<p>Now let’s check if <strong>istio-proxy</strong> Envoy configuration has the configuration for WebSocket protocol.</p>
+
+<p><span class="example2">? istioctl pc listener websockets-client-sleep-68b894bd4-d9w8x.ws --port 8001 -o json | grep -i -A 2 -B 5 websocket<br>…<br>                                }<br>                            ],<br>                            &quot;useRemoteAddress&quot;: false,<br>                            &quot;upgradeConfigs&quot;: [<br>                                {<br>                                    &quot;upgradeType&quot;: &quot;websocket&quot;<br>                                }<br>…</span></p>
+
+<p>Istio version lower than 1.12 had issues with HTTP2 upgrade flow for WebSocket’s. You can find more details on github issues:</p>
+
+<ul><li><a href="https://github.com/istio/istio/pull/33581" target="_self">https://github.com/istio/istio/pull/33581</a></li><li><a href="https://github.com/istio/istio/issues/36185" target="_self">https://github.com/istio/istio/issues/36185</a></li><li><a href="https://github.com/istio/istio/issues/33534" target="_self">https://github.com/istio/istio/issues/33534</a></li></ul>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

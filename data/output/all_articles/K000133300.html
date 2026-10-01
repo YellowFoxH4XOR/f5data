@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000133300: Repace nfs server with a new nfs server</title>
+<meta name="description" content="Support Solution: Repace nfs server with a new nfs server — NGINX Controller configured to store database data (clickhouse and postgres) on an external nfs server">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000133300">
+</head>
+<body>
+<header>
+<h1>K000133300: Repace nfs server with a new nfs server</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-03-31</dd>
+<dt>Updated</dt><dd>2026-08-12</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Controller: 3.22.8</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000133300">https://my.f5.com/manage/s/article/K000133300</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p><span style="font-size: 16px;font-family: -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, Roboto, Oxygen, Ubuntu, &quot;Fira Sans&quot;, &quot;Droid Sans&quot;, &quot;Helvetica Neue&quot;, sans-serif;">Replace existing nfs server with a new nfs server</span></p>
+
+<h2><strong>Environment</strong></h2>
+
+<p><span style="font-size: 16px;font-family: -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, Roboto, Oxygen, Ubuntu, &quot;Fira Sans&quot;, &quot;Droid Sans&quot;, &quot;Helvetica Neue&quot;, sans-serif;">NGINX Controller configured to store database data (clickhouse and postgres) on an external nfs server</span></p>
+
+<h2><strong>Cause</strong></h2>
+
+<p>NFS server needs to be replaced</p>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<h5><strong>Modify clickhouse</strong></h5>
+
+<p>1. Scale down the clickhouse statefulset</p>
+
+<pre class="ckeditor_codeblock">
+kubectl scale --replicas=0 statefulset clickhouse</pre>
+
+<p>2. Export the current clickhouse pv and pvc to a yaml file</p>
+
+<pre class="ckeditor_codeblock">
+kubectl get pv clickhouse -o yaml &gt; clickhouse-pv.yaml
+cp clickhouse-pv.yaml clickhouse-pv-mod.yaml
+kubectl get pvc clickhouse-clickhouse-0 -o yaml &gt; clickhouse-pvc.yaml
+cp clickhouse-pvc.yaml clickhouse-pvc-mod.yaml</pre>
+
+<p>3. Delete the clickhouse pv and pvc resources</p>
+
+<pre class="ckeditor_codeblock">
+kubectl delete pvc clickhouse-clickhouse-0
+kubectl delete pv clickhouse --grace-period=0 --force</pre>
+
+<p>4. Modify clickhouse-pv-mod.yaml</p>
+
+<ul><li>change the values for “spec:nfs:path:” and “spec:nfs:server:” to the new nfs server and share path</li><li>delete &quot;claimRef:&quot;</li></ul>
+
+<p>5. Modify clickhouse-pvc-mod.yaml</p>
+
+<ul><li>delete &quot;annotations:&quot;</li><li>delete &quot;uid:”</li></ul>
+
+<p>6. Apply both modified clickhouse resources</p>
+
+<pre class="ckeditor_codeblock">
+kubectl apply -f clickhouse-pv-mod.yaml
+kubectl apply -f clickhouse-pvc-mod.yaml</pre>
+
+<p>7. Confirm STATUS on both clickhouse pv and pvc is Bound</p>
+
+<pre class="ckeditor_codeblock">
+kubectl get pv,pvc | grep clickhouse</pre>
+
+<p>8. Scale up the clickhouse statefulset</p>
+
+<pre class="ckeditor_codeblock">
+kubectl scale --replicas=1 statefulset clickhouse
+</pre>
+
+<ul><li>If the clickhouse pod starts and is throwing db errors and exceptions then run update.sh from the controller install package</li></ul>
+
+<h5><strong>Modify postgres</strong></h5>
+
+<p>1. Stop controller</p>
+
+<pre class="ckeditor_codeblock">
+/opt/nginx-controller/helper.sh controller stop</pre>
+
+<p>2. Export the postgres pv and pvc to a yaml file</p>
+
+<pre class="ckeditor_codeblock">
+kubectl get pv controller-postgres -oyaml &gt; postgres-pv.yaml
+cp postgres-pv.yaml postgres-pv-new.yaml
+kubectl get pvc controller-postgres-controller-postgres-0 -oyaml &gt; postgres-pvc.yaml
+cp postgres-pvc.yaml postgres-pvc-new.yaml</pre>
+
+<p>3. Modify postgres-pv-new.yaml</p>
+
+<ul><li>modify nfs.path and nfs.server as needed.</li><li>delete &quot;claimRef:&quot;</li></ul>
+
+<p>4. Modify postgres-pvc-new.yaml</p>
+
+<ul><li>delete &quot;annotations:&quot;</li><li>delete &quot;uid:&quot;</li></ul>
+
+<p>5. Delete the current postgres pvc and pv</p>
+
+<pre class="ckeditor_codeblock">
+kubectl delete pvc controller-postgres-controller-postgres-0
+kubectl delete pv controller-postgres
+</pre>
+
+<ul><li><strong>IF</strong> the postgres pvc is not deleting (stuck in STATUS &quot;Terminating&quot;) then remove setting &quot;finalizers&quot; from the postgres pvc</li></ul>
+
+<pre class="ckeditor_codeblock">
+kubectl patch pvc controller-postgres-controller-postgres-0 -p &#39;{&quot;metadata&quot;:{&quot;finalizers&quot;:null}}&#39;</pre>
+
+<p>6. Apply the new postgres pv and pvc resources</p>
+
+<pre class="ckeditor_codeblock">
+kubectl apply -f postgres-pv-new.yaml
+kubectl apply -f postgres-pvc-new.yaml</pre>
+
+<p>7. Confirm STATUS on both postgres pv and pvc is BOUND</p>
+
+<pre class="ckeditor_codeblock">
+kubectl get pv,pvc | grep postgres</pre>
+
+<p>8. Start controller</p>
+
+<pre class="ckeditor_codeblock">
+/opt/nginx-controller/helper.sh controller start
+</pre>
+
+<h2><strong>Additional Information</strong></h2>
+</article>
+</body>
+</html>

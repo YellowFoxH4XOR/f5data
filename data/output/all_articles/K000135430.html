@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000135430: X-Forwarded Headers don&#x27;t show DNS SAN custom fields</title>
+<meta name="description" content="Support Solution: X-Forwarded Headers don&#x27;t show DNS SAN custom fields — Aspen Mesh Citadel creates X.509 certificates with SAN DNS and URI entries for workloads based on annotations added in service accounts.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000135430">
+</head>
+<body>
+<header>
+<h1>K000135430: X-Forwarded Headers don&#x27;t show DNS SAN custom fields</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-07-14</dd>
+<dt>Updated</dt><dd>2023-09-20</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.11, 1.14</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000135430">https://my.f5.com/manage/s/article/K000135430</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>Aspen Mesh Citadel creates X.509 certificates with <a href="https://clouddocs.f5.com/products/aspen-service-mesh/1.14/citadel/mesh-workload-certs-san-entries.html" target="_blank">SAN DNS and URI entries</a> for workloads based on annotations added in service accounts.<br>After adding the annotation and bouncing the pod to get the new certificate the custom fields are not present in the XFCC headers:</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sleep
+  annotations:
+   <strong>&quot;certificate</strong>.<strong>aspenmesh</strong>.<strong>io/customFields&quot;: &#39;{ &quot;SAN&quot;: { &quot;DNS&quot;: [ &quot;test</strong>.<strong>example</strong>.<strong>com&quot; ], &quot;URI&quot;: [ &quot;urn:com.example.com.fnType&quot;: &quot;TEST&quot; ] } }&#39;</strong>
+</pre>
+
+<pre class="ckeditor_codeblock">
+{
+  &quot;headers&quot;: {
+    &quot;Accept&quot;: &quot;*/*&quot;,
+    &quot;Host&quot;: &quot;httpbin:8000&quot;,
+    &quot;User-Agent&quot;: &quot;curl/8.1.2&quot;,
+    &quot;X-B3-Parentspanid&quot;: &quot;24c7d95859ce1d7a&quot;,
+    &quot;X-B3-Sampled&quot;: &quot;0&quot;,
+    &quot;X-B3-Spanid&quot;: &quot;f136025472cb9e54&quot;,
+    &quot;X-B3-Traceid&quot;: &quot;2c6d0e90667fadb924c7d95859ce1d7a&quot;,
+    &quot;X-Envoy-Attempt-Count&quot;: &quot;1&quot;,
+<strong>    &quot;X-Forwarded-Client-Cert&quot;: &quot;By=spiffe://cluster</strong>.<strong>local/ns/default/sa/httpbin;Hash=518b097cac1e1c024e403fa3d4a56d2fde0c69eee8fef829fdcb0fd2e122e16f;Subject=\&quot;\&quot;;URI=spiffe://cluster.local/ns/default/sa/sleep&quot;</strong>
+  }
+}</pre>
+
+<p>Even when inspecting the certificate, the custom fields are not added:</p>
+
+<pre class="ckeditor_codeblock">
+➜  aspenmesh-carrier-grade-1.14.6-am3 export POD=$(kubectl get pod -l app=sleep -o jsonpath=&#39;{.items[0]<strong>.</strong>metadata<strong>.</strong>name}&#39;)
+
+➜  aspenmesh-carrier-grade-1.14.6-am3 istioctl proxy-config secret $POD -o json | jq &#39;.dynamicActiveSecrets[0].secret.tlsCertificate.certificateChain.inlineBytes&#39; -r | base64 -d | openssl x509 -noout -text | grep -A2 <strong>&quot;Subject Alternative Name&quot;
+            X509v3 Subject Alternative Name: critical
+                URI:spiffe://cluster.local/ns/default/sa/sleep</strong>
+    Signature Algorithm: sha256WithRSAEncryption
+
+</pre>
+
+<p> </p>
+
+<h2><strong>Environment</strong></h2>
+
+<p>Aspen Mesh 1.14.x, 1.11.x<br>Certificates created by Citadel with SAN DNS and URI extensions.<br> </p>
+
+<h2><strong>Cause</strong></h2>
+
+<p>Incorrect JSON syntax when adding the custom fields<br>Looking at the istio-proxy container logs the following log is shown:</p>
+
+<pre class="ckeditor_codeblock">
+➜  aspenmesh-carrier-grade-1.14.6-am3 k logs sleep-557747455f-4kj5t -c istio-proxy | grep -iC1 &quot;annotation&quot;
+2023-07-14T18:39:22.832986Z    info    ads    All caches have been synced up in 121.512127ms, marking server ready
+<strong>2023-07-14T18:39:22.833386Z    warn    cache    could not use customFields annotation: CERTIFICATE_CUSTOM_FIELDS env is not valid json: invalid character &#39;:&#39; after array element</strong>
+2023-07-14T18:39:22.833402Z    info    sds    SDS server for workload certificates started, listening on &quot;./var/run/secrets/workload-spiffe-uds/socket&quot;</pre>
+
+<p> </p>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>Change to a JSON valid syntax<br>For this example, we made the change below because the quotes from the URI were causing a conflict:<br>from: </p>
+
+<pre class="ckeditor_codeblock">
+&quot;certificate<strong>.</strong>aspenmesh<strong>.</strong>io/customFields&quot;: &#39;{ &quot;SAN&quot;: { &quot;DNS&quot;: [ &quot;test<strong>.</strong>example<strong>.</strong>com&quot; ], &quot;URI&quot;: [ <strong>&quot;</strong>urn:com<strong>.</strong>example<strong>.</strong>com.fnType<strong>&quot;</strong>: <strong>&quot;</strong>TEST<strong>&quot;</strong> ] } }&#39;</pre>
+
+<p>to:</p>
+
+<pre class="ckeditor_codeblock">
+&quot;certificate<strong>.</strong>aspenmesh<strong>.</strong>io/customFields&quot;: &#39;{ &quot;SAN&quot;: { &quot;DNS&quot;: [ &quot;test<strong>.</strong>example<strong>.</strong>com&quot; ], &quot;URI&quot;: [ <strong>&quot;</strong>urn:com.example.com.fnType: TEST<strong>&quot;</strong> ] } }&#39;</pre>
+
+<p> </p>
+
+<h2><strong>Additional Information</strong></h2>
+After adding the valid JSON syntax, the custom fields are seen in the XFCC header:
+
+<pre class="ckeditor_codeblock">
+➜  aspenmesh-carrier-grade-1.14.6-am3 kubectl exec -it sleep-557747455f-ldsnl -- curl  http<strong>:</strong>//httpbin<strong>:</strong>8000/headers
+{
+  &quot;headers&quot;: {
+    &quot;Accept&quot;: &quot;*/*&quot;,
+    &quot;Host&quot;: &quot;httpbin:8000&quot;,
+    &quot;User-Agent&quot;: &quot;curl/8.1.2&quot;,
+    &quot;X-B3-Parentspanid&quot;: &quot;314ee1d90ac149e1&quot;,
+    &quot;X-B3-Sampled&quot;: &quot;0&quot;,
+    &quot;X-B3-Spanid&quot;: &quot;6ce74b68885e4c45&quot;,
+    &quot;X-B3-Traceid&quot;: &quot;2daa738982721690314ee1d90ac149e1&quot;,
+    &quot;X-Envoy-Attempt-Count&quot;: &quot;1&quot;,
+<strong>    &quot;X-Forwarded-Client-Cert&quot;: &quot;By=spiffe://cluster.local/ns/default/sa/httpbin;Hash=df4a55cb09fc039dcc34e7b5827099762c23748a80436c60ec8652aed71d7ca2;Subject=\&quot;\&quot;;URI=spiffe://cluster.local/ns/default/sa/sleep;URI=urn:com.example.com.fnType: TEST;DNS=test</strong>.<strong>example</strong>.<strong>com&quot;</strong>
+  }
+}
+</pre>
+When we inspect the certificate values we can see the custom fields
+
+<pre class="ckeditor_codeblock">
+➜  aspenmesh-carrier-grade-1.14.6-am3 istioctl proxy-config secret $POD -o json | jq &#39;.dynamicActiveSecrets[0].secret.tlsCertificate.certificateChain.inlineBytes&#39; -r | base64 -d | openssl x509 -noout -text | grep -A2 &quot;Subject Alternative Name&quot;
+            X509v3 Subject Alternative Name: critical
+               <strong> URI:spiffe://cluster</strong>.<strong>local/ns/default/sa/sleep, DNS:test</strong>.<strong>example</strong>.<strong>com, URI:urn:com.example.com.fnType: TEST</strong>
+    Signature Algorithm: sha256WithRSAEncryption
+➜  aspenmesh-carrier-grade-1.14.6-am3</pre>
+</article>
+</body>
+</html>

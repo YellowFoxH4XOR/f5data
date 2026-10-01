@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161960: CRL Cache Stops Updating and keymgmtd Memory Leak with Dynamic CRL Validation on BIG-IP LTM</title>
+<meta name="description" content="Support Solution: CRL Cache Stops Updating and keymgmtd Memory Leak with Dynamic CRL Validation on BIG-IP LTM — Connection error: ssl_hs_do_crl_validation:7073: alert(46) unknown certificate error">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161960">
+</head>
+<body>
+<header>
+<h1>K000161960: CRL Cache Stops Updating and keymgmtd Memory Leak with Dynamic CRL Validation on BIG-IP LTM</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-29</dd>
+<dt>Updated</dt><dd>2026-06-29</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161960">https://my.f5.com/manage/s/article/K000161960</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When a Client SSL profile is configured with a dynamic CRL Validator on BIG-IP LTM, the CRL cache may stop being updated after working correctly for an extended period. Client SSL handshakes begin failing with the following error in /var/log/ltm:</p>
+<p>Connection error: ssl_hs_do_crl_validation:7073: alert(46) unknown certificate error</p>
+<p><br>The CRL is successfully downloaded from the CRL Distribution Point endpoint, but the downloaded file is not written to the CRL cache directory at /config/filestore/crl_file_cache_d/. The cached file retains its previous modification timestamp and the stale CRL continues to be used for validation. Removing the CRL Validator from the Client SSL profile immediately restores connectivity.</p>
+<p>Restarting the keymgmtd service and deleting the stale cached CRL file resolves the issue temporarily. However, the problem recurs over time as keymgmtd memory grows again.</p>
+<p>Symptoms</p>
+<p><br>The following symptoms are observed when this issue is active.</p>
+<p>SSL handshakes fail with the error message shown in the Description section above.</p>
+<p>The CRL is downloaded successfully from the CRLDP endpoint, which can be confirmed via firewall logs or a tcpdump capture, but the cached file in /config/filestore/crl_file_cache_d/ is not updated. The modification timestamp on the cached CRL file does not change after a successful download.</p>
+<p>The keymgmtd process memory, specifically VmRSS and VmSize, increases steadily over time without leveling off. Memory usage drops significantly after restarting the keymgmtd service.</p>
+<p>Removing the CRL Validator from the Client SSL profile immediately restores SSL connectivity. Restarting keymgmtd and deleting the stale cached CRL file restores CRL validation temporarily.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>Client SSL profile configured with a dynamic CRL cert-validator object (sys crypto cert-validator crl)</li><li>Internal proxy and DNS resolver configured for CRL downloads</li><li>CRL cache directory: /config/filestore/crl_file_cache_d/</li></ul>
+<h2>Cause</h2>
+<p>This issue is caused by a known memory leak in the keymgmtd daemon when dynamic CRL validation is enabled, documented in Bug ID1256757.</p>
+<p>When dynamic CRL validation is active, keymgmtd steadily accumulates memory in the emdeviced memory subsystem. Over time, as memory is exhausted, keymgmtd loses the ability to write the newly downloaded CRL file to the cache directory. The daemon continues to download the CRL from the CRLDP endpoint but cannot complete the cache update operation. As a result, the stale cached CRL file remains in place and is used for all subsequent certificate validation, causing handshake failures.</p>
+<p>The memory leak is independent of traffic volume and occurs whenever CRL validation is enabled. The rate of memory growth may vary depending on the frequency of CRL downloads and the number of SSL handshakes processed.</p>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>Workaround</strong></p>
+<p>The following procedure temporarily resolves the issue by clearing the stale cache and resetting keymgmtd memory. This procedure must be repeated when the issue recurs as memory grows again.</p>
+<p>Step 1. Re-enable the CRL Validator in the Client SSL profile if it was removed as a workaround.</p>
+<p>Step 2. Delete the stale cached CRL file from the cache directory. The filename corresponds to the CRL URL with special characters replaced by underscores.</p>
+<p>rm /config/filestore/crl_file_cache_d/&lt;crl_cache_filename&gt;</p>
+<p>Step 3. Restart the keymgmtd service to reset memory and allow the daemon to download and cache a fresh CRL.</p>
+<p>tmsh restart sys service keymgmtd</p>
+<p>Step 4. Verify that a new CRL file is created in the cache directory with the current date after the restart.</p>
+<p>ls -la /config/filestore/crl_file_cache_d/</p>
+<p>Step 5. Confirm that the ssl_hs_do_crl_validation errors no longer appear in /var/log/ltm.</p>
+<p><strong>Monitoring keymgmtd Memory Growth</strong></p>
+<p>To confirm that keymgmtd memory is growing and to establish a trend, collect the following outputs periodically, for example every hour over a period of three days.</p>
+<p>Check the keymgmtd process memory using ps:</p>
+<p>date; ps aux | grep keymgmtd</p>
+<p><br>Check the keymgmtd virtual memory details from the proc filesystem:</p>
+<p><code>cat /proc/$(pgrep keymgmtd)/status | grep -i vm</code></p>
+<p>Look for VmRSS and VmSize values that increase steadily over time without leveling off. This confirms the memory leak is active.</p>
+<p>To check for evidence of prior keymgmtd crashes or out-of-memory events, run the following commands:</p>
+<p><code>grep -i keymgmtd /var/log/ltm | grep -iE &quot;crash|core|restart|killed|oom&quot;</code><br><code>grep -i &quot;out of memory&quot; /var/log/messages</code><br><code>grep -i keymgmtd /var/log/daemon.log</code><br><code>ls -lh /var/core/ | grep keymgmtd</code></p>
+<h2>Inspecting the CRL Cache File</h2>
+<p>To check the Next Update timestamp in a cached CRL file and verify whether it is stale, run the following command:</p>
+<pre><code>openssl crl -inform der -in /config/filestore/crl_file_cache_d/&lt;crl_cache_filename&gt; -text | grep -E &quot;Last Update|Next Update&quot;
+</code></pre>
+<p>To check the file modification timestamp on the cached CRL file:</p>
+<pre><code>stat /config/filestore/crl_file_cache_d/&lt;crl_cache_filename&gt;
+</code></pre>
+<p>If the Modify timestamp on the cached file is older than the most recent CRL download confirmed in firewall or network logs, this confirms that keymgmtd downloaded the CRL but failed to update the cache file.</p>
+<h2>Additional Information</h2>
+<p>Additional context or information relevant to the issue or topic (Leave blank if not applicable).</p>
+</article>
+</body>
+</html>

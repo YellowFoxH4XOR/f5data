@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K50557252: Install Istio Ingress Gateway using the Aspen Mesh Ingress Helm Chart</title>
+<meta name="description" content="Support Solution: Install Istio Ingress Gateway using the Aspen Mesh Ingress Helm Chart — Aspen Mesh can integrate with other Ingress Controller using Ingress Resource but to make use of all Istio features it is recommended to install Istio Ingress Gateway. Istio Gateway is based on the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K50557252">
+</head>
+<body>
+<header>
+<h1>K50557252: Install Istio Ingress Gateway using the Aspen Mesh Ingress Helm Chart</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-06-24</dd>
+<dt>Updated</dt><dd>2023-01-13</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K50557252">https://my.f5.com/manage/s/article/K50557252</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><span class="sectiontitle">Description</span></h2>
+
+<p>Aspen Mesh can integrate with other Ingress Controller using Ingress Resource but to make use of all Istio features it is recommended to install Istio Ingress Gateway. Istio Gateway is based on the same Envoy proxy used by the istio-proxy sidecar container in the Service Mesh. Aspen Mesh install package contains the Helm Chart to deploy the Istio Ingress Gateway. In this article we are going to describe how to install and configure Istio Ingress Gateway.<br> </p>
+
+<h2><span class="sectiontitle">Environment</span></h2>
+
+<ul><li><strong>Kubernetes</strong>: 1.17x,1.18.x,1.19.x,1.20.x  </li><li><strong>Aspen Mesh</strong>: 1.6.x, 1.9.x, 1.11.x, 1.14.x</li></ul>
+
+<h2><br><span class="sectiontitle">Cause</span></h2>
+
+<p>To expose a service outside of the Aspen Mesh service cluster we can use the Kubernetes Ingress Controller and Kubernetes Ingress Resource.<br> </p>
+
+<ul></ul>
+
+<h2><span class="sectiontitle">Recommended Actions</span></h2>
+
+<ul><li><a href="#default" target="_self">The default values.yaml file</a></li><li><a href="#custom" target="_self">Create your custom values yaml file</a></li><li><a href="#install" target="_self">Install Istio Ingress Gateway</a></li></ul>
+Istio Ingress Gateway is an optional Helm Chart that you can install during the Aspen Mesh installation. After extracting the Aspen Mesh install tarball, the Ingress Chart can be found in the following directory:
+
+<p><span class="code">manifests/charts/gateways/istio-ingress</span><br> </p>
+<span class="subsectiontitle"><a id="default" name="default"></a><strong>The default values.yaml file</strong></span>
+
+<p>You can customize the Ingress Gateway configuration by creating Helm values in a yaml file. The default settings for the Chart are stored under the following directory and file:</p>
+<span class="code">manifests/charts/gateways/istio-ingress/values.yaml</span> 
+
+<p>You can use the above default values file as a reference for your custom values yaml file. Default values configure the Ingress Gateway as such:</p>
+
+<ul><li>as a LoadBalancer type</li><li>The gateway is called <strong>istio-ingressgateway</strong></li><li><strong>HorizontalPodAutoscaler </strong>is enabled to scale the number of Istio Ingress Gateway pods between 2-5 based on the CPU usage. <strong>targetAverageUtilization </strong>is configured to be 80%.</li><li>The gateway is labeled with <strong>app: istio-ingressgateway</strong>. You can use this label later as a Selector to the Gateway manifest to select which gateway to receive the configuration.</li><li>5 ports are defined and exposed by default by the LoadBalancer service:
+	<ul style="list-style-type: circle;"><li>15021</li><li>80</li><li>443</li><li>15012</li><li>15443</li></ul>
+	</li></ul>
+ 
+
+<p>Examples from the default configuration:</p>
+
+<pre class="ckeditor_codeblock">
+gateways:
+  istio-ingressgateway:
+    name: istio-ingressgateway
+    labels:
+      app: istio-ingressgateway
+      istio: ingressgateway
+    ports:
+    - port: 15021
+      targetPort: 15021
+      name: status-port
+      protocol: TCP
+    - port: 80
+      targetPort: 8080
+      name: http2
+      protocol: TCP
+    - port: 443
+      targetPort: 8443
+      name: https
+      protocol: TCP
+    - port: 15012
+      targetPort: 15012
+      name: tcp-istiod
+      protocol: TCP
+    # This is the port where sni routing happens
+    - port: 15443
+      targetPort: 15443
+      name: tls
+      protocol: TCP
+ 
+    # Scalability tuning
+    replicaCount: 2
+    rollingMaxSurge: 100%
+    rollingMaxUnavailable: 25%
+    autoscaleEnabled: true
+    autoscaleMin: 2
+    autoscaleMax: 5
+ 
+    cpu:
+      targetAverageUtilization: 80
+ 
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 2000m
+        memory: 1024Mi
+ 
+    podAnnotations: {}
+    type: LoadBalancer
+ 
+    nodeSelector: {}
+ 
+   &lt;TRUNCATED&gt;</pre>
+  
+
+<p><span class="subsectiontitle"><a id="custom" name="custom"></a><strong>Create your custom values yaml file</strong></span></p>
+
+<p>To override any of the above default configuration, you can create your custom values yaml file that you will use later for the installation. Using the example below you can increase the CPU and memory limits assigned to every Ingress Gateway pod. You will also add pod annotation to the Envoy Proxy to enable <strong>cluster.outbound</strong> metrics. You should use the <strong>NodePort </strong>service type if you do not have Cloud Controller installed in your Kubernetes cluster.</p>
+
+<pre class="ckeditor_codeblock">
+gateways:
+  istio-ingressgateway:
+    replicaCount: 1
+    autoscaleMin: 1
+    autoscaleMax: 5
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 3000m
+        memory: 2048Mi
+    podAnnotations:
+      &quot;sidecar.istio.io/statsInclusionPrefixes&quot;: &quot;cluster.outbound”
+    type: NodePort</pre>
+
+<p><br><strong><span class="subsectiontitle"><a id="install" name="install"></a>Install Istio Ingress Gateway</span></strong></p>
+
+<p>To install Istio Ingress Gateway, run the following command:</p>
+<em><span class="code">helm install istio-ingress manifests/charts/gateways/istio-ingress --namespace &lt;NAMESPACE&gt; --values &lt;OVERRIDE_VALUES_FILE&gt;</span></em>
+
+<p>You can install Istio Ingress Gateway Helm Chart in any namespace you want. The Gateway does not have to be installed in the <strong>istio-system</strong> namespace. If you do not specify your custom <strong>OVERRIDE_VALUES_FILE</strong>, then the default settings will be used.<br> </p>
+You can install more than 1 instance of Istio Ingress Gateway on your cluster, but you should modify the name of the deployment and the label that is used in the Gateway manifest as Selector.
+
+<h2><br><br><span class="sectiontitle">Additional Information</span></h2>
+
+<ul><li><a href="https://my.aspenmesh.io/client/docs/1.14/aspen-mesh/installing/perform-a-clean-installation/#install-the-control-plane-and-gateway-components" target="_blank">Install the control plane and gateway components</a></li><li><a href="https://my.f5.com/manage/s/article/K16530333" target="_self">K16530333: Configure workload TLS certificates validity in Aspen Mesh</a></li><li><a href="https://my.f5.com/manage/s/article/K50554509" target="_self">K50554509: Basic troubleshooting commands for istio-proxy in Aspen Mesh</a></li></ul>
+</article>
+</body>
+</html>

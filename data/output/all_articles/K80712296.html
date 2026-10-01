@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K80712296: BIG-IQ 7.1 Upgrade fails during database conversion of ASM policies</title>
+<meta name="description" content="Support Solution: BIG-IQ 7.1 Upgrade fails during database conversion of ASM policies — When there are a sufficient large number of ASM Policy instances in the BIG-IQ database, upgrading to version 7.1 and later will fail during the database migration from toku to postgres that occurs…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K80712296">
+</head>
+<body>
+<header>
+<h1>K80712296: BIG-IQ 7.1 Upgrade fails during database conversion of ASM policies</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-02-17</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Virtual Editions</li><li>BIG-IQ Platforms</li><li>BIG-IQ</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K80712296">https://my.f5.com/manage/s/article/K80712296</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>When there are a sufficient large number of ASM Policy instances in the BIG-IQ database, upgrading to version 7.1 and later will fail during the database migration from toku to postgres that occurs as part of the upgrade.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IQ upgrade to 7.1.0 or later</li><li>ASM Policies present in BIG-IQ</li><li>Deployment snapshots containing ASM Policy deployments</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br>After the initial boot and the post-boot activities occur, the bootstrap log (/var/log/bootstrap/bootstrap[date and time].out) and the GUI will show something like below:<br><br><span class="example2">[INFO][Thu Feb 17 2021 04:26:02 GMT-0800 (PST)] adding threatCampaignReference and threatCampaignSettingReference reference to policy : secure_app150<br>[INFO][Thu Feb 17 2021 04:26:02 GMT-0800 (PST)] adding threatCampaignReference and threatCampaignSettingReference reference to policy : secure_app151<br>[ERROR][Thu Feb 17 2021 04:26:02 GMT-0800 (PST)] undefined<br>TokuMX mongo shell v2.0.3-mongodb-2.4.10<br>connecting to: bigiqDb<br>Tokumx upgrade failed!<br>Stopping Tokumx<br><br>Errors on Launch<br>Traceback (most recent call last):<br>  File &quot;/usr/local/lib/python2.7/site-packages/bigiq_setup/configuration/bootstrap.py&quot;, line 262, in main<br>    _do_bootstrap(out)<br>  File &quot;/usr/local/lib/python2.7/site-packages/bigiq_setup/configuration/bootstrap.py&quot;, line 228, in _do_bootstrap<br>    commander.run_pgupgrade()<br>  File &quot;/usr/local/lib/python2.7/site-packages/bigiq_setup/configuration/commands.py&quot;, line 97, in run_pgupgrade<br>    stdout=self.outfile, stderr=STDOUT, env=env)<br>  File &quot;/usr/local/lib/python2.7/subprocess.py&quot;, line 186, in check_call<br>    raise CalledProcessError(retcode, cmd)<br>CalledProcessError: Command &#39;[&#39;bash&#39;, &#39;/usr/bin/tokuToPgUpgrade.sh&#39;]&#39; returned non-zero exit status 1</span><br><br>When the total number of ASM Policy instances in the database exceeds 2442, mongo will be unable to complete some of the migration actions needed to convert the database to postgres, resulting in the upgrade failing during the post-boot tasks.<br><br>Each ASM Policy present in the configuration will result in a single ASM Policy instance (1:1 ratio) while Deployment Snapshots containing changes to ASM Policies deployed to BIG-IPs may result in a number of ASM Policy instances each, depending on the nature of the deployment. Each Deployment Snapshot contains a version of objects (like ASM Policies), to allow rollback to the snapshot&#39;s earlier state if desired. ASM Policy instances will be created in the database for each ASM Policy modified across every BIG-IP selected in the deployment and captured in the Snapshot. Multiple changes across multiple BIG-IPs can result in a single Deployment snapshot containing a number of ASM Policy instances.<br><br>The bug ID994737 has been opened for this upgrade issue.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+There are two workarounds to allow the database conversion to succeed. An index can be manually created in mongo for the ASM Policies prior to initiating upgrade, or ASM Policy Deployment Snapshots can be deleted prior to upgrading.
+
+<ol><li>Manually create an index for ASM Policies in mongo<br>	<span class="note">This will create an index used during upgrade which then becomes inactive along with mongo and toku in 7.1+ after the upgrade completes and they are disabled.</span>
+
+	<ol><li>SSH to the BIG-IQ</li><li>Confirm no index for ASM Policies currently exists<br>		<span class="code"><span class="example2">mongo bigiqDb --eval &quot;printjson(db.bigiqWorkingConfig.getIndexes())&quot; | grep &#39;&quot;_value.generation&quot;&#39; -A4 -B2</span></span><br>		<span class="note">Note: This should return no result, indicating no index is present.</span></li><li>Create the index<br>		<span class="code">mongo bigiqDb --eval &#39;db.bigiqWorkingConfig.createIndex( { &quot;_value.generation&quot;: 1 } )&#39;</span></li><li>Confirm the index is now present<br>		<span class="code">mongo bigiqDb --eval &quot;printjson(db.bigiqWorkingConfig.getIndexes())&quot; | grep &#39;&quot;_value.generation&quot;&#39; -A4 -B2</span><br>		<span class="note">Note: The output should look like:<br>		        {<br>		                &quot;key&quot; : {<br>		                        &quot;_value.generation&quot; : 1<br>		                },<br>		                &quot;ns&quot; : &quot;bigiqDb.bigiqWorkingConfig&quot;,<br>		                &quot;name&quot; : &quot;_value.generation_1&quot;<br>		        }</span></li><li>Close SSH session and proceed with upgrade</li></ol>
+	</li><li>Delete Deployment Snapshots<br>	<span class="warning">This will <strong>remove</strong> all the ASM Deployment Snapshots present on the BIG-IQ, resulting in an <strong>inability</strong> to revert ASM Policy changes which occurred prior to the upgrade. Ensure all ASM Policies are in a desired state <strong>prior</strong> to deleting Deployment Snapshots.</span>
+	<ol><li>Log into the BIG-IQ GUI</li><li>Go to Deployments -&gt; Snapshots -&gt; Web Application Security</li><li>Click the name of a Deployment Snapshot, opening the detail window</li><li>Click Delete in the upper right hand corner and confirm Delete in the following pop-up window</li><li>Repeat steps 3 and 4 until all ASM Policy Deployment Snapshots have been deleted</li><li>Proceed with upgrade</li></ol>
+	</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span><br>The impact of adding an additional index to toku (the first workaround) is negligible as toku can process many more database records than would be generated for ASM Policy instances. Since toku and mongo are disabled in 7.1, there is no need to remove the index after the upgrade completes. Utilizing the index allows for retention of the Deployment Snapshots however the upgrade itself may take longer due to the number of records contains in the Snapshots. Deleting the Deployment Snapshots is a more time-consuming process and prevents the ability to revert to older Snapshots, however it will result in a potentially shorter upgrade as there will be less records to convert to postgres.<br><br>To view the number of ASM Policy instances, ASM Policy instances from Policies and Policy instances from Deployment Snapshots, SSH to the BIG-IQ and run the following read-only query:<br><br><span class="code">instances=$(mongo bigiqDb -quiet --eval &#39;db.bigiqWorkingConfig.find({&quot;_value.kind&quot;: &quot;cm:asm:working-config:policies:policystate&quot;}).count()&#39;); policies=$(mongo bigiqDb -quiet --eval &#39;db.bigiqWorkingConfig.distinct(&quot;_value.name&quot;, {&quot;_value.kind&quot;: &quot;cm:asm:working-config:policies:policystate&quot;}).length&#39;); echo &quot;$instances ASM Policies instances. $policies from ASM Policies and $(($instances-$policies)) from Deployment snapshots.&quot;; unset instances; unset policies</span><br><br>Example output:<br>2803 ASM Policies instances. 319 from ASM Policies and 2484 from Deployment snapshots.<br><br>In this case deleting all of the Deployment snapshots will result in 319 ASM Policy instances remaining due to 319 ASM Policies being present.</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K1541: Configuring BIG-IP as a Layer 2 device</title>
+<meta name="description" content="Knowledge: Configuring BIG-IP as a Layer 2 device — In some configurations, it may be desirable to have multiple VLAN groups. For example, you could deploy a BIG-IP at an ISP to do load balancing, while still providing a transparent L2-functioning…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K1541">
+</head>
+<body>
+<header>
+<h1>K1541: Configuring BIG-IP as a Layer 2 device</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2006-02-17</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>BIG-IP 4.X: 4.6.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K1541">https://my.f5.com/manage/s/article/K1541</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3>
+<p>In some configurations, it may be desirable to have multiple VLAN groups. For example, you could deploy a BIG-IP at an ISP to do load balancing, while still providing a transparent L2-functioning solution for non-load balanced traffic. Whether traffic is headed for another network or to the Internet, for security reasons it is important to pass the traffic through a firewall.</p>
+<p>Consider the following diagram:</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000ZC4j&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000VvZSD" alt="example network diagram"></img></p>
+<p>In the preceding configuration example, each customer (C1 and C2) has a VLAN group and above each of these VLAN groups is a firewall. There are several complications associated with this configuration.</p>
+<p>If you set up the two VLAN groups without any virtual servers, C1 can reach the Internet, as can C2. However, C1 cannot securely or properly reach C2 for the following reasons:</p>
+<ul><li>BIG-IP versions 4.0 PTF-01 through 4.1.1PTF-03 pass traffic between VLAN groups without going through the firewall. That means that in this configuration example, BIG-IP will route packets straight from C1 to C2, completely bypassing the firewall.</li><li>BIG-IP versions 4.1.1 PTF-03 and later do not route between VLAN groups unless IP forwarding is enabled. If IP forwarding is not enabled, BIG-IP drops the packet.</li></ul>
+<p>Ideally, BIG-IP should send any packets not destined for the BIG-IP itself, or for virtual servers on the BIG-IP, through the firewall—a hybrid of transparency at L2 and routing at L3.</p>
+<p>In the original implementation of proxy ARP (the mechanism that causes BIG-IP to respond to ARPs on behalf of other hosts), BIG-IP proxies for ARPs using the MAC address of the VLAN group and all ARP replies show the VLAN group&#39;s MAC address.</p>
+<p>This implementation works fine when there is only one VLAN group, but if BIG-IP receives a packet from C1 destined for BIG-IP&#39;s own MAC address with the destination IP of C2, BIG-IP has no reason to send the traffic through the firewall. If the MAC address has the destination of the BIG-IP, BIG-IP is the next hop and, therefore, that BIG-IP makes the next routing decision. According to BIG-IP system&#39;s routing table it can reach this network directly (because it is routing/bridging for both networks), and as we see above in the diagram, this would mean the firewall is bypassed.</p>
+<p>In the new implementation of proxy ARP with <b>transparent_vlangroups=1</b>, BIG-IP does not use the MAC address of the VLAN group in its ARP replies; it uses the real MAC address of the host that is being requested with a <b>locally unique</b> bit toggled. Because of this, when a client on C1 makes a request for C2, the client ARPs for the default gateway (that is, the firewall), and BIG-IP responds with the firewall&#39;s MAC address, which has the locally unique bit toggled. When the client uses this MAC address to make a connection, BIG-IP recognizes that the MAC address needs to be sent to the firewall, and sends the packet out through the correct firewall-facing interface.</p>
+<p>The flow is as follows:</p>
+<p><b>C1 requests a connection to C2</b></p>
+<ol><li>C1 sends an ARP for the default gateway (the firewall).</li><li>BIG-IP sees this request, proxies a response for the firewall, and toggles a bit to make it unique so that the same MAC does not exist in multiple places on the network.</li><li>The client receives this ARP entry and updates the ARP table.</li><li>The client then tries to open a connection to C2, using the firewall MAC address assigned by BIG-IP as the next hop.</li><li>BIG-IP receives this request and, since the MAC address is the same as the firewall, it sends the packet to that MAC address.</li></ol>
+<p>Steps 1 through 5 are then repeated with the firewall doing the ARP request.</p>
+<p>Theoretically, it would appear that you could use virtual servers to bypass OS routing, but there is another complication. Consider the previous example where C1 is trying to connect to C2, except in this case we have a virtual server pointing at the firewall for both networks (on each VLAN group).</p>
+<p>The flow is as follows:</p>
+<ol><li>C1 sends an ARP for the default gateway.</li><li>C1 receives the MAC address of the BIG-IP.</li><li>C1 attempts to open a connection using the BIG-IP&#39;s MAC address as the next hop.</li><li>BIG-IP receives the packet (on VC1) with its own address as the next hop, destined for C2, for which it has a VIP.</li><li>The packet is sent to the firewall and creates a connection in the connection table.</li><li>The firewall sends an ARP for C2 and gets the BIG-IP MAC address as the next hop.</li><li>The firewall sends the packet to BIG-IP (on VE2).</li><li>BIG-IP receives the packet, and looks up the connection to see if the VIP on which it was created is enabled on this VLAN.</li><li>BIG-IP finds a connection (because it has the same source and destination as when it was first received on VC1), and sends the packet to the correct host (the firewall), as defined in the connection table.</li><li>This cycle is repeated 127 times as the TTL gets decremented, and then the packet is dropped (routing loop).</li></ol>
+<p>If the firewall translated the source address, this configuration will work because it would appear as a new connection, enabling the traffic to be securely sent. This configuration only works if the firewall translates the address, and is no longer necessary with the new implementation of proxy ARP, but can also be resolved by making BIG-IP VLAN-aware. VLAN awareness allows BIG-IP to know on what VLAN a request is received so it can differentiate where (what VLAN) the request came from—this would also resolve the issue described in this example.</p>
+<p>To enable VLAN awareness, set the <b>honor_vlans</b> internal variable to <b>1</b>—this internal variable is available on BIG-IP version 4.1.1 PTF-04 and 4.1.1 PTF-05, and is enabled by default on BIG-IP 4.2 PTF-02 and greater. The following section demonstrates how to set up this configuration.</p>
+<h3>Configuring the new proxy ARP implementation</h3>
+<p><b>BIG-IP version 4.5 through 4.6.4</b></p>
+<p>As of BIG-IP version 4.5, the <b>internal transparent_vlangroups</b> is the global setting: <b>vlangroups opaque | translucent | transparent</b>. The transparent setting corresponds to the internal setting.</p>
+<p>To enable this through the command line, type the following command:</p>
+<p class="code">b global vlangroups transparent</p>
+<p>The <b>honor_vlans</b> internal variable has been converted to the global variable, <b>vlans lookup enable | disable</b>. This global variable is enabled by default.</p>
+<p><br><b>BIG-IP versions 4.1.1 PTF-04 through 4.1.1 PTF-05 and 4.2 PTF-02 through 4.2 PTF-10</b></p>
+<p>By default, BIG-IP version 4.0 through 4.1.1 PTF-03 uses the original proxy ARP implementation, which sends out the VLAN group MAC address in all proxied ARPs.</p>
+<p>To toggle this on BIG-IP version 4.1.1 PTF-04, 4.1.1 PTF-05, and 4.2 PTF-02 and greater, set the <b>transparent_vlangroups</b> internal variable by typing the following command:</p>
+<p class="code">b internal set transparent_vlangroups = 1</p>
+<p>Where the possible values are:<br><br></p>
+<table border="0"><tbody><tr><td colspan="1" rowspan="1" width="15"><b>0</b></td><td colspan="1" rowspan="1">Use VLAN group MAC</td></tr><tr><td colspan="1" rowspan="1" width="10"><b>1</b></td><td colspan="1" rowspan="1">Use the real MAC address of the requested host with the <b>locally unique</b> bit toggled</td></tr><tr><td colspan="1" rowspan="1" width="10"><b>2</b></td><td colspan="1" rowspan="1">Use the real MAC address of the requested host</td></tr></tbody></table>
+</article>
+</body>
+</html>

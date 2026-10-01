@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K06352139: Management firewall rules not updated, deleted or outdated rules still enforced</title>
+<meta name="description" content="Support Solution: Management firewall rules not updated, deleted or outdated rules still enforced — After modifying or deleting management firewall rules following K46122561, the old rules are still enforced.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K06352139">
+</head>
+<body>
+<header>
+<h1>K06352139: Management firewall rules not updated, deleted or outdated rules still enforced</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-05-16</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 14.X.X, 14.1.X, 14.0.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0</li><li>BIG-IP AFM: 14.1.X, 14.0.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.X.X, 14.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K06352139">https://my.f5.com/manage/s/article/K06352139</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>After modifying or deleting management firewall rules following <a href="https://my.f5.com/manage/s/article/K46122561" target="_self">K46122561</a>, the old rules are still enforced.</p>
+
+<p>Traffic is blocked or allowed unexpectedly.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Management firewall</li><li>mgmt_acld</li><li>BIG-IP 14.1.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>The <strong>MCP </strong>and <strong>iptables </strong>rules are inconsistent, as a result of <a href="https://cdn.f5.com/product/bugtracker/ID812481.html" target="_self">bug ID 812481</a>.</p>
+
+<p>When this issue is encountered, you will see an <strong>iptables -xvL f5acl</strong> command, when running:</p>
+
+<p><span class="code">ps aux | grep -E &#39;[/]mgmt_acld|[i]ptables&#39;</span></p>
+
+<p>For example:</p>
+
+<p><span class="example2">USER         PID   PPID  %CPU  %MEM     VSZ     RSS TTY      STAT START   TIME        COMMAND<br>root       10728   6612   0.0   0.2    2.2G   25.1M ?        S    Feb22   00:21:16.75 /usr/bin/mgmt_acld<br>root       15097  10728   0.0   0.0   51.2M    1.7M ?        S    15:17   00:00:00.00 /sbin/iptables -xvL f5acl  &lt;---</span></p>
+
+<p>The <strong>PPID </strong>(parent process ID) of this process will correspond to the <strong>PID </strong>of the <strong>mgmt_acld </strong>process, which is responsible for maintaining statistics relating to the management firewall rules.</p>
+
+<p>Additionally, running the <strong>iptables -xvL f5acl</strong> command manually from the command line will result in the following:</p>
+
+<p><span class="example2">Another app is currently holding the xtables lock. Perhaps you want to use the -w option?</span></p>
+
+<p>The <strong>iptables -xvL f5acl</strong> command runs every 10 seconds to gather stats about the various firewall rules for <strong>mgmt_acld</strong>.</p>
+
+<p>By default, when using the <strong>-L</strong> option, <strong>iptables </strong>attempts a <strong>reverse DNS lookup</strong> of any IP addresses present, in order to display hostnames rather than IP addresses.</p>
+
+<p>These reverse lookups can take a long time (especially if they fail), and since the process runs every 10 seconds, the system will be continually attempting those lookups. The result is that any other command that requires the <strong>xtables </strong>lock (like those that would add or delete rules) is likely to not work, resulting in the rule changes not being properly propagated to <strong>iptables </strong>(<strong>iptables-save</strong> is an exception to this and does not require the lock).</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>Upgrade to <strong>15.1.x</strong> or later, which includes the fix for bug <strong>ID 812481</strong>. The <strong>iptables </strong>command spawned from <strong>mgmt_acld</strong> in the fixed versions includes the <strong>-n</strong> option, which causes <strong>iptables </strong>to displays IP addresses in numerical format, rather than attempt to resolve them to hostnames using a reverse DNS lookup.</p>
+
+<p>Alternatively, to work around the issue, do one of the following:</p>
+
+<ul><li>
+	<p>Reboot the system:</p>
+
+	<p><span class="code">touch /service/mcpd/forceload &amp;&amp; reboot</span></p>
+	</li><li>
+	<p>Stop <strong>mgmt_acld</strong>, clear the <strong>/run/xtables.lock</strong> file, delete the old rule(s) in question from iptables, then start <strong>mgmt_acld</strong>.</p>
+
+	<p><span class="note"><strong>Note</strong>: This option is not recommended, unless you are an advanced user of <strong>iptables</strong>.</span></p>
+	</li><li>
+	<p>Stop <strong>mgmt_acld</strong>, clear the <strong>/run/xtables.lock</strong> file, create a new firewall rule which does <strong>not</strong><em><strong> </strong></em>contain an IP address, then start <strong>mgmt_acld</strong>:</p>
+
+	<ul><li><span class="code">tmsh stop sys service mgmt_acld &amp;&amp; rm -f /run/xtables.lock</span></li><li><span class="code">&lt;create new management firewall rule&gt;</span></li><li><span class="code">tmsh start sys service mgmt_acld</span></li></ul>
+	</li></ul>
+
+<p><span class="note"><strong>Note</strong>: There is an element of timing with the workarounds, since <strong>mgmt_acld</strong> runs the <strong>iptables </strong>command every 10 seconds.</span></p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>You can review the current rules in the <strong>f5acl </strong>chain with the following command:</p>
+
+<p><span class="code">command iptables -nL f5acl</span><br>(including <strong>command</strong>, which is a bash builtin)</p>
+
+<p><span class="note"><strong>Note</strong>: This command will not work if the system is still affected by bug <strong>ID 812481</strong>.</span></p>
+</article>
+</body>
+</html>

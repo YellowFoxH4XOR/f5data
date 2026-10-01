@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K25102110: overly escaped jwt tokens</title>
+<meta name="description" content="Support Solution: overly escaped jwt tokens — &quot;{\n \&quot;token_type\&quot;:\&quot;Bearer\&quot;,\n \&quot;scope\&quot;:\&quot;ScopeSeason openid\&quot;,\n \&quot;scope_data\&quot;:[\n {\n \&quot;id\&quot;:\&quot;ScopeSeason\&quot;,\n \&quot;value\&quot;:\&quot;fall\&quot;\n },\n {\n \&quot;id\&quot;:\&quot;openid\&quot;,\n \&quot;value\&quot;:\&quot;1\&quot;\n }\n ],\n…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K25102110">
+</head>
+<body>
+<header>
+<h1>K25102110: overly escaped jwt tokens</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-10-11</dd>
+<dt>Updated</dt><dd>2024-05-24</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 16.X.X, 15.X.X, 14.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.3, 15.1.6, 15.1.5, 15.1.4, 15.1.2, 15.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K25102110">https://my.f5.com/manage/s/article/K25102110</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+<p>When F5&#39;s APM module acts as an OAuth Authorization Server, it&#39;s possible to see a jwt token that looks something similar to this:<br><span class="code">&quot;{\n  \&quot;token_type\&quot;:\&quot;Bearer\&quot;,\n  \&quot;scope\&quot;:\&quot;ScopeSeason openid\&quot;,\n  \&quot;scope_data\&quot;:[\n    {\n        \&quot;id\&quot;:\&quot;ScopeSeason\&quot;,\n        \&quot;value\&quot;:\&quot;fall\&quot;\n    },\n    {\n        \&quot;id\&quot;:\&quot;openid\&quot;,\n        \&quot;value\&quot;:\&quot;1\&quot;\n    }\n  ],\n  \&quot;iss\&quot;:\&quot;https://oauth.lab\&quot;,\n  \&quot;aud\&quot;:[\n    \&quot;LabUsers\&quot;\n  ],\n  \&quot;claim1\&quot;:\&quot;http://www.f5.com\&quot;,\n  \&quot;email\&quot;:test2@oauth.lab,\n  \&quot;userName\&quot;:\&quot;test2\&quot;,\n  \&quot;sub\&quot;:\&quot;/Common/AccessProfile1_ap.test2\&quot;,\n  \&quot;x-jti\&quot;:\&quot;39a...dlPQ\&quot;,\n  \&quot;jti\&quot;:\&quot;0afe...9828\&quot;,\n  \&quot;iat\&quot;:1633980890,\n  \&quot;exp\&quot;:1633981190,\n  \&quot;nbf\&quot;:1633980590\n}&quot;</span></p>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>APM as OAuth Authorization server</li><li>Custom claim</li></ul>
+<p><span class="sectiontitle">Cause</span></p>
+<p>This happens when the APM Admin is using a &quot;custom&quot; claim configured at <strong>Access</strong> -&gt;<strong> Federation</strong> -&gt; <strong>OAuth Authorization Server</strong> -&gt; <strong>Claim</strong>:<br><br>Given a claim configured like this:<br><span class="code"># tmsh list apm oauth oauth-claim E-Mail<br>apm oauth oauth-claim E-Mail {<br>    claim-name email<br>    claim-type custom<br>    claim-value &quot;%{session.ad.last.attr.mail}&quot;<br>}</span><br><br>and the OAuth Authorization object in the Visual Policy Editor is configured like this:<br><span class="code"># tmsh list apm policy agent oauth-authz /Common/ExampleAS_ap_act_oauth_authz_ag<br>apm policy agent oauth-authz ExampleAS_ap_act_oauth_authz_ag {<br>    audience { You }<br>    customization-group ExampleAS_ap_act_oauth_authz_ag<br>    entries {<br>        0 {<br>            jwt-access-token-claim-entries {<br>                0 {<br>                    claim-name E-Mail<br>                    claim-value &quot;%{session.ad.last.attr.mail}&quot;<br>                }<br>            }<br>        }<br>    }<br>}</span><br><br><span class="note">NOTE that in the BIG-IP WebUI, those values are not quoted. They are added in the configuration and therefore tmsh or bigip.conf shows the quotes around the dereferenced session variable</span><br><br>APM does not auto quote the value of the resulting string when the claim is set to custom as we are unsure what the value type will be.  Part of the process in generating the jwt is to base64 encode the values.  Base64 encoding standard will escape the results when the value is not quoted leaving the jwt as shown above when decoded. <br><br>Using the above as an example, an AD query is made to populate session.ad.last.attr.mail session variable. The value returned from AD may be test2@oauth.lab (unquoted).  The value is dereferenced and stored as the claim-value before the jwt is base64 encoded. Base64 will then escape the jwt as shown above.</p>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<p><span class="note">NOTE Starting in 15.1.x, you no longer need to perform the additional quoting of the session var as shown below.  The resulting tmsh command will show </span></p>
+<p><span class="code">claim-value &quot;%{session.ad.last.attr.mail}&quot;</span></p>
+<p>The fix for this issue is to either:</p>
+<ol><li>Use a string type in the claim if possible</li><li>Ensure you&#39;re using the proper type, a setting of Number and a value that is a string can produce this same, overly escaped jwt</li><li>If a static string is set, ensure the string is quoted</li><li>If a session variable is used as in the example above, Navigate to <strong>Access</strong> -&gt; <strong>Profiles/Policies </strong>-&gt; <strong>Access Profiles (Per-Session Policies)</strong> and edit the problematic policy to open the Visual Policy Editor.  Select the OAuth Authorization object. In the Scope/Claim Assign section, select Add/Delete.  Select the proper &quot;claims&quot; tab eg: Access Token Claims and add quotes around the session var for the claim who&#39;s type is set to custom.  If your app uses the other claims tab and those have claims that are custom, you&#39;ll need to quote those as well.  <br><br>The result will look like this in tmsh and the jwt will be proper:</li></ol>
+<p><span class="code">apm policy agent oauth-authz ExampleAS_ap_act_oauth_authz_ag {<br>    audience { You }<br>    customization-group ExampleAS_ap_act_oauth_authz_ag<br>    entries {<br>        0 {<br>            jwt-access-token-claim-entries {<br>                0 {<br>                    claim-name E-Mail<br>                    claim-value &quot;\&quot;%{session.ad.last.attr.mail}\&quot;&quot;<br>                }<br>            }<br>        }<br>    }<br>} </span><br> </p>
+<p><span class="sectiontitle">Additional Information</span><br>None</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000137352: BIGIQ: LDAPs auth not working. The error &quot;java.security.cert.CertificateException&quot;</title>
+<meta name="description" content="Support Solution: BIGIQ: LDAPs auth not working. The error &quot;java.security.cert.CertificateException&quot; — Unable to connect to the authentication server. java.security.cert.CertificateException: No subject alternative names matching IP address 1.1.1.1 found">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000137352">
+</head>
+<body>
+<header>
+<h1>K000137352: BIGIQ: LDAPs auth not working. The error &quot;java.security.cert.CertificateException&quot;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-10-25</dd>
+<dt>Updated</dt><dd>2023-10-25</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li><li>BIG-IQ Centralized Management: 8.3.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000137352">https://my.f5.com/manage/s/article/K000137352</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+
+<p>The BIGIQ Administrator may want to configure the remote authentication using LDAPS and observes the following error in GUI during login attempt:</p>
+
+<p><span style="font-family: courier;">Unable to connect to the authentication server. java.security.cert.CertificateException: No subject alternative names matching IP address 1.1.1.1 found</span></p>
+
+<h2>Environment</h2>
+
+<ul><li>BIGIQ</li><li>Remote Authentication</li><li>LDAPS</li></ul>
+
+<h2>Cause</h2>
+
+<p>1) In CM GUI under &#39;System -&gt; User Management -&gt; &lt;LDAPS_provider_name&gt; -&gt; Servers&#39; setting, the BIGIQ administrator may define the Server as IP 1.1.1.1 but not FQDN</p>
+
+<p>2) But at the same time in CM GUI under &#39;System -&gt; User Management -&gt; &lt;LDAPS_provider_name&gt; -&gt; SSL Certificate&#39;, the certificate is defined which has the SAN extension where LDAPS server is defined as FQDN but not IP. For example, we can review the uploaded certificate using openssl tool:</p>
+
+<p><span style="font-family: courier;"># openssl x509 -in cert-example.crt -text -noout</span></p>
+
+<p><span style="font-family: courier;">Certificate:</span></p>
+
+<p><span style="font-family: courier;">Data:</span></p>
+
+<p><span style="font-family: courier;">Version: 3 (0x2)</span></p>
+
+<p><span style="font-family: courier;">Serial Number:</span></p>
+
+<p><span style="font-family: courier;">[...]</span></p>
+
+<p><span style="font-family: courier;">Signature Algorithm: sha256WithRSAEncryption</span></p>
+
+<p><span style="font-family: courier;">Issuer: [...]</span></p>
+
+<p><span style="font-family: courier;">Validity</span></p>
+
+<p><span style="font-family: courier;">Not Before: Dec 1 03:33:58 2022 GMT</span></p>
+
+<p><span style="font-family: courier;">Not After : Dec 1 03:33:58 2023 GMT</span></p>
+
+<p><span style="font-family: courier;">Subject: [...] CN=ldaps.example.com</span></p>
+
+<p><span style="font-family: courier;">[...]</span></p>
+
+<p><span style="font-family: courier;">X509v3 Subject Alternative Name:</span></p>
+
+<p><span style="font-family: courier;">DNS:ldaps.example.com </span><strong style="font-family: courier;">&lt;&lt;&lt; (!)</strong></p>
+
+<p><span style="font-family: courier;">[...]</span></p>
+
+<p>3) As result of such config, the BIGIQ administrator during login via remote LDAPS will see the error:</p>
+
+<p><span style="font-family: courier;">Unable to connect to the authentication server. java.security.cert.CertificateException: No subject alternative names matching IP address 1.1.1.1 found</span></p>
+
+<p>4) And in the packet capture at the same time during login attempt, we can see TCP RST from BIGIQ:</p>
+
+<p><span style="font-family: courier;">1.1.1.2 -&gt; bigiq</span></p>
+
+<p><span style="font-family: courier;">1.1.1.1 -&gt; ldap server</span></p>
+
+<p><span style="font-family: courier;">2 2023-09-13 04:28:33.894100 1.1.1.2 1.1.1.1 TCP 43898 636 0 43898 → 636 [SYN] Seq=0 Win=29200 Len=0 MSS=1460 SACK_PERM TSval=2374016232 TSecr=0 WS=128</span></p>
+
+<p><span style="font-family: courier;">3 2023-09-13 04:28:33.895703 1.1.1.1 1.1.1.2 TCP 636 43898 0 636 → 43898 [SYN, ACK] Seq=0 Ack=1 Win=8192 Len=0 MSS=1410 WS=256 SACK_PERM TSval=2435324679 TSecr=2374016232</span></p>
+
+<p><span style="font-family: courier;">4 2023-09-13 04:28:33.895774 1.1.1.2 1.1.1.1 TCP 43898 636 0 43898 → 636 [ACK] Seq=1 Ack=1 Win=29312 Len=0 TSval=2374016234 TSecr=2435324679</span></p>
+
+<p><span style="font-family: courier;">5 2023-09-13 04:28:33.896263 1.1.1.2 1.1.1.1 TLSv1.2 43898 636 0 Client Hello</span></p>
+
+<p><span style="font-family: courier;">6 2023-09-13 04:28:33.898777 1.1.1.1 1.1.1.2 TLSv1.2 636 43898 0 Server Hello, Certificate, Server Key Exchange, Certificate Request, Server Hello Done</span></p>
+
+<p><span style="font-family: courier;">[...]</span></p>
+
+<p><span style="font-family: courier;">        Certificate Length: 1799</span></p>
+
+<p><span style="font-family: courier;">[...]</span></p>
+
+<p><span style="font-family: courier;">            subject: rdnSequence (0)</span></p>
+
+<p><span style="font-family: courier;">[...]</span></p>
+
+<p><span style="font-family: courier;">                RDNSequence item: 1 item (id-at-commonName=ldaps.example.com) </span></p>
+
+<p><span style="font-family: courier;">            subjectPublicKeyInfo</span></p>
+
+<p><span style="font-family: courier;">            extensions: 10 items</span></p>
+
+<p><span style="font-family: courier;font-size: var(--lwc-fontSize3,0.8125rem);">[...]</span></p>
+
+<p><span style="font-family: courier;">              Extension (id-ce-subjectAltName)</span></p>
+
+<p><span style="font-family: courier;">                Extension Id: 2.5.29.17 (id-ce-subjectAltName)</span></p>
+
+<p><span style="font-family: courier;">                GeneralNames: 2 items</span></p>
+
+<p><span style="font-family: courier;">                  GeneralName: dNSName (2)</span></p>
+
+<p><span style="font-family: courier;">                    dNSName: </span><strong style="font-family: courier;">ldaps.example.com &lt;&lt;&lt;&lt; (!)</strong></p>
+
+<p><span style="font-family: courier;">[...]</span></p>
+
+<p><span style="font-family: courier;">7 2023-09-13 04:28:33.898859 1.1.1.2 1.1.1.1 TCP 43898 636 0 43898 → 636 [ACK] Seq=191 Ack=3568 Win=36352 Len=0 TSval=2374016237 TSecr=2435324680</span></p>
+
+<p><span style="font-family: courier;">8 2023-09-13 04:28:33.899104 1.1.1.2 1.1.1.1 TLSv1.2 43898 636 0 Alert (Level: Fatal, Description: Certificate Unknown) </span><strong style="font-family: courier;">&lt;&lt;&lt; (!)</strong></p>
+
+<p><span style="font-family: courier;">9 2023-09-13 04:28:33.899169 1.1.1.2 1.1.1.1 TCP 43898 636 0 43898 → 636 [FIN, ACK] Seq=198 Ack=3568 Win=36352 Len=0 TSval=2374016237 TSecr=2435324680</span></p>
+
+<p><span style="font-family: courier;">11 2023-09-13 04:28:33.899453 1.1.1.1 1.1.1.2 TCP 636 43898 0 636 → 43898 [ACK] Seq=3568 Ack=199 Win=262656 Len=0 TSval=2435324683 TSecr=2374016237</span></p>
+
+<p><span style="font-family: courier;">12 2023-09-13 04:28:33.899734 1.1.1.1 1.1.1.2 TCP 636 43898 0 636 → 43898 [RST, ACK] Seq=3568 Ack=199 Win=0 Len=0</span></p>
+
+<h2>Recommended Actions</h2>
+
+<p>Make sure that In CM GUI under &#39;System -&gt; User Management -&gt; &lt;LDAPS_provider_name&gt; -&gt; Servers&#39; setting, the Server value matches with SAN extension of certificate.</p>
+
+<h2>Additional Information</h2>
+</article>
+</body>
+</html>

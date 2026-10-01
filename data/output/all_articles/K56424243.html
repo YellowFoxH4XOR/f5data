@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K56424243: Missing End of Header and End of Stream flag fields in Aspen Mesh Packet Inspector captured transactions</title>
+<meta name="description" content="Support Solution: Missing End of Header and End of Stream flag fields in Aspen Mesh Packet Inspector captured transactions — One End Headers marker on the last (or only) HEADERS frame from the client to server (containing request headers).">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K56424243">
+</head>
+<body>
+<header>
+<h1>K56424243: Missing End of Header and End of Stream flag fields in Aspen Mesh Packet Inspector captured transactions</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-09-13</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K56424243">https://my.f5.com/manage/s/article/K56424243</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p><span class="subsectiontitle">End Headers</span></p>
+
+<p>End Headers should be set in whichever HTTP/2 frame contains the end of the headers. Typically, there will be only one HEADERS frame from client to server (and it should have <strong>End Headers</strong> set), and one HEADERS frame from server to client. So, there should be:</p>
+
+<ul><li>One End Headers marker on the last (or only) HEADERS frame from the client to server (containing request headers).</li><li>One End Headers marker on the last (or only) HEADERS frame from the server to the client (containing response headers).</li></ul>
+
+<p><span class="subsectiontitle">End Stream</span></p>
+
+<p>End Stream should be set in whichever HTTP/2 frame is the end of the stream direction (request or response). There is:</p>
+
+<ul><li>One End Stream marker to end the stream from client to server (containing the request). </li><li>One End Stream marker to end the stream from server to client (containing the response).</li></ul>
+
+<p>For information about HTTP/2 specification, refer to <a href="https://datatracker.ietf.org/doc/html/rfc7540" target="_self">rfc7540 (ietf.org)</a>.</p>
+
+<p><span class="subsectiontitle">Typical examples</span></p>
+
+<ul><li>A GET request does not have a body, so the HEADERS frame from the client to server (request headers) should have the End Stream marker.</li><li>POST, PUT, PATCH and other requests with bodies have a HEADERS frame followed by one or more DATA frames. The last DATA frame (indicating that the request body has been completed) should have the End Stream marker. </li><li>Most responses will have bodies (even in error like 502, typically there is a body returned that is the error message), so we would expect a HEADERS frame with End Headers set, and then one or more DATA frames, and the last DATA frame would have End Stream set.</li><li>Some responses do not have bodies (often 201 Created or 301 Moved Permanently), if we are handling a response without a body, we would expect a HEADERS frame with End Headers and End Stream set.</li></ul>
+
+<p><span class="sectiontitle">Environment</span></p>
+This was fixed in Aspen Mesh 1.9.5-am2 and Aspen Mesh 1.6.14-am7 releases. Releases before that were missing these flags in some of the transactions.
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>HTTP2 Packets received from the Aspen Mesh Packet Inspector (Pcapper) service of Aspen Mesh do not include the <strong>end header</strong> flag to indicate the completion of HTTP transaction. This is causing the packet broker tool to mark all transactions received as <strong>incomplete packets</strong> and drop them without properly processing the performance metrics for it. This is a highly impactful issue for the visibility need of cluster on which the Service Mesh is running.</p>
+
+<p>Using tshark to look at one of the client side transactions. I.e. consumer pcap captured from the Aspen Mesh environment which shows the flag for End header was not set:</p>
+
+<p><span class="example2">tshark -r PCAPPER.pcap -d tcp.port==49663,http2 -Y &quot;frame.number==4&quot; -VP<br> Stream: HEADERS, Stream ID: 1, Length 376, POST /&lt;URI&gt;<br>        Length: 376<br>        Type: HEADERS (1)<br>        Flags: 0x00<br>            00.0 ..0. = Unused: 0x00<br>            ..0. .... = Priority: False<br>            .... 0... = Padded: False<br>            .... .0.. = End Headers: False<br>            .... ...0 = End Stream: False<br>        0... .... .... .... .... .... .... .... = Reserved: 0x0</span></p>
+
+<p>We can see that the End Headers flag was missing in the HEADERS stream. In an analogous manner to the above, if we look at the DATA stream for the HTTP2, you will see that the End Stream flag is not set. This flag is required to indicate the end of a stream for an HTTP transaction.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>None</p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

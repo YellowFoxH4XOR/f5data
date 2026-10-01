@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000137348: APM: F5RST &quot;Session killed by session DB&quot;</title>
+<meta name="description" content="Support Solution: APM: F5RST &quot;Session killed by session DB&quot; — 1457 2023-09-28 13:31:38.423899 1.1.1.1 1.1.1.2 HTTP/JSON 40482 443 148 IN s1/tmm9 : POST /api/some-data HTTP/1.1 , JavaScript Object Notation (application/json)">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000137348">
+</head>
+<body>
+<header>
+<h1>K000137348: APM: F5RST &quot;Session killed by session DB&quot;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-10-25</dd>
+<dt>Updated</dt><dd>2023-10-25</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 16.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000137348">https://my.f5.com/manage/s/article/K000137348</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2><p>The BIGIP Administrators may notice that some APM sessions are reset as per tcpdump capture with reason &quot;<strong>F5RST(peer): Session killed by session DB</strong>&quot; or &quot;<strong>F5RST: Session killed by session DB</strong>&quot; and wonder what can be the explanation of such reset. There can be different triggers to TCP RST from APM, but here is one example. From decrypted packet capture during attempt to get the service behind APM Virtual Server (VS), the Administrator may observe the similar flow which results to TCP RST:</p><p><br></p><p><span style="font-family: courier;">client -&gt; 1.1.1.1</span></p><p><span style="font-family: courier;">vs -&gt; 1.1.1.2</span></p><p><span style="font-family: courier;">snat -&gt; 2.2.2.1</span></p><p><span style="font-family: courier;">server -&gt; 2.2.2.2</span></p><p> </p><p>1) the client sends the HTTP query, it&#39;s handled by APM logic (the session id is assigned, the query is processed and etc.). The connection is seen on client-side from APM perspective. TCP handshake related packets under stream 148 are omitted for brevity: </p><p><br></p><p><span style="font-family: courier;">1457 2023-09-28 13:31:38.423899 1.1.1.1 1.1.1.2 HTTP/JSON 40482 443 148 IN s1/tmm9 : POST /api/some-data HTTP/1.1 , JavaScript Object Notation (application/json)</span></p><p> </p><p>2) then the connection is initiated on server-side from APM perspective in tcp stream 151: </p><p><br></p><p><span style="font-family: courier;">1481 2023-09-28 13:31:38.437719 2.2.2.1 2.2.2.2 TCP 40482 443 151 OUT s1/tmm9 : 40482 → 443 [SYN] Seq=0 Win=14600 Len=0 MSS=1460 WS=1 SACK_PERM TSval=3690783812 TSecr=0</span></p><p><br></p><p>3) the same HTTP request (as in frame 1457) is sent to server, but now on server-side from APM perspective:</p><p> </p><p><span style="font-family: courier;">1498 2023-09-28 13:31:38.471921 2.2.2.1 2.2.2.2 HTTP/JSON 40482 443 151 OUT s1/tmm9 : POST /api/some-data HTTP/1.1 , JavaScript Object Notation (application/json)</span></p><p> </p><p>4) the server acknowledges that it receives the above POST via TCP ACK:</p><p> </p><p><span style="font-family: courier;">1499 2023-09-28 13:31:38.481616 2.2.2.2 2.2.2.1 TCP 443 40482 151 IN s1/tmm9 : 443 → 40482 [ACK] Seq=5952 Ack=1736 Win=16335 Len=0 TSval=2829392054 TSecr=3690783847 </span></p><p><br></p><p>5) but nothing happens after that: the server doesn&#39;t reply with 2XX or 4XX or with 5XX http response. So, APM resets the connection ~12 sec later on server-side first from APM perspective: </p><p><br></p><p><span style="font-family: courier;">1513 2023-09-28 13:31:49.733025 2.2.2.1 2.2.2.2 TCP 40482 443 151 OUT s1/tmm9 : 40482 → 443 [RST, ACK] Seq=1736 Ack=5952 Win=0 Len=0 [</span><strong style="font-family: courier;">F5RST(peer): Session killed by session DB</strong><span style="font-family: courier;">]</span></p><p> </p><p>6) then on client-side from APM perspective:</p><p> </p><p><span style="font-family: courier;">1514 2023-09-28 13:31:49.733086 1.1.1.2 1.1.1.1 TCP 443 40482 148 OUT s1/tmm9 : 443 → 40482 [RST, ACK] Seq=4401 Ack=2066 Win=0 Len=0 [</span><strong style="font-family: courier;">F5RST: Session killed by session DB</strong><span style="font-family: courier;">]</span></p><h2>Environment</h2><ul><li>APM</li><li>F5RST: Session killed by session DB</li></ul><h2>Cause</h2><p>Non-F5. The end server is not responding to HTTP request on server-side. As result of that, ~ 12sec later APM resets the connection on server-side, then on client-side</p><h2>Recommended Actions</h2><p>To verify with server administrator why HTTP request is not responded.</p><h2>Additional Information</h2>
+</article>
+</body>
+</html>

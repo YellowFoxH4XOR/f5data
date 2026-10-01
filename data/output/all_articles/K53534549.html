@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K53534549: certificateCustomFields validation for Aspen Mesh upgrade from 1.9.x to 1.11.x</title>
+<meta name="description" content="Support Solution: certificateCustomFields validation for Aspen Mesh upgrade from 1.9.x to 1.11.x — This article describes the upgrade procedure and validation steps to confirm Aspen Mesh has been upgraded successfully, as well as the .global.certificateCustomFields field value has been propagated…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K53534549">
+</head>
+<body>
+<header>
+<h1>K53534549: certificateCustomFields validation for Aspen Mesh upgrade from 1.9.x to 1.11.x</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-05-20</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K53534549">https://my.f5.com/manage/s/article/K53534549</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>This article describes the upgrade procedure and validation steps to confirm Aspen Mesh has been upgraded successfully, as well as the <strong>.global.certificateCustomFields</strong> field value has been propagated to the newer version.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Aspen Mesh: 1.9.x - 1.11.x</li><li>Kubernetes: 1.17x - 1.22.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>None</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>By default, Istio does not populate the Subject field for certificates and this might cause issues since some applications expect to receive either the Subject field or the SAN DNS name extension.</p>
+
+<p>Aspen Mesh developed a solution for this, <strong>certificateCustomFields</strong>. This feature generates certificates with SAN DNS extensions for workloads based on annotations with the associated service account. This is especially useful for legacy VMs connecting to pods inside the mesh.</p>
+
+<p>This article assumes <strong>certificateCustomFields</strong> is already in use. For information about how to enable this feature, refer to the Aspen Mesh article <a href="https://my.aspenmesh.io/client/docs/1.9/operations/mesh-workload-certs-san-entries/" target="_self">Mesh Workload Certificates with DNS and URI SAN entries</a>.</p>
+
+<p>Aspen Mesh version <strong>aspenmesh-carrier-grade-1.9.8-am1</strong> is used in the below example, and a demo of working with the sleep application. This application can be found in the Aspen Mesh release folder <strong>../aspenmesh-carrier-grade-1.9.8-am1/samples/sleep/sleep.yaml</strong>.</p>
+
+<p>The sleep service account has been modified with the following annotations:</p>
+
+<p><span class="example2">apiVersion: v1<br>kind: ServiceAccount<br>metadata:<br>  name: sleep<br>  annotations:<br>   &quot;certificate.aspenmesh.io/customFields&quot;: &#39;{ &quot;SAN&quot;: { &quot;DNS&quot;: [ &quot;test-sleep.example.com&quot;, &quot;sleep.example.com&quot; ], &quot;URI&quot;: [ &quot;com.example.uuid:cc1bf660-9e35-4169-9bbf-2a893ea2fa5d&quot; ] } }&#39;</span></p>
+
+<p>To confirm custom DNS and URIs have been added, run the following commands:</p>
+
+<p><span class="example2">$ export SLEEP_POD=$(kubectl get pod -l app=sleep -o jsonpath=&#39;{.items[0].metadata.name}&#39;)<br>$ istioctl proxy-config secret $SLEEP_POD -o json | jq &#39;.dynamicActiveSecrets[0].secret.tlsCertificate.certificateChain.inlineBytes&#39; -r | base64 -d | openssl x509 -noout -text</span></p>
+
+<p>The output of the previous command should show the same values you specified in the service account:</p>
+
+<p><span class="example2">…<br>X509v3 Subject Alternative Name: critical<br>DNS:sleep.example.com, URI:spiffe://cluster.local/ns/default/sa/sleep, DNS:test-sleep.example.com, URI:com.example.uuid:cc1bf660-9e35-4169-9bbf-2a893ea2fa5d <br>…</span></p>
+
+<p>Another way to confirm it is working as expected is to run a curl command:</p>
+
+<p><span class="example2">kubectl exec sleep-557747455f-xsxz2 -c sleep -- curl  http://httpbin:8000/headers<br><br>…<br>&quot;X-Forwarded-Client-Cert&quot;: &quot;By=spiffe://cluster.local/ns/default/sa/httpbin;Hash=d162c31ef3c438d95ca0b10b85c1f1d0d24d2cd1955ea52fd732559fb7422ee5;Subject=\&quot;\&quot;;URI=spiffe://cluster.local/ns/default/sa/sleep;DNS=sleep.example.com;DNS=test-sleep.example.com&quot;<br>…</span></p>
+
+<p>This confirms <strong>CertificateCustomFields</strong> is working as expected.</p>
+
+<p><span class="subsectiontitle">Upgrade instructions</span></p>
+
+<p>Prior to following the <a href="https://my.aspenmesh.io/client/docs/1.11/operations/upgrading/" target="_self">Aspen Mesh upgrade instruction</a>, it is assumed that you’ve downloaded the desired version, and your working directory is the Aspen Mesh release directory. For information about downloading a release, refer to the Aspen Mesh article <a href="https://my.aspenmesh.io/client/docs/1.9/getting-started/download/" target="_self">Downloading Releases</a>.</p>
+
+<p>The release version is <strong>aspenmesh-carrier-grade-1.11.8-am2</strong> in the following example.</p>
+
+<p><span class="subsubsectiontitle">Post-upgrade Tasks</span></p>
+
+<p>To show the upgraded version using Helm, run the command below: </p>
+
+<p><span class="code">helm ls -A</span></p>
+The output appears similar to the following example (some of the contents have been omitted):
+
+<p><span class="example2">~/ ? helm ls -A                                                           <br>NAME            NAMESPACE     ...  STATUS      CHART                       <br><br>istio-base      istio-system  ...  deployed    base-1.11.8-am2<br>istio-cni       kube-system   ...  deployed    istio-cni-1.11.8-am2<br>istio-ingress   istio-system  ...  deployed    istio-ingress-1.11.8-am2<br>istiod          istio-system  ...  deployed    istio-discovery-1.11.8-am2</span></p>
+
+<p>After upgrading, some applications will still be using an older sidecar. It is very important to upgrade sidecars immediately after upgrading.</p>
+
+<p>In this example the sleep deployment will be restarted by entering the following command:</p>
+
+<p><span class="code">kubectl rollout restart deployment sleep</span></p>
+
+<p>To confirm that the <strong>CertificateCustomFields</strong> feature has been propagated correctly, enter the same commands we ran prior to the upgrade:</p>
+
+<p><span class="example2">$ export SLEEP_POD=$(kubectl get pod -l app=sleep -o jsonpath=&#39;{.items[0].metadata.name}&#39;)</span></p>
+
+<p><span class="example2">$ istioctl proxy-config secret $SLEEP_POD -o json | jq &#39;.dynamicActiveSecrets[0].secret.tlsCertificate.certificateChain.inlineBytes&#39; -r | base64 -d | openssl x509 -noout -text</span></p>
+
+<p>Example output:</p>
+
+<p><span class="example2">…<br>X509v3 Subject Alternative Name: critical<br>DNS:sleep.example.com, URI:spiffe://cluster.local/ns/default/sa/sleep, DNS:test-sleep.example.com, URI:com.example.uuid:cc1bf660-9e35-4169-9bbf-2a893ea2fa5d <br>…</span></p>
+
+<p>And finally, a curl test:</p>
+
+<p><span class="example2">kubectl exec sleep-557747455f-xsxz2 -c sleep -- curl  http://httpbin:8000/headers<br><br>…<br>&quot;X-Forwarded-Client-Cert&quot;: &quot;By=spiffe://cluster.local/ns/default/sa/httpbin;Hash=d162c31ef3c438d95ca0b10b85c1f1d0d24d2cd1955ea52fd732559fb7422ee5;Subject=\&quot;\&quot;;URI=spiffe://cluster.local/ns/default/sa/sleep;DNS=sleep.example.com;DNS=test-sleep.example.com&quot;<br>…</span></p>
+The curl output confirms <strong>certificateCustomFields</strong> is working as expected after the upgrade.
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

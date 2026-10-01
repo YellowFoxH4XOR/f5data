@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000139830: Troubleshooting SIP UDP Source Port Changes and One-Way Audio on BIG-IP LTM</title>
+<meta name="description" content="Support Solution: Troubleshooting SIP UDP Source Port Changes and One-Way Audio on BIG-IP LTM — SIP packets (such as INVITE or OPTIONS) sent from a SIP client to the BIG-IP may have their original source port preserved in some cases, but in other cases, the LC translates the source port to a…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000139830">
+</head>
+<body>
+<header>
+<h1>K000139830: Troubleshooting SIP UDP Source Port Changes and One-Way Audio on BIG-IP LTM</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-06-18</dd>
+<dt>Updated</dt><dd>2025-05-13</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.X.X, 17.X.X, 17.5.X, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0</li><li>BIG-IP DNS: 16.X.X, 17.X.X, 17.5.X, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0</li><li>BIG-IP Link Controller: 16.X.X, 17.X.X, 17.5.X, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000139830">https://my.f5.com/manage/s/article/K000139830</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When using BIG-IP with FastL4 virtual servers to handle SIP traffic, you may encounter the following issues:</p>
+<ul><li>Inconsistent Source Port Preservation:<br>SIP packets (such as INVITE or OPTIONS) sent from a SIP client to the BIG-IP may have their original source port preserved in some cases, but in other cases, the LC translates the source port to a random high port when forwarding the packet to the backend SIP server.
+<ul><li>Example of source port mismatch:<br><span style="font-family: &#39;courier new&#39;, courier, monospace;">Client-side: IP_A:7592 → VIP:5060</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">Server-side: IP_A:34007 → Pool_Member:5060<br><br></span></li><li>Example of source port preserved:<br><span style="font-family: &#39;courier new&#39;, courier, monospace;">Client-side: IP_A:7596 → VIP:5060</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">Server-side: IP_A:7596 → Pool_Member:5060</span><br><br></li></ul>
+</li><li>One-Way Audio on RTP Streams:<br>After SIP signaling is established, RTP (audio) streams may experience one-way audio. This typically occurs when RTP packets are routed through the wrong virtual server or SNAT pool, causing return RTP traffic to be sourced from an unexpected IP address or port. This is often due to overlapping or misconfigured virtual server destination addresses, or the lack of SIP-aware processing.</li></ul>
+<h2>Environment</h2>
+<ul><li>LTM</li><li>SIP</li><li>UDP</li><li>FastL4</li><li>Standard</li><li>Source Port changed</li><li>One-Way Audio</li><li>GUI</li><li>CLI</li></ul>
+<h2>Cause</h2>
+<ul><li>Source Port Translation:<br>With FastL4 virtual servers, if the source port is set to preserve (default), the BIG-IP may not always preserve the original client source port, especially if there are port conflicts or existing connection table entries. This can result in the source port being translated to a random high port.</li><li>Lack of SIP Profile:<br>FastL4 does not provide SIP-aware processing. Without a SIP profile, the BIG-IP cannot inspect SIP messages, manage dynamic pinholing for RTP streams, or handle SIP-specific behaviors such as Via header processing and media negotiation.</li><li>One-Way Audio:<br>One-way audio is often caused by RTP traffic being routed through an incorrect virtual server or SNAT pool, resulting in return RTP packets being sourced from an unexpected IP address or port.</li></ul>
+<h2>Recommended Actions</h2>
+<p>Please apply either:</p>
+<ul><li>Source Port Preservation on FastL4 Virtual Server type
+<ul><li>Set the virtual server’s source port to preserve-strict to improve the likelihood of preserving the original client source port:<br><pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ltm virtual &lt;VS_NAME&gt; {
+  ...
+  source-port preserve-strict
+  ...
+}</code></pre>
+<p> </p>
+</li><li>After changing this setting, clear existing connections:<br><span style="background-color: #f1f1f1;">tmsh delete /sys connection all<br><br></span></li></ul>
+</li><li>Use SIP Profile for SIP Traffic for Standard Virtual Server type
+<ul><li>For SIP deployments, configure a SIP profile on the relevant virtual servers:<br><em><span style="color: #15891f;"><strong>Note: </strong>Applying a SIP profile requires the virtual server to be of the &quot;<strong>Standard</strong>&quot; type. If your current virtual server is set to &quot;Performance (Layer 4)&quot; (FastL4), you must change it to &quot;Standard&quot; before you can attach a SIP profile.</span></em><br><ul><li>Go to Local Traffic &gt; Profiles &gt; Message Routing &gt; SIP.</li><li>Create a new SIP profile based on the parent profile sipsession.</li><li>Enable &quot;Honor Via&quot;, disable &quot;Do Not Connect Back&quot;, and disable &quot;Insert Via Header&quot;.</li><li>Apply this profile to the virtual server handling SIP signaling.</li></ul>
+</li><li>This ensures the BIG-IP system can properly parse and manage SIP traffic, preserving protocol-specific behaviors and supporting advanced SIP features.<br><br></li></ul>
+</li><li>Configure Virtual Servers for RTP
+<ul><li>Ensure RTP traffic is routed through the correct virtual server by restricting destination addresses/IPs so that each virtual server matches only its intended endpoint(s).</li><li>Use address lists if multiple destinations are required, but avoid overlap between virtual server definitions.<br><br></li></ul>
+</li><li>Review SNAT Pool Configuration
+<ul><li>Assign SNAT pools carefully so that return traffic uses the expected IP addresses. Misconfiguration can cause one-way audio due to unexpected NAT behavior.<br><br></li></ul>
+</li><li>General Best Practices
+<ul><li>Avoid using FastL4 alone for complex SIP deployments; use SIP profiles where possible.</li><li>After any configuration change, test end-to-end call flow and verify via packet capture on BIG-IP that ports and IPs behave as expected.</li></ul>
+</li></ul>
+<h2>Additional Information</h2>
+<ul><li>For advanced requirements or new SIP/VoIP deployments on F5 platforms, consider engaging F5 Professional Services for design and implementation support.</li><li>Refer to official F5 documentation for up-to-date best practices regarding SIP deployments:<br><a href="https://techdocs.f5.com/en-us/bigip-15-0-0/big-ip-service-provider-message-routing-administration/configuring-sip-load-balancing.html" target="_self">Configuring SIP Load Balancing</a></li></ul>
+<p><em><span style="color: #15891f;"><strong>Note: </strong>This article is based on real-world troubleshooting and may not cover all possible SIP deployment scenarios. Always validate changes in a test environment before applying to production.</span></em></p>
+</article>
+</body>
+</html>

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K14473692: Communications between external client and pods inside Aspen Mesh</title>
+<meta name="description" content="Support Solution: Communications between external client and pods inside Aspen Mesh — This article provides an example showing the details about how an external HTTP client communicates with pods within the mesh cluster. The below example contains two deployments named sleep (one with…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K14473692">
+</head>
+<body>
+<header>
+<h1>K14473692: Communications between external client and pods inside Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-01-05</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K14473692">https://my.f5.com/manage/s/article/K14473692</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>This article provides an example showing the details about how an external HTTP client communicates with pods within the mesh cluster. The below example contains two deployments named sleep (one with sidecar and one without) and the purpose is to simulate HTTP client inside and outside the mesh. It also includes another httpbin deployment with sidecar with the purpose of simulating a HTTP server inside a mesh, with a sleep additional service account which is mounted to the sleep pod without a sidecar to add the necessary client certificates. You can verify this by opening a shell into the sleep pod without a sidecar and verifying the certificate at volume mount location (<strong>/etc/sleep/tls</strong>).</p>
+
+<p><span class="example2">---<br>apiVersion: v1<br>kind: ServiceAccount<br>metadata:<br>  name: sleep<br>---<br>apiVersion: v1<br>kind: ServiceAccount<br>metadata:<br>  name: sleep-additional<br>---<br>apiVersion: v1<br>kind: ServiceAccount<br>metadata:<br>  name: httpbin<br>---<br>apiVersion: v1<br>kind: Service<br>metadata:<br>  name: httpbin-sidecar<br>  labels:<br>    app: httpbin-sidecar<br>spec:<br>  ports:<br>  - name: http<br>    port: 8000<br>    targetPort: 80<br>  selector:<br>    app: httpbin-sidecar<br>---<br>apiVersion: apps/v1<br>kind: Deployment<br>metadata:<br>  name: httpbin-sidecar<br>spec:<br>  replicas: 1<br>  selector:<br>    matchLabels:<br>      app: httpbin-sidecar<br>  template:<br>    metadata:<br>      labels:<br>        app: httpbin-sidecar<br>    spec:<br>      serviceAccountName: httpbin<br>      containers:<br>      - image: docker.io/kennethreitz/httpbin<br>        imagePullPolicy: IfNotPresent<br>        name: httpbin<br>        ports:<br>        - containerPort: 80<br>---<br>apiVersion: apps/v1<br>kind: Deployment<br>metadata:<br>  name: sleep-sidecar<br>spec:<br>  replicas: 1<br>  selector:<br>    matchLabels:<br>      app: sleep-sidecar<br>  template:<br>    metadata:<br>      labels:<br>        app: sleep-sidecar<br>    spec:<br>      serviceAccountName: sleep<br>      containers:<br>      - name: sleep<br>        image: curlimages/curl<br>        command: [&quot;/bin/sleep&quot;, &quot;3650d&quot;]<br>        imagePullPolicy: IfNotPresent<br>        volumeMounts:<br>        - mountPath: /etc/sleep/tls<br>          name: sleep-additional<br>          readOnly: true<br>      volumes:<br>      - name: sleep-additional<br>        secret:<br>          secretName: istio.sleep-additional<br>---<br>apiVersion: apps/v1<br>kind: Deployment<br>metadata:<br>  name: sleep-nosidecar<br>spec:<br>  replicas: 1<br>  selector:<br>    matchLabels:<br>      app: sleep-nosidecar<br>  template:<br>    metadata:<br>      labels:<br>        app: sleep-nosidecar<br>      annotations:<br>        &#39;sidecar.istio.io/inject&#39;: &#39;false&#39;<br>    spec:<br>      serviceAccountName: sleep<br>      containers:<br>      - name: sleep<br>        image: curlimages/curl<br>        command: [&quot;/bin/sleep&quot;, &quot;3650d&quot;]<br>        imagePullPolicy: IfNotPresent<br>        volumeMounts:<br>        - mountPath: /etc/sleep/tls<br>          name: sleep-additional<br>          readOnly: true<br>      volumes:<br>      - name: sleep-additional<br>        secret:<br>          secretName: istio.sleep-additional</span></p>
+
+<p>Client: <strong>sleep-nosidecar </strong></p>
+
+<p>Server: <strong>httpbin-sidecar</strong> </p>
+
+<p>Protected by mTLS: <strong>Yes</strong> (as the default PeerAuthentication is in Strict Mode).</p>
+
+<p>This is a motivating case for this example. How does a non-mesh client talk to a service in the mesh? There are three possible approaches: </p>
+
+<ol><li>Use a Gateway, a special resource implemented in ingress gateway pods specifically designed to forward communication from external clients that cannot do mTLS onto the mesh. </li><li>Disable mTLS for a particular service using an authentication Policy. This is less secure. It also generally requires an equivalent DestinationRule so that mesh clients know to not use mTLS. It&#39;s possible to make mTLS optional but this may be worse from a security standpoint as traffic may look secured until a client asks for insecure. </li><li>Teach the client how to do mutual TLS and give it a certificate and key so that it is accepted by server sidecars that are in the mesh. This example covers the last approach. First, you must give the client application a certificate and key to use that will be trusted by the mesh. You can see in the example that we created an extra service account (sleep-additional). </li></ol>
+
+<p>After deploying all the above yaml files, Now we must use it when calling a service that is protected by an mTLS-enforcing sidecar, like <strong>httpbin-sidecar</strong>:</p>
+
+<p><span class="example2">$ oc exec $(oc get pod -l app=sleep-nosidecar -o jsonpath=&#39;{.items[0].metadata.name}&#39;) \<br>    -it -c sleep -- curl -v -k --cert /etc/sleep/tls/cert-chain.pem \<br>    --key /etc/sleep/tls/key.pem https://httpbin-sidecar:8000/headers<br><br>*   Trying 172.30.64.135:8000...<br>* Connected to httpbin-sidecar (172.30.64.135) port 8000 (#0)<br>* ALPN, offering h2<br>* ALPN, offering http/1.1<br>* successfully set certificate verify locations:<br>*   CAfile: /etc/ssl/certs/ca-certificates.crt<br>  CApath: none<br>* TLSv1.3 (OUT), TLS handshake, Client hello (1):<br>* TLSv1.3 (IN), TLS handshake, Server hello (2):<br>* TLSv1.3 (IN), TLS handshake, Encrypted Extensions (8):<br>* TLSv1.3 (IN), TLS handshake, Request CERT (13):<br>* TLSv1.3 (IN), TLS handshake, Certificate (11):<br>* TLSv1.3 (IN), TLS handshake, CERT verify (15):<br>* TLSv1.3 (IN), TLS handshake, Finished (20):<br>* TLSv1.3 (OUT), TLS change cipher, Change cipher spec (1):<br>* TLSv1.3 (OUT), TLS handshake, Certificate (11):<br>* TLSv1.3 (OUT), TLS handshake, CERT verify (15):<br>* TLSv1.3 (OUT), TLS handshake, Finished (20):<br>* SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384<br>* ALPN, server accepted to use h2<br>* Server certificate:<br>*  subject: [NONE]<br>*  start date: Oct 13 19:04:30 2020 GMT<br>*  expire date: Jan 11 19:04:30 2021 GMT<br>*  issuer: O=cluster.local<br>*  SSL certificate verify result: unable to get local issuer certificate (20), continuing anyway.<br>* Using HTTP2, server supports multi-use<br>* Connection state changed (HTTP/2 confirmed)<br>* Copying HTTP/2 data in stream buffer to connection buffer after upgrade: len=0<br>* Using Stream ID: 1 (easy handle 0x556a28205500)<br>&gt; GET /headers HTTP/2<br>&gt; Host: httpbin-sidecar:8000<br>&gt; user-agent: curl/7.69.1<br>&gt; accept: */*<br>&gt;<br>* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):<br>* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):<br>* old SSL session ID is stale, removing<br>* Connection state changed (MAX_CONCURRENT_STREAMS == 4294967295)!<br>&lt; HTTP/2 200<br>&lt; server: istio-envoy<br>&lt; date: Tue, 13 Oct 2020 19:42:06 GMT<br>&lt; content-type: application/json<br>&lt; content-length: 503<br>&lt; access-control-allow-origin: *<br>&lt; access-control-allow-credentials: true<br>&lt; x-envoy-upstream-service-time: 1<br>&lt; x-envoy-decorator-operation: httpbin-sidecar.nosidecar-mtls.svc.cluster.local:8000/*<br>&lt;<br>{<br>  &quot;headers&quot;: {<br>    &quot;Accept&quot;: &quot;*/*&quot;,<br>    &quot;Content-Length&quot;: &quot;0&quot;,<br>    &quot;Host&quot;: &quot;httpbin-sidecar:8000&quot;,<br>    &quot;User-Agent&quot;: &quot;curl/7.69.1&quot;,<br>    &quot;X-B3-Sampled&quot;: &quot;0&quot;,<br>    &quot;X-B3-Spanid&quot;: &quot;3d71c69122ce4d23&quot;,<br>    &quot;X-B3-Traceid&quot;: &quot;5c06e702b886769a3d71c69122ce4d23&quot;,<br>    &quot;X-Forwarded-Client-Cert&quot;: &quot;By=spiffe://cluster.local/ns/nosidecar-mtls/sa/httpbin;Hash=26ce64ae56d1453b8b039acc55a5567f5f446a5ea26dc235c2cf5025558b2a96;Subject=\&quot;\&quot;;URI=spiffe://cluster.local/ns/nosidecar-mtls/sa/sleep-additional&quot;<br>  }<br>}<br>* Connection #0 to host httpbin-sidecar left intact</span></p>
+You can see that the sidecar trusted the sleep client based on the SPIFFE identity <strong>spiffe://cluster.local/ns/nosidecar-mtls/sa/sleep-additional</strong> which is from the <strong>sleep-additional</strong> service account (not the primary <strong>sleep</strong> service account). This depicts that when we configured the external client with correct certificate, we can achieve a mTLS communication between two endpoints. 
+
+<p><span class="sectiontitle"><strong>Environment</strong></span></p>
+
+<ul><li>Aspen Mesh: 1.9.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>None</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>None</p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>Note that the client curl cannot validate the server (the -k option was passed to curl). Service mesh certificates do not have DNS SANs or CNAMEs by default and by design. So, while curl can validate the cert is signed by the proper web-of-trust, it cannot confirm that it is a valid cert for the service that the user asked it to connect to (<strong>httpbin-sidecar</strong>). Curl does not have an option to validate the SPIFFE URI SAN instead.</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000130459: Configuring X-Forwarded-For in http profile in CIS in CRD Mode</title>
+<meta name="description" content="Support Solution: Configuring X-Forwarded-For in http profile in CIS in CRD Mode — Configuring X-Forwarded-For in http profile in CIS in CRD Mode">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000130459">
+</head>
+<body>
+<header>
+<h1>K000130459: Configuring X-Forwarded-For in http profile in CIS in CRD Mode</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-01-04</dd>
+<dt>Updated</dt><dd>2023-01-20</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Automation and Orchestration</li><li>F5 Container Ingress Services</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000130459">https://my.f5.com/manage/s/article/K000130459</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>Configuring X-Forwarded-For in http profile in CIS in CRD Mode</p>
+
+<p> </p>
+
+<h2><strong>Environment</strong></h2>
+
+<p> </p>
+
+<ul><li>BIG-IP Container Ingress Services in CRD mode</li><li>AS3 3.40</li><li>Custom Resource Definitions<br>	 </li></ul>
+
+<h2><strong>Cause</strong></h2>
+
+<p>None</p>
+
+<p> </p>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>This is an example for the annotation used to build your yaml code that will be executed on the K8s or Openshift</p>
+
+<p><br>Login to the BIG-IP VE which is managed by the BigIP Controller running on K8s or Openshift</p>
+
+<p> </p>
+
+<p>Create a custom http profile in the Common partition and enable the &quot;insert-xforwarded-for&quot; option like in the below example</p>
+
+<p> </p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">ltm profile http custom-http {</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">app-service none</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">defaults-from http</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">insert-xforwarded-for enabled</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">proxy-type reverse</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">}</span></p>
+
+<p> </p>
+
+<p> </p>
+
+<p> </p>
+
+<p>Login to the K8s Master and create a yaml code for VirtualServer and Policy</p>
+
+<p> </p>
+
+<p>Below example my-policy.yaml</p>
+
+<p> </p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: cis.f5.com/v1
+kind: Policy
+metadata:
+  labels:
+    f5cr: &quot;true&quot;
+  name: sample-policy
+  namespace: dev
+spec:
+  snat: auto
+  profiles:
+    tcp:
+      client: /Common/f5-tcp-lan
+      server: /Common/f5-tcp-wan
+    udp: /Common/udp
+    http: /Common/custom-http      &lt;------!! define the name of the custom http profile here that was created on the BIG-IP in Common partition</pre>
+ 
+
+<p>Now define the policy that is created above on the below VirtualServer yaml</p>
+
+<p> </p>
+
+<p>my-virtual-server.yaml</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: cis.f5.com/v1
+kind: VirtualServer
+metadata:
+  labels:
+    f5cr: &quot;true&quot;
+  name: vs-with-policy
+  namespace: dev
+spec:
+  host: foo.example.com
+  persistenceProfile: &quot;none&quot;
+  iRules: []
+  policyName: sample-policy
+  pools:
+    - monitor:
+        interval: 13
+        recv: a
+        send: /
+        timeout: 10
+        type: http
+      path: /foo
+      service: f5-demo-dev
+      servicePort: 80
+  snat: auto
+  virtualServerAddress: 10.1.1.121</pre>
+ 
+
+<p>Once done then execute the yaml as below</p>
+
+<p> </p>
+
+<p>root@control:~# kubectl create -f my-policy.yaml</p>
+
+<p>policy.cis.f5.com/sample-policy created</p>
+
+<p> </p>
+
+<p>root@control:~# kubectl create -f my-virtual-server.yaml</p>
+
+<p>virtualserver.cis.f5.com/vs-with-policy created</p>
+
+<p> </p>
+
+<p>Now you should be able to see on the BI-IP VE under the kubernetes partition the below configuration for the Virtual Server</p>
+
+<p> </p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">ltm virtual crd_10_1_1_121_80 {</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">description Shared</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">destination /kubernetes/10.1.1.121:http</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">ip-protocol tcp</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">mask 255.255.255.255</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">partition kubernetes</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">persist {</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">/Common/cookie {</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">default yes</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">}</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">}</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">policies {</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">crd_10_1_1_121_80_foo_example_com_policy { }</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">}</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">profiles {</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">/Common/custom-http { } &lt;----- custom HTTP profile</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">/Common/f5-tcp-lan {</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">context clientside</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">}</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">/Common/f5-tcp-wan {</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">context serverside</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">}</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">}</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">serverssl-use-sni disabled</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">source 0.0.0.0/0</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">source-address-translation {</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">type automap</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">}</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">translate-address enabled</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">translate-port enabled</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">vs-index 8</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">}</span></p>
+
+<h2><strong>Additional Information</strong></h2>
+
+<p> </p>
+
+<p>https://clouddocs.f5.com/containers/latest/userguide/crd/</p>
+
+<p> </p>
+
+<p>https://github.com/F5Networks/k8s-bigip-ctlr/tree/master/docs/config_examples/customResource/Policy#profile-components</p>
+
+<p> </p>
+
+<p>https://github.com/F5Networks/k8s-bigip-ctlr/blob/master/docs/config_examples/customResource/Policy/sample-policy.yaml#L26</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K73214203: BIG-IQ not showing graphs due to max shards</title>
+<meta name="description" content="Support Solution: BIG-IQ not showing graphs due to max shards — Further check shows that it has max shards. Running the following command shows the shards for each disk.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K73214203">
+</head>
+<body>
+<header>
+<h1>K73214203: BIG-IQ not showing graphs due to max shards</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-07-19</dd>
+<dt>Updated</dt><dd>2025-02-07</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K73214203">https://my.f5.com/manage/s/article/K73214203</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+BIG-IQ is not showing graphs.<br><br>Further check shows that it has max shards. Running the following command shows the shards for each disk.<br><span class="code"># curl -s localhost:9200/_cat/allocation?v</span><br><span class="example2">shards disk.indices disk.used disk.avail disk.total disk.percent host          ip            node<br> <strong>19000        </strong>4.2gb     8.8gb     20.2gb     29.1gb           30 10.100.100.11 10.100.100.22 77777777-6666-qqqq-bbbb-aaaaaaaaaaaa<br> <strong>17000        </strong>3.7gb     9.5gb     19.5gb     29.1gb           32 10.100.100.22 10.100.100.22 55555555-aaaa-3333-0000-bbbbbbbbbbbb<br> <strong>13000        </strong>2.7gb     9.3gb     19.7gb     29.1gb           32 10.100.100.33 10.100.100.33 aaaaaaaa-cccc-4444-9999-cccccccccccc</span><br><br>A good rule-of-thumb is to ensure you keep the number of shards per node below 20 per GB heap it has configured. A node with a 30GB heap should therefore have a maximum of 600 shards, but the further below this limit you can keep it the better. This will generally help the cluster stay in good health.<br><br>As per the above example, 13,000 - 19,000 shards are too high as compared to the expected 600 shards.<br><br>Another way to view the shards is to run the following command:<br><span class="code"># curl -s localhost:9200/_cluster/health?pretty</span><br><span class="example2">{<br>  &quot;cluster_name&quot; : &quot;77777777-6666-qqqq-bbbb-aaaaaaaaaaaa&quot;,<br>  &quot;status&quot; : &quot;yellow&quot;,<br>  &quot;timed_out&quot; : false,<br>  &quot;number_of_nodes&quot; : 3,<br>  &quot;number_of_data_nodes&quot; : 3,<br>  &quot;active_primary_shards&quot; : 35000,                   <span class="note"><strong>Note</strong>: 35,000 active shards</span><br>  &quot;active_shards&quot; : 51000,<br>  &quot;relocating_shards&quot; : 0,<br>  &quot;initializing_shards&quot; : 6,<br>  &quot;unassigned_shards&quot; : 20000,<br>  &quot;delayed_unassigned_shards&quot; : 0,<br>  &quot;number_of_pending_tasks&quot; : 1210000,<br>  &quot;number_of_in_flight_fetch&quot; : 0,<br>  &quot;task_max_waiting_in_queue_millis&quot; : 800000000,<br>  &quot;active_shards_percent_as_number&quot; : 70.00<br>}</span><br><br><span class="sectiontitle">Environment</span>
+
+<ul><li>BIG-IQ</li><li>No graphs on BIG-IQ</li><li>Max shards showing &quot;over-sharding&quot;</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>This is a common issue called “over-sharding”: too many shards were created in ElasticSearch for storing stats data which eventually lead to JAVA heap memory exhaustion.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>You can use the following steps to remove the existing stats to recover the BIG-IQ cluster to a working status, then configure the stats retention settings to prevent &quot;over-sharding&quot; from happening again.</p>
+
+<ol><li>To recover the cluster run the following commands on any of the 3 BIG-IQ DCDs (this will remove all real time stats indices in ElasticSearch)<br>	On BIG-IQ DCD:<br>	<span class="code">curl localhost:9200/stat*tl0* -X DELETE<br>	curl localhost:9200/events*tl0* -X DELETE</span><br>	 </li><li>You may need to run that command a couple of times until you get &quot;<strong>acknowledge: true</strong>&quot;.<br>	Check the status of the cluster to confirm that the number of allocations was reduced.<br>	As per the example above, it currently have <strong>13,000</strong> to <strong>19,000</strong> shards per node. This number needs to be reduced.<br>	Run the following command to check the shards value (on BIG-IQ DCD):<br>	<span class="code">curl -s localhost:9200/_cat/allocation?v</span><br>	 </li><li>Restart ElasticSearch on BIG-IQ CM<br>	<span class="code">bigstart restart elasticsearch</span><br>	 </li><li>Run the command on both BIG-IQ CM and BIG-IQ DCD to confirm BIG-IQ CM has joined the cluster.<br>	<span class="code">curl -s localhost:9200/_cat/nodes?v</span><br>	 </li><li>Clear the appiq data to remove remaining stats.<br>	On BIG-IQ CM:<br>	<span class="code">clear-appiq-data</span><br>	 </li><li>While the above is running, you&#39;ll be ask to stop appiqagent on each BIG-IQ DCD<br>	<span class="code">bigstart stop appiqagent </span><br>	 </li><li>Once the process finishes, go back to the BIG-IQ WebGUI.<br>	 </li><li>Confirm that statistics collection is enabled and that the &quot;<strong>last collected date</strong>&quot; gets updated for some managed devices.</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None.</p>
+</article>
+</body>
+</html>

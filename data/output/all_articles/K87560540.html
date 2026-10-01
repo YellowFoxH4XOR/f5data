@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K87560540: Understanding out-of-order transactions in Aspen Mesh Packet Inspector</title>
+<meta name="description" content="Support Solution: Understanding out-of-order transactions in Aspen Mesh Packet Inspector — Aspen Mesh Packet Inspector (Pcapper) captures the HTTP/2 traffic flowing through the service mesh internally before it is converted from plaintext to mTLS. It generates the plaintext representation…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K87560540">
+</head>
+<body>
+<header>
+<h1>K87560540: Understanding out-of-order transactions in Aspen Mesh Packet Inspector</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-09-09</dd>
+<dt>Updated</dt><dd>2022-12-30</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.9, 1.6</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K87560540">https://my.f5.com/manage/s/article/K87560540</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>Aspen Mesh Packet Inspector (Pcapper) captures the HTTP/2 traffic flowing through the service mesh internally before it is converted from plaintext to mTLS. It generates the plaintext representation of that traffic and forwards it to a packet broker. This traffic is encrypted between Pcapper and the packet broker via outer TLS wrapper using keys and certs that identify both ends. </p>
+
+<p>One on-the-wire TCP session may contain a mix of many different requests/responses (conflating multiple transactions, call flow, etc.). The virtual representation contains only one request/response per virtual TCP flow. It is then delivered to the packet broker via HTTP POSTs containing the metadata (which pod this came from, what OpenTracing trace ID is associated with it, etc.) and pcaps (the most generic format for recording packet captures). </p>
+
+<p>The simplest mode for Aspen Mesh Packet Inspector is where all the packets for a small transaction are sent and received in a short window of time. In this case, the entire request and response can be delivered in one HTTP POST to the packet broker which contains metadata and a pcap (approximately 8 packets).</p>
+
+<p>Aspen Mesh will split a single transaction across multiple HTTP POST to packet broker under following cases:</p>
+
+<ol><li>
+	<p>The transaction takes longer than tapfilterTimeout to complete. This case is designed to deliver a partial packet capture to tools (i.e. packet broker) to diagnose <strong>hung transactions</strong> – if we always wait until a transaction is entirely complete, then tools have no chance to operate on a transaction where, for instance, the request has been sent but the server is taking a long time to generate a response.</p>
+
+	<p><strong>Behavior</strong>: We buffer and group packets until tapfilterTimeout elapses, then we send a new capture to GCB with we have so far, delete our in-memory copies of what was delivered, and restart tapfilterTimeout.</p>
+	</li><li>
+	<p>The transaction takes more than tapfilterBufferSize to complete. This case is designed to deliver very large transactions in small pieces to relieve memory pressure on Aspen Mesh and other components. Imagine a 1GB file transfer – without this behavior, Aspen Mesh would have to buffer approximately 1GB of data in memory, then send an enormous 1GB HTTP POST to GCB, and so on.</p>
+
+	<p><strong>Behavior</strong>: We buffer and group packets until we have used tapfilterBufferSize for our internal storage for this transaction, then we send a new capture to GCB with what we have so far, delete our in-memory copies of what was delivered, and restart counting towards tapfilterBufferSize.</p>
+	</li></ol>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li><strong>Aspen Mesh</strong>: 1.6.14 and later</li><li><strong>Kuberntes</strong>: 1.18 and later </li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>In cases where you look at the single transaction pcap file and if these packet captures (which included the whole 3 way handshake, request and response) are larger than the Buffer Size configured, Pcapper went break these single transaction into multiple POST before sending it to the packet broker. In a comparable manner, if your single transaction is taking longer than filter timeout configured, it will break it into multiple POST before sending it to packet broker. Here is the documentation on how to configure the <a href="https://my.aspenmesh.io/client/docs/1.9/tasks/packet-capture/configuration/" target="_self">pcapper configuration</a>. </p>
+
+<p>Here is an example of a single transaction which was taken from the client side (i.e. Consumer). Here you can see the size of the transaction is (60+60+60+1461+1337+7733+63+60+60+60= 10954 kb). So if the Buffer Size is configured less than 10954 kb, pcapper will send this transaction into multiple HTTP POST response to the packet broker. </p>
+
+<p><span class="example2">10,&quot;0.071482&quot;,&quot;192.168.21.207&quot;,&quot;192.168.25.115&quot;,&quot;TCP&quot;,&quot;60&quot;,&quot;59715 → 8080 [SYN] Seq=0 Win=65535 Len=0&quot;,&quot;1&quot;<br>11,&quot;0.000004&quot;,&quot;192.168.25.115&quot;,&quot;192.168.21.207&quot;,&quot;TCP&quot;,&quot;60&quot;,&quot;8080 → 59715 [SYN, ACK] Seq=0 Ack=1 Win=65535 Len=0&quot;,&quot;1&quot;<br>12,&quot;0.000003&quot;,&quot;192.168.21.207&quot;,&quot;192.168.25.115&quot;,&quot;TCP&quot;,&quot;60&quot;,&quot;59715 → 8080 [ACK] Seq=1 Ack=1 Win=65535 Len=0&quot;,&quot;1&quot;<br>13,&quot;0.000097&quot;,&quot;192.168.21.207&quot;,&quot;192.168.25.115&quot;,&quot;HTTP2&quot;,&quot;1461&quot;,&quot;Magic, SETTINGS[0], HEADERS[1]: GET /services/monitoring/status/getData/MonitoredSite&quot;,&quot;1&quot;<br>14,&quot;0.001942&quot;,&quot;192.168.25.115&quot;,&quot;192.168.21.207&quot;,&quot;HTTP2&quot;,&quot;1347&quot;,&quot;SETTINGS[0], HEADERS[1]: 200 OK&quot;,&quot;1&quot;<br><br>15,&quot;0.000010&quot;,&quot;192.168.25.115&quot;,&quot;192.168.21.207&quot;,&quot;HTTP2&quot;,&quot;7733&quot;,&quot;DATA[1]&quot;,&quot;1&quot;<br>16,&quot;0.000069&quot;,&quot;192.168.25.115&quot;,&quot;192.168.21.207&quot;,&quot;HTTP2/JSON&quot;,&quot;63&quot;,&quot;DATA[1], JavaScript Object Notation (application/json)&quot;,&quot;1&quot;<br>17,&quot;0.000151&quot;,&quot;192.168.21.207&quot;,&quot;192.168.25.115&quot;,&quot;TCP&quot;,&quot;60&quot;,&quot;59715 → 8080 [FIN, ACK] Seq=1408 Ack=8982 Win=65535 Len=0&quot;,&quot;1&quot;<br>18,&quot;0.000001&quot;,&quot;192.168.25.115&quot;,&quot;192.168.21.207&quot;,&quot;TCP&quot;,&quot;60&quot;,&quot;8080 → 59715 [FIN, ACK] Seq=8982 Ack=1409 Win=65535 Len=0&quot;,&quot;1&quot;<br>19,&quot;0.000001&quot;,&quot;192.168.21.207&quot;,&quot;192.168.25.115&quot;,&quot;TCP&quot;,&quot;60&quot;,&quot;59715 → 8080 [ACK] Seq=1409 Ack=8983 Win=65535 Len=0&quot;,&quot;1&quot;</span></p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>None</p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

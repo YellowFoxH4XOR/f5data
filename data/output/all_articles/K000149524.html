@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000149524: Message: 01220001:3: TCL error: [irule-name] &lt;HTTP_RESPONSE_RELEASE&gt; - No HTTP header is cached - ERR_NOT_SUPPORTED (line x)</title>
+<meta name="description" content="Support Solution: Message: 01220001:3: TCL error: [irule-name] &lt;HTTP_RESPONSE_RELEASE&gt; - No HTTP header is cached - ERR_NOT_SUPPORTED (line x) — After upgrading to 15.x or later, an iRule may generate &quot;No HTTP header is cached - ERR_NOT_SUPPORTED&quot; error and client may receive TCP RST pkt with rstcause text &quot;iRule execution error&quot;.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000149524">
+</head>
+<body>
+<header>
+<h1>K000149524: Message: 01220001:3: TCL error: [irule-name] &lt;HTTP_RESPONSE_RELEASE&gt; - No HTTP header is cached - ERR_NOT_SUPPORTED (line x)</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-01-29</dd>
+<dt>Updated</dt><dd>2025-01-29</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.X.X, 16.X.X, 17.X.X, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000149524">https://my.f5.com/manage/s/article/K000149524</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>After upgrading to 15.x or later, an iRule may generate &quot;No HTTP header is cached - ERR_NOT_SUPPORTED&quot; error and client may receive TCP RST pkt with rstcause text &quot;iRule execution error&quot;.</p>
+<p> </p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Jan 29 12:13:13 bigip.local info tmm[11521]: Rule /Common/my_samesite_cookie_irule &lt;HTTP_RESPONSE_RELEASE&gt;: 10.1.1.60:33208: Parsed persist cookie name=BIGipServer/Common/http_pool</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">Jan 29 12:13:13 bigip.local err tmm[11521]: 01220001:3: TCL error: /Common/my_samesite_cookie_irule &lt;HTTP_RESPONSE_RELEASE&gt; - No HTTP header is cached - ERR_NOT_SUPPORTED (line 19)     invoked from within &quot;HTTP::cookie attribute $persist_cookie insert &quot;SameSite&quot; &quot;None&quot;&quot;     (&quot;none&quot; arm line 2)     invoked from within &quot;switch [string tolower $samesite_security] {          &quot;none&quot; {             HTTP::cookie attribute $persist_cookie insert &quot;SameSite&quot; &quot;None&quot;            ...&quot;</span></p>
+<p> </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>[root@bigip:Active:In Sync] config # tcpdump -Snni 0.0:nn -s0 port 443 and &#39;tcp[13]&amp;4!=0&#39;
+tcpdump: verbose output suppressed, use -v or -vv for full protocol decode
+listening on 0.0:nn, link-type EN10MB (Ethernet), capture size 65535 bytes
+12:13:13.633230 IP 10.1.1.205.443 &gt; 10.1.1.60.33208: Flags [R.], seq 4272012934, ack 3225240048, win 0, length 0 out slot1/tmm0 lis=/Common/https_vs port=1.2 trunk= flowtype=64 flowid=400001793A00 peerid=0 conflags=808224 inslot=63 inport=23 haunit=1 priority=3 rst_cause=&quot;[0x30bb4dd:1868] iRule execution error&quot;
+</code></pre>
+<p> </p>
+<p>Before upgrade (v14.x or earlier), same iRule was working fine and no RST was sent to client. Here are sample debug logs of working iRule.</p>
+<p> </p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Jan 29 12:57:04 bigip.local info tmm3[16821]: Rule /Common/my_samesite_cookie_irule &lt;HTTP_RESPONSE_RELEASE&gt;: 10.1.1.60:33968: Parsed persist cookie name=BIGipServer/Common/http_pool</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">Jan 29 12:57:04 bigip.local info tmm3[16821]: Rule /Common/my_samesite_cookie_irule &lt;HTTP_RESPONSE_RELEASE&gt;: 10.1.1.60:33968: Set-Cookie header values=</span></p>
+<p> </p>
+<h2>Environment</h2>
+<ul><li>BIG-IP 15.0.0 or later.</li><li>Server response does not have HTTP Header. For instance, client sends HTTP/0.9 request (e.g., &quot;GET /\r\n\r\n&quot; only) to virtual server and backend server returns HTTP body only to BIG-IP.</li><li>Client-ssl virtual server uses an iRule which manipulates HTTP header (i.e., cookie header) in HTTP_RESPONSE_RELEASE event. Here is example configuration which can generate &quot;No HTTP header is cached - ERR_NOT_SUPPORTED&quot; error.</li></ul>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ltm virtual https_vs {
+    destination 10.1.1.205:https
+    ip-protocol tcp
+    mask 255.255.255.255
+    persist {
+        cookie {
+            default yes
+        }
+    }
+    pool http_pool
+    profiles {
+        clientssl {
+            context clientside
+        }
+        http { }
+        tcp { }
+    }
+    rules {
+        my_samesite_cookie_irule
+    }
+    source 0.0.0.0/0
+    translate-address enabled
+    translate-port enabled
+}
+ltm rule my_samesite_cookie_irule {
+   when HTTP_RESPONSE_RELEASE {
+      set persist_cookie_dbg 1
+      set samesite_security &quot;none&quot;
+      if { not [PROFILE::exists persist cookie] } {
+         if { $persist_cookie_dbg } {
+            log local0. &quot;[IP::client_addr]:[TCP::client_port]: Exiting because there isn&#39;t a cookie persist profile on the VS&quot;
+         }
+         return
+      }
+      if { [set persist_cookie [PROFILE::persist mode cookie cookie_name]] ne &quot;&quot; } {
+         if { $persist_cookie_dbg } {
+            log local0. &quot;[IP::client_addr]:[TCP::client_port]: \$persist_cookie=$persist_cookie&quot;
+         }
+      } else {
+         set persist_cookie &quot;BIGipServer[LB::server pool]&quot;
+      }
+      if { $persist_cookie_dbg } {
+         log local0. &quot;[IP::client_addr]:[TCP::client_port]: Parsed persist cookie name=$persist_cookie&quot;
+      }
+      switch [string tolower $samesite_security] {
+         &quot;none&quot; {
+            HTTP::cookie attribute $persist_cookie insert &quot;SameSite&quot; &quot;None&quot;
+            HTTP::cookie secure $persist_cookie
+         }
+         &quot;lax&quot; -
+         &quot;strict&quot; {
+            HTTP::cookie attribute $persist_cookie insert &quot;SameSite&quot; $samesite_security
+         }
+         default {
+            if { $persist_cookie_dbg } {
+               log local0. &quot;[IP::client_addr]:[TCP::client_port]: Invalid SameSite attribute value &#39;&#39;. Needs to be one of None|Lax|Strict&quot;
+            }
+         }
+      }
+      if { $persist_cookie_dbg } {
+         log local0. &quot;[IP::client_addr]:[TCP::client_port]: Set-Cookie header values=[HTTP::header values {set-cookie}]&quot;
+      }
+   }
+}</code></pre>
+<p> </p>
+<h2>Cause</h2>
+<p>Behavior changed in 15.0.0 via <a href="https://cdn.f5.com/product/bugtracker/ID752858.html" target="_blank">Bug ID 752858</a> fix. When no header response is returned by backend server (for example, server returns HTTP body only as an response for HTTP/0.9 request) and iRule tries to manipulate HTTP response header in HTTP_RESPONSE_RELEASE event, an error &quot;No HTTP header is cached - ERR_NOT_SUPPORTED&quot; may be thrown.</p>
+<p> </p>
+<h2>Recommended Actions</h2>
+<p>Try replacing HTTP_RESPONSE_RELEASE event to HTTP_RESPONSE event.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ltm rule my_samesite_cookie_irule-2 {
+   when HTTP_RESPONSE {
+      set persist_cookie_dbg 1
+      set samesite_security &quot;none&quot;
+		...</code></pre>
+<p> </p>
+<p><span style="color: #15891f;"><strong>Note:</strong> Changes to iRule should be tested to determine impact to your specific environment. F5 also recommends that you review your current global iRule configuration, if any, to ensure that there are no conflicts or redundant configuration.</span></p>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None.</p>
+<p> </p>
+</article>
+</body>
+</html>

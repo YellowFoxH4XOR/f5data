@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K25051326: Insert SNI in the serverside TLS handshake cause VMWare Horizon client cannot access the RDP server</title>
+<meta name="description" content="Support Solution: Insert SNI in the serverside TLS handshake cause VMWare Horizon client cannot access the RDP server — When follow the article like K41600007 or K08485455, create the iRule to insert the SNI in the serverside TLS handshake, it will cause the VMWare Horizon client cannot access the RDP server.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K25051326">
+</head>
+<body>
+<header>
+<h1>K25051326: Insert SNI in the serverside TLS handshake cause VMWare Horizon client cannot access the RDP server</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-12-07</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 16.X.X, 14.X.X, 13.X.X, 12.X.X, 11.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 11.6.X, 11.5.X, 11.4.X, 11.3.X, 11.2.X, 11.1.X, 11.0.X, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 13.1.0, 16.1.0, 13.0.1, 16.0.1, 13.0.0, 16.0.0, 12.1.6, 15.1.8, 12.1.5, 15.1.7, 12.1.4, 15.1.6, 12.1.3, 15.1.5, 12.1.2, 15.1.4, 12.1.1, 15.1.3, 12.1.0, 15.1.2, 12.0.0, 15.1.1, 11.6.5, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 15.X.X, 11.5.0, 11.4.1, 11.4.0, 11.3.0, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 11.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K25051326">https://my.f5.com/manage/s/article/K25051326</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>When follow the article like <a href="https://my.f5.com/manage/s/article/K41600007" target="_self">K41600007</a> or <a href="https://my.f5.com/manage/s/article/K08485455" target="_self">K08485455</a>, create the iRule to insert the SNI in the serverside TLS handshake, it will cause the VMWare Horizon client cannot access the RDP server.<br>Meanwhile, we can see the follow error log in the /var/log/ltm:</p>
+
+<p style="margin-left: 40px;"><span class="example2">err tmm[PID]: 01220001:3: TCL error: /Common/&lt;Irule name&gt; &lt;SERVERSSL_CLIENTHELLO_SEND&gt; - can&#39;t read &quot;sni_value&quot;: no such variable     while executing &quot;string length $sni_value&quot;</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP APM</li><li>Virtual server</li><li>Access profile</li><li>VMWare Horizon RDP resource</li><li>VMWare Horizon client</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>When APM access the VMWare Horizon server, some TLS connection are not HTTPS, cannot get the value for SNI, cause the iRule cannot work, and TLS handshake fail, TCP connection reset.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>Please edit the iRule to avoid this error, verify the SNI existed before insert the SNI extension, for example:</p>
+
+<p style="margin-left: 40px;"><span class="example2">when REWRITE_REQUEST_DONE {<br>  #log local0. &quot;HOST: [HTTP::host]&quot;<br>  set sni_value [getfield [HTTP::host] &quot;:&quot; 1]<br>}<br>when SERVERSSL_CLIENTHELLO_SEND {<br>  # SNI extension record as defined in RFC 3546/3.1<br>  #<br>  # - TLS Extension Type                =  int16( 0 = SNI )<br>  # - TLS Extension Length              =  int16( $sni_length + 5 byte )<br>  #    - SNI Record Length              =  int16( $sni_length + 3 byte)<br>  #       - SNI Record Type             =   int8( 0 = HOST )<br>  #          - SNI Record Value Length  =  int16( $sni_length )<br>  #          - SNI Record Value         =    str( $sni_value )<br>  # verify the SNI value existed.<br>  # Calculate the length of the SNI value, Compute the SNI Record / TLS extension fields and add the result to the SERVERSSL_CLIENTHELLO<br> if {[info exists sni_value]} {<br>   SSL::extensions insert [binary format SSScSa* 0 [expr { [set sni_length [string length $sni_value]] + 5 }] [expr { $sni_length + 3 }] 0 $sni_length $sni_value]<br> }<br>}</span></p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None.</p>
+</article>
+</body>
+</html>

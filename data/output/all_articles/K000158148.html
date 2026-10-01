@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000158148: How to prevent data loss when copying and pasting a large amount of information.</title>
+<meta name="description" content="Support Solution: How to prevent data loss when copying and pasting a large amount of information. — Users may encounter issues when copying and pasting. For example, multiple rows from Excel into a web application accessed through the load balancer. The pasted data is incomplete or missing rows…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000158148">
+</head>
+<body>
+<header>
+<h1>K000158148: How to prevent data loss when copying and pasting a large amount of information.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-12-10</dd>
+<dt>Updated</dt><dd>2025-12-10</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000158148">https://my.f5.com/manage/s/article/K000158148</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><strong>Description</strong></p>
+<p style="margin: 0in;font-family: Calibri;font-size: 11.0pt;">Users may encounter issues when copying and pasting. For example, multiple rows from Excel into a web application accessed through the load balancer. The pasted data is incomplete or missing rows when routed via F5 BIG-IP, while bypassing the load balancer results in successful paste operations.</p>
+<p style="margin: 0in;font-family: Calibri;font-size: 11.0pt;">No explicit error messages are shown.</p>
+<p><strong>Environment</strong></p>
+<p style="margin: 0in;font-family: Calibri;font-size: 11.0pt;">BIG-IP LTM</p>
+<p style="margin: 0in;font-family: Calibri;font-size: 11.0pt;">Virtual server with stream profile.</p>
+<p><strong>Cause</strong></p>
+<p style="margin: 0in;font-family: Calibri;font-size: 11.0pt;">Stream profile interferes with POST requests containing complex or multi-row payloads (such as those copied from Excel), resulting in incomplete data being delivered to the backend application.<strong></strong></p>
+<p><strong>Recommended Actions</strong></p>
+<p style="vertical-align: middle;"><span style="font-family: Calibri;font-size: 11.0pt;font-weight: normal;font-style: normal;">          1. Remove or replace the problematic stream profile on the affected virtual server.</span></p>
+<p style="margin-top: 0;margin-bottom: 0;vertical-align: middle;"><span style="font-family: Calibri;font-size: 11.0pt;font-weight: normal;font-style: normal;">          2. If removing the stream profile breaks required application logic (such as URL rewrites), use an iRule to perform targeted rewrites without affecting POST payloads.</span></p>
+<p style="margin: 0in;margin-left: .375in;font-family: Calibri;font-size: 11.0pt;">Replace the stream profile with a blank one.</p>
+<p style="margin: 0in;margin-left: .375in;font-family: Calibri;font-size: 11.0pt;">Apply the iRule below (please double-check it and adjust it to fit your configuration)</p>
+<p style="margin: 0in;margin-left: .375in;font-family: Calibri;font-size: 11.0pt;">when HTTP_REQUEST {<br>    # Always disable the stream profile at the start of each request<br>    STREAM::disable<br>    set name [HTTP::host]<br>}</p>
+<p style="margin: 0in;margin-left: .375in;font-family: Calibri;font-size: 11.0pt;">when HTTP_RESPONSE {<br>    # Always disable the stream profile at the start of each response<br>    STREAM::disable</p>
+<p style="margin: 0in;margin-left: .375in;font-family: Calibri;font-size: 11.0pt;"># Rewrite Location header on 302 redirects to HTTPS using the original host<br>    set location [HTTP::header Location]<br>    set port [URI::port $location]<br>    set n_path [URI::path $location]<br>    set n_basename [URI::basename $location]<br>    set n_query [URI::query $location]<br>if { [HTTP::is_redirect] }{<br>        if { $port eq <span style="font-weight: bold;">VS_PORT</span>}{<br>            HTTP::header replace Location &quot;<a href="https://$name$n_path$n_basename?$n_query" target="_blank">https://$name$n_path$n_basename?$n_query</a>&quot;<br>        }<br>    }</p>
+<p style="margin: 0in;margin-left: .375in;font-family: Calibri;font-size: 11.0pt;"># Only enable stream if Content-Type contains &quot;text&quot;<br>    if { [HTTP::header value Content-Type] contains &quot;text&quot; }{<br>        # Replace all instances of http:// with https:// in textual responses<br>        STREAM::expression {@http://example.com:1234@https://example.com:1234@}<br>        STREAM::enable<br>    }<br>}</p>
+<p style="margin: 0in;font-family: Calibri;font-size: 11.0pt;">This iRule is designed to control when the stream profile (which allows search-and-replace of text in HTTP responses) is enabled on your F5 BIG-IP.</p>
+<p style="margin: 0in;font-family: Calibri;font-size: 11.0pt;">Its main purpose is to prevent the stream profile from modifying important data (like large or complex information copied and pasted from Excel), while still allowing it to make necessary changes to web pages, such as converting links from http to https.</p>
+<p style="margin: 0in;font-family: Calibri;font-size: 11.0pt;">Ensure iRule logic matches your specific port configuration and rewrite requirements.</p>
+<p><strong>Additional Information</strong></p>
+<p style="margin: 0in;font-family: Calibri;font-size: 11.0pt;">None</p>
+</article>
+</body>
+</html>

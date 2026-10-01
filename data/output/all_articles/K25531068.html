@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K25531068: Websocket application on BIG-IP is failing</title>
+<meta name="description" content="Support Solution: Websocket application on BIG-IP is failing — Websocket handshake requests are being rejected with &quot;Error 403&quot; by the pool members">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K25531068">
+</head>
+<body>
+<header>
+<h1>K25531068: Websocket application on BIG-IP is failing</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-07-21</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 13.X.X, 15.X.X, 14.X.X, 12.X.X, 11.X.X, 11.5.X, 11.4.X, 11.3.X, 11.2.X, 11.1.X, 11.0.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 11.6.X, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 11.6.5, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 16.X.X, 11.5.0, 11.4.1, 11.4.0, 11.3.0, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 11.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K25531068">https://my.f5.com/manage/s/article/K25531068</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+Connections to Virtual Server using Websockets are reset.
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP LTM</li><li>Virtual Server</li><li>TCP, HTTP, and Websockets Profiles</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+Websocket handshake requests are being rejected with &quot;Error 403&quot; by the pool members<br> 
+<p><span class="sectiontitle">Recommended Actions</span></p>
+Take a packet capture of the connection attempt and investigate whether the client is able to complete a websockets<br><br>If your pool members are providing a 403 or other 400 series response code, they may need to be reconfigured to accept websockets requests<br><br>&quot;Error 403&quot; means the origin server is not authorized to access websocket application.<br><br>Solution options:<br> 
+<pre>
+The options here are:
+
+
+The most efficient one involves the modification of the &quot;WebSocket&quot; application residing on the back-end server to accept the &quot;origin&quot; header:
+
+Origin: https://mysite.com\r\n
+
+
+Or try an iRule to modify the host header:
+
+when HTTP_REQUEST {
+        if { [HTTP::host] contains &quot;0non_authorized_site.com&quot; } {
+            log local0. &quot;Original Request:  [HTTP::host][HTTP::uri]&quot;
+            HTTP::header replace Host [string map -nocase {&quot;non_authorized_site.com&quot; &quot;correct_site.com&quot;} [HTTP::header Host]]
+            log local0. &quot;Modified Request:  [HTTP::host][HTTP::uri]&quot;
+        }
+    }</pre>
+<br><br><br><br><span class="sectiontitle">Additional Information</span>
+
+<pre>
+ </pre>
+
+<h3>The WebSocket Protocol</h3>
+https://tools.ietf.org/html/rfc6455
+
+<pre>
+1.2 _This section is non-normative._
+
+   The protocol has two parts: a handshake and the data transfer.
+
+   The handshake from the client looks as follows:
+
+        GET /chat HTTP/1.1
+        Host: server.example.com
+        Upgrade: websocket
+        Connection: Upgrade
+        Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+        Origin: http://example.com                      &lt;------------------------------
+        Sec-WebSocket-Protocol: chat, superchat
+        Sec-WebSocket-Version: 13
+
+   The handshake from the server looks as follows:
+
+        HTTP/1.1 101 Switching Protocols
+        Upgrade: websocket
+        Connection: Upgrade
+        Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+        Sec-WebSocket-Protocol: chat
+
+10.2.  Origin Considerations
+
+   Servers that are not intended to process input from any web page but
+   only for certain sites SHOULD verify the |Origin| field is an origin
+   they expect.  If the origin indicated is unacceptable to the server,
+   then it SHOULD respond to the WebSocket handshake with a reply
+   containing HTTP 403 Forbidden status code.                                   &lt;------------------------------ !!!
+
+   The |Origin| header field protects from the attack cases when the
+   untrusted party is typically the author of a JavaScript application
+   that is executing in the context of the trusted client.  The client
+   itself can contact the server and, via the mechanism of the |Origin|
+   header field, determine whether to extend those communication
+   privileges to the JavaScript application.  The intent is not to
+   prevent non-browsers from establishing connections but rather to
+   ensure that trusted browsers under the control of potentially
+   malicious JavaScript cannot fake a WebSocket handshake.</pre>
+</article>
+</body>
+</html>

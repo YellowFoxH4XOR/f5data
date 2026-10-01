@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160524: F5 WAF for NGINX (App Protect) service down after a signature update</title>
+<meta name="description" content="Support Solution: F5 WAF for NGINX (App Protect) service down after a signature update — After attempting to update the NGINX App Protect attack signatures, the App-Protect service fails to start.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160524">
+</head>
+<body>
+<header>
+<h1>K000160524: F5 WAF for NGINX (App Protect) service down after a signature update</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-04-06</dd>
+<dt>Updated</dt><dd>2026-07-13</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>F5 WAF for NGINX: 5.9.0, 5.10.1, 5.10.0, 5.9.X, 5.9.1, 5.X.X, 5.13.X, 5.13.2, 5.13.1, 5.13.0, 5.12.X, 5.12.1, 5.12.0, 5.11.X, 5.11.2, 5.11.1, 5.11.0, 5.10.X</li><li>NGINX App Protect WAF: 5.4.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160524">https://my.f5.com/manage/s/article/K000160524</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>After attempting to update the NGINX App Protect attack signatures, the App-Protect service fails to start.</p>
+<h2>Environment</h2>
+<p>The log entry that identified the probable cause:<code>BD_MISC|CRIT  |Mar 27 21:04:17.428|3640329|/builds/t1_j2fGn9/7/waf/waf-general/secore/bd/bd/manifest_listener.cpp:0125|read_manifest failed, about to exit. info:<br>{<br>&quot;datetimeMicros&quot;:1774625657335775,<br>&quot;generationIndex&quot;:2,<br>&quot;jobId&quot;:&quot;0aa60cdd5e6ea20e8d2ef0dc3c4ed748&quot;,<br>&quot;jobCreateDatetime&quot;:&quot;2026-03-27T21:04:17Z&quot;,<br>&quot;messages&quot;:[&quot;CONFIG_TYPE_PROTOBUF_FILENAMES message had parsing error: could not parse protobuf message&quot;,&quot;CONFIG_TYPE_PROTOBUF_FILENAMES message had errors in block_index: 0. status=-1&quot;,&quot;CONFIG_TYPE_MANIFEST message had parsing error: could not parse protobuf message&quot;,&quot;failed to read dynamic data from file&quot;],<br>&quot;bdPid&quot;:3640325,<br>&quot;loadDatetime&quot;:&quot;2026-03-27T21:04:16Z&quot;,<br>&quot;completedSuccessfully&quot;:false<br>}</code></p>
+<p>Breakdown on the 2 components that point to an issue...</p>
+<ul><li><strong>CONFIG_TYPE_PROTOBUF_FILENAMES message had parsing error</strong>: Corrupted/mismatched/missing file, version mismatch, or permissions</li><li><strong>CONFIG_TYPE_MANIFEST message had parsing error</strong>: Same as above</li></ul>
+<h2>Cause</h2>
+<p>The logs indicated parsing errors and failures related to signature files, resulting in the service remaining down until the corrupted or mismatched signature package is purged and reinstalled.</p>
+<p>In the bd logs it is indicating that the signature file used was either...</p>
+<ul><li>Corrupted</li><li>Incomplete</li><li>Mismatched with the running engine version </li><li>or has incorrect permissions.</li></ul>
+<h2>Answer/Recommended Actions</h2>
+<p>In many cases purging the signatures will correct the issue and allow the update to work.</p>
+<p>1) Purge the signatures.<code>sudo apt purge app-protect-attack-signatures</code></p>
+<p>2. then install a non-corrupted and version matching set of signatures.<code>sudo apt install app-protect-attack-signatures</code></p>
+<p>3) Then restart the service;<code>sudo systemctl restart nginx-app-protect.service</code></p>
+<p>These steps will often allow the update to take place and correct the issue. If updating the signatures continues to be a problem or the log messages persist run the following Plan of Action (PoA). <a href="https://my.f5.com/manage/s/article/K000159030#link_05_12" target="_self"></a></p>
+<p>Enable F5 WAF for Nginx debug logging, reproduce the issue, tar logs and share the tar log files.</p>
+<p><strong>Enabling debug mode for the bd process without restarting the bd process</strong></p>
+<p style="padding-left: 40px;">1. Log in to the command line.</p>
+<p style="padding-left: 40px;">2. Create a backup copy of the /etc/ts/bd/logger.cfg file using the following command:<code>cp /etc/app_protect/bd/logger.cfg /etc/app_protect/bd/logger.cfg.bak</code></p>
+<p style="padding-left: 40px;">3. Add the following lines:<code>  MODULE=ECARD_POLICY;<br>  LOG_LEVEL=TS_INFO | TS_DEBUG;<br>  FILE = 2;<br>  <br>  MODULE=BD_MISC;<br>  LOG_LEVEL=TS_INFO | TS_DEBUG;<br>  FILE = 2;<br>  <br>  MODULE = ALL;<br>  LOG_LEVEL = TS_ERR | TS_CRIT | TS_WARNING | TS_NOTICE;<br>  FILE=2;</code></p>
+<p style="padding-left: 40px;">4. Save and exit the logger.cfg file.</p>
+<p style="padding-left: 80px;">  Note: If the logger.cfg format is not correct, the system uses the last good configuration of the logger.cfg file.</p>
+<p style="padding-left: 40px;">5. Reproduce the issue.</p>
+<p style="padding-left: 40px;">After completing F5 WAF for NGINX debug testing, return the logging levels to the default configuration to avoid excessive logging by performing the following procedure:</p>
+<p style="padding-left: 40px;">1. Copy the /etc/ts/bd/logger.cfg_sol9955 to /etc/ts/bd/logger.cfg backup file.<code>cp /etc/app_protect/bd/logger.cfg.bak /etc/app_protect/bd/logger.cfg</code></p>
+<p style="padding-left: 40px;">2. Generate and upload tar logs.<code>tar -czpf /var/tmp/$HOSTNAME-logs.`date &quot;+%F&quot;`.tar.gz /var/log/*</code></p>
+<p style="padding-left: 40px;">3. Run the steps here <a href="https://docs.nginx.com/waf/support/" target="_self">F5 WAF for NGINX Support</a> to include the additional information needed for the case.</p>
+<p style="padding-left: 40px;">4. Then open a case with f5 Support and upload the files to it.  <a href="https://my.f5.com/manage/s/article/K000090853" target="_self">K000090853: Exchange files with F5 Support</a></p>
+<h2>Additional Information</h2>
+</article>
+</body>
+</html>

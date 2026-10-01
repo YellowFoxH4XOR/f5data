@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K70894946: Unable to delete a legacy application in BIG-IQ using Force-Delete</title>
+<meta name="description" content="Support Solution: Unable to delete a legacy application in BIG-IQ using Force-Delete — When trying to delete a legacy application in BIG-IQ, via a force-delete command, there is an error and the application is not deleted.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K70894946">
+</head>
+<body>
+<header>
+<h1>K70894946: Unable to delete a legacy application in BIG-IQ using Force-Delete</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-11-12</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K70894946">https://my.f5.com/manage/s/article/K70894946</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>When trying to delete a legacy application in BIG-IQ, via a force-delete command, there is an error and the application is not deleted.<br><br>In the <strong>/var/log/restjavad.0.log </strong>file, you see these log entries:<br><br><span class="example2">[ERROR][&lt;&lt;timestamp&gt;&gt;][/cm/global/tasks/force-delete/&lt;&lt;task ID&gt;&gt;/worker ForceDeleteTaskWorker] unable to retrieve config to delete.: Get document for key: cm/global/classic-configs/&lt;&lt;config ID&gt;&gt; returned nothing<br>[DEBUG][&lt;&lt;timestamp&gt;&gt;][/cm/global/tasks/force-delete/&lt;&lt;task ID&gt;&gt;/worker ForceDeleteTaskWorker] Task finished with status FAILED: unable to retrieve config to delete.: Get document for key: cm/global/classic-configs/&lt;&lt;config ID&gt;&gt; returned nothing<br>[DEBUG][&lt;&lt;timestamp&gt;&gt;][/cm/global/tasks/force-delete ForceDeleteTaskCollectionWorker] Handling PUT from https://localhost/mgmt/cm/global/tasks/force-delete/&lt;&lt;task ID&gt;&gt;/worker - FAILED task http://localhost:8100/cm/global/tasks/force-delete/&lt;&lt;task ID&gt;&gt;<br>[DEBUG][&lt;&lt;timestamp&gt;&gt;]HikariCP - Reset (autoCommit) on connection org.postgresql.jdbc.PgConnection@69811012<br>[DEBUG][&lt;&lt;timestamp&gt;&gt;][/cm/global/tasks/force-delete/&lt;&lt;task ID&gt;&gt;/worker ForceDeleteTaskWorker] Processing status: FAILED<br>[DEBUG][&lt;&lt;timestamp&gt;&gt;][/cm/global/tasks/force-delete/&lt;&lt;task ID&gt;&gt;/worker ForceDeleteTaskWorker] Allowing reentrant execution in status FAILED<br>[DEBUG][&lt;&lt;timestamp&gt;&gt;][/cm/global/tasks/force-delete/&lt;&lt;task ID&gt;&gt;7bd9/worker ForceDeleteTaskWorker] Unregistering worker</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IQ Application Legacy</li><li>Force remove</li><li>Changed MachineID</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br>Legacy applications are linked to an internal managed-device identifier that is called <strong>machineId</strong>. This ID is created in the BIG-IP and imported into BIG-IQ when discovering the device. Also, this ID might change in some circumstances, some examples can be found in <a href="https://my.f5.com/manage/s/article/K23145710" target="_self">K23145710: Identifying and removing invalid duplicate device objects on the BIG-IQ system</a>.<br><br>If the <strong>machineId</strong> changes, there will be a mismatch in UUID and machine ID, thus the force-delete API is unable to find the application.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ol><li>On BIG-IQ CM, list BIG-IP&#39;s uuid and machineId and verify that there is a mismatch. </li></ol>
+
+<div style="margin-left: 40px;"><span class="code">restcurl cm/system/machineid-resolver | grep -B 5 &lt;&lt;BIG-IP&#39;s IP&gt;&gt;</span><br><br><span class="note">Note: If you wish to list all devices&#39; uuid and machineId from BIG-IQ for comparison purposes, use the following command:</span><br><span class="code">restcurl cm/system/machineid-resolver | grep &quot;uuid\|machineId\|hostname&quot;</span></div>
+
+<ol start="2"><li>Note the output for the field &quot;uuid&quot;</li><li>In the BIG-IP, edit the file &quot;/config/f5-rest-device-id&quot; and replace whatever value is in there with the value from &quot;uuid&quot;  (without the quotes) obtained in step 2.</li><li>In the BIG-IP, restart restjavad:<br>	<span class="code">tmsh restart sys service restjavad</span></li><li>Wait for 5 minutes, then in the BIG-IP, run:<br>	<span class="code">restcurl /shared/resolver/device-groups/cm-bigip-allDevices/devices/&lt;&lt;uuid&gt;&gt; | jq .machineId</span></li></ol>
+
+<div style="margin-left: 40px;"><span class="note">In step 5, make sure to replace &quot;&lt;&lt;uuid&gt;&gt;&quot; for the value obtained in step 2<span class="code">.</span></span></div>
+
+<ol start="6"><li>Make sure the output is the same as in step 2.</li><li>In the BIG-IQ CM GUI, go to the Devices tab and re-import and rediscover LTM for BIG-IP.<br>	<span class="note">If the discovery / import throws any error, go to the CM console and restart restjavad with &quot;tmsh restart sys service restjavad&quot;, wait until GUI is back online, and retry.</span></li><li>Then, in the BIG-IQ CM, run:<br>	<span class="code">restcurl /shared/resolver/device-groups/cm-bigip-allDevices/devices/&lt;&lt;uuid&gt;&gt; | jq .machineId</span></li></ol>
+
+<div style="margin-left: 40px;"><span class="note">In step 8, make sure to replace &quot;&lt;&lt;uuid&gt;&gt;&quot; for the value obtained in step 2<span class="code">.</span></span></div>
+
+<ol start="9"><li>Make sure the output is the same as in step 2.</li><li>Attempt to force-delete the application again, this time it should work.</li></ol>
+
+<div style="margin-left: 40px;"><span class="code">restcurl -X POST cm/global/tasks/force-delete -d &#39;{&quot;configSetName&quot;:&quot;&lt;&lt;Legacy Application Name&gt;&gt;&quot;}&#39;</span></div>
+
+<p><span class="sectiontitle">Additional Information</span><br>None</p>
+</article>
+</body>
+</html>

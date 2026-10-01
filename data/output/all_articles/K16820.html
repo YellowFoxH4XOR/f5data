@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K16820: The lb_http process may produce a core file with the &#x27;Assertion failed: (!requests()-&gt;empty()), function waitUntilReadyForResponse&#x27; error message</title>
+<meta name="description" content="Known Issue: The lb_http process may produce a core file with the &#x27;Assertion failed: (!requests()-&gt;empty()), function waitUntilReadyForResponse&#x27; error message — The lb_http process may produce a core file with the Assertion failed: (!requests()-&gt;empty()), function waitUntilReadyForResponse error message.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K16820">
+</head>
+<body>
+<header>
+<h1>K16820: The lb_http process may produce a core file with the &#x27;Assertion failed: (!requests()-&gt;empty()), function waitUntilReadyForResponse&#x27; error message</h1>
+<dl>
+<dt>Type</dt><dd>Known Issue</dd>
+<dt>Published</dt><dd>2015-07-07</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>LineRate: 2.5.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K16820">https://my.f5.com/manage/s/article/K16820</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Known Issue</h3>
+
+<p>The <b>lb_http</b> process may produce a core file with the <b>Assertion failed: (!requests()-&gt;empty()), function waitUntilReadyForResponse</b> error message.</p>
+<p>This issue occurs when all of the following conditions are met:</p>
+<ul><li>You have a LineRate script configured in the datapath.</li><li>Your LineRate script uses the Node.js <b>setTimeout()</b> method with the client response configured as the <b>callback</b> value, with a <b>delay</b> value of 10 seconds. Your script may look similar to the following example (this example is truncated for brevity):<p class="example2">var slow_respond = function(sReq, sRes) {<br>   var timeout = 10000;<br>   sReq.on(&#39;response&#39;, function(response) {<br>   ...<br>     response.on(&#39;data&#39;, function(chunk) {<br>       body += chunk;<br>     });<br>  <br>     response.on(&#39;end&#39;, function(chunk) {<br>       body += chunk;<br>       var timeoutResponse = function() {<br>         console.log(&quot;generating closure&quot;);<br>         return function() {<br>           console.log(&quot;closure executing&quot;);<br>           sRes.write(body);<br>         }<br>       }<br>  <br>       setTimeout(timeoutResponse(), timeout);<br>       console.log(&quot;set timeout&quot;);<br>     });<br>  });<br> }</p>
+</li></ul>
+<p>The LineRate system has an internal timeout value that is fixed at 10 seconds, which represents the script response timeout. The two timers can potentially create a race condition for the timeout event.</p>
+
+<p><a name="impact"></a><span class="sectiontitle">Impact</span></p>
+
+<p>The <b>lb_http</b> processes produce a core file and then restart. All connections on the affected <b>lb_http</b> process are lost, and must be re-established. Other <b>lb_http</b> processes may be affected, depending on the retry by the client applications and whether you encounter the same conditions when reproducing the bug.</p>
+
+<p><a name="symptoms"></a><span class="sectiontitle">Symptoms</span></p>
+
+<p>As a result of this issue, you may encounter one or more of the following symptoms:</p>
+<ul><li>The system loses connections that use the affected <b>lb_http</b> process.</li><li>In the <b>/var/log/controller.messages</b> file, the system logs messages similar to the following example:<p class="example2">Assertion failed: (!requests()-&gt;empty()), function waitUntilReadyForResponse, file appmods/lb_http/client_connection.cc, line 971.<br> ProcManager: lb_http exited: exited due to signal 6 (core dumped).</p>
+</li></ul>
+<h3>Resolution</h3><p><a name="status"></a><span class="sectiontitle">Status</span></p>
+
+<p>F5 Product Development has assigned ID LRS-32164 to this issue. F5 has confirmed that this issue exists in the products listed in the <b>Applies To</b> box, located in the upper-right corner of this article. For information about releases or hotfixes that resolve this issue, refer to the following table:</p>
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1" width="100%"><tbody><tr><td colspan="1" rowspan="1" class="askf5tablehead">Type of Fix</td><td colspan="1" rowspan="1" class="askf5tablehead">Versions Fixed</td><td colspan="1" rowspan="1" class="askf5tablehead">Related Articles</td></tr><tr><td colspan="1" rowspan="1">Release</td><td colspan="1" rowspan="1">2.5.1</td><td colspan="1" rowspan="1"><a href="https://my.f5.com/manage/s/article/K2200" target="_blank">K2200: Most recent versions of F5 software</a></td></tr></tbody></table>
+
+<p><a name="workaround"></a><span class="sectiontitle">Workaround</span></p>
+
+<p>To work around this, you can either override the default script response timeout by using <b>resetTimeout()</b> with a timeout value set to something other than the value configured for <b>setTimeout()</b>, or you can modify the delay value for the <b>setTimeout()</b> method to something other than the default 10 seconds.</p>
+<p><span class="impact"><b>Impact of workaround:</b> Changing the design of your LineRate scripting may have additional effects on traffic processing. Ensure that any modification you make is compatible with your environment.</span></p>
+<p>The following is a possible configuration for <b>resetTimeout()</b>, using the the example provided above:<br> <br> <span class="example2"><b>var scriptTimeoutValue = 60;</b><br> sReq.on(&#39;response&#39;, function(response) {<br>   sReq.resetTimeout(scriptTimeoutValue);<br>   ...<br>     response.on(&#39;data&#39;, function(chunk) {<br>       body += chunk;<br>     });<br>   ....<br> }</span></p>
+<p><span class="note"><b>Note</b>: If the timeout in <b>resetTimeout(timeout)</b> is set to zero, the timer is disabled for this request, and a 504 Gateway Timeout is never automatically sent to the client.</span><span class="example2"></span></p>
+</article>
+</body>
+</html>

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K48274816: Custom metrics in Aspen Mesh</title>
+<meta name="description" content="Support Solution: Custom metrics in Aspen Mesh — The sidecar in Aspen Mesh generates a standard set of metrics but you can create new metrics as per your needs. This article provides one such example.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K48274816">
+</head>
+<body>
+<header>
+<h1>K48274816: Custom metrics in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-12-15</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K48274816">https://my.f5.com/manage/s/article/K48274816</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+The sidecar in Aspen Mesh generates a standard set of metrics but you can create new metrics as per your needs. This article provides one such example.
+
+<p><strong>Environment</strong></p>
+
+<ul><li><strong>Aspen Mesh</strong>: 1.9.x and above</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+N/A
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>The sidecar in Aspen Mesh generates a standard set of metrics but you can create new metrics as per your needs. In this example we are adding the <strong>request_host</strong> and <strong>destination_port</strong> dimensions to the <strong>requests_total</strong> metrics that are emitted by the sidecar and gateways in both inbound and outbound directions</p>
+
+<ol><li>Add the following section to the override value file:
+	<p><span class="example2">#Custom metrics<br>	telemetry:<br>	  v2:<br>	    prometheus:<br>	      configOverride:<br>	        inboundSidecar:<br>	          metrics:<br>	            - name: requests_total<br>	              dimensions:<br>	                destination_port: string(destination.port)<br>	                request_host: request.host<br>	        outboundSidecar:<br>	          metrics:<br>	            - name: requests_total<br>	              dimensions:<br>	                destination_port: string(destination.port)<br>	                request_host: request.host<br>	        gateway:<br>	          metrics:<br>	            - name: requests_total<br>	              dimensions:<br>	                destination_port: string(destination.port)<br>	                request_host: request.host</span></p>
+	</li><li>Upgrade the helm installation for <strong>istiod</strong> using the newly edited file:
+	<p><span class="example2">helm upgrade istiod &lt;path to release&gt;/manifests/charts/istio-control/istio-discovery -n istio-system --values sample_overrides-aspenmesh.yaml</span></p>
+	</li><li>After the upgrade is done, you can check the envoy filter if the new metrics are added correctly. The output should look like the following:
+	<p><span class="example2">kubectl get envoyfilters -n istio-system stats-filter-1.9 -o yaml | grep metrics -A 3 –B3<br>	 <br>	configuration:<br>	&#39;@type&#39;: type.googleapis.com/google.protobuf.StringValue<br>	   value: |<br>	     {&quot;metrics&quot;:[{&quot;dimensions&quot;:{&quot;destination_port&quot;:&quot;string(destination.port)&quot;,&quot;request_host&quot;:&quot;request.host&quot;,&quot;request_operation&quot;:&quot;istio_operationId&quot;},&quot;name&quot;:&quot;requests_total&quot;}]}<br>	root_id: stats_outbound<br>	vm_config:<br>	  code:<br>	--<br>	--<br>	configuration:<br>	  &#39;@type&#39;: type.googleapis.com/google.protobuf.StringValue<br>	   value: |<br>	     {&quot;metrics&quot;:[{&quot;dimensions&quot;:{&quot;destination_port&quot;:&quot;string(destination.port)&quot;,&quot;request_host&quot;:&quot;request.host&quot;,&quot;request_operation&quot;:&quot;istio_operationId&quot;},&quot;name&quot;:&quot;requests_total&quot;}]}<br>	root_id: stats_inbound<br>	vm_config:<br>	  code:<br>	--<br>	--<br>	configuration:<br>	  &#39;@type&#39;: type.googleapis.com/google.protobuf.StringValue<br>	  value: |<br>	    {&quot;metrics&quot;:[{&quot;dimensions&quot;:{&quot;destination_port&quot;:&quot;string(destination.port)&quot;,&quot;request_host&quot;:&quot;request.host&quot;,&quot;request_operation&quot;:&quot;istio_operationId&quot;},&quot;name&quot;:&quot;requests_total&quot;}]}<br>	root_id: stats_outbound<br>	vm_config:<br>	  code:</span></p>
+
+	<p>You have successfully added <strong>request_host </strong>and <strong>destination_port</strong> as dimensions for the <strong>requests_total</strong> metric. The name of the envoy filter is <strong>stats-filter-1.9</strong> because of Aspen Mesh version 1.9.</p>
+	</li><li>If the dimensions are not already in the <strong>DefaultStatTags </strong>List, add the following annotation to all the pods from which we would need to extract the dimensions into Prometheus. You can check the default stats in the bootstrap configuration of any given pod.
+	<p><span class="example2">istioctl pc bootstrap &lt;pod-name&gt; -n &lt;namespace&gt; | jq &quot;.bootstrap.statsConfig&quot;</span></p>
+	<span class="example2">DefaultStatTags = []string{<br>	&quot;reporter&quot;,<br>	&quot;source_namespace&quot;,<br>	&quot;source_workload&quot;,<br>	&quot;source_workload_namespace&quot;,<br>	&quot;source_principal&quot;,<br>	&quot;source_app&quot;,<br>	&quot;source_version&quot;,<br>	&quot;source_cluster&quot;,<br>	&quot;destination_namespace&quot;,<br>	&quot;destination_workload&quot;,<br>	&quot;destination_workload_namespace&quot;,<br>	&quot;destination_principal&quot;,<br>	&quot;destination_app&quot;,<br>	&quot;destination_version&quot;,<br>	&quot;destination_service&quot;,<br>	&quot;destination_service_name&quot;,<br>	&quot;destination_service_namespace&quot;,<br>	&quot;destination_port&quot;,<br>	&quot;destination_cluster&quot;,<br>	&quot;request_protocol&quot;,<br>	&quot;request_operation&quot;,<br>	&quot;request_host&quot;,<br>	&quot;response_flags&quot;,<br>	&quot;grpc_response_status&quot;,<br>	&quot;connection_security_policy&quot;,<br>	&quot;source_canonical_service&quot;,<br>	&quot;destination_canonical_service&quot;,<br>	&quot;source_canonical_revision&quot;,<br>	&quot;destination_canonical_revision&quot;,<br>	}<br>	apiVersion: apps/v1<br>	kind: Deployment<br>	spec:<br>	  template: # pod template<br>	    metadata:<br>	      annotations:<br>	        sidecar.istio.io/extraStatTags: destination_port,request_host</span>
+
+	<p>Refer to the <strong>Annotation</strong> section of <a href="https://my.f5.com/manage/s/article/K12253321" target="_self">K12253321: Holding up application until proxy starts in Aspen Mesh for more information</a>. As you can see <strong>request_host</strong> and <strong>destination_port</strong> is already in the list, so there was no need to annotate.</p>
+	</li><li>To verify if the new dimensions are collected in Prometheus, <strong>port-forward</strong> the pod to 15090 and <strong>grep</strong> for dimensions.
+	<p><span class="example2">kubectl port-forward &lt;pod-name&gt; &lt;namespace&gt;  15090:15090</span></p>
+	<span class="example2">curl localhost:15090/stats/prometheus | grep &#39;destination_port\|request_host&#39;  -A 2 -B 2<br>	 <br>	% Total    % Received % Xferd  Average Speed   Time    Time     Time  Current<br>	                                 Dload  Upload   Total   Spent    Left  Speed<br>	100 21638    0 21638    0     0   116k      0 --:--:-- --:--:-- --:--:--  116k<br>	# TYPE istio_requests_total counter<br>	istio_requests_total{&lt;redacted&gt;,destination_workload_namespace=&quot;default&quot;,<strong>destination_port</strong>=&quot;9080&quot;,request_protocol=&quot;http&quot;,<strong>request_host</strong>=&quot;reviews:9080&quot;,} 4945<br>	 <br>	istio_requests_total{&lt;redacted&gt;,destination_workload_namespace=&quot;default&quot;,<strong>destination_port</strong>=&quot;9080&quot;,request_protocol=&quot;http&quot;,<strong>request_host</strong>=&quot;reviews.default.svc.cluster.local:9080&quot;} 1<br>	 <br>	istio_requests_total{&lt;redacted&gt;, destination_workload=&quot;ratings-v1&quot;,<strong>destination_port</strong>=&quot;9080&quot;,request_protocol=&quot;http&quot;,<strong>request_host</strong>=&quot;ratings:9080&quot;} 494</span></li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>Istio exposes all standard <a href="https://www.envoyproxy.io/docs/envoy/v1.17.0/intro/arch_overview/advanced/attributes.html?highlight=attributes" target="_blank">Envoy attributes</a> which can be used to create custom metrics. Peer metadata is available as attributes <strong>upstream_peer</strong> for outbound and <strong>downstream_peer</strong> for inbound with the following fields:</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1"><tbody><tr><td colspan="1" rowspan="1">Field</td><td colspan="1" rowspan="1">Type</td><td colspan="1" rowspan="1">Value</td></tr><tr><td colspan="1" rowspan="1">name</td><td colspan="1" rowspan="1">string</td><td colspan="1" rowspan="1">Name of the pod.</td></tr><tr><td colspan="1" rowspan="1">namespace</td><td colspan="1" rowspan="1">string</td><td colspan="1" rowspan="1">Namespace that the pod runs in</td></tr><tr><td colspan="1" rowspan="1">labels</td><td colspan="1" rowspan="1">map</td><td colspan="1" rowspan="1">Workload labels</td></tr><tr><td colspan="1" rowspan="1">owner</td><td colspan="1" rowspan="1">string</td><td colspan="1" rowspan="1">Workload owner</td></tr><tr><td colspan="1" rowspan="1">wokload_name</td><td colspan="1" rowspan="1">string</td><td colspan="1" rowspan="1">Workload name</td></tr><tr><td colspan="1" rowspan="1">platform_metadat</td><td colspan="1" rowspan="1">map</td><td colspan="1" rowspan="1">Platform metadata with prefixedkeys</td></tr><tr><td colspan="1" rowspan="1">istio_version</td><td colspan="1" rowspan="1">string</td><td colspan="1" rowspan="1">Version identifier for the proxy</td></tr><tr><td colspan="1" rowspan="1">mesh_id</td><td colspan="1" rowspan="1">string</td><td colspan="1" rowspan="1">Unique identifier for the mesh</td></tr><tr><td colspan="1" rowspan="1">app_containers</td><td colspan="1" rowspan="1">list&lt;string&gt;</td><td colspan="1" rowspan="1">List of short names for application containers</td></tr><tr><td colspan="1" rowspan="1">cluster_id</td><td colspan="1" rowspan="1">string</td><td colspan="1" rowspan="1">Identifier for the cluster to which this workload belongs.</td></tr></tbody></table>
+</article>
+</body>
+</html>

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000130020: Critical CPF, NMS and TRIPO alarms on both SDC nodes - Tripo process restarted</title>
+<meta name="description" content="Support Solution: Critical CPF, NMS and TRIPO alarms on both SDC nodes - Tripo process restarted — Due to connecting to SDC IP via port 5555 from external server (like vulnerability scanner e.g &quot;Qualys&quot;), the Tripo process unexpected restarted.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000130020">
+</head>
+<body>
+<header>
+<h1>K000130020: Critical CPF, NMS and TRIPO alarms on both SDC nodes - Tripo process restarted</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-01-05</dd>
+<dt>Updated</dt><dd>2023-02-07</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000130020">https://my.f5.com/manage/s/article/K000130020</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Description</strong></h2>
+
+<ul><li>CPF, NMS and Tripo Critical alarms on both SDC nodes</li><li><span style="font-family: Arial, sans-serif;font-size: 10.5pt;">Tripo process unexpected restarted on both SDC nodes</span></li><li><span style="font-family: Arial, sans-serif;font-size: 10.5pt;">Error messages from </span><span style="font-family: courier;">\var\log\rsyslog\</span><span style="font-family: courier;font-size: 10.5pt;">&lt;name&gt;.SysWatchDog.log</span></li></ul>
+
+<p class="ql-indent-2"><span style="font-family: courier;">WebStatMgr crashed. Tripo is shutting down</span></p>
+
+<h2> </h2>
+
+<h2><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Environment</strong></h2>
+
+<ul><li>SDC (Traffix) till 5.1 CF30</li></ul>
+
+<h2><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Cause</strong></h2>
+
+<p>Due to connecting to SDC IP via port 5555 from external server (like vulnerability scanner e.g &quot;Qualys&quot;), the Tripo <span style="font-family: Arial, sans-serif;font-size: 14px;">process unexpected restarted.</span></p>
+
+<p><span style="font-family: Arial, sans-serif;font-size: 10.5pt;">This is due to known bug id SDC-374</span></p>
+
+<p> </p>
+
+<h2><span style="font-family: Arial, sans-serif;font-size: 10.5pt;"> </span><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Recommended Actions</strong></h2>
+
+<ul><li><span style="font-family: Arial, sans-serif;font-size: 10.5pt;">Perform software upgrade to <strong>SDC 5.1 CF31 or higher.</strong></span></li></ul>
+<span style="font-family: Arial, sans-serif;font-size: 10.5pt;">Or</span>
+
+<ul><li>Implement workaround to block port 5555 in SDC iptables for external traffic - to do so, follow the steps below:</li></ul>
+1. To see the rule/line number
+
+<pre class="ckeditor_codeblock">
+# iptables -L -v -n --line-numbers | grep 5555</pre>
+2. Delete the generic rule that allowed access to port 5555
+
+<pre class="ckeditor_codeblock">
+# iptables -D INPUT yy (that have the default TCP 5555 rules)</pre>
+
+<div style="margin-left: 40px;"><span style="color: #2980b9;"><strong><span style="background-color: #dddddd;">Note:</span></strong><span style="background-color: #dddddd;"> The </span><strong><span style="background-color: #dddddd;">yy</span></strong><span style="background-color: #dddddd;"> refers to the rule or line number</span><span style="background-color: #ffffff;">.</span></span></div>
+3. Add new role for block port 5555 for external traffic
+
+<pre class="ckeditor_codeblock">
+# iptables -A INPUT -d &lt;MGMT network&gt; -i eth0 -p tcp -m tcp --dport 5555 -m comment --comment &quot;Drop connections to WebStatMgr port from outside traffic&quot; -j LOGDROP
+</pre>
+
+<p>Next step is to make sure that <em>iptables monitoring is <strong>unmanaged</strong></em><strong> </strong>from salt. Then make the iptables changes.<br><br><strong><u>How to unmanage iptables from Salt:</u></strong></p>
+
+<p><strong>Enable/Disable Salt iptables monitoring</strong></p>
+
+<div style="margin-left: 40px;"><span style="color: #2980b9;"><span style="background-color: #dddddd;"><strong>Note: </strong>The below procedure should be done on each Salt master&#39;s EMS and Sites machines.</span></span></div>
+
+<ol><li>iptables Service</li></ol>
+
+<div style="margin-left: 40px;">Stop the iptables service on each EMS and Site machine associated to the Salt master instances that you are working on.</div>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+# service iptables stop</pre>
+
+<ol start="2"><li>Master machines</li></ol>
+
+<div style="margin-left: 40px;">Look for Salt two master instances (one per machine). Salt master process can be identified under process containing the word &quot;vnf&quot;</div>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+# monit summary</pre>
+
+<div style="margin-left: 40px;">example of output showing the process having the word &quot;<strong>vnf</strong>&quot;</div>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+Process &#39;sdclab008-05_vnf&#39;     Running
+</pre>
+
+<ol start="3"><li>Disabling or Enabling &quot;iptables&quot; Salt monitoring on the master machine only</li></ol>
+
+<div style="margin-left: 40px;"><em>Change directory to iptables salt configuration folder (folder &quot;5.1-1003&quot; is an example)</em></div>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+# cd /srv/salt/5.1*/system</pre>
+
+<div style="margin-left: 40px;">Edit the file: &quot;<strong>firewall.sls</strong>&quot;</div>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+# vi firewall.sls</pre>
+
+<div style="margin-left: 40px;">Look for the line:</div>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+{% if virtWhat != &#39;kvm&#39; %}</pre>
+
+<div style="margin-left: 40px;">and DISABLE the iptables salt monitoring by replacing the above line with:</div>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+{% if virtWhat == ‘kvm’ %}</pre>
+
+<div style="margin-left: 40px;">Comment the whole else block by setting {# in line 758 of the file and #} in line 777</div>
+
+<ol start="4"><li>Save the file</li></ol>
+
+<div style="margin-left: 40px;"><strong><em>Beginning of the else section:</em></strong></div>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+{#                            &lt;&lt;&lt;
+{% else %} #virtwhat
+### Disabled for virtual machines ###
+{% for iptable in &#39;iptables&#39;, &#39;ip6tables&#39; %}
+{{iptable}}_disabled:
+ service.disabled:
+   - name: {{iptable}}
+   - require:
+     - pkg: iptables_install
+{{iptable}}_stop:
+ service.dead:
+   - name: {{iptable}}
+   - require:
+     - pkg: iptables_install
+{% endfor %}
+#}                            &lt;&lt;&lt;
+{% endif %} #virtwhat</pre>
+
+<div style="margin-left: 40px;"><span style="color: #2980b9;"><strong><em><span style="background-color: #dddddd;">Note</span></em></strong><span style="background-color: #dddddd;">: If you want to re-enable the iptables Salt monitoring, restore the changes</span></span></div>
+
+<div style="margin-left: 40px;">Verification:</div>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+cat firewall.sls --number |grep &quot;758\|777&quot;
+grep &quot;virtWhat ==&quot; firewall.sls</pre>
+
+<ol start="5"><li>Publish the new configuration</li></ol>
+
+<div style="margin-left: 40px;">It is required to publish the new configuration on all &quot;minion&quot; machines.</div>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+# salt “*” state.highstate</pre>
+
+<ol start="6"><li>Reactivate the iptables service</li></ol>
+
+<div style="margin-left: 40px;">You need to enable the firewall on all stopped iptables services machines.</div>
+
+<pre class="ckeditor_codeblock" style="margin-left: 40px;">
+# service iptables start</pre>
+
+<p class="ql-indent-2"> </p>
+
+<p class="ql-indent-1"><strong><u>Please repeat this for all SDC nodes.</u></strong></p>
+
+<p class="ql-indent-1"> </p>
+
+<h2><span style="font-family: Arial, sans-serif;font-size: 10.5pt;"> </span><strong style="font-family: Arial, sans-serif;font-size: 18pt;">Additional Information</strong></h2>
+
+<p><span style="font-family: Arial, sans-serif;font-size: 10.5pt;">None</span></p>
+</article>
+</body>
+</html>

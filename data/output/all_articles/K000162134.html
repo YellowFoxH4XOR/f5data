@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162134: Snat-translation object got orphaned while running &quot;delete ltm snat all&quot; TMSH command.</title>
+<meta name="description" content="Support Solution: Snat-translation object got orphaned while running &quot;delete ltm snat all&quot; TMSH command. — When &quot;tmsh delete ltm snat all&quot; command is executed, snat-translation object, which was automatically created while parent snat object was created, may not be deleted and got orphaned.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162134">
+</head>
+<body>
+<header>
+<h1>K000162134: Snat-translation object got orphaned while running &quot;delete ltm snat all&quot; TMSH command.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-07-08</dd>
+<dt>Updated</dt><dd>2026-07-08</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 21.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162134">https://my.f5.com/manage/s/article/K000162134</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When &quot;tmsh delete ltm snat <span style="font-size: 14px;"><strong>all</strong></span>&quot; command is executed, snat-translation object, which was automatically created while parent snat object was created, may not be deleted and got orphaned. </p>
+<p>Here is example case, snat-translation object &quot;10.1.1.1&quot; got orphaned after running &quot;delete ltm snat all&quot; command.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>[root@bigipltm:Active:Standalone] config # tmsh create ltm snat my_snat origins add { 10.0.0.1 } translation 10.1.1.1
+[root@bigipltm:Active:Standalone] config # tmsh list ltm snat
+ltm snat my_snat {
+    origins {
+        10.0.0.1/32 { }
+    }
+    translation /Common/10.1.1.1
+}
+[root@bigipltm:Active:Standalone] config # tmsh list ltm snatpool
+[root@bigipltm:Active:Standalone] config # tmsh list ltm snat-translation
+ltm snat-translation 10.1.1.1 {
+    address 10.1.1.1
+    inherited-traffic-group true
+    traffic-group traffic-group-1
+}
+[root@bigipltm:Active:Standalone] config # tmsh delete ltm snat all
+[root@bigipltm:Active:Standalone] config #
+[root@bigipltm:Active:Standalone] config #
+[root@bigipltm:Active:Standalone] config # tmsh list ltm snat
+[root@bigipltm:Active:Standalone] config #
+[root@bigipltm:Active:Standalone] config #
+[root@bigipltm:Active:Standalone] config # tmsh list ltm snat-translation
+ltm snat-translation 10.1.1.1 {
+    address 10.1.1.1
+    inherited-traffic-group true
+    traffic-group traffic-group-1
+}
+[root@bigipltm:Active:Standalone] config # </code></pre>
+<p> </p>
+<p>The remaining snat-translation object can not be manually deleted on TMSH or GUI. An error message &quot;01070321:3: Snat translation address /Common/x.x.x.x is still referenced by a snat pool.&quot; is returned despite there is no snat pool object referring to the snat-translation object.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>[root@bigipltm:Active:Standalone] config # tmsh delete ltm snat-translation all
+01070321:3: Snat translation address /Common/10.1.1.1 is still referenced by a snat pool.
+[root@bigipltm:Active:Standalone] config # </code></pre>
+<p> </p>
+<p>Once snat-translation object got orphaned, another error message &quot;01070712:3: Invalid primary key on trans_addr object - path is empty.&quot; may be displayed and snat creation may fail while trying to create new snat-translation object.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>[root@bigipltm:Active:Standalone] config # tmsh create ltm snat-translation 10.2.2.1 { address 10.2.2.1 traffic-group traffic-group-1 }
+01070712:3: Invalid primary key on trans_addr object - path is empty.
+[root@bigipltm:Active:Standalone] config #</code></pre>
+<p> </p>
+<p>Also, different error message &quot;01070734:3: Configuration error: Invalid primary key on trans_addr object () - not a full path 2.&quot; may be displayed while trying to create another/new snat object.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>[root@bigipltm:Active:Standalone] config # tmsh create ltm snat my_snat2 origins add { 10.4.4.1 } translation 10.5.5.1
+01070734:3: Configuration error: Invalid primary key on trans_addr object () - not a full path 2.
+[root@bigipltm:Active:Standalone] config #</code></pre>
+<p> </p>
+<h2>Environment</h2>
+<ul><li>Ran &quot;tmsh delete ltm snat <strong>all</strong>&quot; command.</li><li>Running BIG-IP v21.1.0. No other software versions are known to be affected, at the time of article publication.</li></ul>
+<p> </p>
+<h2>Cause</h2>
+<p><a href="https://cdn.f5.com/product/bugtracker/ID2365353.html" target="_blank" rel="noopener noreferrer">Bug ID2365353</a>.</p>
+<p> </p>
+<h2>Answer/Recommended Actions</h2>
+<p>Orphaned snat-translation object can be manually deleted after executing mcpd forceload reboot (ref: K13030). Once the problematic/orphaned snat-translation object is deleted, no more error should be generated while trying to create new snat or snat-translation object.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># touch /service/mcpd/forceload
+# reboot
+# tmsh delete ltm snat-translation 10.1.1.1 ; tmsh save sys config</code></pre>
+<p> </p>
+<p>The problem does not occur when &quot;all&quot; is not specified on &quot;tmsh delete ltm snat&quot; command. For instance, problem does not occur while deleting specific snat object only, as shown below.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># tmsh delete ltm snat my_snat2</code></pre>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None.</p>
+<p> </p>
+</article>
+</body>
+</html>

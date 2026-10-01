@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000135402: Use Postman with iControl REST on a BIG-IQ to generate unreachable FCP licenses for BIG-IP</title>
+<meta name="description" content="Support Solution: Use Postman with iControl REST on a BIG-IQ to generate unreachable FCP licenses for BIG-IP — You want to use Postman with the iControl REST API to generate a license for your unreachable BIG-IP from your BIG-IQ FCP utility pool.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000135402">
+</head>
+<body>
+<header>
+<h1>K000135402: Use Postman with iControl REST on a BIG-IQ to generate unreachable FCP licenses for BIG-IP</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-07-06</dd>
+<dt>Updated</dt><dd>2023-09-14</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IQ</li><li>Public Cloud</li><li>Private Cloud</li><li>Virtual Editions</li><li>BIG-IQ Platforms</li><li>F5 Automation and Orchestration</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000135402">https://my.f5.com/manage/s/article/K000135402</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>You want to use Postman with the iControl REST API to generate a license for your unreachable BIG-IP from your BIG-IQ FCP utility pool.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IQ LM or CM</li><li>BIG-IP</li><li>ELA / FCP licensing</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>BIG-IQ traditionally expects to be able to connect to any BIG-IP devices it is going to license.<br>If your BIG-IP is not on the same network as the BIG-IQ, using Postman with iControl REST on BIG-IQ is an easy way to create BIG-IP license files.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+The Postman tool will need network access to the BIG-IQ, you will need to set up basic auth (user name and password) or use the <strong>X-F5-Auth-Token</strong> header to access the iControl REST API. For more information refer to <a href="https://my.f5.com/manage/s/article/K43725273" target="_blank">K43725273: The BIG-IQ system has HTTP basic authentication disabled by default</a> and <a href="https://my.f5.com/manage/s/article/K04452074" target="_blank">K04452074: Overview of using the BIG-IQ system authentication token</a>. The JSON requires the management IP address of the BIG-IP and its MAC address, utility pool name, SKU name, and hypervisor type you want to use. This is a 2 step process requiring a PUSH and a GET to the BIG-IQ. Finally you will need to use Notepad++ or another text editor to find and replace text.
+
+<ol><li>Set Postman to <strong>POST</strong>.</li><li>Set the address to the following:
+	<p><span class="code">https://&lt;BIG-IQ address&gt;/mgmt/cm/device/tasks/licensing/pool/member-management</span></p>
+	For example:
+
+	<p><span class="example2">https<strong>:</strong>//10.1.1<strong>.</strong>1/mgmt/cm/device/tasks/licensing/pool/member-management</span></p>
+	</li><li>Select body and raw and paste the following example: 
+	<pre class="ckeditor_codeblock">
+{
+  &quot;licensePoolName&quot;: &quot;CAT-A-1&quot;,
+  &quot;command&quot;: &quot;assign&quot;,
+  &quot;address&quot;: &quot;192.0.2.1&quot;,
+  &quot;skuKeyword1&quot;: &quot;BT&quot;,
+  &quot;skuKeyword2&quot;: &quot;1G&quot;,
+  &quot;unitOfMeasure&quot;: &quot;yearly&quot;,
+  &quot;assignmentType&quot;: &quot;UNREACHABLE&quot;,
+  &quot;macAddress&quot;: &quot;FF:11:11:11:FE:DE&quot;,
+  &quot;hypervisor&quot;: &quot;vmware&quot;,
+  &quot;chargebackTag&quot;: &quot;Project 1016&quot;
+}</pre>
+	</li><li>Edit the JSON example to include your unique values.<br>	<span class="note"><strong>Note</strong>: The options for <strong>hypervisor</strong> are <strong>aws</strong>,<strong> azure</strong>,<strong> gce</strong>,<strong> vmware</strong>,<strong> hyperv</strong>,<strong> kvm</strong>,<strong> xen</strong>.</span></li><li>Go to <strong>Authorization</strong> tab select <strong>Basic Auth</strong> and enter the username and password or add the <strong>X-F5-Auth-Token</strong> header with the token as the <strong>Value</strong>.</li><li>Click on <strong>Send</strong>.</li><li>Review the output text and look for a line starting with <strong>selflink</strong>.</li><li>Copy the entire https <strong>selflink</strong> address including the unique number.</li><li>Open a new tab in Postman (click the <strong>+</strong>)</li><li>Change the method from <strong>POST</strong> to <strong>GET</strong>.</li><li>In the address / URL area paste the <strong>selflink</strong> address and change <strong>localhost</strong> to the IP address of the BIG-IQ.</li><li>Click on <strong>Send</strong>.</li><li>Review the output. Notice in <strong>licenseText</strong> the value is the license file and output starts with <strong>#\n#\nAuth vers :</strong> and the file ends with a <strong>\n</strong> just before <strong>skuKeyword1</strong>.</li><li>Copy the whole license file from the starting and ending points noted previously (do not include the speech/quotation marks) and paste it into Notepad++.</li><li>In notepad, press CTRL + H.</li><li>In the <strong>Find what</strong> field, enter:<br>	<span class="code">\\n</span></li><li>In the <strong>Replace with</strong> field, enter:<br>	<span class="code">\r\n</span></li><li>Make sure the <strong>Search Mode</strong> is set to <strong>Extended</strong>.</li><li>Click on <strong>Replace All</strong> to perform the translation throughout the text.</li><li>Save the file as <strong>bigip.license</strong>.</li><li>Copy the file to <strong>/config</strong> on the BIG-IP.</li><li>To reload the new license on the BIG-IP system, log into the CLI and enter the following command:<br>	<span class="code">reloadlic</span></li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+None
+</article>
+</body>
+</html>

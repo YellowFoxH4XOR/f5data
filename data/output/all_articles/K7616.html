@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K7616: Configuring static web content to bypass the BIG-IP ASM in BIG-IP version 9.x</title>
+<meta name="description" content="Knowledge: Configuring static web content to bypass the BIG-IP ASM in BIG-IP version 9.x — Note: For information about configuring the BIG-IP ASM version 10.0.1 and later to allow static web content requests to bypass the BIG-IP ASM, refer to K10986: Configuring static web content to…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K7616">
+</head>
+<body>
+<header>
+<h1>K7616: Configuring static web content to bypass the BIG-IP ASM in BIG-IP version 9.x</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2010-01-12</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 9.4.8, 9.4.6, 9.4.5, 9.4.4, 9.4.3, 9.4.2, 9.4.1, 9.4.0, 9.3.1, 9.4.7, 9.2.5, 9.2.4, 9.2.3, 9.2.2, 9.2.0, 9.3.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K7616">https://my.f5.com/manage/s/article/K7616</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p class="note"><b>Note:</b> For information about configuring the BIG-IP ASM version 10.0.1 and later to allow static web content requests to bypass the BIG-IP ASM, refer to  <a href="https://my.f5.com/manage/s/article/K10986" target="_blank">K10986: Configuring static web content to bypass BIG-IP ASM versions 10.0.1 and later</a>.</p>
+<p>You can configure the BIG-IP ASM to allow static web content requests, such as images, to bypass the BIG-IP ASM and the BIG-IP ASM security policy, and travel directly to the web server. To do so, perform the following three procedures:</p>
+<ul><li>Ensuring that the images Data Group contains the correct file types</li><li>Creating a static web content pool</li><li>Creating an iRule to cause static content to bypass the BIG-IP ASM</li></ul>
+<h4>Ensuring that the images Data Group contains the correct file types</h4>
+<ol><li>Log in to the BIG-IP ASM Configuration utility.</li><li>Click <b>Local Traffic</b>.</li><li>Click <b>iRules</b>.</li><li>Click <b>Data Group List</b> from the menu bar.</li><li>Click the <b>images</b> Data Group.</li><li>Verify that the file types listed represent the static image files on the web server.</li><li>Click <b>Update</b>.</li></ol>
+<h4><br>Creating a static web content pool</h4>
+<ol><li>Log in to the Configuration utility.</li><li>Click <b>Local Traffic</b>.</li><li>Click <b>Pools</b>.</li><li>Click <b>Create</b>.</li><li>Type a name for the pool.<p>For example:</p>
+<p class="example">static_content_pool</p>
+</li><li>Choose a monitor.</li><li>Select a load balancing method from the <b>Load Balancing Method</b> drop-down menu.</li><li>Add the pool members that serve static web content.</li><li>Click <b>Finished</b>.</li></ol>
+<h4>Creating an iRule to cause static content to bypass the BIG-IP ASM</h4>
+<p>Perform one of the following three procedures, depending on your version:</p>
+<p><b>BIG-IP ASM versions 9.4.2 through 9.4.8</b></p>
+<ol><li>Log in to the BIG-IP ASM Configuration utility.</li><li>Click <b>Local Traffic</b>.</li><li>Click <b>iRules</b>.</li><li>Click <b>Create</b>.</li><li>Type a name for the iRule.</li><li>Enter the following iRule in the <b>Definition</b> box:<p class="note"><b>Note:</b> Replace <b>STATIC_HOST_NAME</b> with the name of the Host header you want to insert.</p>
+<pre class="code">
+when RULE_INIT {
+set ::static_content_pool &quot;SET_STATIC_POOL_NAME_HERE&quot;
+set ::static_host &quot;SET_STATIC_HOST_NAME_HERE&quot;
+set ::max_uri_length &quot;100&quot;
+}
+
+when HTTP_CLASS_SELECTED {
+
+PLUGIN::enable ASM
+# Save a copy of the URI in lowercase for multiple tests
+set test_uri [string tolower [HTTP::uri]]
+
+if {[matchclass $test_uri ends_with $::images]}{
+
+# Verify request is an HTTP GET, starts with a / and is of required length
+if {([HTTP::method] eq &quot;GET&quot;) and ([HTTP::uri] starts_with &quot;/&quot;)and\
+([string length [HTTP::uri]] &lt; $::max_uri_length)}{
+
+set test_uri2 [string range [HTTP::uri] 1 [expr [string last . [HTTP::uri]]-1]]
+
+# verify request only contains allowable characters
+if {[string is alnum\
+[string map {%20 {} / {} $ {} _ {} - {}} $test_uri2 ] ]} {
+
+# Remove all HTTP headers except Host and set static host
+foreach header_name [HTTP::header names] {
+                        while { [HTTP::header exists $header_name] } {
+                                    HTTP::header remove $header_name
+                        }
+}
+HTTP::header replace Host $::static_host
+
+# Set the HTTP version
+HTTP::version &quot;1.0&quot;
+HTTP::header insert Connection close
+PLUGIN::disable ASM
+pool $::static_content_pool
+}
+}
+}
+}
+</pre>
+</li><li>Click <b>Finished</b>.</li></ol>
+<p>You must now associate the iRule and Pool with the virtual server that manages traffic for the security policy.</p>
+<p><b>BIG-IP ASM versions 9.4.0 through 9.4.1</b></p>
+<ol><li>Log in to the BIG-IP ASM Configuration utility.</li><li>Click <b>Local Traffic</b>.</li><li>Click<b> iRules</b>.</li><li>Click <b>Create</b>.</li><li>Type a name for the iRule.</li><li>Enter the following iRule in the <b>Definition</b> box:<p class="note"><b>Note:</b> Replace <b>STATIC_HOST_NAME</b> with the name of the Host header you want to insert.</p>
+<pre class="code">
+when RULE_INIT {
+   set ::static_host &quot;STATIC_HOST_NAME&quot;
+   set ::max_uri_length &quot;100&quot;
+   }
+
+  when HTTP_CLASS_SELECTED {
+ # Ensure ASM is ebabled by default
+ set asm_bypass 0
+ # Save a copy of the URI in lowercase for multiple tests
+ set test_uri [string tolower [HTTP::uri]]
+
+  if {not ([matchclass $test_uri ends_with $::images])}{return}
+
+  # verify request is using GET method, starts with a / and is of required length
+ if {not (([HTTP::method] eq &quot;GET&quot;) and ([HTTP::uri] starts_with &quot;/&quot;)\
+ and ([string length [HTTP::uri]] &lt; $::max_uri_length))}{return}
+
+  set test_uri2 [string range [HTTP::uri] 1 [expr [string last . [HTTP::uri]]-1]]
+ # verify request only contains alphanumerics, periods, spaces,
+ # forward slashes, dollar signs, underscores and dashes
+ if {not ([string is alnum [string map {%20 {} / {} $ {} _ {} - {}} $test_uri2 ] ])} {return}
+
+  # Remove all HTTP headers except Host and set static host
+ foreach header_name [HTTP::header names] {
+     while { [HTTP::header exists $header_name] } {
+         HTTP::header remove $header_name
+     }
+ }
+ HTTP::header replace Host $::static_host
+ # Set the HTTP version
+ HTTP::version &quot;1.0&quot;
+ HTTP::header insert Connection close
+ # Disable ASM for this request
+ set asm_bypass 1
+ }</pre>
+</li><li>Click <b>Finished.</b></li></ol>
+<p>You must now associate the iRule and Pool with the virtual server that manages traffic for the security policy.</p>
+<p><b>BIG-IP ASM versions 9.2.0 through 9.3.0</b></p>
+<ol><li>Log in to the BIG-IP ASM Configuration utility.</li><li>Click <b>Local Traffic</b>.</li><li>Click <b>iRules</b>.</li><li>Click <b>Create</b>.</li><li>Type a name for the iRule.</li><li>Enter the following iRule in the <b>Definition</b> box:<p class="note"><b>Note:</b> Replace <b>STATIC_POOL_NAME</b> with the name of the static content pool you created.</p>
+<p class="note"><b>Note:</b> Replace <b>STATIC_HOST_NAME</b> with the name of the Host header you want to insert.</p>
+<pre class="code">
+when RULE_INIT {
+       set ::static_content_pool &quot;STATIC_POOL_NAME&quot;
+       set ::static_host &quot;STATIC_HOST_NAME&quot;
+       set ::max_uri_length &quot;100&quot;
+       }
+
+        when HTTP_REQUEST {
+        # Ensure the HTTP classes will be evaluated by default
+       event HTTP_CLASS_SELECTED enable
+       # Save a copy of the URI in lowercase for multiple tests
+       set test_uri [string tolower [HTTP::uri]]
+
+        if {[matchclass $test_uri ends_with $::images]}{
+        # Verify request is an HTTP GET, starts with a / and is of required length
+       if {([HTTP::method] eq &quot;GET&quot;) and ([HTTP::uri] starts_with &quot;/&quot;)\
+       and ([string length [HTTP::uri]] &lt; $::max_uri_length)}{
+
+        set test_uri2 [string range [HTTP::uri]\
+       1 [expr [string last . [HTTP::uri]]-1]]
+
+        # verify request only contains allowable characters
+       if {[string is alnum\
+       [string map {%20 \{\} / \{\} $ \{\} _ \{\} - \{\}} $test_uri2 ] ]} {
+
+        # Remove all HTTP headers except Host and set static host
+       foreach header_name [HTTP::header names] {
+               while { [HTTP::header exists $header_name] } {
+                   HTTP::header remove $header_name
+               }
+       }
+       HTTP::header replace Host $::static_host
+
+        # Set the HTTP version
+       HTTP::version &quot;1.0&quot;
+
+        # don&#39;t evaluate the HTTP class(es) if not going via ASM
+       event HTTP_CLASS_SELECTED disable
+
+        # specify the pool
+       pool $::static_content_pool
+       }
+       }
+       }
+       }</pre>
+</li><li>Click <b>Finished</b>.</li></ol>
+<p>You must now associate the iRule and Pool with the virtual server that manages traffic for the security policy.</p>
+</article>
+</body>
+</html>

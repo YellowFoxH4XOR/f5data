@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K43234841: VELOS ltm log inconsistent hostname</title>
+<meta name="description" content="Support Solution: VELOS ltm log inconsistent hostname — Mar 9 13:03:26 LTM1 notice clusterd[]: 013a0006:5: mcpd tells us that config is being saved; incrementing this blade&#x27;s revision and saving cluster config">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K43234841">
+</head>
+<body>
+<header>
+<h1>K43234841: VELOS ltm log inconsistent hostname</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-04-12</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>VELOS Platforms</li><li>F5OS</li><li>BIG-IP</li><li>F5OS-C</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K43234841">https://my.f5.com/manage/s/article/K43234841</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+Since switched to VELOS OS platform, log&#39;s format, missing Slot ID and Hostname, which were included before:
+
+<p><span class="example">Mar  9 13:03:26 <strong>LTM1 </strong>notice clusterd[]: 013a0006:5: mcpd tells us that config is being saved;  incrementing this blade&#39;s revision and saving cluster config<br>Mar  9 13:03:26 <strong>slot2</strong> notice mcpd[]: 01071d15:5: adjust_admin_ips: old_mbrAddrs of slot: 2: 10.10.10.152/255.255.0.0</span></p>
+
+<p>As an example - logs on VIPRION platform format looks like this:<br><br><span class="example2"><span class="example">Mar  9 11:00:13 <strong>slot2/LTM1 </strong>notice clusterd[]:013a0006:5: mcpd tells us that config is being saved; incrementing this blade&#39;s revision and saving cluster config<br>Mar  9 11:00:14 <strong>slot1/LTM1</strong> notice mcpd[]:01071d15:5: adjust_admin_ips: old_mbrAddrs of slot: 1: 10.10.10.121/255.255.0.0</span></span><br><br><br><span class="sectiontitle">Environment</span></p>
+
+<ul><li>F5OS</li><li>BIG-IP tenants</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+The issue is tracked under <a href="https://cdn.f5.com/product/bugtracker/ID992097.html" target="_blank">ID992097</a>.<br><br><span class="sectiontitle">Recommended Actions</span>
+
+<p>Overall, this is related to syslog formatting. This is the same for VIPRION (both native and vCMP) and BIG-IP tenants on VELOS.<br><br>From version 12, indeed the default message format is supposed to be &quot;slotX/hostname level process&quot;, for example:</p>
+
+<p><span class="example2">slot1/viprion1.local err tmsh[29839]</span></p>
+Moreover, there are 2 db keys to control the behavior: 
+
+<ol><li>This controls whether the slot identifier is prepended to the hostname - that is enabled by default and is seen in example above<br>	<span class="example2"># tmsh modify sys syslog clustered-host-slot enabled|disabled</span></li><li>This controls whether the slot identifier is included as a column on its own in the message body - that is disabled by default. When it&#39;s enabled the log line format will look like: &quot;slotX/hostname level slotX process&quot;.<br>	<span class="example2"># tmsh modify sys syslog clustered-message-slot enabled|disabled</span></li></ol>
+ As an example:<br><span class="example2">slot1/viprion1.local err slot1 tmsh[29839]</span>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+The log format got broken starting version 14.1.3.1 and version 15.1.2 because of regression of another bug. And now, in Viprions (both native and vCMP) it behaves like this:<br><br>- Primary blade: slotX is missing from LTM logs, but the hostname is logged.<br>- Secondary blades: the hostname replaced by slotX.<br><br>So, as VELOS tenants inherited the same BIG-IP code, it applies to them as well. So, what you see in the log examples, is the behavior (first line is from Primary slot showing just hostname and second line from Secondary showing Slot number only)<br><br><span class="example2">Mar  9 13:03:26 lb009.i.etech.sk notice clusterd[5838]: 013a0006:5: mcpd tells us that config is being saved;  incrementing this blade&#39;s revision and saving cluster config<br>Mar  9 13:03:26 slot2 notice mcpd[8359]: 01071d15:5: adjust_admin_ips: old_mbrAddrs of slot: 2: 10.1.0.152/255.255.0.0</span><br><br>We can add the slot number to the line using the <em><span class="example2">clustered-message-slot</span></em> db key (done on tenant side):<br><span class="code"><span class="example2"># tmsh modify sys syslog clustered-message-slot enabled</span></span><br><br>And it will look like this on primary slot (&quot;hostname level slotX&quot;):<br><br><span class="example2">Mar 24 03:02:20 VIP2400-R38-S15.sea.pslab.local info slot2 bigstart[4464]: Start 2 bigd processes<br>Mar 24 03:02:20 VIP2400-R38-S15.sea.pslab.local info slot2 bigd.start[4468]: Execing bigd: /usr/bin/bigd bigd.1 -P 2 -I 1<br>Mar 24 03:02:20 VIP2400-R38-S15.sea.pslab.local info slot2 bigd.start[4467]: Execing bigd: /usr/bin/bigd bigd.0 -P 2 -I 0</span><br><br>And on secondary we have twice the slotX:<br><span class="example2">Mar 24 03:02:22 slot4 info slot4 bigd.0[23917]: 0114002b:6: HA daemon_heartbeat bigd enabled.<br>Mar 24 03:02:22 slot4 info slot4 bigd.1[23918]: 0114002b:6: HA daemon_heartbeat bigd enabled.</span><br> 
+</article>
+</body>
+</html>

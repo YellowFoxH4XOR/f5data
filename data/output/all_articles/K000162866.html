@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162866: BIG-IP HA mirroring channels failed, causing subscriber sessions to be lost during failover.</title>
+<meta name="description" content="Support Solution: BIG-IP HA mirroring channels failed, causing subscriber sessions to be lost during failover. — After failover of a BIG-IP LTM high-availability pair, nearly all active subscriber sessions were lost.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162866">
+</head>
+<body>
+<header>
+<h1>K000162866: BIG-IP HA mirroring channels failed, causing subscriber sessions to be lost during failover.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-09-03</dd>
+<dt>Updated</dt><dd>2026-09-03</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162866">https://my.f5.com/manage/s/article/K000162866</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<p>After failover of a BIG-IP LTM high-availability pair, nearly all active subscriber sessions were lost. </p>
+<p> </p>
+<p> </p>
+<h2><strong>Environment</strong></h2>
+<ul><li>BIG-IP LTM</li><li><strong>HA configuration:</strong> Two-device HA pair</li><li><strong>Traffic groups:</strong> One traffic group shown in the evidence (<code>traffic-group-1</code>), with eight TMM mirroring channels </li><li><strong>Relevant HA function:</strong> State mirroring between TMM instances</li></ul>
+<h2><strong>Cause</strong></h2>
+<div>
+<p>The issue was caused by a combination of HA mirroring configuration and initialization problems:</p>
+<ol><li>The mirror self IP service policy was reviewed and corrected to permit the required HA mirroring traffic. <em><strong>Allow All</strong></em> was used during recovery, but it should not be presented as the required permanent setting.</li><li>The HA mirror configuration required reinitialization. In this case, toggling the configured mirror interface caused the mirroring channels to reinitialize.</li><li>Secure state mirroring was made consistent on both devices and enabled where required. A mismatch in <em><strong>statemirror.secure</strong></em> can cause HA mirroring TLS handshake failures.</li></ol>
+<p>As a result, the HA mirroring channels were unable to initialize correctly. Because the standby device was not receiving connection state information from the active device, client sessions were lost during failover events.</p>
+<p>The following evidence supported the diagnosis:</p>
+<ul><li><code>tmsh show sys ha-mirror</code> showed most TMM channels as <code>closed</code> or <code>delay</code>.<br><ul><li>Only TMM <code>[0.2]</code> had a connected primary mirroring channel.</li><li>The remaining TMM mirroring channels were in <code>delay</code> or <code>closed</code> states.</li><li></li></ul>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># tmsh show sys ha-mirror
+
+-------------------------------------------------------------------------------------------------------------------
+Sys::HA Mirror Status
+-------------------------------------------------------------------------------------------------------------------
+Traffic Group      TMM    Primary  Secondary   Aborts  Overflows  Errors  Buffered  L4 Mirror  L7 Mirror  L7 Failed
+-------------------------------------------------------------------------------------------------------------------
+traffic-group-1  [0.0]      delay     closed  1662599          0       4         0          0          0          0
+traffic-group-1  [0.1]      delay     closed  1662472          0       4         0          0          0          0
+traffic-group-1  [0.2]  connected     closed      405          0       4         0          0          0          0
+traffic-group-1  [0.3]      delay     closed  1662412          0       4         0          0          0          0
+traffic-group-1  [0.4]      delay     closed  1662494          0       4         0          0          0          0
+traffic-group-1  [0.5]      delay     closed  1662455          0       5         0          0          0          0
+traffic-group-1  [0.6]      delay     closed  1662494          0       4         0          0          0          0
+traffic-group-1  [0.7]      delay     closed  1662535          0       4         0          0          0          0</code></pre>
+</li><li>The mirroring channel reported high abort and error counters.
+<ul><li>The Secondary channels were closed while the Primary channels were being used. This is not by itself a failure; the Secondary address is an alternate mirror path and does not necessarily remain connected simultaneously.</li></ul>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># tmctl ha_stat       
+ha_unit tmid  active_conn primary_state secondary_state requests eof inactive closeall connfailed mismatch unready inconsistent timeout icmp closed rejects accepts connects expires errors  aborts overflows buffered 
+------- ----- ----------- ------------- --------------- -------- --- -------- -------- ---------- -------- ------- ------------ ------- ---- ------ ------- ------- -------- ------- ------ ------- --------- --------
+      0 [0.0] none                    0               0        0   0        0        0          0        0       0            0       0    0      0       0       0        0       0      0       0         0        0
+      0 [0.1] none                    0               0        0   0        0        0          0        0       0            0       0    0      0       0       0        0       0      0       0         0        0
+      0 [0.2] none                    0               0        0   0        0        0          0        0       0            0       0    0      0       0       0        0       0      0       0         0        0
+      0 [0.3] none                    0               0        0   0        0        0          0        0       0            0       0    0      0       0       0        0       0      0       0         0        0
+      0 [0.4] none                    0               0        0   0        0        0          0        0       0            0       0    0      0       0       0        0       0      0       0         0        0
+      0 [0.5] none                    0               0        0   0        0        0          0        0       0            0       0    0      0       0       0        0       0      0       0         0        0
+      0 [0.6] none                    0               0        0   0        0        0          0        0       0            0       0    0      0       0       0        0       0      0       0         0        0
+      0 [0.7] none                    0               0        0   0        0        0          0        0       0            0       0    0      0       0       0        0       0      0       0         0        0
+      1 [0.0] none                    1               0  1662629   0        2        2          0        0       0            0       0    0      0       2       0  1662224       0      0 1662628         0        0
+      1 [0.1] none                    1               0  1662503   0        2        2          0        0       0            0       0    0      0       2       0  1662098       0      0 1662502         0        0
+      1 [0.2] primary                 4               0      407   0        2        2          0        0       0            0       0    0      0       2       0        2       0      0     405         0        0
+      1 [0.3] none                    1               0  1662443   0        2        2          0        0       0            0       0    0      0       2       0  1662038       0      0 1662442         0        0
+      1 [0.4] none                    1               0  1662524   0        2        2          0        0       0            0       0    0      0       2       0  1662119       0      0 1662523         0        0
+      1 [0.5] none                    1               0  1662487   0        2        2          0        0       0            0       0    0      0       2       0  1662082       0      0 1662485         0        0
+      1 [0.6] none                    1               0  1662524   0        2        2          0        0       0            0       0    0      0       2       0  1662119       0      0 1662523         0        0
+      1 [0.7] none                    1               0  1662566   0        2        2          0        0       0            0       0    0      0       2       0  1662161       0      0 1662565         0        0</code></pre>
+</li><li>The logs contained messages similar to the following. These messages are consistent with an HA/SSL mirroring problem but do not, by themselves, prove the specific root cause:
+<ul><li><code>SSL Handshake failed</code></li><li><code>ssl_basic_crypto_cb:703: alert(20) Decryption error</code><br>If SSL connection mirroring was enabled, verify that both peers contain identical certificate and key contents, not merely identical object names. F5 does not support SSL mirroring with the default certificate and key. <code> </code><br><code></code></li></ul>
+</li></ul>
+</div>
+<h2><strong>Recommended Actions</strong></h2>
+<p>On both BIG-IP devices:</p>
+<ol><li>Set the mirror self IP port lockdown to <strong>Allow All</strong>.
+<ol><li>Via CLI:
+<ol><li>Modify the mirror self IP. Replace &lt;mirror_self_ip_name&gt; with the self IP object name, not necessarily the IP address:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify net self /Common/&lt;mirror_self_ip_name&gt; allow-service all</code></pre>
+</li><li>Example:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify net self /Common/ha-mirror-self allow-service all</code></pre>
+</li><li>Save the configuration:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh save /sys config</code></pre>
+</li><li>Verify the setting:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh list net self /Common/&lt;mirror_self_ip_name&gt; allow-service</code></pre>
+</li><li>The output should include:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>allow-service all</code></pre>
+</li></ol>
+</li><li>Via GUI
+<ol><li>Log in to the BIG-IP Configuration utility.</li><li>Go to <strong>Network &gt; Self IPs</strong>.</li><li>Click the self IP used for mirroring.</li><li>Set <strong>Port Lockdown</strong> to <strong>Allow All</strong>.</li><li>Click <strong>Update</strong>.</li></ol>
+</li></ol>
+</li><li>Toggle the HA mirror interface by changing it to another interface and then changing it back. This forced the mirroring channels to reinitialize.</li><li>Enable secure state mirroring:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify /sys db statemirror.secure value enable
+tmsh save /sys config</code></pre>
+</li></ol>
+<pre></pre>
+<ol start="4"><li>Verify the mirroring status:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh show sys ha-mirror</code></pre>
+</li></ol>
+<pre></pre>
+<p>After the changes, all eight TMM Primary mirroring channels for <em><strong>traffic-group-1</strong></em> showed <em><strong>connected</strong></em>. This demonstrated recovery of the mirror-channel connection state. Because the abort and error counters were nonzero historical counters and had not been reset, continued monitoring and a controlled failover test were still required.</p>
+<p> </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># tmsh show sys ha-mirror
+--------------------------------------------------------------------------------------------------------------------
+Sys::HA Mirror Status
+--------------------------------------------------------------------------------------------------------------------
+Traffic Group      TMM    Primary  Secondary  Aborts  Overflows    Errors  Buffered  L4 Mirror  L7 Mirror  L7 Failed
+--------------------------------------------------------------------------------------------------------------------
+traffic-group-1  [0.0]  connected     closed       2          0        15         0          0          0          0
+traffic-group-1  [0.1]  connected     closed       2          0        15         0          0          0          0
+traffic-group-1  [0.2]  connected     closed      16          0  77085457         0          0          0          0
+traffic-group-1  [0.3]  connected     closed      28          0    153192         0          0          0          0
+traffic-group-1  [0.4]  connected     closed       2          0        15         0          0          0          0
+traffic-group-1  [0.5]  connected     closed       2          0        15         0          0          0          0
+traffic-group-1  [0.6]  connected     closed       2          0        15         0          0          0          0
+traffic-group-1  [0.7]  connected     closed       2          0        15         0          0          0          0</code></pre>
+<p> </p>
+<p> </p>
+<h2><strong>Additional Information</strong></h2>
+<div>
+<p>As this is an HA (High Availability) environment, a controlled failover should be performed during a scheduled maintenance window.</p>
+<p>The configuration is deployed across two devices operating in an HA pair. The following steps are recommended for the controlled failover:</p>
+<ol><li>Schedule a maintenance window for the failover test.</li><li>Take a UCS backup of both devices.</li><li>Confirm that all TMM mirroring channels are in a <strong>Connected</strong> state.
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh show sys ha-mirror</code></pre>
+</li><li>Verify the configured mirror IP addresses.
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh show cm device | grep -E &#39;Device:|Mirror&#39;</code></pre>
+</li><li>Verify the active/standby distribution of the traffic groups.
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh show cm traffic-group</code></pre>
+</li><li>Confirm that secure mirroring is enabled and configured consistently on both devices.
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh list sys db statemirror.secure</code></pre>
+</li><li>Verify that device trust is healthy and synchronized.
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh show cm trust-domain</code></pre>
+</li><li>Perform the failover test and confirm the following:
+<ul><li>Sessions are visible on the newly active device.</li><li>Mirroring channels remain connected after the failover.</li></ul>
+</li></ol>
+<p>If the mirroring channels become disconnected again after the failover, first verify mirror addresses, network reachability, software/hardware parity, and the statemirror.secure settings. If those checks are correct and the problem persists, rebuild the device trust relationship between the HA peers.</p>
+</div>
+<p> </p>
+</article>
+</body>
+</html>

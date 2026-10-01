@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000146856: How do Host Header configuration and process work?</title>
+<meta name="description" content="Support Solution: How do Host Header configuration and process work? — The incoming Host header does not match any of the values configured under Domains or the CNAME record value for the virtual host, resulting in the request being rejected by the HTTP Load Balancer.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000146856">
+</head>
+<body>
+<header>
+<h1>K000146856: How do Host Header configuration and process work?</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-11-08</dd>
+<dt>Updated</dt><dd>2025-11-30</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Distributed Cloud Services</li><li>F5 Distributed Cloud</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000146856">https://my.f5.com/manage/s/article/K000146856</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2 id="h_01HKEWTGCFD0D72Q1B75ZNNX3D">Description</h2>
+<p>You want to know how Host Header rewrites work.</p>
+<h2 id="h_01HKEWTGCFSTWVBQNERK061K82">Environment</h2>
+<ul><li><span>F5® Distributed Cloud<span> </span></span>HTTP Load Balancer (LB)</li></ul>
+<h2 id="h_01HKEWTGCFSTWVBQNERK061K82">Cause</h2>
+<p>The incoming Host header does not match any of the values configured under Domains or the CNAME record value for the virtual host, resulting in the request being rejected by the HTTP Load Balancer.</p>
+<h2 id="h_01HKEWTGCF5A3KYD42QH146V1M">Answer/Recommended Actions</h2>
+<p>An incoming request to a HTTP LB will be rejected with an HTTP 404 error if the incoming Host header does not match any of:</p>
+<ol><li>The values configured under Domains</li><li>The CNAME record value for the virtual host, (e.g. <em><span class="wysiwyg-underline"><strong>v</strong></span><span class="wysiwyg-underline"><strong>es-io-xxxx-....volterra.com</strong></span></em>)</li></ol>
+<p><strong>Host rewrite</strong> <span class="wysiwyg-underline">is <em>enabled</em> by default</span>, i.e. any incoming Host header will be stripped and replaced with a new Host header matching the FQDN of the configured origin pool.</p>
+<p> </p>
+<h3 id="h_01HKEWTGCF92XB6YPHSX9S1PEG">Explanation</h3>
+<p dir="auto">You have a LB with the domains listed as</p>
+<div class="gl-relative markdown-code-block js-markdown-code">
+<pre class="code highlight js-syntax-highlight dark language-plaintext" id="code-75"><code>   &quot;domains&quot;: [
+      &quot;www.example.com&quot;,
+      &quot;*.gov-example.com&quot;
+    ],</code></pre>
+</div>
+<p dir="auto">Requests to the LB&#39;s CNAME with either the exact or wildcard domain names are allowed. Others will get an HTTP 404;</p>
+<div class="gl-relative markdown-code-block js-markdown-code">
+<pre class="code highlight js-syntax-highlight dark language-plaintext" id="code-76"><code>$ curl -LIS http://ves-io-123.volterra.us -H &quot;www.example.com&quot;
+HTTP/1.1 200 OK
+
+$ curl -LIS http://ves-io-123.volterra.us -H &quot;Host:www.gov-example.com&quot;
+HTTP/1.1 200 OK
+
+$ curl -LIS http://ves-io-123.volterra.us -H &quot;Host:www.net-example.com&quot;
+HTTP/1.1 404 Not Found</code></pre>
+</div>
+<p> </p>
+<h2 id="h_01HKEWTGCF9PZCF7P8E9V6SYJY">Additional Information</h2>
+<h3 id="h_01HKWQZSH0RYJNEY9P6PF7A6TW">Additional Questions</h3>
+<ul><li><strong>Q: Is the only way to disable Host Rewrite by configuring a simple route and disable it there?</strong><br><ul><li>A: Here are few options that illustrate how to use host rewrite:
+<ul><li>In the origin pool, if you have configured a SNI to be used, the SNI becomes the host header.</li><li>In the origin pool, if you have configured <code>use_host_header_as_sni</code>, then the domain itself becomes the host header.</li><li>You can also use routes configuration instead of origin pool and enable host_rewrite.</li></ul>
+</li></ul>
+</li><li><strong>Q: If the origin server is set to IP address, is Host Rewrite automatically disabled ?</strong>
+<ul><li>A: It depends on the tls configuration of your origin pool, as explained above.</li></ul>
+</li><li><strong>Q: What is the order of processing? If Service Policies operate on the Host header, are these operations done before the rewrite operation?</strong>
+<ul><li>A: The short answer is service policies are evaluated on the original host header (before it is re-written). </li><li>A: The long answer is that as soon as our proxy gets a request from the client, if security policy is applied on the HTTP LB, the proxy <span class="wysiwyg-color-black">sends the Host Header to for service</span> policy validation and the policy is evaluated on the request. If it passes, the request is sent back to the proxy. If host_header rewrite is present in the configuration, our proxy will then re-write the host header. Therefore, it is important to use the original host header for any evaluation in service policy.</li></ul>
+</li><li><strong>Q: Are the Host header values seen in security event logs from before the rewrite occurs?</strong>
+<ul><li>A: It is after the host_rewrite occurs. Therefore, the security event logs should have the rewritten host header in req_header field.</li></ul>
+</li><li><strong>Q: What if there are a multiple Host headers, no Host header, malformed Host header or similar violations, but the <span class="wysiwyg-color-black">Application firewall (FW)</span> is either disabled or set to transparent mode? Does the rewrite still occur as usual?</strong>
+<ul><li>A: host rewrite is the property of the proxy and therefore it gets re-written just before it is sent to the endpoint. (assuming that the question is for WAF)</li></ul>
+</li><li><strong>Q: (Only applicable for Silverline customers) Can the default Host Rewrite behavior be toggled at a per-tenant level, or similar, so that it’s disabled by default on new LBs? (Most of the VIPs from Silverline do not have such a configuration, and we’ll have to ensure it doesn’t get introduced as it could break apps in unpredictable ways.)</strong>
+<ul><li>A: This is done at the LB level. </li></ul>
+</li></ul>
+</article>
+</body>
+</html>

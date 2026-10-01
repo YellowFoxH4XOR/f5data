@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160028: REST API 403 Forbidden Errors After BIG-IP Upgrade Prevent CIS Pool Member Updates Due to Missing httpd Allow List Entry</title>
+<meta name="description" content="Support Solution: REST API 403 Forbidden Errors After BIG-IP Upgrade Prevent CIS Pool Member Updates Due to Missing httpd Allow List Entry — After upgrading BIG-IP LTM from version 17.1.3 to 17.1.3.1 and AS3 from 3.53 to 3.55, environments integrating with OpenShift (OCP) and using the F5 Container Ingress Services (CIS) may experience…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160028">
+</head>
+<body>
+<header>
+<h1>K000160028: REST API 403 Forbidden Errors After BIG-IP Upgrade Prevent CIS Pool Member Updates Due to Missing httpd Allow List Entry</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-16</dd>
+<dt>Updated</dt><dd>2026-02-16</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.0.0, 16.0.X, 16.0.1, 21.X.X, 16.X.X, 17.X.X, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160028">https://my.f5.com/manage/s/article/K000160028</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>After upgrading BIG-IP LTM from version 17.1.3 to 17.1.3.1 and AS3 from 3.53 to 3.55, environments integrating with OpenShift (OCP) and using the F5 Container Ingress Services (CIS) may experience failures where virtual servers (VIPs) do not come up after OpenShift pods are restarted. The core symptom is persistent &quot;403 Forbidden&quot; errors on REST API calls from the CIS controller to BIG-IP, preventing dynamic pool member updates. As a result, VIPs associated with restarted pods remain down with outdated pool member IP addresses.</p>
+<p><strong>Error/Log Messages:</strong></p>
+<ul><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">icontrol.exceptions.iControlUnexpectedHTTPError: 403 Unexpected Error: Forbidden</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">Access forbidden! You don&#39;t have permission to access the requested object.</span></li><li>REST API authentication failures (401/403) for CIS service accounts when accessing management IP or specific AS3 endpoints</li><li>CIS controller logs show: <span style="font-family: &#39;courier new&#39;, courier, monospace;">Failed to refresh Token from BIGIP</span> or <span style="font-family: &#39;courier new&#39;, courier, monospace;">REST call error</span></li></ul>
+<h2>Environment</h2>
+<ul><li><strong>Products:</strong> BIG-IP LTM, AS3, F5 Container Ingress Services (CIS)</li><li><strong>Versions:</strong> BIG-IP 17.1.3.1, AS3 3.55, OpenShift OCP 4.18.9</li><li><strong>Configuration:</strong>
+<ul><li>Integration with OpenShift for dynamic pool member management via CIS/AS3</li><li>REST API calls from CIS controller to BIG-IP for pool member updates</li><li>sys httpd &quot;allow&quot; list controls REST API access</li><li>CIS controller source IP subnet not included in BIG-IP httpd allow list</li></ul>
+</li><li><strong>Recent Actions:</strong>
+<ul><li>Upgrade of BIG-IP from 17.1.3 to 17.1.3.1 and AS3 from 3.53 to 3.55</li><li>Restart of OpenShift pods, resulting in new pool member IP assignments</li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p>The root cause is that the source IP subnet of the CIS controller was not included in the BIG-IP sys httpd &quot;allow&quot; list. After the upgrade to BIG-IP 17.1.3.1, the system enforces stricter REST API access controls, requiring explicit inclusion of the CIS controller&#39;s source subnet in the httpd allow list. This change blocks REST API calls from the CIS controller, resulting in 403 Forbidden errors and preventing pool member updates. The upgrade introduced enhanced security hardening for REST API access that was not present in earlier versions.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>To resolve REST API 403 Forbidden errors and restore CIS/AS3 integration after upgrading to BIG-IP 17.1.3.1:</p>
+<ol><li><strong>Identify the Source IP/Subnet of the CIS Controller:</strong>
+<ul><li>Determine the IP address or subnet used by the CIS controller when making REST API calls to BIG-IP.</li><li>Check CIS controller logs or network configuration to identify the source subnet.</li></ul>
+</li><li><strong>Update the sys httpd Allow List:</strong>
+<ul><li>Log in to the BIG-IP Traffic Management Shell (tmsh):
+<p><span style="background-color: #f1f1f1;">tmsh</span></p>
+</li><li>Add the CIS controller&#39;s source subnet to the httpd allow list:
+<p><span style="background-color: #f1f1f1;">modify /sys httpd allow add { &lt;CIS_controller_subnet&gt;/xx }</span></p>
+</li><li>Example:
+<p><span style="background-color: #f1f1f1;">modify /sys httpd allow add { 10.47.78.0/23 }</span></p>
+</li><li>Save the configuration:
+<p><span style="background-color: #f1f1f1;">save /sys config</span></p>
+</li></ul>
+</li><li><strong>Verify the Configuration:</strong>
+<ul><li>List the current httpd allow list to confirm the entry was added:
+<p><span style="background-color: #f1f1f1;">list /sys httpd allow</span></p>
+</li></ul>
+</li><li><strong>Test REST API Access:</strong>
+<ul><li>Use curl or similar tools from the CIS controller host to verify successful authentication and access to the BIG-IP REST API endpoints.</li><li>Example test command:
+<p><span style="background-color: #f1f1f1;">curl -ku /&lt;username&gt;:&lt;password&gt; https:/</span></p>
+</li></ul>
+</li><li><strong>Verify Pool Member Updates:</strong>
+<ul><li>Restart affected OpenShift pods and confirm that VIPs and pool members are updated and come up as expected.</li><li>Check that pool member IP addresses reflect the current pod assignments.</li></ul>
+</li><li><strong>If Issue Persists:</strong>
+<ul><li>Confirm REST API authentication works for the CIS service account from both localhost and the management IP.</li><li>If still unresolved, follow Option 2 from <a href="https://my.f5.com/manage/s/article/K000132348" target="_blank">K000132348</a> to reset REST framework state.</li><li>Provide a pre-upgrade UCS for further analysis if needed.</li><li>Engage F5 escalation or product development for deeper investigation if REST API access remains blocked after all configuration and permission checks.</li></ul>
+</li></ol>
+<h2>Additional Information</h2>
+<ul><li>After upgrading to BIG-IP 17.1.3.1, the system enforces stricter REST API access controls through the sys httpd allow list, requiring explicit entries for all source subnets needing API access.</li><li>The CIS controller may reside on the same subnet as the BIG-IP management interface due to OpenShift routing requirements; ensure this subnet is included in the allow list.</li><li>REST API access may work via localhost but fail via management IP if the allow list is not properly configured.</li><li>This behavior differs from previous BIG-IP versions (such as 17.1.3), where such explicit allow-list entries were not required for local or management subnets.</li><li>The issue manifests only after pod restarts because that is when CIS attempts to update pool member IP addresses via REST API calls.</li><li>Multiple AS3 reinstallation attempts will not resolve the issue if the underlying httpd allow list configuration is missing the CIS controller subnet.</li></ul>
+</article>
+</body>
+</html>

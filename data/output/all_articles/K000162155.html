@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162155: DNS Listener with Transparent Cache not forwarding queries for arpa zones to back end DNS pool members</title>
+<meta name="description" content="Support Solution: DNS Listener with Transparent Cache not forwarding queries for arpa zones to back end DNS pool members — On BIG-IP DNS 17.1.3 and later, a DNS Transparent Cache configured with answer-default-zones no may still respond locally with NXDOMAIN to queries for _dns.resolver.arpa (and potentially…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162155">
+</head>
+<body>
+<header>
+<h1>K000162155: DNS Listener with Transparent Cache not forwarding queries for arpa zones to back end DNS pool members</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-07-09</dd>
+<dt>Updated</dt><dd>2026-07-15</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 17.5.X, 17.5.1, 17.5.0, 17.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162155">https://my.f5.com/manage/s/article/K000162155</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>On BIG-IP DNS 17.1.3 and later, a DNS Transparent Cache configured with answer-default-zones no may still respond locally with NXDOMAIN to queries for _dns.resolver.arpa (and potentially service.arpa) instead of forwarding those queries to the configured back-end DNS pool members or local BIND, as expected.</p>
+<p>This behavior persists across TMM restarts and is not resolved by restarting TMM.</p>
+<p><strong>Observed symptoms:</strong></p>
+<ul><li>DNS queries for <span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">_dns.resolver.arpa</span> (e.g., SVCB type queries per RFC 9462) sent to a listener backed by a Transparent Cache are answered locally by BIG-IP with NXDOMAIN.</li><li>The NXDOMAIN response includes an authority section referencing <span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">resolver<strong>.</strong>arpa. SOA localhost. nobody.invalid.</span>, indicating the response originates from Unbound&#39;s built-in local zone, not from the back-end pool.</li><li>The <span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">answer-default-zones no</span> setting on the Transparent Cache profile has no effect on these zones.</li><li>The behavior is persistent — it is not triggered by a configuration change and is not resolved by restarting TMM.</li></ul>
+<p><strong>Example of affected query/response</strong></p>
+<pre>;; QUESTION SECTION:<br>;_dns.resolver<strong>.</strong>arpa.    IN SVCB<br><br>;; ANSWER SECTION:<br>(empty)<br><br>;; AUTHORITY SECTION:<br>resolver<strong>.</strong>arpa.  10800 IN SOA localhost. nobody.invalid. 1 3600 1200 604800 10800<br><br>;; status: NXDOMAIN<br><br></pre>
+<h2>Environment</h2>
+<ul><li><strong>Product:</strong> BIG-IP DNS</li><li><strong>Affected versions:</strong> 17.1.3, 17.1.3.1, 17.1.3.2, 17.5.x (Backlog)</li><li><strong>Unaffected versions:</strong> 17.1.2 and earlier (Unbound 1.23.0 was not yet present)</li><li><strong>Configuration:</strong> DNS Transparent Cache profile with <span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">answer-default-zones no</span></li><li><strong>Query types affected:</strong> Any query type (SVCB, A, AAAA, NS, etc.) for zones <span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">resolver<strong>.</strong>arpa.</span> and <span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">service<strong>.</strong>arpa.</span>, including subdomains such as <span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">_dns.resolver.arpa</span></li><li><strong>Platform:</strong> All platforms running the affected BIG-IP DNS versions</li></ul>
+<h2>Cause</h2>
+<p>Bug ID2377749</p>
+<h2>Answer/Recommended Actions</h2>
+<p>Apply an iRule to the DNS listener(s) to bypass the Transparent Cache for queries matching the affected zones. This allows those queries to be forwarded directly to the configured back-end pool members.</p>
+<pre><span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">when DNS_REQUEST {</span><br><span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;"> if { [DNS::question name] ends_with &quot;resolver<strong>.</strong>arpa&quot; } {</span><br><span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;"> DNS::disable cache</span><br><span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;"> }</span><br><span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">}</span></pre>
+<p>To also cover <span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">service<strong>.</strong>arpa</span> or apply a broader scope to all <span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">.arpa</span> queries:</p>
+<pre><span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">when DNS_REQUEST {</span><br><span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;"> if { [DNS::question name] ends_with &quot;.arpa&quot; } {</span><br><span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;"> DNS::disable cache</span><br><span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;"> }</span><br><span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">}</span></pre>
+<p><strong>Considerations for the iRule workaround:</strong></p>
+<ul><li>The Transparent Cache is completely bypassed for matched queries — every matching query is forwarded to the back-end pool on every request, even within the TTL validity period. There is no cache-hit benefit for these queries.</li><li>If a broad scope (<span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">ends_with &quot;.arpa&quot;</span>) is used, this includes all reverse PTR lookups (<span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">in-addr<strong>.</strong>arpa</span>). In high-volume CGNAT environments, bypassing the cache for all reverse lookups may significantly increase back-end DNS pool member load. A narrower scope (<span style="font-size: 13px;font-family: &#39;JetBrains Mono&#39;, monospace;">ends_with &quot;resolver<strong>.</strong>arpa&quot;</span>) is recommended unless broader coverage is required.</li></ul>
+<h2>Additional Information</h2>
+<p>This is a distinct issue from <a href="https://cdn.f5.com/product/bugtracker/ID1966405.html" target="_blank" rel="noopener noreferrer">Bug ID1966405</a>, which describes a triggered regression where PTR lookups for RFC1918 addresses return NXDOMAIN after a local zone configuration change, and which is resolved by a TMM restart. Bug ID2377749 is a persistent behavioral change that occurs regardless of any configuration change and is not resolved by TMM restart.</p>
+</article>
+</body>
+</html>

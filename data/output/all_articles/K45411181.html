@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K45411181: Configuring DNS Express using tmsh</title>
+<meta name="description" content="Knowledge: Configuring DNS Express using tmsh — You have provisioned DNS Express to act as a high-speed, authoritative secondary DNS server.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K45411181">
+</head>
+<body>
+<header>
+<h1>K45411181: Configuring DNS Express using tmsh</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2017-03-03</dd>
+<dt>Updated</dt><dd>2025-04-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 13.0.0, 12.1.2, 12.1.0, 12.0.0, 12.1.1</li><li>BIG-IP DNS: 12.1.2, 12.1.1, 12.1.0, 12.0.0, 13.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K45411181">https://my.f5.com/manage/s/article/K45411181</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>You should consider using this procedure under the following condition:</p>
+
+<ul><li>You have provisioned DNS Express to act as a high-speed, authoritative secondary DNS server.</li><li>You have a large number of DNS zones to import into the DNS Express engine.</li><li>You want to configure the BIG-IP system using the TMOS Shell (<strong>tmsh</strong>).</li></ul>
+<h3>Description</h3><p>The DNS Express engine is a high-speed, authoritative secondary DNS server. Using DNS Express, the BIG-IP system can answer remote client DNS queries, respond to zone transfer requests from authoritative DNS nameservers and secure zone transfers using transaction signature (TSIG) keys. You can fully configure DNS Express using <strong>tmsh</strong> Using <strong>tmsh </strong>can be helpful when a large number of DNS zones must be transferred from an authoritative DNS server. To configure DNS Express and the BIG-IP system as a secondary DNS server, create the necessary objects in the following order.</p>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisite to use this procedure:</p>
+
+<ul><li>You have access to <strong>tmsh</strong>.</li><li>Optional: You have obtained the TSIG key from the master DNS server.</li></ul>
+
+<p><span class="sectiontitle">Procedures</span></p>
+
+<ul><li><a href="#tsigObj">Creating a TSIG object (optional)</a></li><li><a href="#nameserverObj">Creating a nameserver object</a></li><li><a href="#zoneObj">Creating a zone object</a></li><li><a href="#udpVip">Creating a DNS request virtual server</a></li><li><a href="#tcpVip">Creating notify virtual servers (HA)</a></li></ul>
+
+<p><span class="subsectiontitle"><a name="tsigObj"></a>Creating a TSIG object (optional)</span></p>
+
+<p>The TSIG object contains an authoritative DNS server&#39;s TSIG key and specifies the key&#39;s hash message authentication code (HMAC) algorithm. Each nameserver or zone object, created in the next procedures, can reference the TSIG object to perform secure zone transfers. Once you have obtained the authoritative DNS server&#39;s TSIG key and HMAC, create the TSIG key object by performing the following procedure:</p>
+
+<p><span class="warning"><strong>Important</strong>: The TSIG key object name must be the same on both the BIG-IP system and the authoritative DNS server.</span></p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following option procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to <strong>tmsh</strong> by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>To create the TSIG key object, use the following command syntax:
+	<p><span class="code">create ltm dns tsig-key &lt;key name&gt; algorithm &lt;hmac&gt; secret &lt;TSIG key&gt;</span></p>
+
+	<p>For example, to create a TSIG key named <strong>example.com.key</strong> created using the MD5 HMAC, type the following command:</p>
+
+	<p><span class="example2">create ltm dns tsig-key example.com.key algorithm hmacmd5 secret p4wLo78ir1zTTmkYaEARs5DhS6K0aKxQZ3Y2GzHEMgk=</span></p>
+	</li><li>Save the configuration by typing the following command:
+	<p><span class="code">save sys config</span></p>
+	</li></ol>
+
+<p><a name="nameserverObj"></a><span class="subsectiontitle">Creating a Nameserver object</span></p>
+
+<p>The BIG-IP system nameserver object defines an authoritative DNS server&#39;s IP address and the optional TSIG key. Each zone object, created in the next procedure, requires a nameserver object. To create a nameserver object, perform the following procedure:</p>
+
+<p><span class="warning"><strong>Important</strong>: The authoritative DNS server must allow zone transfers from the BIG-IP system self IP address. Bind DNS servers use <strong>allow-transfer</strong> to restrict zone transfers.</span></p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to <strong>tmsh</strong> by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>To create the nameserver object, use the following command syntax:
+	<p><span class="code">create ltm dns nameserver &lt;name&gt; address &lt;IP address&gt; tsig-key &lt;key name&gt;</span></p>
+
+	<p>For example, to create a nameserver object named <strong>ns.example.com</strong> with IP address 192.168.10.100 and the optional TSIG key named <strong>example.com.key</strong>, type the following command:</p>
+
+	<p><span class="example2">create ltm dns nameserver ns.example.com address 192.168.10.100 tsig-key example.com.key</span></p>
+	</li><li>Save the configuration by typing the following command:
+	<p><span class="code">save sys config</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a name="zoneObj"></a>Creating a zone object</span></p>
+
+<p>The zone object represents a DNS zone on an authoritative DNS server. Once you create the zone object, DNS Express transfers the zone from the authoritative DNS server. To create a zone object and verify the zone transfer, perform the following procedure:</p>
+
+<p><span class="warning"><strong>Important</strong>: This zone object name must be the same on both the BIG-IP system and the authoritative DNS server.</span></p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to <strong>tmsh</strong> by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>To create the zone object, use the following command syntax:
+	<p><span class="code">create ltm dns zone &lt;zone domain&gt; dns-express-server &lt;DNS server&gt;</span></p>
+
+	<p>For example, to create the zone object for a DNS zone named <strong>example.com</strong> and associate the nameserver object <strong>ns.example</strong>, type the following command:</p>
+
+	<p><span class="example2">create ltm dns zone example.com dns-express-server ns.example</span></p>
+	</li><li>Save the configuration by typing the following command:
+	<p><span class="code">save sys config</span></p>
+	</li><li>To verify the status of the zone transfer, use the following command syntax:
+	<p><span class="code">show ltm dns zone &lt;zone domain&gt; | grep -A 3 Status</span></p>
+
+	<p>For example, to view the status of the zone transfer for the <strong>example.com</strong> zone, type the following command:</p>
+
+	<p><span class="example2">show ltm dns zone example.com | grep -A 3  Status</span></p>
+
+	<p>In the following example, the <strong>example.com</strong> zone status indicates the zone is available and DNS Express performed a successful transfer:</p>
+
+	<p><span class="example2">  Status<br>	    Availability : available<br>	    State        : enabled<br>	    Reason       : Successful AXFR</span></p>
+
+	<p>If the zone transfer fails, the command output appears similar to the following example:</p>
+
+	<p><span class="example2">  Status<br>	    Availability : offline<br>	    State        : enabled<br>	    Reason       : Failed transfer query</span><br>	 </p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a name="udpVip"></a>Creating a DNS request virtual server</span></p>
+
+<p>You must create a UDP virtual server with an associated DNS profile to process remote client DNS resolution requests. If this is a standalone BIG-IP system, DNS notify messages from an authoritative DNS server can be processed as well. However, if your BIG-IP system is in a high availability (HA) configuration, you must create additional local-only virtual servers using the <strong>Creating notify virtual servers (HA)</strong> procedure to ensure all BIG-IP systems in the HA configuration receive and respond to DNS notify messages.</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to <strong>tmsh</strong> by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>To create the DNS request virtual server, use the following command syntax:
+	<p><span class="code">create ltm virtual &lt;name&gt; destination &lt;IP address&gt;:53 profiles add { udp dns }</span></p>
+
+	<p>For example, to create the DNS request virtual server named <strong>listen_example</strong> using IP address 192.168.10.200 and DNS port 53, type the following command:</p>
+
+	<p><span class="example2">create ltm virtual listen_example destination 192.168.10.200:53 profiles add { udp dns }</span></p>
+	</li><li>Save the configuration by typing the following command:
+	<p><span class="code">save sys config</span></p>
+	</li><li>To verify DNS resolution, use the following command syntax:
+	<p><span class="code">dig @&lt;IP address&gt; &lt;DNS domain&gt;</span></p>
+
+	<p>For example, to test DNS resolution for the example domain <strong>ns.example.com</strong> using the UDP virtual address 192.168.10.200, type the following command:</p>
+
+	<p><span class="example2">dig @192.168.10.200 ns.example.com +short</span></p>
+
+	<p>In the following example, the command output displays the correct IP address 192.168.10.100 for the example domain name <strong>ns.example.com</strong>:</p>
+
+	<p><span class="example2">192.168.10.100</span></p>
+
+	<p>If there are connectivity issues between the DNS client and the BIG-IP system listener, the response will appear similar to the following example:</p>
+
+	<p><span class="example2">; &lt;&lt;&gt;&gt; DiG 9.8.1-P1 &lt;&lt;&gt;&gt; @192.160.10.200 example.com<br>	; (1 server found)<br>	;; global options: +cmd<br>	;; connection timed out; no servers could be reached</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a name="tcpVip"></a>Creating notify virtual servers (HA)</span></p>
+
+<p>If your BIG-IP systems are in an HA configuration, zone transfer updates will not be processed by standby BIG-IP systems when using only the DNS request virtual server. As a result, newly active BIG-IP systems may respond to DNS requests using stale DNS zone information. A UDP local-only virtual server must be created on each BIG-IP system in the HA configuration to respond to DNS notify requests from an authoritative DNS server. To create and test local-only virtual servers, perform the following procedure on all BIG-IP systems in the HA configuration:</p>
+
+<p><span class="warning"><strong>Important</strong>: The destination IP addresses used for the local-only virtual servers must be the notify IP addresses used by the authoritative DNS server. Bind DNS servers use <strong>also-notify</strong> to determine which secondary DNS servers receive zone updates.</span></p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system. </span></p>
+
+<ol><li>Log in to <strong>tmsh</strong> by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>To create the <strong>local-only virtual-address</strong>, use the following command syntax:
+	<p><span class="note"><strong>Note</strong>: Defining a local-only virtual-address ensures a virtual server using this IP address will process notify messages in standby state. The virtual-address will not sync to other BIG-IP systems.</span></p>
+
+	<p><span class="code">create ltm virtual-address &lt;IP address&gt; traffic-group traffic-group-local-only</span></p>
+
+	<p>For example, to create a local-only virtual address using IP address 192.168.10.201, type the following command:</p>
+
+	<p><span class="example2">create ltm virtual-address 192.168.10.201 traffic-group traffic-group-local-only</span></p>
+	</li><li>To create a virtual server with a destination IP address of the local-only virtual address to process DNS notify messages, use the following command syntax:
+	<p><span class="code">create ltm virtual &lt;name&gt; destination &lt;IP address&gt;:53 profiles add { udp dns }</span></p>
+
+	<p>For example, to create a virtual server named <strong>notify_example</strong> using IP address 192.168.10.201, type the following command:</p>
+
+	<p><span class="example2">create ltm virtual notify_example destination 192.168.10.201:53 profiles add { udp dns }</span></p>
+	</li><li>Save the configuration by typing the following command:
+	<p><span class="code">save sys config</span></p>
+	</li><li>To verify transfers for a particular zone are successful, determine the serial number of a zone file in DNS Express using the following command syntax:
+	<p><span class="code">show ltm dns zone &lt;name&gt; | grep Serial</span></p>
+
+	<p>For example, to determine the serial number of the zone named <strong>example.com</strong>, type the following command:</p>
+
+	<p><span class="example2">show ltm dns zone example.com | grep Serial</span></p>
+
+	<p>In the following example, the serial number for the <strong>example.com</strong> zone is <strong>2017012345</strong>:</p>
+
+	<p><span class="example2">Serial       : 2017012345</span></p>
+	</li><li>On the authoritative DNS server, modify the serial number of a zone file and reload the DNS database to trigger a DNS notify message.</li><li>Verify the serial number for the zone in DNS Express matches the serial number of the authoritative DNS server zone file:
+	<p><span class="example2">show ltm dns zone example.com | grep Serial</span></p>
+
+	<p>In the following example, the serial number for the example.com zone is now <strong>2017012346</strong>, indicating the notify message was successfully processed.</p>
+
+	<p><span class="example2">Serial       : 2017012346</span></p>
+	</li><li>Repeat these steps on each BIG-IP system in the HA configuration.</li></ol>
+</article>
+</body>
+</html>

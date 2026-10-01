@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000148998: RADIUS authentication not working with Cisco ISE EAP-TLS</title>
+<meta name="description" content="Support Solution: RADIUS authentication not working with Cisco ISE EAP-TLS — Cisco ISE authentication does not work when BIG-IP is configured to use the virtual server for handling RADIUS authentication requests over UDP protocol. ISE reports a timeout while exchanging the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000148998">
+</head>
+<body>
+<header>
+<h1>K000148998: RADIUS authentication not working with Cisco ISE EAP-TLS</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-12-16</dd>
+<dt>Updated</dt><dd>2026-07-18</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000148998">https://my.f5.com/manage/s/article/K000148998</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<p><span style="font-size: 13px;">Cisco ISE authentication does not work when BIG-IP is configured to use the virtual server for handling RADIUS authentication requests over UDP protocol. ISE reports a timeout while exchanging the certificate.</span></p>
+<h2><strong>Environment</strong></h2>
+<ul><li>BIG-IP</li><li>RADIUS UDP virtual server (UDP profile for a pool)</li><li>Cisco ISE authentication</li></ul>
+<h2><strong>Cause</strong></h2>
+<p>The problem is caused by unusual use of IP fragmentation, where the size of a non-final fragmented piece is lower than 552 bytes. The default minimal fragmented packet size for a non-final fragment piece is defined as BigDB variable <strong>tm.minipfragsize.</strong></p>
+<p>In IP fragmentation, each fragment piece has the IP &quot;more fragments&quot; (mf) header flag set to true (1), and the final fragment piece set to 0.  This can be seen in wireshark with the filter &quot;ip.flags.mf==1&quot; </p>
+<p>IP fragments are typically transmitted as one or more full-length datagrams, followed by a smaller final piece.  The Cisco ISE server does not follow this pattern, and instead sends a large piece, followed by one or more small non-final fragment pieces, followed by the final fragment, causing tmm to drop the non-final fragments </p>
+<p>For example, this capture shows three packets, of length 1415 (offset 0), 64 (offset 1416), and 336 (offset 1480), which, when reassembled form an IP packet of length 1815</p>
+<p><span style="background-color: #ffffff;">30 Dec 10, 2024 09:35:34.493190000 CET 63.224493 10.10.10.1 10.10.10.2 IPv4 1570 IN s1/tmm0 : Fragmented IP protocol (proto=UDP 17, off=0, ID=50c4) [Reassembled in #32]</span></p>
+<p><span style="background-color: #ffffff;">31 Dec 10, 2024 09:35:34.493228000 CET 63.224531 10.10.10.1 10.10.10.2  IPv4 218 IN s1/tmm0 : Fragmented IP protocol (proto=UDP 17, off=1416, ID=50c4) [Reassembled in #32]</span></p>
+<p><span style="background-color: #ffffff;">32 Dec 10, 2024 09:35:34.493233000 CET 63.224536 10.10.10.1 10.10.10.2 RADIUS 490 IN s1/tmm0 : Access-Request id=89</span></p>
+<p> </p>
+<p><span style="background-color: #ffffff;">Frame 31: 218 bytes on wire (1744 bits), 218 bytes captured (1744 bits)<br></span><span style="background-color: #ffffff;">Ethernet II, Src: xxxxxxxx_c2:ad:70 (00:1c:7f:c2:ad:70), Dst: xxxxxxxx_8d:ca:ae (00:50:56:8d:ca:ae)<br></span><span style="background-color: #ffffff;"></span><span style="background-color: #ffffff;">802.1Q Virtual LAN, PRI: 0, DEI: 0, ID: 4094<br></span><span style="background-color: #ffffff;">Internet Protocol Version 4, Src: 10.10.10.1, Dst: 10.10.10.2<br></span><span style="background-color: #ffffff;"><strong>Data (64 bytes)   </strong><strong style="font-family: Wingdings;">ß</strong><strong>------------------------<br></strong></span><span style="background-color: #ffffff;">  Data: ...<br></span><span style="background-color: #ffffff;">  [Length: 64]</span></p>
+<h2><strong>Recommended Actions</strong></h2>
+<p>If your network carries legitimate IP packets that have non-final fragment pieces with an IP length value lower than the value in the <strong>Tm</strong>.<strong>MinIPFragSize </strong>(default 552 bytes) db key, then you should configure the db key to accommodate those packets. You can calculate specific value required by inspecting the IP length field in a packet capture that demonstrates the issue, or just set it to 1, to allow non-final IP fragment pieces of any length.</p>
+<p>For example, to change the value to 64, follow the steps below:</p>
+<p>1.<span style="font-family: &#39;Times New Roman&#39;;font-size: 7pt;">     </span>Log in to CLI<br>2.<span style="font-family: &#39;Times New Roman&#39;;font-size: 7pt;">     </span>Execute a command: <span style="background-color: #dddddd;"><strong>tmsh </strong><strong>modify sys db tm.minipfragsize value 64</strong></span></p>
+<p> </p>
+<p><span style="color: #c20025;background-color: #dddddd;"><em><strong>Important</strong>: </em></span></p>
+<ul><li style="color: #c20025;"><span style="color: #c20025;background-color: #dddddd;"><em>The change takes effect immediately, without requiring a system restart or configuration reload.</em></span></li><li style="font-style: italic;color: #c20025;"><span style="color: #c20025;background-color: #dddddd;"><em>Lowering the value may expose the system to IP Fragment Too Small or IP Fragmentation exploits.</em></span></li><li style="font-style: italic;color: #c20025;"><span style="color: #c20025;background-color: #dddddd;"><em>Exposing the system to denial-of-service (DoS) attacks.</em></span></li><li style="font-style: italic;color: #c20025;"><span style="color: #c20025;background-color: #dddddd;"><em>Consider changing the default IP fragment size setting only if the system is dropping packets smaller than the default IP fragment size.</em></span></li><li style="font-style: italic;color: #c20025;"><span style="color: #c20025;background-color: #dddddd;"><em>The <strong>tm.minipfragsize</strong> variable affects packets with the More Fragments (MF) flag set to 1.</em></span></li></ul>
+<h2></h2>
+<p> </p>
+</article>
+</body>
+</html>

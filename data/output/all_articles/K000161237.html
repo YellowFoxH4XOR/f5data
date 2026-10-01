@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161237: F5 Distributed Cloud - How to configure BGP peering, ECMP routing policies, and CE isolation for maintenance on Customer Edge nodes (Part 2 - Implementation)</title>
+<meta name="description" content="Support Solution: F5 Distributed Cloud - How to configure BGP peering, ECMP routing policies, and CE isolation for maintenance on Customer Edge nodes (Part 2 - Implementation) — Following the conceptual and design guidance in Part 1, this article provides step-by-step implementation instructions for deploying BGP and ECMP with F5 Distributed Cloud Customer Edge (CE) nodes.…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161237">
+</head>
+<body>
+<header>
+<h1>K000161237: F5 Distributed Cloud - How to configure BGP peering, ECMP routing policies, and CE isolation for maintenance on Customer Edge nodes (Part 2 - Implementation)</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-05-12</dd>
+<dt>Updated</dt><dd>2026-05-12</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Distributed Cloud Services</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161237">https://my.f5.com/manage/s/article/K000161237</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Following the conceptual and design guidance in Part 1, this article provides step-by-step implementation instructions for deploying BGP and ECMP with F5 Distributed Cloud Customer Edge (CE) nodes. It covers BGP peering and routing policy configuration in the F5 Distributed Cloud Console, and includes ready-to-use configuration examples for Fortinet FortiGate and Palo Alto Networks firewalls.</p>
+<ul><li>How is BGP peering configured on a Customer Edge node in the F5 Distributed Cloud Console?</li><li>How are BGP routing policies configured to allow VIP prefix advertisement and deny all other prefixes?</li><li>How is BGP and ECMP configured on a Fortinet FortiGate firewall for CE peering?</li><li>How is BGP and ECMP configured on a Palo Alto Networks firewall for CE peering?</li><li>How is a CE node isolated for maintenance by withdrawing BGP VIP advertisements?</li><li>How is BGP route withdrawal verified on the upstream firewall after CE isolation?</li></ul>
+<h2>Environment</h2>
+<ul><li>F5 Distributed Cloud (SaaS)</li><li>Customer Edge (CE) nodes — Secure Mesh Sites v2 (SMSv2) on AWS or on-premises</li><li>Two CE nodes with the following IP configuration (example):
+<ul><li>CE1 Outside interface: <code>10.154.4.160/24</code></li><li>CE2 Outside interface: <code>10.154.4.33/24</code></li><li>Firewall Inside interface: <code>10.154.4.119/24</code></li><li>Global VIP: <code>192.168.100.10/32</code></li><li>VIP subnet: <code>192.168.100.0/24</code></li></ul>
+</li><li>BGP AS Numbers: CE nodes — AS 65002; Upstream Firewall/Router — AS 65001</li><li>Upstream firewall: Fortinet FortiGate or Palo Alto Networks (Advanced Routing Engine mode)</li><li>ECMP enabled on upstream firewall with maximum paths configured</li></ul>
+<h2>Cause</h2>
+<p>None</p>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>Architecture Reference</strong></p>
+<table border="1" cellpadding="6" cellspacing="0"><thead><tr><th colspan="1" rowspan="1">Component</th><th colspan="1" rowspan="1">IP Address</th><th colspan="1" rowspan="1">Role</th></tr></thead><tbody><tr><td colspan="1" rowspan="1">Firewall (Inside)</td><td colspan="1" rowspan="1">10.154.4.119/24</td><td colspan="1" rowspan="1">BGP Peer, ECMP Router</td></tr><tr><td colspan="1" rowspan="1">CE1 (Outside/SLO)</td><td colspan="1" rowspan="1">10.154.4.160/24</td><td colspan="1" rowspan="1">Customer Edge Node 1</td></tr><tr><td colspan="1" rowspan="1">CE2 (Outside/SLO)</td><td colspan="1" rowspan="1">10.154.4.33/24</td><td colspan="1" rowspan="1">Customer Edge Node 2</td></tr><tr><td colspan="1" rowspan="1">Global VIP</td><td colspan="1" rowspan="1">192.168.100.10/32</td><td colspan="1" rowspan="1">Load Balancer VIP advertised via BGP</td></tr></tbody></table>
+<p><strong>Step 1: Configure BGP Peering in F5 Distributed Cloud Console</strong></p>
+<ol><li>Navigate to <strong>Multi-Cloud Network Connect → Manage → Networking → External Connectivity → BGP Peers &amp; Policies</strong>.</li><li>Click <strong>Add BGP Peer</strong> and configure the following:
+<ul><li><strong>Name:</strong> A descriptive name for the BGP peer object (e.g., <code>bgp-peer-ce1</code>)</li><li><strong>Where:</strong> Select <strong>Site</strong> and specify the CE site reference</li><li><strong>ASN:</strong> <code>65002</code></li><li><strong>Router ID:</strong> Select <strong>From Interface Address</strong></li></ul>
+</li><li>Click <strong>Peers → Add Item</strong> and fill in the relevant peer fields:
+<ul><li>Peer IP address (upstream firewall inside interface IP: <code>10.154.4.119</code>)</li><li>Peer AS number: <code>65001</code></li><li>Interface to use for peering (e.g., the CE&#39;s outside/SLO interface)</li></ul>
+</li><li>Save the BGP Peer configuration. Repeat for each CE node.</li></ol>
+<p><strong>Step 2: Configure BGP Routing Policies in F5 Distributed Cloud Console</strong></p>
+<ol><li>Navigate to <strong>Multi-Cloud Network Connect → Manage → Networking → External Connectivity → BGP Peers &amp; Policies → BGP Routing Policies</strong>.</li><li>Click <strong>Add BGP Routing Policy</strong>. Create the following two policies:</li></ol>
+<p><strong>Policy 1 — Allow VIP Advertisement (Outbound):</strong></p>
+<ol><li>Provide a name (e.g., <code>allow-vip</code>) and click <strong>Configure</strong> under Rules.</li><li>Click <strong>Add Item</strong> and configure a rule to permit /32 prefixes from the VIP subnet:
+<ul><li>Match prefix: <code>192.168.100.0/24</code> with <code>le 32</code> (matches all /32 VIP prefixes within the subnet)</li><li>Action: <strong>Permit</strong></li></ul>
+</li><li>Save the policy.</li></ol>
+<p><strong>Policy 2 — Deny All (Inbound and for isolation use):</strong></p>
+<ol><li>Provide a name (e.g., <code>filter-all</code>) and click <strong>Configure</strong> under Rules.</li><li>Click <strong>Add Item</strong> and configure a rule to deny all prefixes.</li><li>Save the policy.</li></ol>
+<p>Apply the policies to the BGP Peer objects:</p>
+<ul><li><strong>Inbound policy:</strong> <code>filter-all</code> — applied to ALL nodes</li><li><strong>Outbound policy:</strong> <code>allow-vip</code> — applied to ALL nodes</li></ul>
+<p><strong>Fortinet FortiGate Configuration</strong></p>
+<p><strong>Step 1: Configure Router ID, AS Number, and ECMP</strong></p>
+<pre>config router bgp
+  set as 65001
+  set router-id 10.154.4.119
+  set ebgp-multipath enable
+</pre>
+<p><strong>Step 2: Configure BGP Neighbors</strong></p>
+<pre>config neighbor
+  edit &quot;10.154.4.160&quot;
+    set remote-as 65002
+    set route-map-in &quot;ACCEPT-CE-VIPS&quot;
+    set route-map-out &quot;DENY-ALL&quot;
+    set soft-reconfiguration enable
+  next
+  edit &quot;10.154.4.33&quot;
+    set remote-as 65002
+    set route-map-in &quot;ACCEPT-CE-VIPS&quot;
+    set route-map-out &quot;DENY-ALL&quot;
+    set soft-reconfiguration enable
+  next
+end
+</pre>
+<p><strong>Step 3: Create Prefix List for VIP Range</strong></p>
+<pre>config router prefix-list
+  edit &quot;CE-VIP-PREFIXES&quot;
+    config rule
+      edit 1
+        set prefix 192.168.100.0 255.255.255.0
+        set ge 32
+        set le 32
+      next
+    end
+  next
+end
+</pre>
+<p><strong>Note:</strong> The <code>ge 32</code> and <code>le 32</code> parameters ensure only /32 prefixes within <code>192.168.100.0/24</code> are matched — exactly what CE nodes advertise for VIPs.</p>
+<p><strong>Step 4: Create Route Maps</strong></p>
+<pre>config router route-map
+  edit &quot;ACCEPT-CE-VIPS&quot;
+    config rule
+      edit 1
+        set match-ip-address &quot;CE-VIP-PREFIXES&quot;
+      next
+    end
+  next
+  edit &quot;DENY-ALL&quot;
+    config rule
+      edit 1
+        set action deny
+      next
+    end
+  next
+end
+</pre>
+<p><strong>Step 5: Verify BGP and ECMP</strong></p>
+<pre>get router info bgp summary
+get router info routing-table bgp
+</pre>
+<p>Expected output showing ECMP (two paths to VIP):</p>
+<pre>B 192.168.100.10/32 [20/255] via 10.154.4.160, 00:00:11
+                             via 10.154.4.33, 00:00:11
+</pre>
+<p><strong>Palo Alto Networks Configuration (Advanced Routing Engine Mode)</strong></p>
+<p><strong>Step 1: Configure ECMP Parameters</strong></p>
+<pre>set network logical-router default vrf default ecmp enable yes
+set network logical-router default vrf default ecmp max-path 4
+set network logical-router default vrf default ecmp algorithm ip-hash
+</pre>
+<p><strong>Step 2: Configure BGP Peer Group and Peers</strong></p>
+<pre>set network logical-router default vrf default bgp peer-group BGP_PEERS peer CE1 peer-as 65002
+set network logical-router default vrf default bgp peer-group BGP_PEERS peer CE1 local-address interface ethernet1/2
+set network logical-router default vrf default bgp peer-group BGP_PEERS peer CE1 peer-address ip 10.154.4.160
+set network logical-router default vrf default bgp peer-group BGP_PEERS peer CE2 peer-as 65002
+set network logical-router default vrf default bgp peer-group BGP_PEERS peer CE2 local-address interface ethernet1/2
+set network logical-router default vrf default bgp peer-group BGP_PEERS peer CE2 peer-address ip 10.154.4.33
+</pre>
+<p><strong>Step 3: Configure Prefix Lists and Routing Profiles</strong></p>
+<pre>set network routing-profile filters prefix-list ALLOWED_PREFIXES type ipv4 ipv4-entry 1 prefix entry network 192.168.100.0/24
+set network routing-profile filters prefix-list ALLOWED_PREFIXES type ipv4 ipv4-entry 1 prefix entry greater-than-or-equal 32
+set network routing-profile filters prefix-list ALLOWED_PREFIXES type ipv4 ipv4-entry 1 prefix entry less-than-or-equal 32
+set network routing-profile filters prefix-list ALLOWED_PREFIXES type ipv4 ipv4-entry 1 action permit
+</pre>
+<p><strong>Step 4: Verify BGP and ECMP</strong></p>
+<pre>run show advanced-routing bgp peer status logical-router default
+run show advanced-routing route logical-router default
+</pre>
+<p><strong>Implementing CE Isolation for Maintenance</strong></p>
+<ol><li>In the F5 Distributed Cloud Console, navigate to the BGP Peer object for the CE to be isolated.</li><li>Edit the Peer and change the <strong>Outbound BGP routing policy</strong> from <code>allow-vip</code> to <code>filter-all</code> (or another policy that denies VIP prefix advertisement).</li><li>Save the configuration. The CE will stop advertising its VIP routes; the upstream firewall removes it from ECMP paths within seconds.</li></ol>
+<p><strong>Verification on FortiGate after isolation:</strong></p>
+<pre>get router info bgp summary
+# Verify 0 prefixes received from isolated CE peer
+
+get router info routing-table bgp
+# Verify only one ECMP path remains (through the non-isolated CE)
+</pre>
+<p><strong>Restoring the CE after maintenance:</strong></p>
+<ol><li>In the BGP Peer configuration, restore the outbound policy to <code>allow-vip</code>.</li><li>Save the configuration. The CE resumes advertising VIP routes and is automatically added back to ECMP paths on the upstream firewall.</li></ol>
+<h2>Additional Information</h2>
+<p>This article is Part 2 of a two-part series. Part 1 covers the conceptual and design principles behind BGP and ECMP for CE deployments, including VIP architecture, filtering design philosophy, and the maintenance isolation concept. It is recommended to read Part 1 before implementing the configurations in this article.</p>
+<p>The Palo Alto Networks configuration in this article assumes the firewall is operating in <strong>Advanced Routing Engine mode</strong> using the logical router named <code>default</code>. Standard mode configurations will differ.</p>
+<p>The BGP-based approach transforms CE deployments from traditional Active/Standby models into full Active/Active topologies where every node contributes to handling traffic, and any node can be gracefully removed for maintenance without impacting application availability.</p>
+</article>
+</body>
+</html>

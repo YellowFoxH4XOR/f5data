@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K24542243: Understanding BIG-IP SNMP index truncation</title>
+<meta name="description" content="Support Solution: Understanding BIG-IP SNMP index truncation — SNMP OIDs have two components - the index and value, for example sysUpTime.0 is an index, and the value could be 12345678. The MIB definition can express some parts of the index as a string of…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K24542243">
+</head>
+<body>
+<header>
+<h1>K24542243: Understanding BIG-IP SNMP index truncation</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-04-28</dd>
+<dt>Updated</dt><dd>2023-04-28</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K24542243">https://my.f5.com/manage/s/article/K24542243</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br><br>SNMP OIDs have two components - the index and value, for example <em>sysUpTime.0</em> is an index, and the value could be <em>12345678</em>. The MIB definition can express some parts of the index as a string of variable length, for example, <em>myobjects.&quot;myexampleobjectname&quot;.value = 10</em>, where &quot;<em>myexampleobjectname</em>&quot; is encoded in an OID as a sequence of bytes prefixed by the length of that sequence.  </p>
+
+<p style="margin-left: 40px;">xx.&quot;apple&quot;.yy would be encoded as xx.<strong>5</strong>.97.112.112.108.101.yy, with the 5 indicating the length of the following string sequence, &quot;a&quot; = 97 ASCII, p = 112, and so on.</p>
+
+<p><br>BIG-IP uses this technique with a number of objects, such as ltm pools, node names, gtm wide ips, and so on to provide unique index OIDs for each  object. However, the SNMP standard imposes a maximum length of 128 bytes in an OID index, forcing BIG-IP to have to truncate the object name to fit within that limit.  <br><br>The solution implemented since since 11.5.4 HF2, 11.4.1 HF10, and other versions released around the same time, is to truncate the variable length component of the index to a maximum of 100 bytes, by replacing the final 8 bytes with a 32 bit checksum of the original variable component.  This ensures that the index OID is consistently named, and also unique.  It does not result in a loss of data - only the index OID is truncated - the value of that OID is not, and the name of the object is typically available under the &#39;...Name&#39; OID, for example &quot; &quot;<em>x.x.x.xx.x.x.<strong>ltmPoolName</strong>.&lt;variable length component&gt; = &lt;untruncated object name&gt;</em>&quot;<br><br>Although this behaviour is necessary to comply with SNMP standards, it can cause confusion to SNMP monitoring software that incorrectly expects to find an object&#39;s untruncated name as part of the index OID.    To avoid this, customers can limit the size of their index OIDs by keeping the length of the component objects small enough so as not to trigger the truncation.<br><br>To do this effectively, the following must be understood</p>
+
+<ul><li>Each string component requires one additional byte to express the length</li><li>Truncation occurs when the total length of the variable length section reaches 100 bytes.</li><li>Some OIDs contain multiple strings in the index</li><li>Some objects contain additional metadata outside of the string piece - for example, In BIG-IP DNS 13.0.0 and later, gtm wideip and gtm pool objects are both prefixed with their rrtype (eg, A, AAAA, CNAME, etc). This counts towards the size of the variable length component.</li><li>The partition name and the backslashes count towards the total length, for example &quot;<em>/Common/myltmpool</em>&quot; is 17 bytes long. Objects created using iApps can have unusually long names due to the include of the name of the iApp&#39;s name within the object&#39;s name.</li></ul>
+<span class="sectiontitle">Examples</span>
+
+<pre style="margin-left: 40px;">
+<em>F5-BIGIP-LOCAL-MIB::ltmPoolName.&lt;variable length component&gt;.name = &quot;/ParitionName/&lt;ltm pool name&gt;&quot;</em></pre>
+
+<div style="margin-left: 40px;">The BIG-IP LTM pool Name OID contains the name of the pool.  Truncation occurs at 100 bytes, and 99 bytes are required to store a 98 byte string, so pool names of 98 characters or less will not be truncated.
+<div> </div>
+
+<pre>
+<em>F5-BIGIP-GLOBAL-MIB::gtmWideipPoolPoolName.&lt;rrtype&gt;.&lt;wipname&gt;.&lt;rrtype&gt;.&lt;poolname&gt; = &quot;gtm-wideip-pool-entry-name&quot;</em></pre>
+
+<div>This OID contains the name of a pool that has been assigned to a wideip.  Truncation still occurs at 100 bytes, but the way that is counted is more complicated:<br> </div>
+
+<div style="margin-left: 40px;">rrtype = 1 byte<br>wipname = length of string + 1 (including &#39;/Common/&#39;)<br>rrtype = 1 byte<br>poolname = length of string + 1 (including &#39;/Common/&#39;)</div>
+
+<div><br>For this type of object, the total of the two variable length strings can be up to <strong>95 </strong>bytes each before truncation occurs. </div>
+</div>
+ 
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP GTM / BIG-IP DNS</li></ul>
+
+<p> </p>
+</article>
+</body>
+</html>

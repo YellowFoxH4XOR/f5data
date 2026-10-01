@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000137558: VELOS blades not ready, stuck in &quot;Adding to Cluster&quot; or &quot;Not in Cluster&quot;, server gave HTTP response to HTTPS client</title>
+<meta name="description" content="Support Solution: VELOS blades not ready, stuck in &quot;Adding to Cluster&quot; or &quot;Not in Cluster&quot;, server gave HTTP response to HTTPS client — ----------------------------------------------------------------------------------------------------">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000137558">
+</head>
+<body>
+<header>
+<h1>K000137558: VELOS blades not ready, stuck in &quot;Adding to Cluster&quot; or &quot;Not in Cluster&quot;, server gave HTTP response to HTTPS client</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-11-13</dd>
+<dt>Updated</dt><dd>2023-11-13</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS</li><li>F5OS-C: 1.5.X, 1.6.X, 1.6.1, 1.6.0, 1.5.1, 1.5.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000137558">https://my.f5.com/manage/s/article/K000137558</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>One or more blades in a VELOS cluster are not joining the cluster:</p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">                                                          ABLE  ABLE<br>                                        IN       READY    TO    TO                       PARTITION<br>INDEX  NAME                   INSERTED  CLUSTER  CLUSTER  PING  SSH   STATE              LABEL<br>----------------------------------------------------------------------------------------------------<br>1      blade-1.chassis.local  true      false    false    true  true  Adding to Cluster<br>2      blade-2.chassis.local  true      false    false    true  true  Adding to Cluster<br>3      blade-3.chassis.local  true      false    false    true  true  Adding to Cluster<br>4      blade-4.chassis.local  true      false    false    true  true  Adding to Cluster<br>5      blade-5.chassis.local  true      false    false    true  true  Adding to Cluster<br>6      blade-6.chassis.local  true      false    false    true  true  Adding to Cluster<br>7      blade-7.chassis.local  true      false    false    true  true  Adding to Cluster<br>8      blade-8.chassis.local  true      false    false    true  true  Not In Cluster</span></p>
+
+<p>The <strong>/var/log/openshift.log</strong> file on the active controller and <strong>/var/log/messages</strong> file on the blades show issues pulling docker images from the controller registries:</p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">Error initializing source docker-daemon:controller-ha.chassis.local:2000/openshift-3.11/ci-cd/496e03f/openshift/origin-node:3.11.0.496e03f: Error loading image from docker engine: Error response from daemon: reference does not exist</span></p>
+
+<p>When attempting to pull the image(s) manually from a blade, the image does exist in the registry, but docker returns <strong>server gave HTTP response to HTTPS client</strong>:</p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">[root@blade-1 ~]# curl -s &#39;http<strong>:</strong>//controller-ha<strong>.</strong>chassis<strong>.</strong>local:2000/v2/openshift-3.11/ci-cd/496e03f/openshift/origin-node/tags/list&#39;<br>{&quot;name&quot;:&quot;openshift-3.11/ci-cd/496e03f/openshift/origin-node&quot;,&quot;tags&quot;:[&quot;3.11.0.496e03f&quot;,&quot;v3.11.0&quot;]}<br><br>[root@blade-1 ~]# docker image pull controller-ha.chassis.local:2000/openshift-3.11/ci-cd/496e03f/openshift/origin-node:3.11.0.496e03f<br>Trying to pull repository controller-ha.chassis.local:2000/openshift-3.11/ci-cd/496e03f/openshift/origin-node ...<br>Get https<strong>:</strong>//controller-ha<strong>.</strong>chassis<strong>.</strong>local:2000/v1/_ping: http: server gave HTTP response to HTTPS client</span></p>
+
+<h2><strong>Environment</strong></h2>
+
+<ul><li>VELOS</li><li>Docker</li></ul>
+
+<h2><strong>Cause</strong></h2>
+
+<p>Docker&#39;s insecure registry configuration is missing from <strong>/etc/sysconfig/docker</strong> on one or more blades.</p>
+
+<p>There is no <strong>--insecure-registry</strong> configuration at all in that file:</p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">[root@blade-1 ~]# cat /etc/sysconfig/docker<br>OPTIONS=&#39; --selinux-enabled        --log-driver=journald --selinux-enabled --signature-verification=false --bip 100.64.10.0/16 --host tcp://0.0.0.0:4243 --host unix:///var/run/docker.sock --signature-verification=False&#39;<br>(no other contents)<br><br>[root@blade-1 ~]# docker info<br>...<br>Insecure Registries:<br> 127.0.0.0/8                &lt;--- Note</span></p>
+
+<p>Proper configuration example:</p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">[root@blade-1 ~]# cat /etc/sysconfig/docker<br>...<br>INSECURE_REGISTRY=&#39;--insecure-registry controller-1.chassis.local --insecure-registry controller-2.chassis.local --insecure-registry controller-ha.chassis.local --insecure-registry 100.64.0.0/12 --insecure-registry 10.0.0.0/8&#39;<br><br>[root@blade-1 ~]# docker info<br>...<br>Insecure Registries:<br> controller-ha.chassis.local<br> controller-1.chassis.local<br> controller-2.chassis.local<br> 100.64.0.0/12<br> 10.0.0.0/8<br> 127.0.0.0/8</span></p>
+
+<p>The exact root cause of this problem is not known at the time of publication. <strong>ID1391589</strong> tracks this issue.</p>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>To recover from this issue, confirm which blades are missing <strong>INSECURE_REGISTRY</strong> in <strong>/etc/sysconfig/docker</strong>, manually insert that config, then reboot the blades.</p>
+
+<ol><li>
+	<p>Confirm which blades have the missing <strong>INSECURE_REGISTRY</strong> line:</p>
+
+	<p><span style="font-family: Courier New,Courier,monospace;"># from controller<br>	for i in {1..8}; do echo &quot;blade-${i}:&quot;; ssh blade-${i} &quot;grep -c INSECURE /etc/sysconfig/docker&quot;; done<br>	# 0 = missing</span></p>
+	</li><li>
+	<p>SSH to the affected blades and edit <strong>/etc/sysconfig/docker</strong>, adding the missing line:</p>
+
+	<p><span style="font-family: Courier New,Courier,monospace;">INSECURE_REGISTRY=&#39;--insecure-registry controller-1.chassis.local --insecure-registry controller-2.chassis.local --insecure-registry controller-ha.chassis.local --insecure-registry 100.64.0.0/12 --insecure-registry 10.0.0.0/8&#39;<br>	# Above is one line</span></p>
+	</li><li>Reboot the blades</li><li>Confirm if the <strong>docker pull </strong>attempts are now successful. This may take some time.</li></ol>
+
+<p><span style="color: #15891f;"><em><strong>Note</strong>: These steps have been tested one time and resolved the issue on the chassis in question. If these steps do not work in your environment, consider a clean install.</em></span></p>
+
+<h2><strong>Additional Information</strong></h2>
+
+<p>Blades may be out of cluster for numerous reasons. Further troubleshooting is required if the observed symptoms do not match this article&#39;s description.</p>
+</article>
+</body>
+</html>

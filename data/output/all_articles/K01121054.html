@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K01121054: Limitations of ASM Event logging</title>
+<meta name="description" content="Support Solution: Limitations of ASM Event logging — The purpose of this article is to understand the different factors that limits ASM event logs.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K01121054">
+</head>
+<body>
+<header>
+<h1>K01121054: Limitations of ASM Event logging</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-07-18</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 17.X.X, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 17.0.0, 16.1.3, 14.1.3, 16.1.1, 16.1.0, 16.0.1, 16.0.0, 16.1.2, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 16.X.X, 15.0.0, 14.1.5, 14.1.4, 15.0.1, 15.X.X, 14.X.X, 17.0.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K01121054">https://my.f5.com/manage/s/article/K01121054</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br><br>The purpose of this article is to understand the different factors that limits ASM event logs.</p>
+
+<p><br><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP ASM</li><li>Logs Rate limited</li><li>Local Logging</li><li>Guaranteed Logging Enabled</li></ul>
+
+<p><br><span class="sectiontitle">Cause</span><br><br>ASM local logging has limitations. This is by design.<br><br>For further information refer to <a href="https://my.f5.com/manage/s/article/K45320421" target="_self">K45320421: ASM event logs are deleted or rotated out very quickly</a></p>
+
+<p><br><span class="sectiontitle">Recommended Actions</span></p>
+The following describes what logs to look for and how to determine log rate limitation behavior.
+
+<ol><li><strong>BD </strong>has the variable <strong>PRX RateLimit</strong> which determines the initial rate limit for <strong>BD </strong>to pass requests either to <strong>pabnagd </strong>or <strong>asmlogd</strong>. The unit is configured with the default value (<strong>200</strong>); This is divided by the number of bd threads, e.g.<br>	<br>	       <span class="example">200 / 16 (cores) = ~12 tps</span><br>	       <br>	So each thread can send up to ~12 requests per second to the local logger.<br>	<br>	We need <strong>ECARD_POLICY</strong> in debug mode to fully confirm that PRX RateLimit thresholds are being exceeded.  Logs may look something like this (example):<br>	<br>	```<br>	<span class="example2">ECARD_POLICY|DEBUG |Sep 20 10:07:28.359|32519|proxy_log.c:1942|local filter: rate limit ok - req in cur sec: 9 time: 1568999248 limit: 10 (RPS)<br>	ECARD_POLICY|DEBUG |Sep 20 10:07:28.361|32519|proxy_log.c:1949|local filter: LRN/tightening RATE LIMITED: req in cur sec: 10 time: 1568999248 limit: 10 (RPS)</span><br>	```<br>	<span class="note"><strong>NOTE</strong>: BD halts processing if guaranteed logging is enabled and pipes are full.</span><br>	<br>	BD also has a mechanism in place which reduces the amount of transactions that it relays to <strong>pabnagd</strong> for learning, based on the overall (aggregated per device) CPU utilization. The default setting of that &quot;bd&quot; mechanism is as follows:<br>	<br>	 - CPU utilization  0% -  60%: <strong>bd</strong> offloads everything to <strong>pabnagd</strong><br>	 - CPU utilization 60% -  90%: <strong>bd</strong> offloads at most 10 requests and 10 responses, in a second, to <strong>pabnagd</strong><br>	 - CPU utilization 90% - 100%: <strong>bd</strong> offloads nothing to <strong>pabnagd</strong><br>	 </li><li><strong>pabnagd </strong>has an internal queue for requests to handle &quot;policies_events_subscription_queue_limit&quot;  (default is 10).<br>	 </li><li><strong>asmlogd </strong>has a rate limit of 1500 requests per 5 seconds by default &quot;local_insert_rate_limit_count&quot;. When the rate limit on asmlogd is reached, asmlogd skips requests and they are not written into db/protobuf. When this happens, you see &quot;skipped&quot; message in its log file as below.<br>	<br>	```<br>	<span class="example2">asmlogd|INFO|Sep 20 08:21:44.001|32610|F5::RequestLog::log_pulse_message,,270 requests handled since startup (last support id handled = 13315865692552583186, 229889 requests handled from PBRQL, skipped 229619 requests due to rate limit)</span><br>	```<br>	 </li><li>About the storage of physical system [5GB]/virtual system [2GB], or 3M records in MySQL; this is for log rotation and not log throttling.<br>	 </li></ol>
+
+<p><span class="sectiontitle">Additional Information</span><br><br>None.</p>
+</article>
+</body>
+</html>

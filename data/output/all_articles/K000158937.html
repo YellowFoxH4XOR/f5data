@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000158937: TMM Log message and stack trace troubleshooting: &lt;log level&gt; Oops @ &lt;file&gt;:&lt;line&gt;:&lt;error message&gt;</title>
+<meta name="description" content="Support Solution: TMM Log message and stack trace troubleshooting: &lt;log level&gt; Oops @ &lt;file&gt;:&lt;line&gt;:&lt;error message&gt; — The BIG-IP may sometimes log the following messages in /var/log/tmm*">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000158937">
+</head>
+<body>
+<header>
+<h1>K000158937: TMM Log message and stack trace troubleshooting: &lt;log level&gt; Oops @ &lt;file&gt;:&lt;line&gt;:&lt;error message&gt;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-12-29</dd>
+<dt>Updated</dt><dd>2025-12-29</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000158937">https://my.f5.com/manage/s/article/K000158937</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>The BIG-IP may sometimes log the following messages in /var/log/tmm*</p>
+<pre>&lt;big-ip hostname&gt; notice Oops @ &lt;source code file number&gt;:&lt;source code line number&gt;:&lt;message&gt;</pre>
+<p> </p>
+<p>For example:</p>
+<pre>&lt;13&gt; Nov 27 18:20:13 mybigip.local.org notice Oops @ 0x30cd0e0:216: maximum pages</pre>
+<p> </p>
+<h2>Environment</h2>
+<p>Any F5 BIG-IP product running tmm that generates Oops logs into /var/log/tmm*</p>
+<p>While there may be other log messages with the word &quot;oops,&quot; such as linux kernel drivers, ie. in other log files, this article specifically addresses only those that are generated from tmm in /var/log/tmm*.</p>
+<p> </p>
+<h2>Cause</h2>
+<p>The error message is generated when tmm code recognizes an Out Of Place Situation (OOPS), in other words, an unexpected condition.</p>
+<p> </p>
+<p>For example, the following signifies that the tmm memory allocator failed to allocate memory:</p>
+<pre>&lt;13&gt; Nov 27 18:20:13 mybigip.local.org notice Oops @ 0x30cd0e0:216: maximum pages</pre>
+<p> </p>
+<p>Other examples:</p>
+<p>The following signifies a problem while processing an iRule:</p>
+<pre>Oct 17 03:16:14 mybigip.local.org crit tmm[15415]: 01010289:2: Oops @ 0x29fda69:2759: Cannot continue a rule that is not suspended.</pre>
+<p> </p>
+<p>The following are just benign messages from a code quality tool (K51513933):</p>
+<pre>Dec 19 10:45:04 mybigip.local.org crit tmm[14165]: 01010289:2: Oops @ 0x2b13900:1348: invalid tp</pre>
+<p> </p>
+<p> </p>
+<h2>Recommended Actions</h2>
+<p>Ideally, you want a clean bill of health for your system without tmm reporting any Oops messages by narrowing down the root cause of the message.</p>
+<p> </p>
+<p>With benign messages, you might even try suppressing the logs, if they occur too frequently.</p>
+<p> </p>
+<p>Fortunately, some Oops log messages are accompanied with a stack trace.</p>
+<p>For example:</p>
+<p> </p>
+<pre>&lt;13&gt; Nov 27 18:20:10 localhost notice pgo_use x86_64 vadc TMM Version 17.1.3.0.0.11<br>&lt;13&gt; Nov 27 18:20:10 localhost notice Called from 0x15df736<br>&lt;13&gt; Nov 27 18:20:10 localhost notice Called from 0x8248df<br>&lt;13&gt; Nov 27 18:20:10 localhost notice Called from 0x82bc5e<br>&lt;13&gt; Nov 27 18:20:10 localhost notice Called from 0x82becc<br>&lt;13&gt; Nov 27 18:20:10 localhost notice Called from 0x2570f40<br>&lt;13&gt; Nov 27 18:20:10 localhost notice Oops @ 0x30cd0e0:216: maximum pages</pre>
+<p> </p>
+<p>A stack trace will help F5 support determine which part of the code leads to the OOPS condition. For example, after processing by F5 support, the following stack trace above suggests the root cause for this &quot;maximum pages&quot; error message is a failure in TCL (iRules) allocating memory for its variables.</p>
+<p> </p>
+<pre>#0 0x15df736 in tmm_oops at ../lib/stdio.c:1435<br>#1 0x8248df in page_alloc at ../kern/page_alloc.c:217<br>#2 0x82b0a1 in umem_page_alloc at ../kern/umem.c:2273<br>#3 0x82bc5e in umalloc at ../kern/umem.c:3234<br>#4 0x82becc in urealloc at ../kern/umem.c:2974<br>#5 0x2570f40 in Tcl_AttemptSetObjLength at ../generic/tclStringObj.c:884<br><br></pre>
+<p>For a more detailed analysis, you may upload your qkview and request a stack trace analysis to F5 support for further information.</p>
+<p> </p>
+<p>You can modify how tmm handles caught unexpected conditions by modifying the db key <strong>tmm.oops</strong>,<strong> </strong>which can be set to silent,log, or panic.</p>
+<p> </p>
+<p>The default behavior is to just log any unexpected conditions and try to resume traffic processing:</p>
+<p> </p>
+<pre># tmsh list sys db tmm.oops<br>sys db tmm.oops {<br>  value &quot;<strong>log</strong>&quot;<br>}<br><br><br></pre>
+<p>If there are too many Oops log messages, you may try to suppress them by setting <strong>tmm.oops</strong> to <strong>silent</strong>.</p>
+<p> </p>
+<pre># tmsh modify sys db tmm.oops value <strong>silent</strong></pre>
+<p> </p>
+<p>In more difficult to diagnose cases, you may try to force an tmm core for an even deeper analysis.</p>
+<p>You can configure the OOPS condition to panic and dump core instead of just logging a message, if tmm did not already produce a core. See: <a href="https://my.f5.com/manage/s/article/K10062" target="_blank">K10062: Overview of managing BIG-IP core files</a></p>
+<p>If you want tmm to dump core for deep analysis, you can set <strong>tmm.oops</strong> to <strong>panic</strong>.</p>
+<p> </p>
+<pre> # tmsh modify sys db tmm.oops value <strong>panic</strong></pre>
+<p> </p>
+<p><span style="color: #c0392b;"><em>Note: If you set tmm.oops to panic, tmm will stop, produce a core, and restart every time it encounters the unexpected condition. Please be careful to do this on only one of your active-standby pair, or expect some traffic impacting downtime. Configuring tmm.oops to panic on both active and standby units or blades may cause tmm to constantly core.</em></span></p>
+<p><span style="color: #d35400;"><em>Note: If you expect the unexpected condition to repeat over and over, consider configuring the tmm core retention to 2 to 3 cores without rotation. See: </em></span><a href="https://my.f5.com/manage/s/article/K24290241" target="_blank"><em><span style="color: #d35400;">K24290241: Overview of the BIG-IP core file retention policy</span><span style="background-color: #e67e22;"></span></em></a></p>
+<p> </p>
+<p> </p>
+<h2>Additional Information</h2>
+<p> </p>
+</article>
+</body>
+</html>

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K05453953: Advanced Troubleshooting Local event logs when a security logging profile is configured</title>
+<meta name="description" content="Support Solution: Advanced Troubleshooting Local event logs when a security logging profile is configured — This article is a guide to do a troubleshooting when ASM local logging is not functioning as it is configured. It&#x27;s already confirmed the traffic is handled for the Virtual server and an LTM policy…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K05453953">
+</head>
+<body>
+<header>
+<h1>K05453953: Advanced Troubleshooting Local event logs when a security logging profile is configured</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-03-26</dd>
+<dt>Updated</dt><dd>2023-03-09</dd>
+<dt>Applies to</dt><dd><ul><li>Virtual Editions</li><li>BIG-IP</li><li>VIPRION Platforms</li><li>BIG-IP Platforms</li><li>BIG-IP ASM: 15.X.X, 11.0.0, 11.1.0, 11.2.0, 11.2.1, 11.3.0, 11.4.0, 11.4.1, 11.5.0, 11.5.1, 11.5.2, 11.5.3, 11.5.4, 11.5.5, 11.5.6, 11.5.7, 11.5.8, 11.5.9, 11.5.10, 11.6.0, 11.6.1, 11.6.2, 11.6.3, 11.6.4, 11.6.5, 12.0.0, 12.1.0, 12.1.1, 12.1.2, 12.1.3, 12.1.4, 12.1.5, 12.1.6, 13.0.0, 13.0.1, 13.1.0, 13.1.1, 13.1.3, 13.1.4, 13.1.5, 14.0.0, 14.0.1, 14.1.0, 14.1.2, 14.1.3, 14.1.4, 14.1.5, 15.0.0, 15.0.1, 15.1.0, 15.1.1, 15.1.2, 15.1.3, 15.1.4, 15.1.5, 15.1.6, 15.1.7, 15.1.8, 11.0.X, 11.1.X, 11.2.X, 11.3.X, 11.4.X, 11.5.X, 11.6.X, 12.0.X, 12.1.X, 13.0.X, 13.1.X, 14.0.X, 14.1.X, 15.0.X, 15.1.X, 11.X.X, 12.X.X, 13.X.X, 14.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K05453953">https://my.f5.com/manage/s/article/K05453953</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>This article is a guide to do a troubleshooting when ASM local logging is not functioning as it is configured. It&#39;s already confirmed the traffic is handled for the Virtual server and an LTM policy or irule which enables an ASM policy (usually done via packet capture). Then,  Virtual server has been configured with a local logging profile but there is no events in the report &quot;Security &gt;&gt; Event Logs &gt;&gt; Application &gt;&gt; Requests&quot;.</p>
+
+<p>1. Verify the security log profile is configured in MCPD database</p>
+
+<pre>
+# guishell -c &quot;select * from fw_vs_log_profile;&quot;
+
+<span class="code">-----------------------------------------------------------------------------------------------------
+| VIRTUAL_SERVER_NAME |           PROFILE_NAME | OBJECT_ID | PARTITION_ID | FOLDER_NAME | LEAF_NAME |
+-----------------------------------------------------------------------------------------------------
+|        /Common/test | /Common/logging_local |    135701 |       Common |     /Common |      test |
+-----------------------------------------------------------------------------------------------------</span>
+1 row 0.059s (mcpd: 0.000s, mcpj: 0.004s, hsql: 0.048s, conn: 0.004s, format: 0.003s)
+              (rcv: 0Kb, 0.000s, snd: 38b, 0.000s)</pre>
+
+<p>2. Check the vs_name_crc in table VS_RAMCACHE</p>
+
+<pre>
+  # mysql -t -u root -p$(perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw) -e &#39;select * from DCC.VS_RAMCACHE&#39; | grep &quot;&lt;virtual_server&gt;&quot;
+
+<span class="code">+----------------+-------------+----------------+
+| vs_name        | vs_name_crc | ramcache_state |
++----------------+-------------+----------------+
+| /Common/test   |   937764819 |              0 |
++----------------+-------------+----------------+</span></pre>
+
+<p>3. Check the log_profile_name_crc in table LOG_LOCAL_STORAGE_CONFIGURATION</p>
+
+<pre>
+  # mysql -t -u root -p$(perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw) -e &#39;select * from DCC.LOG_LOCAL_STORAGE_CONFIGURATION&#39; | grep &quot;&lt;log_profile&gt;&quot;
+
+<span class="code">+---------------------+----------------------+--------------------+------------------+-----------------------------+
+|   log_profile_name  | log_profile_name_crc | guaranteed_logging | response_logging | response_guaranteed_logging |
++---------------------+----------------------+--------------------+------------------+-----------------------------+
+|/Common/logging_local|           4287994568 |                  0 |                1 |                           0 |
++---------------------+----------------------+--------------------+------------------+-----------------------------+</span></pre>
+
+<p>4. Check the match between vs_name_crc and log_profile_name_crc</p>
+
+<pre>
+  # mysql -t -u root -p$(perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw) -e &#39;select * from DCC.VS_LOG_PROFILE&#39; | grep &quot;&lt;vs_name_crc&gt;&quot;
+
+<span class="code">+----------------------+-------------+--------------+
+| log_profile_name_crc | vs_name_crc | storage_type |
++----------------------+-------------+--------------+
+|           4287994568 |   937764819 |            0 |
++----------------------+-------------+--------------+</span></pre>
+
+<p><span class="code">5. </span>Reviewed the configuration in MCPD database to confirm security log profiles are configured with the right filter: illegal, all or illegal with staged signatures and threat campaigns</p>
+
+<pre>
+<span class="code"># guishell -c &quot;select PARENT_PROFILE, VALUE_LIST from fw_log_request_filter&quot;</span>
+
+<span class="code">----------------------------------------------------------------------
+|               PARENT_PROFILE |                          VALUE_LIST |
+----------------------------------------------------------------------
+|         /Common/illegal_only |                             illegal |
+|         /Common/all_requests |                                 all |
+| /Common/illegal_n_staged_ASU | illegal-including-staged-signatures |
+----------------------------------------------------------------------</span></pre>
+</article>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163297: NGINX One Metrics Missing When the NGINX Plus API Is Disabled or Misconfigured</title>
+<meta name="description" content="Support Solution: NGINX One Metrics Missing When the NGINX Plus API Is Disabled or Misconfigured — Detailed NGINX Plus traffic and network metrics are unavailable in NGINX One even though the NGINX Agent reports the instance as healthy.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163297">
+</head>
+<body>
+<header>
+<h1>K000163297: NGINX One Metrics Missing When the NGINX Plus API Is Disabled or Misconfigured</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-09-10</dd>
+<dt>Updated</dt><dd>2026-09-10</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Distributed Cloud Services</li><li>F5 Distributed Cloud</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163297">https://my.f5.com/manage/s/article/K000163297</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Detailed NGINX Plus traffic and network metrics are unavailable in NGINX One even though the NGINX Agent reports the instance as healthy.</p>
+<p>Symptoms may include:</p>
+<ul><li>Missing instance, HTTP, TCP, or traffic telemetry.</li><li>No <span style="font-family: &#39;courier new&#39;, courier, monospace;">Found NGINX Plus API</span> message in the NGINX Agent log.</li><li>Newly added NGINX configuration not appearing in the NGINX One configuration view.</li><li>NGINX rejecting the API configuration with:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">nginx: [emerg] &quot;server&quot; directive is not allowed here</span></p>
+</li></ul>
+<p>The NGINX Agent can report healthy management-plane communication even when the local NGINX Plus API required for detailed metrics is unavailable.</p>
+<h2>Environment</h2>
+<ul><li>NGINX Plus.</li><li>NGINX Agent.</li><li>NGINX One Console instance metrics and traffic telemetry.</li><li>NGINX Plus API configured on a dedicated listener.</li><li>NGINX configuration includes additional configuration within the <span style="font-family: &#39;courier new&#39;, courier, monospace;">http {}</span> context.</li><li>Detailed metrics require:
+<ul><li>An active NGINX Plus API.</li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">status_zone</span> directives on monitored application servers and, where applicable, location blocks.</li><li>An NGINX Agent API URL that matches the active API listener and protocol.</li><li>A valid NGINX Agent authentication token.</li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p>One or more of the following conditions can prevent detailed metrics from being collected:</p>
+<ul><li>The NGINX Plus API configuration is commented out or inactive.</li><li>No active <span style="font-family: &#39;courier new&#39;, courier, monospace;">status_zone</span> directives are configured.</li><li>The NGINX Agent API URL uses HTTPS while the NGINX Plus API uses plain HTTP, or vice versa.</li><li>The NGINX Agent configuration does not contain the required authentication token.</li><li>Duplicate API <span style="font-family: &#39;courier new&#39;, courier, monospace;">server</span> blocks use the same listener.</li><li>The API <span style="font-family: &#39;courier new&#39;, courier, monospace;">server</span> block is placed outside the <span style="font-family: &#39;courier new&#39;, courier, monospace;">http {}</span> context.</li></ul>
+<p>Successful messages such as <span style="font-family: &#39;courier new&#39;, courier, monospace;">INSTANCE_HEALTH_STATUS_HEALTHY</span> and <span style="font-family: &#39;courier new&#39;, courier, monospace;">Successfully sent health status update</span> confirm management-plane communication only. They do not confirm that the local NGINX Plus API has been discovered or that detailed traffic metrics are available.</p>
+<h2>Recommended Actions</h2>
+<ul><li><strong>Configure the NGINX Plus API in the correct context</strong>
+<p>Place the API configuration in an included configuration section loaded from within the <span style="font-family: &#39;courier new&#39;, courier, monospace;">http {}</span> block:</p>
+<p><code>server {<br>   listen 9000;<br><br>   location /api/ {<br>      api write=on;<br>   }<br><br>   location = /dashboard.html {<br>      root /usr/share/nginx/html;<br>   }<br>}</code></p>
+<p>Do not place the <span style="font-family: &#39;courier new&#39;, courier, monospace;">server</span> block at the top level of the main NGINX configuration outside the <span style="font-family: &#39;courier new&#39;, courier, monospace;">http {}</span> context.</p>
+</li><li><strong>Remove duplicate API listeners</strong>
+<p>Use only one API <span style="font-family: &#39;courier new&#39;, courier, monospace;">server</span> block for the selected listener. Combine the API and dashboard locations into that block and remove duplicate definitions that listen on the same port.</p>
+</li><li><strong>Restrict API access</strong>
+<p>Do not expose the NGINX Plus API publicly. Restrict access with appropriate <span style="font-family: &#39;courier new&#39;, courier, monospace;">allow</span> and <span style="font-family: &#39;courier new&#39;, courier, monospace;">deny</span> rules, firewall controls, or authentication.</p>
+<p>Example:</p>
+<p><code>server {<br>   listen 9000;<br><br>   allow 127.0.0.1;<br>   deny all;<br><br>   location /api/ {<br>      api write=on;<br>   }<br><br>   location = /dashboard.html {<br>      root /usr/share/nginx/html;<br>   }<br>}</code></p>
+</li><li><strong>Configure status zones</strong>
+<p>Add <span style="font-family: &#39;courier new&#39;, courier, monospace;">status_zone</span> to each monitored application server and, where applicable, location block:</p>
+<p><code>server {<br>   listen &lt;application-listener&gt;;<br>   status_zone &lt;server-zone-name&gt;;<br><br>   location / {<br>      status_zone &lt;location-zone-name&gt;;<br>      proxy_pass &lt;existing-upstream&gt;;<br>   }<br>}</code></p>
+<p>The listener, upstream, and zone names must match the existing application configuration.</p>
+</li><li><strong>Correct the NGINX Agent API settings</strong>
+<p>In the NGINX Agent configuration:</p>
+<ul><li>Configure the required authentication token.</li><li>Set <span style="font-family: &#39;courier new&#39;, courier, monospace;">data_plane_config.nginx.api.url</span> to the active NGINX Plus API listener.</li><li>If the API uses plain HTTP, use an HTTP URL and remove TLS and CA settings associated with HTTPS.</li><li>If TLS is enabled on the API listener, use the corresponding HTTPS URL and valid certificate settings.</li></ul>
+</li><li><strong>Validate and reload NGINX</strong>
+<p>Run:</p>
+<span style="background-color: #f1f1f1;">sudo nginx -t</span>
+<p>Resolve any syntax errors before applying the configuration. After the test succeeds, reload NGINX:</p>
+<span style="background-color: #f1f1f1;">sudo nginx -s reload</span></li><li><strong>Restart the NGINX Agent and verify API discovery</strong>
+<p>Run:</p>
+<span style="background-color: #f1f1f1;">sudo systemctl restart nginx-agent</span><br><span style="background-color: #f1f1f1;">sudo journalctl -u nginx-agent --no-pager | grep &quot;Found NGINX Plus API&quot;</span>
+<p>The expected log message is:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Found NGINX Plus API</span></p>
+</li><li><strong>Verify service connectivity</strong>
+<p>Ensure the NGINX Agent can reach the NGINX One service endpoint over TCP port <span style="font-family: &#39;courier new&#39;, courier, monospace;">443</span>. Confirm that outbound firewall and network controls permit the required connection.</p>
+</li><li><strong>Review metrics</strong>
+<p>After the API is discovered and NGINX has been reloaded, allow time for metric collection. Then review the instance metrics and traffic dashboard again.</p>
+</li><li><strong>Collect diagnostics if the issue persists</strong>
+<p>Collect sanitized versions of the following:</p>
+<ul><li>NGINX Plus version.</li><li>NGINX Agent version.</li><li>NGINX Agent configuration.</li><li>Active NGINX configuration.</li><li>Output of <span style="background-color: #f1f1f1;">sudo nginx -t</span>.</li><li>Output of <span style="background-color: #f1f1f1;">sudo systemctl status nginx-agent --no-pager</span>.</li><li>Recent output of <span style="background-color: #f1f1f1;">sudo journalctl -u nginx-agent --no-pager -n 100</span>.</li><li>NGINX diagnostic package, if required.</li></ul>
+<p>Remove all tokens, API keys, credentials, and other sensitive information before sharing diagnostic data.</p>
+</li></ul>
+<h2>Additional Information</h2>
+<ul><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">INSTANCE_HEALTH_STATUS_HEALTHY</span> and <span style="font-family: &#39;courier new&#39;, courier, monospace;">Successfully sent health status update</span> indicate that the NGINX Agent is communicating with the management plane. They do not confirm NGINX Plus API discovery.</li><li>The configuration view may not immediately reflect newly added NGINX configuration. Verify the effective running configuration on the host and confirm API discovery in the NGINX Agent log.</li><li>If NGINX rejects a <span style="font-family: &#39;courier new&#39;, courier, monospace;">server</span> directive, verify that the configuration is loaded inside the <span style="font-family: &#39;courier new&#39;, courier, monospace;">http {}</span> context.</li><li>Confirm that duplicate API listeners have been removed.</li><li>Ensure that the NGINX Agent API protocol matches the protocol configured on the NGINX Plus API listener.</li></ul>
+</article>
+</body>
+</html>

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K51134535: DIAMETER handshake (CER/CEA) fails</title>
+<meta name="description" content="Support Solution: DIAMETER handshake (CER/CEA) fails — This article describes the solution for DIAMETER handshake failure">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K51134535">
+</head>
+<body>
+<header>
+<h1>K51134535: DIAMETER handshake (CER/CEA) fails</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-12-05</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP PEM: 16.X.X, 14.X.X, 13.X.X, 12.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 11.6.X, 11.5.X, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 12.1.4, 15.1.6, 12.1.3, 15.1.5, 12.1.2, 15.1.4, 12.1.1, 15.1.3, 12.1.0, 15.1.2, 12.0.0, 15.1.1, 11.6.5, 15.1.0, 11.6.4, 15.0.1, 11.6.3, 15.0.0, 11.6.2, 14.1.5, 11.6.1, 14.1.4, 11.6.0, 14.1.3, 11.5.10, 14.1.2, 11.5.9, 14.1.0, 11.5.8, 14.0.1, 11.5.7, 14.0.0, 11.5.6, 13.1.5, 11.5.5, 13.1.4, 11.5.4, 13.1.3, 11.5.3, 13.1.1, 11.5.2, 15.X.X, 11.5.1, 13.0.1, 11.5.0, 13.0.0, 12.1.6, 12.1.5, 13.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K51134535">https://my.f5.com/manage/s/article/K51134535</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>This article describes the solution for DIAMETER handshake failure</p>
+
+<ul><li>When BIGIP trying to establish DIAMETER channel, it resets the connection after DIAMETER peer replies with CEA, (Capabilities Exchange Answer)  to the CER (Capabilities Exchange Request) message that the BIGIP sent.</li><li>In ltm log, the following error appears on DIAMETER channel establishment:</li></ul>
+<span class="example2">01230140:3: RST sent from 192.168.1.10:54286 to 192.168.1.5:3869, [0x2bd8143:1154] diameter peer state machine error</span>
+
+<ul><li>In traffic capture, there is a TCP reset sent by the BIGIP right after it receives and acknowledging a DIAMETER CEA message:</li></ul>
+<span class="example2">No.    Time    source    destination    info<br>23    2021-11-21 18:12:01.243390    192.168.1.10    192.168.1.5    OUT s1/tmm0 : cmd=Capabilities-Exchange Request(257) flags=R--- appl=Diameter Common Messages(0) h2h=84b5b78 e2e=7925ba8e | <br>24    2021-11-21 18:12:01.244791    192.168.1.5    192.168.1.10    IN  s1/tmm0 : cmd=Capabilities-Exchange Answer(257) flags=--E- appl=Diameter Common Messages(0) h2h=84b5b78 e2e=7925ba8e | <br>25    2021-11-21 18:12:01.244800    192.168.1.10    192.168.1.5    54382 → 3869 [ACK] Seq=768773260 Ack=124901718 Win=4472 Len=0<br>26    2021-11-21 18:12:01.244814    192.168.1.10    192.168.1.5    OUT s1/tmm0 : 54382 → 3869 [RST, ACK] Seq=768773260 Ack=124901718 Win=0 Len=58</span><br><br><br><span class="example">Frame 24: 193 bytes on wire (1544 bits), 193 bytes captured (1544 bits)<br><span class="example2">Diameter Protocol</span><br><span class="example2">    Version: 0x01</span><br><span class="example2">    Length: 92<br>    Flags: 0x20, Error<br>    Command Code: 257 Capabilities-Exchange<br>    ApplicationId: Diameter Common Messages (0)<br>    Hop-by-Hop Identifier: 0x084b5b78<br>    End-to-End Identifier: 0x7925ba8e<br>    [Request In: 23]<br>    [Response Time: 0.001401000 seconds]<br>    AVP: Origin-Host(264) l=21 f=-M- val=SCLINSLCVM01T<br>    AVP: Origin-Realm(296) l=16 f=-M- val=surfline<br>    <strong>AVP: Result-Code(268) l=12 f=-M- val=DIAMETER_INVALID_AVP_BITS (3009) &lt;&lt;&lt;</strong><br>    AVP: Failed-AVP(279) l=20 f=-M-</span></span><br><br><strong>Environment</strong>
+
+<ul><li>BIGIP PEM</li><li>DIAMETER peer</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>This is caused due to 2 conditions:</p>
+
+<ol><li>PEM&#39;s <span class="code">tmm.diameter.application.enforce.capability.exchange.avps</span> value set to &#39;<span class="code">all</span>&#39; (default ):
+
+	<pre>
+sys db tmm.diameter.application.enforce.capability.exchange.avps {
+    <strong>default-value &quot;all&quot; &lt;&lt;&lt;</strong>
+    scf-config &quot;true&quot;
+    <strong>value &quot;all&quot; &lt;&lt;&lt;</strong>
+    value-range &quot;all auth none vendor&quot;
+}</pre>
+	Possible values are:<br>	<strong>none</strong>:    gx will be allowed regardless of the existence of vendor-specific-application-id or auth-application-id<br>	<strong>vendor</strong>: gx will be allowed only if vendor-specific-application-id exist<br>	<strong>auth</strong>:     gx will be allowed only if auth-application-id exist<br>	<strong>all</strong>:         gx will be allowed only if both vendor-specific-application-id and auth-application-id exist (DEFAULT)<br>	 </li><li>DIAMETER peer is not sending <strong>BOTH </strong>AVPs of:
+	<ol><li><span class="code">vendor-specific-application-id</span></li><li><span class="code">auth-application-id</span></li></ol>
+	</li></ol>
+
+<p><strong>Recommended Actions</strong><br>Option 1:<br>Make sure that DIAMETER peer will send <strong>both </strong>AVPs (<span class="code">vendor-specific-application-id</span> and <span class="code">auth-application-id</span>)<br><br>Option 2:<br>Update <span class="code">tmm.diameter.application.enforce.capability.exchange.avps</span> value to match the scenario (none / vendor / auth / all)</p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

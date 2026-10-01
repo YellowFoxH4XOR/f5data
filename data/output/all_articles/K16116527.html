@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K16116527: ASM Attack Signature update fails after upgrade to 14.1</title>
+<meta name="description" content="Support Solution: ASM Attack Signature update fails after upgrade to 14.1 — The system performs a file cleanup and removes necessary files before the Attack Signature update has completed. This is likely due to the known issue tracked in ID852437.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K16116527">
+</head>
+<body>
+<header>
+<h1>K16116527: ASM Attack Signature update fails after upgrade to 14.1</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-01-24</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Virtual Editions</li><li>BIG-IP Platforms</li><li>VIPRION Platforms</li><li>BIG-IP</li><li>BIG-IP ASM: 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.X, 14.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K16116527">https://my.f5.com/manage/s/article/K16116527</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<span class="sectiontitle">Description</span>
+
+<p>Attack signature update not working.</p>
+
+<ul><li>ASM Attack Signature updates fail after upgrading to 14.1.x</li><li>Errors in <strong>/var/log/asm</strong> during signature update:</li></ul>
+
+<p style="margin-left: 40px;"><span class="example2">crit g_server_rpc_handler.pl[&lt;PID&gt;]: 01310027:2: ASM subsystem error (asm_config_server.pl,F5::Sigfile::Update::store_error_and_die): Couldn&#39;t open /ts/var/tmp/sigfile.tmp.7859/sigs/200001000_xss/200101032/stirling__version_2.xml:<br>crit g_server_rpc_handler.pl[&lt;PID&gt;]: 01310027:2: ASM subsystem error (asm_config_server.pl,F5::ASMConfig::Handler::handle_error): Code: 999, Error message = Couldn&#39;t open /ts/var/tmp/sigfile.tmp.7859/sigs/200001000_xss/200101032/stirling__version_2.xml:<br>crit g_server_rpc_handler.pl[&lt;PID&gt;]: 01310027:2: ASM subsystem error (asm_config_server.pl,F5::ASMConfig::Handler::log_error_and_rollback): Couldn&#39;t open /ts/var/tmp/sigfile.tmp.7859/sigs/200001000_xss/200101032/stirling__version_2.xml:<br>crit perl[&lt;PID&gt;]: 01310027:2: ASM subsystem error (com.f5.liveupdate.update.negativesignatures.sigfile.Update.applyChanges.pl,F5::LiveUpdate::PayloadHandler::clean_fail): Fail load update files: Couldn&#39;t open /ts/var/tmp/sigfile.tmp.7859/sigs/200001000_xss/200101032/stirling__version_2.xml:</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP ASM </li><li>ASM Attack signature update</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+The system performs a file cleanup and removes necessary files before the Attack Signature update has completed. This is likely due to the known issue tracked in <a href="https://cdn.f5.com/product/bugtracker/ID852437.html" target="_self">ID852437</a>. 
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+If the workaround listed in the Bug Tracker article fails, an alternative workaround of temporarily increasing the temp file cleanup interval has also been effective as a workaround based on past cases reported to F5 Support. To do so, perform the following procedure:
+
+<ol><li>
+	<p>Adjust the interval in the /etc/ts/tools/asmcrond.cfg<br>	From:<br>	<span class="code">[CleanFiles]<br>	Interval=300</span><br>	To:<br>	<span class="code">[CleanFiles]<br>	Interval=3000</span><br>	<span class="warning">Important: Don&#39;t extend the Interval too much, 50 minutes should be enough for everything.</span></p>
+	</li><li>
+	<p>Restart the asmcrond<br>	<span class="code">ps -ef | grep asmcrond<br>	kill &lt;pid&gt;</span><br>	<br>	For example:<br>	<span class="example2">[root@C3222964-bigip1:Active:Standalone] tmp # ps -ef | grep asmcrond<br>	root     24036     1  0 21:54 ?        SN     0:01 /usr/bin/perl /usr/share/ts/bin/asmcrond<br>	root     24894 14376  0 22:02 pts/1    S+     0:00 grep asmcrond</span><br>	<br>	<span class="example2">[root@C3222964-bigip1:Active:Standalone] tmp # kill 24036</span><br>	<br>	The asmcrond will be respawning after several seconds.<br>	You may see the following log in /var/log/asm<br>	<span class="example2">Mar 20 21:54:42 C3222964-bigip1.chopra crit perl[22490]: 01310027:2: ASM subsystem error (asm_start,F5::NwdUtils::Nwd::log_failure): Watchdog detected failure for process. Process name: asmcrond, Failure: Insufficient number of threads (required: 1, found: 0).</span><br>	But nothing should be impacted.</p>
+	</li><li>
+	<p>Monitor the asmcrond.log until you see another Cleanfiles log.<br>	<span class="example2">tailf /var/log/ts/asmcrond.log | grep CleanFiles</span><br>	You are looking for something similar to:<br>	<span class="example2">asmcrond|INFO|Mar 20 21:54:44.389|24036|F5::PeriodicTask::Base::run,,Running Task: CleanFiles</span></p>
+	</li><li>
+	<p>Now you can install the ASU, the temp files can be staying in the folder for 50 minutes.</p>
+	</li><li>
+	<p>After the ASU been installed, change the interval to back to 300 and restart the asmcrond (similar steps to 1 and 2 above)<br>	<span class="example2">/etc/ts/tools/asmcrond.cfg</span><br>	<span class="code">[CleanFiles]<br>	Interval=300</span><br>	<span class="code">ps -ef | grep asmcrond</span><br>	<span class="code">kill &lt;pid&gt;</span></p>
+	</li><li>
+	<p>Make sure the asmcrond has been started correctly.<br>	<span class="code">ps -ef | grep asmcrond<br>	tailf /var/log/ts/asmcrond.log</span></p>
+	</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+None
+</article>
+</body>
+</html>

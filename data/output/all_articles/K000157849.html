@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000157849: Directives limit_conn_zone and limit_conn in configuration do not seem to limit</title>
+<meta name="description" content="Support Solution: Directives limit_conn_zone and limit_conn in configuration do not seem to limit — This can occur when a proxy service exists in front of NGINX [Plus]. The source ip address for ingress traffic to NGINX [Plus] will be that of the proxy server and not the expected ip address of…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000157849">
+</head>
+<body>
+<header>
+<h1>K000157849: Directives limit_conn_zone and limit_conn in configuration do not seem to limit</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-11-15</dd>
+<dt>Updated</dt><dd>2025-11-15</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Plus: R13, R35, R34, R33, R32, R31, R30, R29, R28, R27, R26, R25, R24, R23, R22, R21, R20, R19, R18, R17, R16, R15, R14</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000157849">https://my.f5.com/manage/s/article/K000157849</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>After implementing directives <strong>limit_conn_zone</strong> and<strong> limit_conn</strong> in NGINX [Plus] configuration, network traffic through NGINX [Plus] does not limit connections as expected. Example configuration:</p>
+<pre><span style="font-size: 14px;">http {<br></span><span style="font-size: 14px;font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;">  geo $limited {</span><br><span style="font-size: 14px;">    default 1;<br></span><span style="font-size: 14px;">    1.1.1.10/32 0;<br></span><span style="font-size: 14px;">  }</span><br><span style="font-size: 14px;">  map $limited $limit {<br></span><span style="font-size: 14px;">    1 $binary_remote_addr;<br></span><span style="font-size: 14px;">    0 &quot;&quot;;</span><br><span style="font-size: 14px;">  }</span><br><span style="font-size: 14px;">  limit_conn_zone $limit zone=addr:10m;</span><br><span style="font-size: 14px;">  limit_conn addr 5;</span><br><span style="font-size: 14px;">}</span></pre>
+<h2>Environment</h2>
+<p>NGINX [Plus]</p>
+<h2>Cause</h2>
+<p>This can occur when a proxy service exists in front of NGINX [Plus]. The source ip address for ingress traffic to NGINX [Plus] will be that of the proxy server and not the expected ip address of user-agents. Therefore, the <strong>geo</strong> directive will never match on the expected user-agent ip address and <strong>limit_connection_zone</strong> key (<strong>$limit</strong>) will always evaluate to nil.</p>
+<h2>Recommended Actions</h2>
+<p>To resolve this, implement the <strong>proxy</strong> special parameter into the <strong>geo</strong> directive configuration.</p>
+<p>Example configuration:</p>
+<pre>http {<br>  geo $limited {<br>    proxy 2.2.2.0/24;<br>    1.1.1.10/32 1;<br>    default 0;<br>  }<br>  map $limited $limit {<br>    1 $binary_remote_addr;<br>    0 &quot;&quot;;<br>  }<br>  limit_conn_zone $limit zone=addr:10m;<br>  limit_conn_zone $binary_remote_addr zone=default:10m;<br>  limit_conn addr 20;<br>  limit_conn default 100;<br>}</pre>
+<p>The <strong>proxy</strong> parameter within the <strong>geo</strong> directive configuration specifies trusted ip addresses. When requests match these addresses<span style="font-size: medium;font-family: sans-serif;">,</span> an address from the requests&#39; &quot;X-Forwarded-For&quot; request header will be used instead (by default, <strong>geo</strong> evaluates <strong>$remote_addr</strong>). Refer to the <a href="https://nginx.org/en/docs/http/ngx_http_geo_module.html#geo" target="_self">NGINX geo documentation</a> for more information.</p>
+<h2>Additional Information</h2>
+<p><a href="https://nginx.org/en/docs/http/ngx_http_limit_conn_module.html" target="_self">Documentation for <strong style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;">limit_conn_zone</strong> and <strong style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;">limit_conn</strong></a></p>
+<p><span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;">In the <strong>Recommended Actions</strong> example above, requests from user-agent <strong>1.1.1.10/32</strong> that are proxied, or not, by an address within address space <strong>2.2.2.0/24</strong> <span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;">will be limited by </span><strong>limit_conn_zone addr</strong> (<strong>$limit</strong> evaluates to <strong>$limited</strong> which evaluates to <strong>1</strong>). All requests are limited by <strong>limit_conn_zone default</strong>. Since the connections threshold for <strong>limit_conn_zone default</strong> (<strong>100</strong>) is greater than that of <strong>limit_conn_zone addr</strong> (<strong>20</strong>), requests that come from <strong>1.1.1.10/32</strong> will be limited by <strong>limit_conn_zone addr</strong> and will never reach the connections threshold of <strong>limit_conn_zone default</strong>.</span></p>
+</article>
+</body>
+</html>

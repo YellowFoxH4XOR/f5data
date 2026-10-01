@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161809: Licensing a BIG-IP with Declarative Onboarding and Ansible</title>
+<meta name="description" content="Support Solution: Licensing a BIG-IP with Declarative Onboarding and Ansible — This article is written for engineers who previously relied on BIG-IQ to handle BIG-IP licensing and now need to bring that licensing step into their existing automation directly, without a BIG-IQ in…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161809">
+</head>
+<body>
+<header>
+<h1>K000161809: Licensing a BIG-IP with Declarative Onboarding and Ansible</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-19</dd>
+<dt>Updated</dt><dd>2026-06-19</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161809">https://my.f5.com/manage/s/article/K000161809</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>This article is written for engineers who previously relied on BIG-IQ to handle BIG-IP licensing and now need to bring that licensing step into their existing automation directly, without a BIG-IQ in the loop. It covers two approaches — F5 Declarative Onboarding (DO) and Ansible — with complete worked examples that can be adapted into an existing pipeline rather than built from scratch.</p>
+<p>Both approaches talk directly to the target BIG-IP and to the F5 Activation Service: generating a dossier on-device, submitting it for activation, and applying the signed license, driven by a single declaration or playbook task rather than a manual sequence of commands.</p>
+<p>Worked examples throughout use a BIG-IP at 10.10.10.10. Substitute your own management IP, credentials, and registration key.</p>
+<h2>Environment</h2>
+<ul><li>
+<p>BIG-IP running TMOS 13.1 or later with iControl REST enabled.</p>
+</li><li>
+<p>A valid registration key issued via the My F5 portal.</p>
+</li><li>
+<p>Network access from the host issuing the declaration or playbook to the BIG-IP&#39;s management interface, and internet access from whichever side performs activation to reach the F5 Activation Service.</p>
+</li><li>
+<p>For Declarative Onboarding: the DO extension package installed on the target BIG-IP.</p>
+</li><li>
+<p>For Ansible: the f5networks.f5_modules collection installed on the control node.</p>
+</li></ul>
+<h2>Cause</h2>
+<p>Manually licensing a BIG-IP one command at a time does not scale once deployment is automated, and licensing is typically the first action needed before any further configuration is meaningful. With BIG-IQ removed as the licensing broker, that step needs to move into whichever automation tool is already managing the rest of the device lifecycle. This article documents both options so the right one can be chosen depending on whether licensing is one step in a larger first-boot declaration, or a standalone, repeatable task within an existing Ansible playbook.</p>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>Declarative Onboarding — worked example</strong></p>
+<p>Declarative Onboarding expresses licensing as a License class within a larger declaration, alongside other first-boot settings such as hostname, NTP, and VLANs. The declaration is sent as a single HTTPS POST directly to the BIG-IP being licensed.</p>
+<p>The full declaration:</p>
+<pre><code>{
+  &quot;class&quot;: &quot;Device&quot;,
+  &quot;schemaVersion&quot;: &quot;1.30.0&quot;,
+  &quot;async&quot;: true,
+  &quot;Common&quot;: {
+    &quot;class&quot;: &quot;Tenant&quot;,
+    &quot;myLicense&quot;: {
+      &quot;class&quot;: &quot;License&quot;,
+      &quot;licenseType&quot;: &quot;regKey&quot;,
+      &quot;regKey&quot;: &quot;XXXXX-XXXXX-XXXXX-XXXXX-XXXXXXX&quot;
+    },
+    &quot;hostname&quot;: &quot;bigip1.example.com&quot;
+  }
+}</code></pre>
+<p>Send it to the device:</p>
+<pre><code>curl -sk -u admin:yourpassword -X POST \
+  https://10.10.10.10/mgmt/shared/declarative-onboarding \
+  -H &quot;Content-Type: application/json&quot; \
+  -d @declaration.json</code></pre>
+<p>Because <code>async</code> is set to true, the POST returns immediately with a task ID. Poll the same endpoint with GET to check progress:</p>
+<pre><code>curl -sk -u admin:yourpassword \
+  https://10.10.10.10/mgmt/shared/declarative-onboarding</code></pre>
+<p>The response includes a <code>result.code</code> of 200 and <code>result.message</code> of <code>&quot;success&quot;</code> once licensing and any other classes in the declaration have completed. DO generates the dossier on the device, submits it to the Activation Service, accepts the EULA, and applies the resulting license internally — none of that is visible as separate steps, only the final declaration status.</p>
+<p>In practice this License class is combined with the rest of a first-boot declaration — NTP servers, VLANs, self IPs, module provisioning — so a single declaration brings a freshly deployed BIG-IP from unconfigured and unlicensed to fully onboarded in one pass. Adding licensing to an existing DO declaration is simply a matter of adding the License block shown above alongside whatever other classes are already present.</p>
+<p><strong>Ansible — worked example</strong></p>
+<p>The f5networks.f5_modules collection provides a dedicated module, bigip_device_license, for licensing a single device as a standalone task. This fits naturally as an early task in an existing playbook, run before any configuration tasks that depend on the device being licensed.</p>
+<p>Install the collection if not already present:</p>
+<pre><code>ansible-galaxy collection install f5networks.f5_modules</code></pre>
+<p>A complete playbook:</p>
+<pre><code>---
+- name: License BIG-IP
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    bigip_host: &quot;10.10.10.10&quot;
+    bigip_user: &quot;admin&quot;
+    bigip_password: &quot;{{ vault_bigip_password }}&quot;
+    bigip_regkey: &quot;XXXXX-XXXXX-XXXXX-XXXXX-XXXXXXX&quot;
+
+  tasks:
+    - name: Activate and install license
+      f5networks.f5_modules.bigip_device_license:
+        license_key: &quot;{{ bigip_regkey }}&quot;
+        provider:
+          server: &quot;{{ bigip_host }}&quot;
+          user: &quot;{{ bigip_user }}&quot;
+          password: &quot;{{ bigip_password }}&quot;
+          server_port: 443
+          validate_certs: false
+      register: license_result
+
+    - name: Show result
+      debug:
+        var: license_result</code></pre>
+<p>Store the BIG-IP password in Ansible Vault rather than inline in the playbook:</p>
+<pre><code>ansible-vault create group_vars/local/vault.yml</code></pre>
+<p>with contents:</p>
+<pre><code>vault_bigip_password: &quot;your-bigip-password&quot;</code></pre>
+<p>Run it:</p>
+<pre><code>ansible-playbook license_bigip.yml --ask-vault-pass</code></pre>
+<p>On success <code>license_result</code> reports <code>changed: true</code>. Re-running the same playbook against an already-licensed device with the same key reports <code>changed: false</code>, since the module checks the device&#39;s current license before attempting activation — safe to leave in place as a recurring task in a playbook that is applied repeatedly.</p>
+<p>To remove a license from a device, for example as part of decommissioning, the same module is used with <code>state: absent</code> and <code>license_key</code> omitted:</p>
+<pre><code>    - name: Remove license
+      f5networks.f5_modules.bigip_device_license:
+        state: absent
+        provider:
+          server: &quot;{{ bigip_host }}&quot;
+          user: &quot;{{ bigip_user }}&quot;
+          password: &quot;{{ bigip_password }}&quot;
+          server_port: 443
+          validate_certs: false</code></pre>
+<h2>Additional Information</h2>
+<ul><li>
+<p>Where activation actually happens differs between the two approaches. With Declarative Onboarding, the entire process including the call to the Activation Service happens from the BIG-IP itself, so the BIG-IP needs internet access to reach the Activation Service directly. With the Ansible module, the dossier is generated on the BIG-IP but the call to the Activation Service is made from the Ansible control node, so only the control node needs internet access — useful where BIG-IP devices are deliberately kept off the internet.</p>
+</li><li>
+<p>Verify the license took effect on either path by querying the device directly:</p>
+<pre><code>curl -sk -u admin:yourpassword \
+  https://10.10.10.10/mgmt/tm/sys/license</code></pre>
+<p>The <code>registrationKey</code> field under <code>entries</code> should match the key supplied.</p>
+</li><li>
+<p>For environments with no internet access anywhere in the automation chain, the dossier can be generated and submitted for offline activation through the My F5 portal manually, with the resulting license file applied to the device separately — for example by writing it to <code>/config/bigip.license</code> via <code>/mgmt/tm/util/bash</code> and running <code>reloadlic</code> — rather than relying on either tool&#39;s built-in online activation.</p>
+</li><li>
+<p>Common activation failures are the same regardless of which tool drives them, since both ultimately call the same F5 Activation Service. A failure indicating the key is already active on a different unit means the key needs to be released before reassignment — contact <a href="mailto:licensingsupport@f5.com" target="_blank">licensingsupport@f5.com</a> with the registration key and chassis serial number. A failure indicating an invalid or internal key means the key supplied is not eligible for production activation; re-confirm the correct key from the My F5 portal.</p>
+</li><li>
+<p>Related resources: the F5 Declarative Onboarding documentation covers the full schema for the License class and how it combines with other onboarding classes in a single declaration. The F5 Ansible collection documentation covers the full parameter set for bigip_device_license, including offline activation options. K2595 and K7752 in the F5 knowledge base cover the underlying activation process in more detail for troubleshooting.</p>
+</li></ul>
+</article>
+</body>
+</html>

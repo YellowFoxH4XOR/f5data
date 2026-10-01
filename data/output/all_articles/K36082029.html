@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K36082029: Performing mTLS using istio ingress-gateway in Aspen Mesh</title>
+<meta name="description" content="Support Solution: Performing mTLS using istio ingress-gateway in Aspen Mesh — By default, mTLS is enabled when Aspen Mesh is installed. That means every workload will be secured between each of them. You could also have an ingress-gateway which is a standalone proxy that could…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K36082029">
+</head>
+<body>
+<header>
+<h1>K36082029: Performing mTLS using istio ingress-gateway in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-02-07</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K36082029">https://my.f5.com/manage/s/article/K36082029</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>By default, mTLS is enabled when Aspen Mesh is installed. That means every workload will be secured between each of them. You could also have an ingress-gateway which is a standalone proxy that could be used as an ingress controller. There are other examples and use cases for the ingress-gateway explained in detail in the article <a href="https://my.f5.com/manage/s/article/K94561586" target="_self">K94561586: Exposing a service over SIMPLE TLS using Istio ingress gateway in Aspen Mesh</a>. If you want to have also mTLS between the sidecar and the istio ingress-gateway this article will cover this specific use case.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Kubernetes: 1.17x, 1.18.x, 1.19.x, 1.20.x</li><li>Aspen Mesh: 1.6.x, 1.9.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>If you want to enforce communications between your workloads and even between namespaces we could have different options to achieve that like <a href="https://projectcalico.docs.tigera.io/security/calico-network-policy" target="_self">Calico Network Policies</a> and <a href="https://istio.io/latest/docs/reference/config/security/authorization-policy/" target="_self">Istio Authorization Policies</a>.</p>
+
+<p>On top of that, secure communications on workloads and only have one point of ingress and egress could be achieved with an istio ingress-gateway.</p>
+
+<p>The use case can be illustrated as follow:</p>
+
+<p><span class="example2">namespace foo                     namespace bar<br>Pod a    =====&gt;   istio gw   =====&gt;   Pod b  <br>     (istio gw can be in istio-system<br>      or Another namespace)<br>            [ mTLS protected ]</span></p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ul><li><a href="#Prerequisites" target="_self">Prerequisites</a></li><li><a href="#Configure" target="_self">Configure Destination Rule, Gateway and Virtual Service</a></li><li><a href="#Verify" target="_self">Verify</a></li></ul>
+
+<p><span class="subsectiontitle"><a id="Prerequisites" name="Prerequisites"></a>Prerequisites</span></p>
+
+<ul><li>You must have an ingress-gateway installed either in root namespace for istio which is istio-system or your own namespace.</li><li>If you do not have an ingress-gateway follow the article <a href="https://my.f5.com/manage/s/article/K50557252" target="_self">K50557252: Install Istio Ingress Gateway using the Aspen Mesh Ingress Helm Chart</a>.</li><li>If you plan to use a different port than the default, accommodate your values file before the installation.</li></ul>
+
+<p><span class="subsectiontitle"><a id="Configure" name="Configure"></a>Configure Destination Rule, Gateway and Virtual service</span></p>
+
+<p>First, use a few istio objects that will help us to define what kind of TLS our client will initiate against our server. Then a gateway and a virtual service for routing the traffic.</p>
+
+<ol><li>Destination Rule:
+	<p>Our host for the destination rule is our ingress-gateway service, we are using the local service in Kubernetes to reach the endpoint from the other container.</p>
+
+	<p>The TLS mode as expected is ISTIO_MUTUAL which is mTLS but we do not have to provide the certificate and the key, the sidecar will do in our behalf.</p>
+
+	<p>SNI here is required as the proxy will perform SNI matching before forwarding the request.</p>
+
+	<p><span class="example2">apiVersion: networking.istio.io/v1beta1<br>	kind: DestinationRule<br>	metadata:<br>	  name: httpbin-mtls-ext<br>	  namespace: foo<br>	spec:<br>	  host: istio-ingressgateway.istio-system.svc.cluster.local<br>	  trafficPolicy:<br>	    tls:<br>	      mode: ISTIO_MUTUAL<br>	      sni: httpbin.example.com </span></p>
+	</li><li>Gateway:
+	<p>Our gateway will create a specification on which istio ingress-gateway will use and tell which ports should be exposed. </p>
+
+	<p>In this example, we are using a different port from the default, but you could use 443 as well but the protocol must be HTTPS.</p>
+
+	<p>As you can see, we are setting the same TLS mode as the Destination Rule this is how we enforce the TLS in the proxy. </p>
+
+	<p><span class="example2">apiVersion: networking.istio.io/v1beta1<br>	kind: Gateway<br>	metadata:<br>	  name: httpbin-gw<br>	  namespace: foo<br>	spec:<br>	  selector:<br>	    istio: ingressgateway<br>	  servers:<br>	  - hosts:<br>	    - httpbin.example.com<br>	    port:<br>	      name: https-9896<br>	      number: 9896<br>	      protocol: HTTPS<br>	    tls:<br>	      mode: ISTIO_MUTUAL</span></p>
+	</li><li>Virtual Service:
+	<p>Finally, we have a virtual service which will create a virtual destination in the routing of the ingress-gateway</p>
+
+	<p>Once match on the URI in this case the path <strong>/headers</strong> is hit, then all the traffic will be redirected to the pod in namespace <strong>bar</strong> which is our httpbin server.</p>
+
+	<p><span class="example2">apiVersion: networking.istio.io/v1beta1<br>	kind: VirtualService<br>	metadata:<br>	  name: httpbin-vs<br>	  namespace: foo<br>	spec:<br>	  gateways:<br>	  - httpbin-gw<br>	  hosts:<br>	  - httpbin.example.com<br>	  http:<br>	  - match:<br>	    - uri:<br>	        exact: /headers<br>	    route:<br>	    - destination:<br>	        host: httpbin.bar.svc.cluster.local<br>	        port:<br>	          number: 8000</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="Verify" name="Verify"></a>Verify</span></p>
+
+<p>Once you have everything configured, we could test sending a request from pod a.</p>
+
+<p><span class="example2">kubectl exec sleep-658cd68964-c5ch4 -c sleep -- curl -v -HHost:httpbin.example.com http://istio-ingressgateway.istio-system.svc.cluster.local:9896/headers<br>  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current<br>                                 Dload  Upload   Total   Spent    Left  Speed<br>  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0*   Trying 192.0.2.101:9896...<br>* Connected to istio-ingressgateway.istio-system.svc.cluster.local (192.0.2.101) port 9896 (#0)<br>&gt; GET /headers HTTP/1.1<br>&gt; Host:httpbin.example.com<br>&gt; User-Agent: curl/7.79.1<br>&gt; Accept: */*<br>&gt;<br>* Mark bundle as not supporting multiuse<br>&lt; HTTP/1.1 200 OK<br>&lt; server: istio-envoy<br>&lt; date: Mon, 17 Jan 2022 23:02:46 GMT<br>&lt; content-type: application/json<br>&lt; content-length: 2665<br>&lt; access-control-allow-origin: *<br>&lt; access-control-allow-credentials: true<br>&lt; x-envoy-upstream-service-time: 10<br>&lt;<br>{ [2665 bytes data]<br>100  2665  100  2665    0     0  87234      0 --:--:-- --:--:-- --:--:-- 88833<br>* Connection #0 to host istio-ingressgateway.istio-system.svc.cluster.local left intact<br>{<br>  &quot;headers&quot;: {<br>    &quot;Accept&quot;: &quot;*/*&quot;,<br>    &quot;Content-Length&quot;: &quot;0&quot;,<br>    &quot;Host&quot;: &quot;httpbin.example.com&quot;,<br>    &quot;User-Agent&quot;: &quot;curl/7.79.1&quot;,<br>    &quot;X-B3-Parentspanid&quot;: &quot;b519a8992d1f23fc&quot;,<br>    &quot;X-B3-Sampled&quot;: &quot;0&quot;,<br>    &quot;X-B3-Spanid&quot;: &quot;4523dfc752e966fa&quot;,<br>    &quot;X-B3-Traceid&quot;: &quot;3dbbf775763f4576b519a8992d1f23fc&quot;,<br>    &quot;X-Envoy-Attempt-Count&quot;: &quot;1&quot;,<br>    &quot;X-Envoy-External-Address&quot;: &quot;192.0.2.28&quot;,<br>    &quot;X-Forwarded-Client-Cert&quot;: &quot;By=spiffe://cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account;Hash=5a83eef7cd026981fddf432b309c964146b8bf8aba6f2913a38e95076ba4e781;Cert=\&quot;-----BEGIN%20CERTIFICATE-----%ExamplejCCAnagAwIBAgIQW2pjLuctUO1M%2Fv15JY3HwTANBgkqhkiG9w0BAQsFADBH%0AMRMwEQYDVQQKDApBc3BlbiBNZXNoMRwwGgYDVQQDDBNJbnRlcm1lZGlhdGUgQ0Eg%0AcnNhMRIwEAYDVQQHDAljbHVzdGVyLTIwHhcNMjIwMTE3MTkxNDMzWhcNMjIwMTE4%0AMTkxNDMzWjAAMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6pqRoZm7%0AJ%2Buh27JqYhPgvO2HK8gOLvT658%2F%2BNsBQz3V9G6pIOpLVgn420%2BrdYqtZwQ8z3xBG%0A7ysLUu%2B%2FX7bFN6cftJmf7iyUu7RxlMS9hsorqReDCZjNDRCfa%2FhYr3FmBLD034SX%0AqRmx6wbqT6Rn3a67gkOcLPScl2e1z6z7q%2FvpgqlREB83RkVoPKvxlnmZuMeopvpg%0ATrvvZfVWa8GO6OI48XJrKWsPqTj%2BPWHJtKirN2W14vaFebx83TCfDJAanXeGOduk%0ACHaTDuwGsZdwuquy2Aohymjve89Z956Olw78IA6KDxB0y8pDk5N2LGeWdzNuphtz%0Ap55U3ROlJJQd6wIDAQABo4G8MIG5MA4GA1UdDwEB%2FwQEAwIFoDAdBgNVHSUEFjAU%0ABggrBgEFBQcDAQYIKwYBBQUHAwIwDAYDVR0TAQH%2FBAIwADAfBgNVHSMEGDAWgBSy%0AB8iSHFPcsUsJ0bmJRWBbdENAfDBZBgNVHREBAf8ETzBNgh9zbGVlcC5kZWZhdWx0%0ALnN2Yy5jbHVzdGVyLmxvY2FshipzcGlmZmU6Ly9jbHVzdGVyLmxvY2FsL25zL2Rl%0AZmF1bHQvc2Evc2xlZXAwDQYJKoZIhvcNAQELBQADggIBAKB4yUYPsakygK9Rv9fB%0AXsiDxBHPpnUopwN4Iu76%2BPIYUMNc3dx%2Bc2NS68iS6TF5jjENJvqaclBhiZlumXfL%0ASrnzrea91EyRx%2FQNgNUpYBWjhA1S6dPvYKnYYrse2OUKHcxnaZYowWzMrHLtYqct%0AFx0hkG7q5w68eiYTUDS35PiPxYVYZUM4lJ9ToZsFFub1tYBT6XB%2FVr6sb1nCYC%2BT%0A5ptSfGosF4emLAUn3xUSH%2BATRFnsScoIOZDxAo%2Bz6BFMs3xxR3ytfmHURpEB4Ddz%0AyK4AjXbsZFGxDk3x8r%2FWWtOX4Nkril5IeU7H%2BLsrgrEdXYRk1xKDGGIolc0olHip%0AvDleZp%2BvOy4w90Ma20lomHfNGVe%2FSE%2FIBvbflSh4kxXelec1ZQmbNlD8igYfdZ5h%0AHAkB9wypCQz8JYXieOmspM%2Fp6SULweEAGMZvIXCbuIojntBGC9rdfql%2BVQfHT2Pa%0AszEGKbBdiaEzn28e3Mt55%2FU0j1U4CtRB5%2BYz%2BfaZxDIxYtsJbQ9eeBLPALRg2TRt%0AMeM9YEphHa4LH50RQ40wbfs%2FF4QvaQ9qFoz4FMaJnCxG%2B7Vln8zpYY6ChFdwAR8y%0AcXTLC4cPkNZLP6bmeWn4PgycgdCpWNJSGehf0etvI9D5hfknIssvO%2BjGx%2BSuQy12%0AlRfoIwQz%2Fqn0BrHZceKhExample-----END%20CERTIFICATE-----%0A\&quot;;Subject=\&quot;\&quot;;URI=spiffe://cluster.local/ns/foo/sa/sleep;DNS=sleep.foo.svc.cluster.local,By=spiffe://cluster.local/ns/bar/sa/httpbin;Hash=59f1711a0e92cf830241b7460eb77803a460f75a2ad78ae6c1b487db6c2a7449;Subject=\&quot;\&quot;;URI=spiffe://cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account&quot;<br>  }<br>}</span></p>
+
+<p>We got a successful response from our application in namespace bar, we can tell by the x-forward-client-cert that our communication is mTLS enabled as the header indicates certificate information of part or all the clients or proxies that a request has flowed.</p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

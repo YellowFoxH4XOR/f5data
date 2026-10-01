@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000148829: Virtual Server Addresses are not being advertised to BGP neighbor</title>
+<meta name="description" content="Support Solution: Virtual Server Addresses are not being advertised to BGP neighbor — A BIG-IP LTM device hosts Virtual Servers. The virtual-addresses are configured with route-advertisement selective (Route Health Injection). Router BGP configuration defines eBGP neighbor…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000148829">
+</head>
+<body>
+<header>
+<h1>K000148829: Virtual Server Addresses are not being advertised to BGP neighbor</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-12-03</dd>
+<dt>Updated</dt><dd>2024-12-04</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.1, 17.1.0, 16.0.1, 16.0.0, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 17.0.X, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.0.0, 15.1.1, 15.1.0, 15.1.2, 15.0.X, 15.0.1, 15.X.X, 17.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000148829">https://my.f5.com/manage/s/article/K000148829</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>A BIG-IP LTM device hosts Virtual Servers. The virtual-addresses are configured with route-advertisement selective (Route Health Injection). Router BGP configuration defines eBGP neighbor relationship to advertise Virtual Server addresses to external router network. </p>
+<p>However, the Virtual Server addresses are not being advertised to eBGP neighbors, which are typically a core router network.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM with Advanced Routing Module provisioned</li><li>Route Domain with BGP routing-protocol enabled</li><li>eBGP neighbor configuration (BIG-IP has different Autonomous System Number from router network) </li><li>LTM virtual-addresses configured with Route Health Injection (RHI), or route-advertisement selective</li></ul>
+<h2>Cause</h2>
+<p>Performed a routing policy configuration change on BIG-IP, such as a route-map or prefix-list, within imish on an affected version of BIG-IP. Did not reset BGP session to propagate the routing policy changes from LTM to an eBGP neighbor.</p>
+<p><a href="https://cdn.f5.com/product/bugtracker/ID605966.html" target="_blank">ID605966 (BGP route-map changes may not immediately trigger route updates)</a> is fixed in 17.1.2 and 16.1.5. However, affected BIG-IP versions will not automatically advertise the updated route-map policy changes to eBGP neighbors, and manual intervention (BGP outbound soft reconfiguration) is required. </p>
+<h2>Recommended Actions</h2>
+<p>BGP outbound soft reconfiguration (soft reset) will apply the BGP routing policy changes to BGP neighbor advertisements (RIB-OUT), without disrupting the network, and achieve a state of convergence. A hard reset would be a disruptive event, as the BGP session is torn down, and is not generally advised.</p>
+<p><code>clear ip bgp [eBGP neighbor IP address] soft out</code></p>
+<p>To perform a soft reconfiguration for the route policy updates to all BGP neighbors:</p>
+<p><code>clear ip bgp * soft out</code></p>
+<p>The advertised routes to a BGP neighbor can be seen in the show ip bgp neighbor x.x.x.x advertised-routes command output.<br><br>If there was a recent routing policy change, such as updating a route-map for outbound traffic to the eBGP neighbor, the following procedure will show the advertised routes before and after the routing policy change. </p>
+<p><code>show ip bgp neighbor x.x.x.x advertised-routes <br>clear ip bgp x.x.x.x soft out<br>show ip bgp neighbor x.x.x.x advertised-routes  </code></p>
+<p>As an example, the prefix-list &quot;prefix_example&quot; is configured to filter route-map &quot;TO_localhost3&quot;. The Virtual Server address will be defined as  host address 10.2.115.162 with /32 subnet mask (10.2.115.162/32) in the prefix-list on localhost2 (10.2.115.171 local self IP and 10.2.115.169 floating self IP, AS 255), and the route-map will only let allowed RHI addresses be advertised outbound to eBGP neighbor localhost3 (10.2.115.172, AS 365) .</p>
+<p>To further demonstrate the utility of the show ip bgp neighbor x.x.x.x advertised-routes command, host address 10.2.115.163/32 will not be advertised to localhost3. Although host address 10.2.115.163/32 is configured with RHI, the route-map policy will be configured to only allow 10.2.115.162/32. The host address 10.2.115.163/32 will be filtered by the prefix-list implicit deny.</p>
+<p><code>localhost2[0](config)#ip prefix-list prefix_example seq 10 permit 10.2.115.162/32<br>localhost2[0](config)#exit<br> <br>localhost2[0]#show run<br>!<br>no service password-encryption<br>!<br>log record-priority<br>!<br>interface lo<br>!<br>interface tmm<br>!<br>interface Internal<br>!<br>interface External<br>!<br>router bgp 255<br>bgp log-neighbor-changes<br>bgp graceful-restart restart-time 120<br>redistribute kernel<br>redistribute connected<br>neighbor 10.2.115.170 remote-as 255<br>neighbor 10.2.115.172 remote-as 365<br>no neighbor 10.2.115.172 capability graceful-restart<br>neighbor 10.2.115.172 route-map TO_localhost3 out<br>!<br>ip prefix-list prefix_example seq 10 permit 10.2.115.162/32<br>!<br>route-map TO_localhost3 permit 10<br>match ip address prefix-list prefix_example<br>!<br>route-map TO_localhost3 deny 200<br>!<br>line con 0<br>login<br>line vty 0 39<br>login<br>!<br>end<br> <br></code></p>
+<p><br>Both virtual-addresses are configured with route-advertisement selective or RHI.</p>
+<p><code>[root@localhost2:Active:In Sync] config # tmsh list ltm virtual-address 10.2.115.16[23] route-advertisement<br>ltm virtual-address 10.2.115.162 {<br>    route-advertisement selective<br>  }<br>ltm virtual-address 10.2.115.163 {<br>    route-advertisement selective<br>  }</code><br><br>The Virtual Server host addresses will be in localhost2&#39;s BGP table (BGP RIB), and with RHI, Virtual Server addresses are kernel injected routes  (redistribute kernel) by the localhost2 tmrouted process into the show ip route table.</p>
+<p><code>localhost2[0]#show ip bgp<br>BGP table version is 1, local router ID is 10.79.111.98<br>Status codes: s suppressed, d damped, h history, * valid, &gt; best, i - internal, l - labeled<br>              S Stale<br>Origin codes: i - IGP, e - EGP, ? - incomplete<br>   Network          Next Hop            Metric     LocPrf     Weight Path<br>*&gt; 10.2.115.162/32  0.0.0.0                                    32768 ?<br>*&gt; 10.2.115.163/32  0.0.0.0                                    32768 ?<br><br>localhost2[0]#show ip route kernel<br>K       10.2.115.162/32 [0/0] is directly connected, tmm<br>K       10.2.115.163/32 [0/0] is directly connected, tmm<br></code></p>
+<p><br>Virtual Server host addresses 10.2.115.162/32 and 10.2.115.163/32 are not being advertised from localhost2 to eBGP neighbor localhost3. Despite the running-configuration showing that host address 10.2.115.162/32 is allowed to be advertised to localhost3.</p>
+<p><code># before<br>localhost2[0]#show ip bgp neighbors 10.2.115.172 advertised-routes<br>localhost2[0]#<br><br># no advertised routes from localhost2, so the 2 host addresses are not present in localhost3 BGP RIB and BGP route table<br>localhost3[0]#show ip bgp
+BGP table version is 18, local router ID is 10.79.111.99
+Status codes: s suppressed, d damped, h history, * valid, &gt; best, i - internal, l - labeled
+              S Stale
+Origin codes: i - IGP, e - EGP, ? - incomplete
+
+   Network          Next Hop            Metric     LocPrf     Weight Path
+*&gt; 10.2.115.180/32  0.0.0.0                                    32768 ?<br><br>localhost3[0]#show ip route bgp<br>B 10.10.1.0/24 [20/0] via 10.2.115.169, Internal, 00:05:56<br>B 10.10.10.0/24 [20/0] via 10.2.115.169, Internal, 00:13:57<br>B 10.10.30.0/24 [20/0] via 10.2.115.169, Internal, 00:05:56<br>B 10.10.200.0/24 [20/0] via 10.2.115.169, Internal, 00:05:56</code></p>
+<p><br>After performing a BGP outbound soft reconfiguration on localhost2 to eBGP neighbor localhost3, 10.2.115.162/32 is now being advertised to localhost3. <br><br>Since Virtual Server host address 10.2.115.163/32 is not allowed in the prefix-list &quot;prefix_example&quot;, it is not advertised to localhost3, as expected.</p>
+<p><code># outbound soft reconfiguration <br>localhost2[0]#clear ip bgp 10.2.115.172 soft out<br>localhost2[0]#<br><br># after:  10.2.115.162/32 is now advertised to localhost3<br>localhost2[0]#show ip bgp neighbor 10.2.115.172 advertised-routes
+BGP table version is 6, local router ID is 10.79.111.98
+Status codes: s suppressed, d damped, h history, * valid, &gt; best, i - internal
+Origin codes: i - IGP, e - EGP, ? - incomplete
+
+   Network          Next Hop            Metric     LocPrf     Weight Path
+*&gt; 10.2.115.162/32  10.2.115.169                               32768 ?<br>Total number of prefixes 1<br></code></p>
+<p><br>Additionally, the host address 10.2.115.162/32 is in the BGP RIB and BGP routing table of eBGP neighbor localhost3. Host address 10.2.115.163/32 is not present in either table, as it was never advertised to localhost3.</p>
+<p><br><code># localhost3 BGP RIB or BGP table<br>localhost3[0]#show ip bgp
+BGP table version is 17, local router ID is 10.79.111.99
+Status codes: s suppressed, d damped, h history, * valid, &gt; best, i - internal, l - labeled
+              S Stale
+Origin codes: i - IGP, e - EGP, ? - incomplete
+
+   Network          Next Hop            Metric     LocPrf     Weight Path
+*&gt; 10.2.115.162/32  10.2.115.169             0                     0 255 ?<br>*&gt; 10.2.115.180/32  0.0.0.0                                    32768 ?<br><br># localhost3 BGP routing table<br>localhost3[0]#show ip route bgp<br>B 10.2.115.162/32 [20/0] via 10.2.115.169, Internal, 00:00:54<br>B 10.10.1.0/24 [20/0] via 10.2.115.169, Internal, 00:06:55<br>B 10.10.10.0/24 [20/0] via 10.2.115.169, Internal, 00:00:54<br>B 10.10.30.0/24 [20/0] via 10.2.115.169, Internal, 00:06:55<br>B 10.10.200.0/24 [20/0] via 10.2.115.169, Internal, 00:06:55<br></code></p>
+<h2>Additional Information</h2>
+<p>When verifying any BGP routing policy changes, allow some time for BGP update messages to reach neighbors and process the latest NLRI (Network Layer Reachability Information) in their respective BGP RIB (Routing Information Base, as observed in command show ip bgp), neighbor (show ip bgp summary or show ip bgp neighbors) and routing tables (show ip route bgp). </p>
+<p>As BGP operates at Layer 7, there can be a noticeable delay after the soft reconfiguration and when the Virtual Server address is actually being advertised to the eBGP neighbor. Convergence should happen in seconds, possibly longer, depending on the size of the configuration and network topology.</p>
+</article>
+</body>
+</html>

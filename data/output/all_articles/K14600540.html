@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K14600540: Increasing Tripo Storage</title>
+<meta name="description" content="Support Solution: Increasing Tripo Storage — Tripo storage stores Diameter session information needed for routing of stateful messages. This article describes the steps involve in increasing the maximum total entries allowed in the Tripo…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K14600540">
+</head>
+<body>
+<header>
+<h1>K14600540: Increasing Tripo Storage</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-03-30</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Traffix SDC: 5.2.X, 5.1.X, 5.2.0, 5.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K14600540">https://my.f5.com/manage/s/article/K14600540</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>Tripo storage stores Diameter session information needed for routing of stateful messages. This article describes the steps involve in increasing the maximum total entries allowed in the Tripo storage. Prior to using this article it is necessary to ensure there is sufficient RAM on all Tripo nodes.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Tripo</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>One of the most common purposes of increasing Tripo storage is expecting growth in future traffic.<br><br><span class="sectiontitle">Recommended Actions</span></p>
+
+<p><span class="note"><strong>The following steps serve as a general guide only and does not take into consideration any custom SDC setup. </strong></span> <span class="note"><strong>We strongly encourage customers to seek additional assistance through F5 Professional Services for the appropriate Tripo storage memory sizing.</strong></span><br> </p>
+
+<ol><li>Backup
+	<ol><li>Configuration files on each Tripo node</li></ol>
+	</li></ol>
+
+<ul style="margin-left: 40px;"><li>mkdir /tmp/TripoReconfiguration</li><li>cp /etc/fstab /tmp/TripoReconfiguration</li><li>cp /srv/traffix/.lastRev /tmp/TripoReconfiguration</li><li>cp /srv/traffix/.oamdb_pillar /tmp/TripoReconfiguration</li><li>cp /home/traffix/Tripo/sconf/installerTripoParams.scf /tmp/TripoReconfiguration</li><li>cp /home/traffix/Tripo/sconf/SLF_SysConf.scf /tmp/TripoReconfiguration</li></ul>
+
+<ol start="2" style="margin-left: 40px;"><li>Cassandra database data</li></ol>
+
+<ul style="margin-left: 40px;"><li>echo &quot;select * from topology.tripo;&quot; | /opt/cassandra/bin/cqlsh &lt;oamDB IP address&gt;</li><li>Copy and paste data related to tripo to file and store it in /tmp/TripoReconfiguration</li><li>vi /tmp/TripoReconfiguration/CassandraTripoEntries and save changes</li></ul>
+
+<ol start="2"><li>Expanding Tripo node instance one
+	<ol><li>Stop Tripo</li></ol>
+	</li></ol>
+
+<ul style="margin-left: 40px;"><li>monit stop &lt;Tripo process name&gt;</li></ul>
+
+<ol start="2" style="margin-left: 40px;"><li>Update /etc/fstab</li></ol>
+
+<ul style="margin-left: 40px;"><li>vi /etc/fstab</li><li>Change the size of /dev/shm as per calculation. (Calculation is not shown in this article.)</li><li>tmpfs      /dev/shm        tmpfs   defaults,size=<strong>2050m</strong>,noexec,nodev,nosuid        0       0</li><li>Save the fstab</li></ul>
+
+<ol start="3" style="margin-left: 40px;"><li>Remount tmpfs</li></ol>
+
+<ul style="margin-left: 40px;"><li>df -h</li><li>mount -o remount,size=2G /dev/shm</li><li>df -h</li></ul>
+
+<ol start="4" style="margin-left: 40px;"><li>Clean Tripo</li></ol>
+
+<ul style="margin-left: 40px;"><li>su traffix</li><li>cd ~/Tripo/env/linux-x86_64/</li><li>. DefEnv Tripo</li><li>cleansh</li></ul>
+
+<ol start="5" style="margin-left: 40px;"><li>Update Tripo maxSessions in Cassandra</li></ol>
+
+<div style="margin-left: 80px;">The UPDATE command needs to be executed on all row entries of the topology.tripo table using each row respective primary key of &quot;siteId&quot;, &quot;vmName&quot; and &quot;name&quot;.</div>
+
+<ul style="margin-left: 40px;"><li><span class="code">echo &quot;SELECT * FROM topology.tripo ;&quot; | /opt/cassandra/bin/cqlsh &lt;oamDB IP address&gt;</span></li><li><span class="code">echo &quot;UPDATE topology.tripo SET &quot;maxSessions&quot;=10000 WHERE &quot;siteId&quot;=&#39;&lt;sitename&gt;&#39; and &quot;vmName&quot;=&#39;server1a&#39; and &quot;name&quot;=&#39;TRIPO&#39;;&quot; | /opt/cassandra/bin/cqlsh &lt;oamDB IP address&gt;</span></li></ul>
+
+<ol start="6" style="margin-left: 40px;"><li>Update pillar and push changes using salt</li></ol>
+
+<ul style="margin-left: 40px;"><li>cd /srv/traffix/</li><li>ll -a</li><li>rm .lastRev  .oamdb_pillar</li><li>ll -a</li><li>/etc/init.d/salt-master restart</li><li>ll -a</li><li>less .oamdb_pillar</li><li>salt &#39;*&#39; state.highstate</li><li>diff /home/traffix/Tripo/sconf/installerTripoParams.scf /tmp/TripoReconfiguration/installerTripoParams.scf</li></ul>
+
+<ol start="7" style="margin-left: 40px;"><li>Reconfigure Tripo config file</li></ol>
+
+<ul style="margin-left: 40px;"><li>vi /home/traffix/Tripo/sconf/SLF_SysConf.scf</li><li>change</li><li>&lt;NumOfElementsInInst&gt;XXX&lt;/NumOfElementsInInst&gt;</li><li>&lt;NumSiteRepTableInst&gt;XXX&lt;/NumSiteRepTableInst&gt;</li></ul>
+
+<ol start="8" style="margin-left: 40px;"><li>Start Tripo</li></ol>
+
+<ul style="margin-left: 40px;"><li>monit start &lt;Tripo process name&gt;</li></ul>
+
+<ol start="9" style="margin-left: 40px;"><li>Repeat 2.1 to 2.8 on Tripo instance two after resized Tripo instance one has fully synced from other Tripo mate.</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

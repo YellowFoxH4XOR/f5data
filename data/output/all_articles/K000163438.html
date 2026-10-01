@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163438: Traffic Interruption During F5 WAF for NGINX Policy-Bundle Swaps</title>
+<meta name="description" content="Support Solution: Traffic Interruption During F5 WAF for NGINX Policy-Bundle Swaps — In some cases, curl exit code 7 — Couldn&#x27;t connect to server">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163438">
+</head>
+<body>
+<header>
+<h1>K000163438: Traffic Interruption During F5 WAF for NGINX Policy-Bundle Swaps</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-09-28</dd>
+<dt>Updated</dt><dd>2026-09-28</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>F5 WAF for NGINX: 5.14.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163438">https://my.f5.com/manage/s/article/K000163438</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Changing the active WAF policy bundle during continuous traffic can trigger an NGINX reload and WAF plugin reconnection. In-flight requests may be interrupted and return:</p>
+<ul><li>HTTP status <span style="font-family: &#39;courier new&#39;, courier, monospace;">000</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">curl</span> exit code <span style="font-family: &#39;courier new&#39;, courier, monospace;">52</span> — <span style="font-family: &#39;courier new&#39;, courier, monospace;">Empty reply from server</span></li><li>In some cases, <span style="font-family: &#39;courier new&#39;, courier, monospace;">curl</span> exit code <span style="font-family: &#39;courier new&#39;, courier, monospace;">7</span> — <span style="font-family: &#39;courier new&#39;, courier, monospace;">Couldn&#39;t connect to server</span></li></ul>
+<p>Relevant log messages may include:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">signal 1 (SIGHUP) received ... reconfiguring</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">APP_PROTECT ... &quot;event&quot;: &quot;configuration_load_start&quot;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">APP_PROTECT ... compilation status: successful</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">&quot;GET / HTTP/1.1&quot; 000 0</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">&quot;GET / HTTP/1.1&quot; 200 22</span></p>
+<h2>Environment</h2>
+<ul><li>F5 WAF for NGINX</li><li>NGINX Ingress Controller</li><li>Continuous HTTP traffic to a WAF-protected backend</li><li>Active policy changed through <span style="font-family: &#39;courier new&#39;, courier, monospace;">spec.waf.apBundle</span></li><li>Target policy bundle already present on the filesystem</li></ul>
+<h2>Cause</h2>
+<p>This behavior is associated with bug <a href="https://cdn.f5.com/product/bugtracker/WAFMC-15390.html" target="_blank">Bug ID WAFMC-15390</a>.</p>
+<p>During a policy-bundle swap and NGINX reload, the WAF enforcer can interrupt an in-flight transaction while workers reconnect to the WAF plugin. With the default enforcer action of <span style="font-family: &#39;courier new&#39;, courier, monospace;">drop</span>, the affected transaction can be dropped, resulting in an empty response and HTTP status <span style="font-family: &#39;courier new&#39;, courier, monospace;">000</span>.</p>
+<p>The behavior can depend on the policy-bundle content. The specific policy element responsible may not be isolated, and regenerating the policy bundle may prevent reproduction.</p>
+<h2>Recommended Actions</h2>
+<p>Install a F5 WAF for NGINX release containing the fix for <a href="https://cdn.f5.com/product/bugtracker/WAFMC-15390.html" target="_blank">Bug ID WAFMC-15390</a>.</p>
+<p>The fix requires the enforcer action to be set to <span style="font-family: &#39;courier new&#39;, courier, monospace;">pass</span> in the NGINX <span style="font-family: &#39;courier new&#39;, courier, monospace;">http</span> context:</p>
+<p><code>http {<br> app_protect_enforcer_drop_action pass;<br>}</code></p>
+<p>When using NGINX Ingress Controller, configure the directive through the HTTP snippets configuration:</p>
+<p><code>http-snippets: |<br> app_protect_enforcer_drop_action pass;<br></code></p>
+<p>Validate the resulting NGINX configuration and reload the deployment according to the normal NGINX Ingress Controller operating procedure.</p>
+<h2>Additional Information</h2>
+<ul><li>Generate and validate a fresh policy bundle before switching the active bundle.</li><li>Avoid reusing a policy bundle that reproduces the interruption.</li><li>If the issue persists, compare the reproducing and non-reproducing policy configurations and their generation metadata.</li><li>Retain the default <span style="font-family: &#39;courier new&#39;, courier, monospace;">drop</span> behavior when strict WAF enforcement is required, and investigate the policy configuration instead of enabling <span style="font-family: &#39;courier new&#39;, courier, monospace;">pass</span>.</li></ul>
+<p>The <span style="font-family: &#39;courier new&#39;, courier, monospace;">pass</span> setting is fail-open behavior. If an in-flight transaction is interrupted during a policy reload or WAF plugin reconnection, the transaction is released to the client instead of the connection being dropped. The affected transaction may therefore reach the client without completing WAF enforcement.</p>
+<p>The default <span style="font-family: &#39;courier new&#39;, courier, monospace;">drop</span> behavior prioritizes WAF enforcement but can produce empty replies during this transition.</p>
+<p>A policy-bundle swap can trigger an NGINX <span style="font-family: &#39;courier new&#39;, courier, monospace;">SIGHUP</span>, WAF configuration compilation, worker reconfiguration, and WAF plugin reconnection even when the bundle already exists on the filesystem.</p>
+</article>
+</body>
+</html>

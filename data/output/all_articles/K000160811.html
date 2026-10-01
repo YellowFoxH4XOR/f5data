@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160811: F5 Distributed Cloud - How to restrict TLS decryption and traffic proxying to specific Regional Edge locations using Virtual Sites</title>
+<meta name="description" content="Support Solution: F5 Distributed Cloud - How to restrict TLS decryption and traffic proxying to specific Regional Edge locations using Virtual Sites — When deploying application delivery and security services on F5 Distributed Cloud, TLS termination and traffic proxying occur by default across all Regional Edges (RE) globally. Organizations with…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160811">
+</head>
+<body>
+<header>
+<h1>K000160811: F5 Distributed Cloud - How to restrict TLS decryption and traffic proxying to specific Regional Edge locations using Virtual Sites</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-04-15</dd>
+<dt>Updated</dt><dd>2026-04-15</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Distributed Cloud Services</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160811">https://my.f5.com/manage/s/article/K000160811</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When deploying application delivery and security services on F5 Distributed Cloud, TLS termination and traffic proxying occur by default across all Regional Edges (RE) globally. Organizations with regulatory or compliance requirements around encryption key storage and inspection points may need to restrict which Regional Edge locations are permitted to decrypt traffic and proxy application flows.</p>
+<ul><li>How can TLS decryption be restricted to specific Regional Edge locations in F5 Distributed Cloud?</li><li>How can Virtual Sites be used to control which Regional Edges process traffic for a specific application?</li><li>How does F5 Distributed Cloud route traffic to a specific Regional Edge when a custom Virtual Site is configured?</li><li>What are the prerequisites for configuring a custom Regional Edge decryption topology using Virtual Sites?</li><li>How can I verify that traffic is being decrypted only at the intended Regional Edge locations?</li></ul>
+<h2>Environment</h2>
+<ul><li>F5 Distributed Cloud (SaaS)</li><li>Regional Edge (RE) data plane</li><li>HTTP or HTTPS Load Balancer objects</li><li>VIP Advertisement configured on Load Balancer objects</li><li>Organization has compliance or regulatory requirements restricting where TLS decryption and key storage may occur (e.g., specific countries or continents)</li><li>Additional Tenant IP or BYO-IP (/24 or larger) available in the tenant as a prerequisite</li><li>Virtual Sites configured for Regional Edge grouping</li><li>F5 Global Backbone (Application Delivery Network - ADN) used for inter-RE traffic routing</li></ul>
+<h2>Cause</h2>
+<p>By default, F5 Distributed Cloud advertises a shared public IP address across all Regional Edges globally using Anycast routing. This means any Regional Edge can terminate TLS and proxy traffic for services attached to the tenant&#39;s default IP. When regulatory or compliance requirements mandate that encryption key storage and TLS inspection occur only within specific geographic boundaries, the default global topology does not satisfy those constraints.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>Use <strong>Virtual Sites</strong> combined with <strong>additional public IP addresses</strong> to build a custom Regional Edge topology that restricts TLS decryption and proxying to specific Regional Edge locations. The following steps walk through the full configuration.</p>
+<p><strong>Prerequisites</strong></p>
+<ul><li>One additional public IP address per custom topology must be available within the tenant. Additional IPs can be sourced from F5 Distributed Cloud IP blocks or by bringing your own IP space (BYO-IP). BYO-IP requires a minimum prefix size of /24 due to internet advertisement standards.</li></ul>
+<p><strong>Step 1: Create a Virtual Site</strong></p>
+<ol><li>From the home screen, navigate to <strong>Select Service → Shared Configuration → Manage → Virtual Sites</strong>.</li><li>Click <strong>Add Virtual Site</strong> and provide a name and description.</li><li>Set <strong>Site Type</strong> to <strong>RE</strong> (Regional Edge).</li><li>Under <strong>Site Selector Expression</strong>, use the pre-defined RE labels to select the desired Regional Edge locations (e.g., London and Paris for an EU Virtual Site).
+<ul><li>To find RE labels, navigate to <strong>Multi-Cloud Network Connect → Overview → Sites</strong>, filter by <strong>Site Type: REGIONAL_EDGE</strong>, and expand the site JSON to locate the <strong>labels</strong> section.</li></ul>
+</li><li><strong>Important:</strong> Always include more than one Regional Edge in a Virtual Site. A single-location Virtual Site will cause an outage during F5&#39;s regular maintenance windows (every 4–8 weeks).</li></ol>
+<p><strong>Step 2: Associate the Additional Public IP Address with the Virtual Site</strong></p>
+<ol><li>Navigate to <strong>Select Service → Shared Configuration → Manage → Public IP Addresses</strong>.</li><li>Locate the additional IP address to be used for this topology. Click the three dots under <strong>Actions</strong> and select <strong>Manage Configuration</strong>.</li><li>In the top right corner, click <strong>Edit Configuration</strong>.</li><li>Under the <strong>Virtual Site</strong> field, select the Virtual Site created in Step 1.</li><li>Save the configuration.</li></ol>
+<p>Once the Virtual Site is attached to the IP address, that IP will be advertised into the F5 Global Backbone as a <strong>/32</strong>. Internet traffic will still route to the nearest Regional Edge via the /24 Anycast advertisement, but once it enters the F5 Global Backbone, the more specific /32 route directs traffic to the Regional Edges defined in the Virtual Site.</p>
+<p><strong>Step 3: Update VIP Advertisement on the Load Balancer</strong></p>
+<ol><li>Navigate to <strong>Select Service → Load Balancers → Manage → Load Balancers → HTTP Load Balancers</strong>.</li><li>Create a new HTTP Load Balancer or edit an existing one.</li><li>Navigate to <strong>Other Settings</strong> and change the <strong>VIP Advertisement</strong> setting to <strong>Internet (Specified VIP)</strong>.</li><li>Select the public IP address updated in Step 2.</li><li>Save the Load Balancer configuration.</li></ol>
+<p><strong>Note:</strong> Because the Virtual Site and public IP address are configured within the shared namespace, this configuration can be applied to Load Balancers in any namespace within the tenant.</p>
+<p><strong>Verification</strong></p>
+<ol><li>Confirm that DNS has been updated so the FQDN(s) associated with the Load Balancer resolve to the new public IP address. Verify using <code>nslookup</code> or <code>dig</code> from a local machine.</li><li>Navigate to <strong>Select Service → Load Balancers → Virtual Host → Load Balancer → Performance Monitoring → Requests</strong>.</li><li>Locate a request and confirm that the Regional Edge listed for L5–L7 services (TLS termination, proxying, load balancing) corresponds to one of the locations defined in the Virtual Site, regardless of where the client is geographically located.</li><li>Click on the <strong>JSON</strong> tab of the request for detailed attributes, including the Regional Edge that processed the traffic.</li></ol>
+<h2>Additional Information</h2>
+<p>F5 Distributed Cloud&#39;s Regional Edges are connected to two networks by default: the <strong>public internet</strong> and the <strong>F5 Global Backbone</strong> (also referred to as the Application Delivery Network, or ADN). The ADN is a multi-terabit, low-latency physical network with a software-defined distributed overlay. It provides interconnectivity between Regional Edges, Customer Edges, customer data centers, and cloud environments.</p>
+<p>F5 is one of the most peered global networks in the world, with nearly 5,000 IPv4 and 4,000 IPv6 BGP adjacencies. This extensive peering underpins the Anycast route advertisement that routes clients to the nearest Regional Edge. Internet standards require organizations advertising network prefixes to use a /24 or larger, which is why BYO-IP requires a minimum of /24.</p>
+<p>When a custom Virtual Site is applied to an additional public IP:</p>
+<ul><li>The /24 prefix continues to be advertised globally from all Regional Edges, so clients always reach the nearest RE via standard internet routing.</li><li>The specific IP associated with the Virtual Site is advertised as a /32 within the F5 Global Backbone only.</li><li>Once client traffic enters the F5 Global Backbone at the nearest RE, the more specific /32 route directs that traffic internally to the nearest RE included in the Virtual Site, where TLS termination and proxying occur.</li></ul>
+<p>This architecture allows F5 Distributed Cloud to ingest traffic globally while ensuring that sensitive operations such as TLS decryption and key usage are confined to approved Regional Edge locations — satisfying regulatory requirements around data sovereignty, encryption inspection points, and key storage geography.</p>
+<p>Multiple custom Virtual Site topologies can coexist within a single tenant. Different applications can be assigned to different Virtual Sites based on their individual compliance requirements. Some applications may continue to use the default global topology while others are restricted to specific regions.</p>
+</article>
+</body>
+</html>

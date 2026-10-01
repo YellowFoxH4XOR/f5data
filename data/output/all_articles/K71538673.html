@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K71538673: BIG-IQ Fails to Assign License to BIG-IP that had a License Revoked</title>
+<meta name="description" content="Support Solution: BIG-IQ Fails to Assign License to BIG-IP that had a License Revoked — When licensing a BIG-IP that had a license revoked or expired earlier, BIG-IQ tries to assign the license, but it fails after a minute. License Status shows &quot;Installation Failed&quot;.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K71538673">
+</head>
+<body>
+<header>
+<h1>K71538673: BIG-IQ Fails to Assign License to BIG-IP that had a License Revoked</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-04-27</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IQ</li><li>BIG-IQ Centralized Management: 6.X.X, 5.X.X, 7.X.X, 8.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K71538673">https://my.f5.com/manage/s/article/K71538673</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>When licensing a BIG-IP that had a license revoked or expired earlier, BIG-IQ tries to assign the license, but it fails after a minute. License Status shows &quot;Installation Failed&quot;.</p>
+
+<p>/var/log/ltm on BIG-IP contains log messages similar to this when a license is revoked.</p>
+
+<p><span class="example2">err mcpd[6504]: 01070356:3: vlan failsafe feature not licensed.<br>err tmsh[9129]: 01420006:3: Loading configuration process failed.<br>emerg load_config_files: &quot;/usr/bin/tmsh -n -g load sys config partitions all base &quot; - failed. -- 01070356:3: vlan failsafe feature not licensed. Unexpected Error: Loading configuration process failed.<br>err mcpd[6504]: 01070422:3: Base configuration load failed.</span></p>
+
+<p>MCP state on BIG-IP shows &quot;base-config-load-failed&quot; as follows.</p>
+
+<p><span class="example2"># tmsh show sys mcp-state<br>-------------------------------------------------------<br>Sys::mcpd State:<br>-------------------------------------------------------<br>Running Phase                   platform<br>Last Configuration Load Status  base-config-load-failed</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP had a valid license earlier and the license has been revoked</li><li>BIG-IP is configured with a configuration objects that requires a specific license (e.x. VLAN failsafe)</li><li>BIG-IP is running TMOS version prior to v13.1 (the issue is fixed on v13.1 and later)</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>After a license is revoked on BIG-IP, it tries to reload the configuration.</p>
+
+<p>However, the config load fails on BIG-IP because it finds a configuration object in configuration files that requires a specific license.</p>
+
+<p>This is a known limitation of BIG-IP versions prior to v13.1.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>A possible workaround is to use the iControl REST API to assign a license to an unreachable device.</p>
+
+<p>Following procedure describes how to create a license file on BIG-IQ and manually transfer the license file to the BIG-IP device.</p>
+
+<ol><li>Get the name of the license pool in the BIG-IQ (use appropriate path depending on the type of license pool)</li></ol>
+
+<p style="margin-left: 40px;"><span class="code">[BIG-IQ] # restcurl -u admin:password /mgmt/cm/device/licensing/pool/purchased-pool/licenses/ | jq -r &#39;.items[0].name&#39;<br>[BIG-IQ] # restcurl -u admin:password /mgmt/cm/device/licensing/pool/regkey/licenses/ | jq -r &#39;.items[0].name&#39;<br>[BIG-IQ] # restcurl -u admin:password /mgmt/cm/device/licensing/pool/utility/licenses/ | jq -r &#39;.items[0].name&#39;</span></p>
+
+<p style="margin-left: 40px;"><span class="example2">&lt;sample output&gt;<br>reg-key-pool</span></p>
+
+<ol start="2"><li>
+	<p>Get the MAC address of the BIG-IP</p>
+	</li></ol>
+
+<p style="margin-left: 40px;"><span class="code">[BIG-IP] # tmsh show sys hardware field-fmt |grep base-mac</span><br><span class="example2">&lt;sample output&gt;<br>    base-mac xx:xx:xx:xx:xx:xx</span></p>
+
+<ol start="3"><li>
+	<p>Get the management-ip of the BIG-IP</p>
+	</li></ol>
+
+<p style="margin-left: 40px;"><span class="code">[BIG-IP] # tmsh list sys management-ip</span><br><span class="example2">&lt;sample output&gt;<br>sys management-ip yy.yy.yy.yy/zz { }</span></p>
+
+<ol start="4"><li>
+	<p>Create/assign an &quot;UNREACHABLE&quot; type license on the BIG-IQ using info found in; create a variable &quot;taskid&quot; with a value of &quot;id&quot;</p>
+	</li></ol>
+
+<p style="margin-left: 40px;"><span class="code">[BIG-IQ] # taskid=$(restcurl -u admin:password /mgmt/cm/device/tasks/licensing/pool/member-management -d &#39;{&quot;licensePoolName&quot;:  &quot;reg-key-pool&quot; , &quot;command&quot;: &quot;assign&quot;, &quot;address&quot; : &quot;yy.yy.yy.yy&quot; , &quot;macAddress&quot; : &quot;XX:XX:XX:XX:XX:XX&quot; , &quot;hypervisor&quot;: &quot;vmware&quot; , &quot;assignmentType&quot;: &quot;UNREACHABLE&quot;}&#39; | jq -r &#39;.id&#39;)</span></p>
+
+<ol start="5"><li>
+	<p>Get the license text into a file</p>
+	</li></ol>
+
+<p style="margin-left: 40px;"><span class="code">[BIG-IQ] # restcurl -u admin:password /mgmt/cm/device/tasks/licensing/pool/member-management/${taskid} | jq -r &quot;.licenseText&quot; &gt; bigip.license.out</span></p>
+
+<ol start="6"><li>
+	<p>Check the license file</p>
+	</li></ol>
+
+<p style="margin-left: 40px;"><span class="code">[BIG-IQ] # less bigip.license.out</span></p>
+
+<ol start="7"><li>
+	<p>Copy the file to BIG-IP</p>
+	</li></ol>
+
+<p style="margin-left: 40px;"><span class="code">[BIG-IQ] # scp bigip.license.out root@yy.yy.yy.yy:/config/bigip.license</span></p>
+
+<ol start="8"><li>
+	<p>Reboot BIG-IP so that all daemons are aware of the new license</p>
+	</li></ol>
+
+<p style="margin-left: 40px;"><span class="code">[BIG-IP] # shutdown -r now</span></p>
+
+<p>Once BIG-IP boots up, it should be able to load config with a valid license.</p>
+
+<p>BIG-IP will function as expected, but it will leave BIG-IQ managing the BIG-IP license with &quot;Device Type: Unreachable&quot;.</p>
+
+<p>This means BIG-IQ is not connected to the specific BIG-IP device and some features like Change License and Refresh are not available to use.</p>
+
+<p>If changing &quot;Device Type&quot; from &quot;Unreachable&quot; to &quot;Unmanaged&quot; is required, complete the rest of steps.</p>
+
+<ol start="9"><li>
+	<p>Revoke the license from the same BIG-IP that is &quot;Device Type: Unreachable&quot; via GUI (it will not erase license file on BIG-IP)</p>
+	</li><li>Assign an appropriate license again via GUI</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p><span class="ask-article-image">None</span></p>
+</article>
+</body>
+</html>

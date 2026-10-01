@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K31450752: Big-IQ shows no devices after volume resize</title>
+<meta name="description" content="Support Solution: Big-IQ shows no devices after volume resize — After resizing he BIG-IQ CM and DCD the CM does not show the existing BIG-IP devices, instead showing &#x27;There are no items to show in this view.&#x27;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K31450752">
+</head>
+<body>
+<header>
+<h1>K31450752: Big-IQ shows no devices after volume resize</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-11-06</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K31450752">https://my.f5.com/manage/s/article/K31450752</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>After resizing he BIG-IQ CM and DCD the CM does not show the existing BIG-IP devices, instead showing &#39;There are no items to show in this view.&#39;<br>On trying to re-add a device the administrator sees a message saying that the device is already trusted</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IQ</li><li>Managed BIG-IP devices</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br>Trust has failed between the BIG-IQ and the managed BIG-IP.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ol><li>Find the <strong>f5-rest-device-id</strong> of the BIG-IP<br>	SSH to the BIG-IP, navigate to /config, use &#39;cat f5-rest-device-id&#39; to see the ID number for that BIG-IP</li><li>
+	<p>Set variables in the local environment required to run the command:</p>
+
+	<p>IP=&lt;IP_TARGET_BIGIQ&gt;<br>	USERNAME=&lt;USER_NAME&gt;<br>	PASSWORD=&lt;PASSWORD&gt;</p>
+
+	<p>Example:</p>
+
+	<p><span class="example2">IP=192.0.2.50<br>	USERNAME=admin<br>	PASSWORD=ExAmP1EpAsSwOrD</span></p>
+	</li><li>
+	<p>Get auth token and save in a variable:<br>	<strong><span class="note">N</span></strong><span class="note">ote: The token expires after 5 minutes.</span></p>
+
+	<p><span class="example2">TOKEN=$(curl -sk -H &quot;Content-Type: application/json&quot; https://${IP}/mgmt/shared/authn/login -X POST -d &#39;{&quot;username&quot;: &quot;&#39;$USERNAME&#39;&quot;,&quot;password&quot;:&quot;&#39;$PASSWORD&#39;&quot;,&quot;loginProviderName&quot;: &quot;tmos&quot;}&#39; | jq &#39;.token.token&#39; | tr -d &#39;&quot;&#39;)</span></p>
+	</li><li>
+	<p>Find the UUID from step #1 and save it in a variable:</p>
+
+	<p>UUID=&lt;uuid&gt;</p>
+
+	<p>Example:</p>
+
+	<p><span class="example2">UUID=caf1981c-db31-4e66-bb11-e8cb7b005fbb</span></p>
+	</li><li>
+	<p>Save POST data to a variable that will be used to make the request to remove all Services:</p>
+
+	<p><span class="example2">POST_BODY=$( echo &#39;{&quot;moduleList&quot;:[{&quot;module&quot;:&quot;adc_core&quot;},{&quot;module&quot;:&quot;access&quot;},{&quot;module&quot;:&quot;asm&quot;},{&quot;module&quot;:&quot;fps&quot;},{&quot;module&quot;:&quot;firewall&quot;},{&quot;module&quot;:&quot;security_shared&quot;},{&quot;module&quot;:&quot;dns&quot;}],&quot;deviceReference&quot;:{&quot;link&quot;:&quot;https://localhost/mgmt/cm/system/machineid-resolver/&#39;$UUID&#39;&quot;},&quot;createChildTasks&quot;:true,&quot;name&quot;:&quot;remove_all_services_&#39;${UUID}&#39;&quot;}&#39;)</span></p>
+	</li><li>
+	<p>Make a request to remove all Services for the device:</p>
+
+	<p><span class="example2">curl -sk -H &quot;Content-Type: application/json&quot; -H &quot;X-F5-Auth-Token: ${TOKEN}&quot; https://${IP}/mgmt/cm/global/tasks/device-remove-mgmt-authority -X POST -d $POST_BODY | jq .</span></p>
+	</li><li>
+	<p>Save POST data to a variable that will be used to make the request to remove the device:</p>
+
+	<p><span class="example2">POST_BODY=$(echo &#39;{&quot;deviceReference&quot;:{&quot;link&quot;:&quot;https://localhost/mgmt/cm/system/machineid-resolver/&#39;$UUID&#39;&quot;},&quot;name&quot;:&quot;device-remove-&#39;${UUID}&#39;&quot;}&#39;)</span></p>
+	</li><li>
+	<p>Make POST request to remove the device:</p>
+
+	<p><span class="example2">curl -sk -H &quot;Content-Type: application/json&quot; -H &quot;X-F5-Auth-Token: ${TOKEN}&quot; https://${IP}/mgmt/cm/global/tasks/device-remove-trust -X POST -d $POST_BODY | jq .</span></p>
+	</li><li>
+	<p>Re-discover the BIG-IP device and import the configuration as needed<br>	 </p>
+	</li></ol>
+</article>
+</body>
+</html>

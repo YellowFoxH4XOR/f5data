@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162934: NGINX Ingress Controller Reload Failure Due to Invalid Proxy Buffer Configuration</title>
+<meta name="description" content="Support Solution: NGINX Ingress Controller Reload Failure Due to Invalid Proxy Buffer Configuration — NGINX Ingress Controller rejects a configuration reload when the effective proxy_busy_buffers_size is greater than or equal to the total size of proxy_buffers minus one buffer.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162934">
+</head>
+<body>
+<header>
+<h1>K000162934: NGINX Ingress Controller Reload Failure Due to Invalid Proxy Buffer Configuration</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-14</dd>
+<dt>Updated</dt><dd>2026-08-14</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Ingress Controller: 5.3.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162934">https://my.f5.com/manage/s/article/K000162934</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>NGINX Ingress Controller rejects a configuration reload when the effective <span style="background-color: #f1f1f1;">proxy_busy_buffers_size</span> is greater than or equal to the total size of <span style="background-color: #f1f1f1;">proxy_buffers</span> minus one buffer.</p>
+<p>The error is:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">&quot;proxy_busy_buffers_size&quot; must be less than the size of all &quot;proxy_buffers&quot; minus one buffer</span></p>
+<p>A failed reload can prevent updated Kubernetes resources from being applied and may cause applications behind the ingress controller to become unavailable.</p>
+<h2>Environment</h2>
+<ul><li>NGINX Ingress Controller</li><li>Kubernetes cluster</li><li>NGINX Ingress Controller ConfigMap</li><li>Proxy buffer settings:
+<ul><li><span style="background-color: #f1f1f1;">proxy-buffering: &quot;on&quot;</span></li><li><span style="background-color: #f1f1f1;">proxy-buffer-size: &quot;2m&quot;</span></li><li><span style="background-color: #f1f1f1;">proxy-buffers: &quot;32 \&quot;2m\&quot;&quot;</span></li></ul>
+</li></ul>
+<p>For <span style="background-color: #f1f1f1;">proxy-buffers: 32 &quot;2m&quot;</span>:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Total buffer capacity = 32 × 2 MB = 64 MB</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">proxy_busy_buffers_size must be less than 62 MB</span></p>
+<p>The effective <span style="background-color: #f1f1f1;">proxy_busy_buffers_size</span> may be defined by a ConfigMap, annotation, generated configuration, or another NGINX configuration source.</p>
+<h2>Cause</h2>
+<p>The effective NGINX configuration contained a <span style="background-color: #f1f1f1;">proxy_busy_buffers_size</span> value that did not satisfy the required relationship with <span style="background-color: #f1f1f1;">proxy_buffers</span>. NGINX configuration validation therefore failed and the reload was rejected.</p>
+<p>The invalid value may originate from a configuration source that is not visible in a partial ConfigMap or resource definition.</p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li>Inspect the complete effective NGINX configuration from an ingress controller pod:<br><span style="background-color: #f1f1f1;">kubectl exec -n &lt;namespace&gt; &lt;nginx-ingress-pod-name&gt; -- nginx -T</span></li><li>Review the effective values for:
+<ul><li><span style="background-color: #f1f1f1;">proxy_buffers</span></li><li><span style="background-color: #f1f1f1;">proxy_buffer_size</span></li><li><span style="background-color: #f1f1f1;">proxy_busy_buffers_size</span></li></ul>
+</li><li>Confirm that this condition is met:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">proxy_busy_buffers_size &lt; total proxy_buffers size − one buffer</span></p>
+</li><li>For the following configuration:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">proxy_buffers 32 2m</span></p>
+configure:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">proxy_busy_buffers_size &lt; 62m</span></p>
+</li><li>Review all configuration sources that may define the directive, including:
+<ul><li>NGINX Ingress Controller ConfigMaps</li><li>VirtualServer and other Kubernetes resource annotations</li><li>HTTP or server snippets</li><li>Generated NGINX configuration</li></ul>
+</li><li>Correct the invalid <span style="background-color: #f1f1f1;">proxy-busy-buffers-size</span> value, or remove it if it is not required so that the default value can be used.</li><li>Validate the configuration:<br><span style="background-color: #f1f1f1;">nginx -t</span></li><li>Consider enabling the NGINX Ingress Controller <span style="background-color: #f1f1f1;">--enable-directive-autoadjust</span> feature. This feature can automatically correct common proxy buffer configuration issues by:
+<ul><li>Applying a default <span style="background-color: #f1f1f1;">proxy_buffers</span> value when none is specified</li><li>Reducing an excessive <span style="background-color: #f1f1f1;">proxy_busy_buffers_size</span></li><li>Restricting the number of proxy buffers to the supported range</li><li>Correcting empty or invalid buffer settings</li></ul>
+</li><li>Verify that the NGINX configuration reload completes successfully and that the affected Kubernetes resources show an applied configuration.</li></ol>
+<h2>Additional Information</h2>
+<ul><li><span style="background-color: #f1f1f1;">proxy_buffer_size</span> and <span style="background-color: #f1f1f1;">proxy_buffers</span> may be valid individually while the combined effective configuration remains invalid.</li><li>Restarting the ingress controller may temporarily restore service if a valid configuration is loaded during startup, but a restart does not correct the invalid configuration source.</li><li>Use the complete generated configuration when investigating reload failures because a partial configuration excerpt may not show the effective <span style="background-color: #f1f1f1;">proxy_busy_buffers_size</span>.</li><li>The <span style="background-color: #f1f1f1;">proxy_busy_buffers_size</span> value must be strictly less than the total size of all <span style="background-color: #f1f1f1;">proxy_buffers</span> minus one buffer.</li></ul>
+</article>
+</body>
+</html>

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K10232: The pvac process logs a warning message when the Expires header value pre-dates the current Unix epoch</title>
+<meta name="description" content="Known Issue: The pvac process logs a warning message when the Expires header value pre-dates the current Unix epoch — WA Debug: {...} Invalid Expires header received (&lt;Expires_date&gt;}, setting to {&lt;setting_to_date&gt;}">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K10232">
+</head>
+<body>
+<header>
+<h1>K10232: The pvac process logs a warning message when the Expires header value pre-dates the current Unix epoch</h1>
+<dl>
+<dt>Type</dt><dd>Known Issue</dd>
+<dt>Published</dt><dd>2011-03-09</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>BIG-IP WebAccelerator: 9.4.8, 9.4.7, 9.4.6, 10.0.0, 10.0.1, 9.4.5</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K10232">https://my.f5.com/manage/s/article/K10232</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Known Issue</h3><p>This is the result of a known issue. When the origin web server (OWS) sends a response that contains an <b>Expires</b> header whose value pre-dates the beginning of the current Unix epoch (00:00:00 UTC on January 1, 1970), the BIG-IP WebAccelerator logs a warning message in the <b>/var/log/wa/pvac.log </b>file that appears similar to the following example :</p>
+<p><span class="example2">WA Debug: {...} Invalid Expires header received (&lt;Expires_date&gt;}, setting to {&lt;setting_to_date&gt;}</span></p>
+<p><span class="note"><b>Note</b>: The value of <b>Expires_date</b> is the human readable date set by the webserver in the <b>Expires</b> header. The <b>setting_to_date </b>is the date inserted in its place by the BIG-IP WebAccelerator. The value of the <b>setting_to_date</b> is typically a date far in the future, and is expressed in seconds since the Unix epoch.</span></p>
+<p>For example, the BIG-IP WebAccelerator receives a response that includes the following header:<br> <br> <span class="example2">Expires: Wed, 31 Dec 1969 23:59:59 GMT</span></p>
+<p>The BIG-IP WebAccelerator will then log the following warning message:<br> <br> <span class="example2">WA Debug: {...} Invalid Expires header received {Wed, 31 Dec 1969 23:59:59 GMT}, setting to {3709631057}</span></p>
+<p><span class="note"><b>Note</b>: The <b>setting_to_date</b> value of 3709631057 seconds since the Unix epoch equates to Mon, 21 Jul 2087 13:04:17 GMT.</span></p>
+<p>Such logging with each response may add significant system overhead and consume excessive disk space.</p>
+<p>F5 Product Development tracked this issue as CR117836 and it was fixed in BIG-IP WebAccelerator 10.1.0. For information about upgrading, refer to the BIG-IP <a href="https://support.f5.com/kb/en-us/products/wa.html" target="_blank">WebAccelerator</a> release notes.</p>
+<p><span class="note"><b>Note</b>: For information about a related issue, refer to </span><a href="https://my.f5.com/manage/s/article/K8569" target="_blank">K8569: Expires HTTP headers with a non date value of 0 or -1 are logged as invalid</a><span class="note">.</span></p>
+<p><b>Workaround</b></p>
+<p>You can work around this issue by modifying the <b>Expires</b> date to be within the current Unix epoch. To do so, perform the following procedure depending on your software version:</p>
+<p><b>WebAccelerator 10.0.x</b></p>
+<ol><li>Log in to the command line.</li><li>Enter the following text at the command line:<br> <br> <span class="example2">bpsh &lt;&lt;END<br> syslog include &quot;<br> filter f_pvac {<br>     facility(kern) and match(\&quot;WA\&quot;) and not match(\&quot;Invalid Expires header\&quot;);<br> };&quot;<br> END </span></li><li>Press the <b>Enter</b> key.</li><li>To verify the syntax, enter the <b>bigpipe syslog include</b> command and compare with the output:<br> <br> <span class="example2">SYSLOG - Include Data:<br> filter f_pvac {<br>     facility(kern) and match(&quot;WA&quot;) and not match(&quot;Invalid Expires header&quot;);<br> </span><br> <b><span class="note">Note:</span></b><span class="note"> To revert the changes, enter the <b>bigpipe syslog include none</b> command.</span></li></ol>
+<p><b>WebAccelerator 9.4.x</b></p>
+<ol><li>Log in to the BIG-IP WebAccelerator command line.</li><li>Back up the original <b>profile_base.conf</b> file by typing the following command:<br> <br> <span class="code">cp /config/profile_base.conf /config/profile_base.conf.sol10232</span></li><li>Open the <b>/config/profile_base.conf</b> file in a text editor.</li><li>Locate the <b>_sys_WA_serverside</b> iRule, which begins approximately around line<b> 1490</b> with the following line:<br> <br> <span class="example2">rule _sys_WA_serverside {</span></li><li>Modify the HTTP_RESPONSE section of the iRule to match the following example:<br> <br> <span class="example2">rule _sys_WA_serverside {<br> ...<br> <b>  </b>when HTTP_RESPONSE {<br>       if { [HTTP::header value &quot;Expires&quot;] &lt;= &quot;0&quot; } {<br>         set exp_time [HTTP::header value &quot;Expires&quot;]<br>       } else {<br>         set exp_time [ clock scan &quot;[ HTTP::header value &quot;Expires&quot; ]&quot; ]<br>       }<br>        if {$exp_time &lt;= 0 } {<br>          set header_date &quot;Thu, 01 Jan 1970 00:00:01 GMT&quot;<br>          HTTP::header replace &quot;Expires&quot; $header_date<br>       }<br>       if {$tmm_wa_no_detach == 1} {<br>         # Don&#39;t detach or disable if NTLM authorization<br> }<br> }<br> ...</span></li><li>Exit and save the file</li><li>Load the new configuration by typing the following command:<br> <br> <span class="code">bigpipe load</span></li><li>Clear the cache and restart the <b>pvac</b> process by typing the following command:<br> <br> <span class="code">wa_clear_cache</span><br> <br> <span class="warning"><b>Important</b>: This operation will interrupt traffic flowing through the BIG-IP WebAccelerator for a few seconds.</span></li></ol>
+</article>
+</body>
+</html>

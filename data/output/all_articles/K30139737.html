@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K30139737: BIG-IP implementation of DPD (IKEv1) and Liveness (IKEv2) in IPsec</title>
+<meta name="description" content="Support Solution: BIG-IP implementation of DPD (IKEv1) and Liveness (IKEv2) in IPsec — Unexpected termination of Ipsec communication due to DPD/Liveness detection of network failure.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K30139737">
+</head>
+<body>
+<header>
+<h1>K30139737: BIG-IP implementation of DPD (IKEv1) and Liveness (IKEv2) in IPsec</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-05-04</dd>
+<dt>Updated</dt><dd>2025-04-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K30139737">https://my.f5.com/manage/s/article/K30139737</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>How BIG-IP implements DPD/Liveness</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP configured as IPsec end-point</li><li>IKEv1 (DPD) or IKEv2 (Liveness)</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Unexpected termination of Ipsec communication due to DPD/Liveness detection of network failure.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>None</p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>Details refer to DPD, equally you can use Liveness (IKEv2, <a href="https://www.rfc-editor.org/rfc/rfc5996" target="_blank">rfc 5996</a> ).<br><br>If an IPsec peer declares support for DPD (and all remotely recent implementations should support DPD, <a href="https://www.rfc-editor.org/rfc/rfc3706" target="_blank">rfc 3706</a> ) then it is only obliged to respond to incoming DPD requests. A peer can (if it wants) support DPD but not send DPD requests itself. Apart from responding to DPD requests, an IPsec installation can decide how it wants to implement DPD for checking liveliness of the remote peer.<br><br>BIG-IP supports DPD and it is not possible to disable that support.<br><br>The only configuration option is to configure dpd-delay under the ike-peer configuration. The default value is 30 (seconds).<br><br>If you configure dpd-delay of 0, then BIG-IP will not send any DPD requests and will only send DPD responses to incoming DPD requests from the remote peer. In this case, BIG-IP will not detect the loss of a remote peer and will not take any action based on DPD loss.<br><br>If you configure any other value (range 1 to 2147483647), then BIG-IP will send DPD at that configured interval. It will do this so long as it does not see a DPD request from the peer during that interval. ie: if the peer has a lower DPD interval, then BIG-IP will respond to the incoming DPDs and not send DPD itself.<br><br>The sending of DPDs by BIG-IP is not influenced by ingress ESP packets from the remote peer. ie: BIG-IP does not consider ingress ESP (data) packets to be proof of liveness of the remote peer.<br><br>For IKEv1: If a single DPD request from BIG-IP does not get a response from the remote peer, then it will retransmit the same request (with the same message_id (MID) number) every 4 seconds for 9 repeats: ie: after 4s, 8s, 12s, 16s, 20s, 24s, 28s, 32s &amp; 36s. If at the end of the sequence (ie: after 40s from sending the first DPD request with the MID) then the remote peer is considered as dead and all SAs (phase 2 and phase 1) are deleted for that peer.<br><br>For IKEv2: If a single DPD request from BIG-IP does not get a response from the remote peer, then it will retransmit the same request (with the same message_id (MID) number) using incremental backoff, ie: after 1s, 2s, 4s, 8s, 16s &amp; 32s. If at the end of the sequence (ie: after 63s from sending the first DPD request with the MID) then the remote peer is considered as dead and all SAs (phase 2 and phase 1) are deleted for that peer.<br><br>Here is some tcpdump (IKEv2) and log from a lab unit showing the process. Here the peer has a dpd-delay of 10s and BIG-IP has a dpd-delay of 30s.<br><br>DPD sent every 10s<br><br>14:05:39.992972 IP 172.16.200.14.isakmp &gt; 172.16.100.14.isakmp: isakmp: child_sa  inf2 in slot1/tmm0 lis=<br>14:05:39.995193 IP 172.16.100.14.isakmp &gt; 172.16.200.14.isakmp: isakmp: child_sa  inf2[IR] out slot1/tmm0 lis=<br>14:05:49.997943 IP 172.16.200.14.isakmp &gt; 172.16.100.14.isakmp: isakmp: child_sa  inf2 in slot1/tmm0 lis=<br>14:05:50.000432 IP 172.16.100.14.isakmp &gt; 172.16.200.14.isakmp: isakmp: child_sa  inf2[IR] out slot1/tmm0 lis=<br><br>Network broken here. Now a 30s delay until BIG-IP sends its own DPD request.<br><br>14:06:20.000190 IP 172.16.100.14.isakmp &gt; 172.16.200.14.isakmp: isakmp: child_sa  inf2[I] out slot1/tmm0 lis=<br><br>No response, so BIG_IP repeats sending the same request after 1s, 2s, 4s, 8s &amp; 16s.<br><br>14:06:21.000094 IP 172.16.100.14.isakmp &gt; 172.16.200.14.isakmp: isakmp: child_sa  inf2[I] out slot1/tmm0 lis=<br>14:06:22.999745 IP 172.16.100.14.isakmp &gt; 172.16.200.14.isakmp: isakmp: child_sa  inf2[I] out slot1/tmm0 lis=<br>14:06:27.000018 IP 172.16.100.14.isakmp &gt; 172.16.200.14.isakmp: isakmp: child_sa  inf2[I] out slot1/tmm0 lis=<br>14:06:34.999823 IP 172.16.100.14.isakmp &gt; 172.16.200.14.isakmp: isakmp: child_sa  inf2[I] out slot1/tmm0 lis=<br>14:06:51.000124 IP 172.16.100.14.isakmp &gt; 172.16.200.14.isakmp: isakmp: child_sa  inf2[I] out slot1/tmm0 lis=<br><br>32s after the last retransmission,  BIG-IP declares the remote peer as &quot;dead&quot;.<br><span style="color: #27ae60;"><em><strong>Note:</strong> BIG-IP does not send any IKE messages to the peer to delete either phase 1 or phase 2 SAs.</em></span><br><br>Apr 22 14:07:23 BIG-IP.localdomain info tmm[10457]: 017c0000  [0.0] [IKE] v2 172.16.100.14%0-172.16.200.14%0 [0x9b99716fb8463d65-0xab801b57c18788a5][I] [PROTO_ERR]: retransmission count exceeded the limit<br><br>If you configure dpd-delay to be default (30s) then BIG-IP will detect a failure (and take action) 93 seconds after the last valid isakmp message seen from remote peer. Lowering the dpd-delay to 10s would reduce the total time to 73s.<br><br>Note that other isakmp packets from the peer (rekey, delete SA) will reset the appropriate timer on BIG-IP. In the following tcpdump, BIG-IP has a dpd-delay of 10s, the peer has a longer delay. Between DPDs, there is a phase 2 rekey and the dpd-delay is reset to be 10s after the rekey.<br><br>15:15:32.350999 IP 172.16.100.14.isakmp &gt; 172.16.200.14.isakmp: isakmp: child_sa  inf2[I] out slot1/tmm0 lis=<br>15:15:32.353896 IP 172.16.200.14.isakmp &gt; 172.16.100.14.isakmp: isakmp: child_sa  inf2[R] in slot1/tmm0 lis=<br>15:15:42.355276 IP 172.16.100.14.isakmp &gt; 172.16.200.14.isakmp: isakmp: child_sa  inf2[I] out slot1/tmm0 lis=<br>15:15:42.357863 IP 172.16.200.14.isakmp &gt; 172.16.100.14.isakmp: isakmp: child_sa  inf2[R] in slot1/tmm0 lis=<br>15:15:44.300957 IP 172.16.200.14.isakmp &gt; 172.16.100.14.isakmp: isakmp: child_sa  child_sa in slot1/tmm0 lis=<br>15:15:44.305097 IP 172.16.100.14.isakmp &gt; 172.16.200.14.isakmp: isakmp: child_sa  child_sa[IR] out slot1/tmm0 lis=<br>15:15:54.302035 IP 172.16.100.14.isakmp &gt; 172.16.200.14.isakmp: isakmp: child_sa  inf2[I] out slot1/tmm0 lis=<br>15:15:54.304901 IP 172.16.200.14.isakmp &gt; 172.16.100.14.isakmp: isakmp: child_sa  inf2[R] in slot1/tmm0 lis=<br>15:16:04.306240 IP 172.16.100.14.isakmp &gt; 172.16.200.14.isakmp: isakmp: child_sa  inf2[I] out slot1/tmm0 lis=<br>15:16:04.308839 IP 172.16.200.14.isakmp &gt; 172.16.100.14.isakmp: isakmp: child_sa  inf2[R] in slot1/tmm0 lis=<br><br>As noted, dpd-delay is the only configuration option. Setting it too short doesn&#39;t really gain you much in terms of recovery time.</p>
+</article>
+</body>
+</html>

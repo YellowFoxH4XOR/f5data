@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K24677132: Pool members on standby intermittently flap status due to IP conflict with a BIG-IP self-IP</title>
+<meta name="description" content="Support Solution: Pool members on standby intermittently flap status due to IP conflict with a BIG-IP self-IP — Pool members on a standby BIG-IP may intermittently flap its monitor status up and down, if there is a SNAT pool IP address which is the same as a non-floating BIG-IP self-IP in the same…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K24677132">
+</head>
+<body>
+<header>
+<h1>K24677132: Pool members on standby intermittently flap status due to IP conflict with a BIG-IP self-IP</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-12-14</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.X.X, 11.5.1, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 11.5.0, 11.4.1, 11.4.0, 11.3.0, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 11.6.5, 13.X.X, 12.X.X, 11.X.X, 11.5.X, 11.4.X, 11.3.X, 11.2.X, 11.1.X, 11.0.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 11.6.X, 16.1.0, 16.0.1, 15.X.X, 14.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K24677132">https://my.f5.com/manage/s/article/K24677132</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br><br>Pool members on a standby BIG-IP may intermittently flap its monitor status up and down, if there is a SNAT pool IP address which is the same as a non-floating BIG-IP self-IP in the same traffic-group.<br><br><span class="subsectiontitle">Symptoms</span></p>
+
+<ul><li>ARP cache of another device/router/server on the same IP subnet shows standby&#39;s self IP is resolved to active unit&#39;s mac address</li><li>Traffic using the standby BIG-IP self-IP may intermittently fail.<br>	Example:<br>	ping requests sent from the standby BIG-IP to another device/router/server on the same IP subnet will generate responses that are sent to the active BIG-IP</li></ul>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IPs in an HA cluster</li><li>SNAT pool member shares an IP address with a non-floating BIG-IP self-IP</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br><br>When a SNAT pool member shares the same IP address as a non-floating BIG-IP self-IP, this creates an IP conflict on the VLAN because now both the SNAT pool IP is used for production traffic, and the standby non-floating BIG-IP self-IP is used for control-plane traffic such as monitors.<br><span class="note">Note: Having a SNAT pool member sharing a floating IP addresses does not cause an IP conflict, but the IP will share production traffic with control-plane traffic.</span><br><br>All SNAT pool IP addresses generate GARPs when a BIG-IP becomes active, this causes other devices on the same broadcast domain to learn that the self-IP address of the standby BIG-IP should go to the newly active BIG-IP. The devices will then subsequently learn the mac address of either BIG-IP, which causes intermittent production traffic failures and intermittent monitor failures on the standby unit.<br><br>This example shows the non-floating self-IP address 10.10.10.138 conflicts with a SNAT pool member:<br><br><span class="example2">ltm snatpool my_conflicting_snatpool {<br>    members {<br>        <strong>10.10.10.138</strong><br>        10.10.10.139<br>    }<br>}<br>net self <strong>10.10.10.138</strong> {<br>    address <strong>10.10.10.138</strong>/24<br>    traffic-group traffic-group-local-only<br>    vlan external<br>}</span><br> </p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+To resolve this issue, remove any non-floating self IP addresses from the SNAT pool.<br><br>To correct the misconfiguration, perform the following procedure:<br><strong><span class="impact">Impact: Performing the following procedure will disrupt existing production traffic using the conflicted IP addresses.</span></strong>
+
+<ol><li>On the active unit, log in to the BIG-IP via the configuration Utility</li><li>Browse to Local Traffic &gt; Address Translation &gt; SNAT Pool List</li><li>Click on the SNAT pool list in which the self IPs are configured</li><li>Remove SNAT pool member IP addresses that conflict with any non-floating BIG-IP self-IP</li><li>Update</li><li>Perform ConfigSync from active to standby</li><li>For each conflicted IP address removed in step 4, run the following command to delete active connections using them:<br>	<span class="code">tmsh delete sys conn ss-client-addr &lt;conflicting IP address&gt;</span><br>	Example:<br>	<span class="example2">tmsh delete sys conn ss-client-addr 10.10.10.138</span><br>	 </li><li>Clear the arp cache on any affected devices/routers/servers in the broadcast domain (including the active BIG-IP)<br>	<span class="code">arp -d &lt;conflicting IP address&gt;</span><br>	Example:<br>	<span class="example2">arp -d 10.10.10.138</span></li></ol>
+<br>If the above does not resolve the problem, then you may have to restart mcpd/tmm on both systems using the following procedure:<br><strong><span class="impact">Impact: Performing the following procedure will disrupt existing production traffic.</span></strong>
+
+<ol><li>Perform the procedure outlined in <a href="https://my.f5.com/manage/s/article/K13030" target="_self">K13030: Forcing the mcpd process to reload the BIG-IP configuration</a> on the standby unit.</li><li>Repeat the procedure outlined in <a href="https://my.f5.com/manage/s/article/K13030" target="_self">K13030: Forcing the mcpd process to reload the BIG-IP configuration</a> on the active unit</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span><br>None.</p>
+</article>
+</body>
+</html>

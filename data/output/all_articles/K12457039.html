@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K12457039: Port Upgrade is not working for Service Entry with resolution NONE</title>
+<meta name="description" content="Support Solution: Port Upgrade is not working for Service Entry with resolution NONE — &gt; istioctl pc cluster nettools-797c4cc775-6lb6k.ns1 --fqdn &quot;outbound|4433||diameter-tcp-upgrade.all&quot;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K12457039">
+</head>
+<body>
+<header>
+<h1>K12457039: Port Upgrade is not working for Service Entry with resolution NONE</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-10-26</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K12457039">https://my.f5.com/manage/s/article/K12457039</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>When creating a Service Entry (SE) in a cluster, it allows the application pods in a mesh to talk to external clients. While doing so, there are 3 parameters for resolution that can be set: NONE, DNS, STATIC. Here is an example of one of the service entry:</p>
+
+<p><span class="example2">kubectl apply -n ns1 -f - &lt;&lt;EOF<br>apiVersion: networking.istio.io/v1alpha3<br>kind: ServiceEntry<br>metadata:<br>  name: nginx-se1<br>spec:<br>  hosts:<br>  - diameter-tcp-upgrade.all<br>  location: MESH_EXTERNAL<br>  ports:<br>  - number: 3868<br>    name: tcp-3868<br>    protocol: TCP<br>  - number: 4433<br>    name: tcp-5868<br>    protocol: TCP<br>  resolution: NONE<br>EOF</span></p>
+
+<p>Once the Service Entry is created, it is propagated to all the pods where SE is applied. When looking at one of the pods, you can see the clusters it created:</p>
+
+<p><span class="example2">&gt; istioctl pc cluster nettools-797c4cc775-6lb6k.ns1 --fqdn &quot;outbound|4433||diameter-tcp-upgrade.all&quot;<br>SERVICE FQDN                 PORT     SUBSET     DIRECTION     TYPE             DESTINATION RULE<br>diameter-tcp-upgrade.all     4433     -          outbound      ORIGINAL_DST     nginx-dr1.ns</span></p>
+
+<p>Port upgrade is used when you want envoy to route the traffic to another port based on virtual service. Here is an example which shows when traffic is received on one port but is forwarded to another:</p>
+
+<p><a href="https://istio.io/latest/docs/reference/config/networking/virtual-service/#TCPRoute" target="_self">Istio Documentation: Virtual Service - TCPRoute</a></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Aspen Mesh: 1.11.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Setting <strong>resolution: NONE</strong> on the ServiceEntry will create ORIGINAL_DST cluster type assigned to the listener on the specified port. This means that Envoy istio-sidecar proxy is a pass-through proxy. It does not modify the Destination IP (and port) sent by the application to open a TCP connection. In this scenario the Application is responsible for resolving the external IP address. this is just a passthrough/ORIGINAL_DST cluster which means that it does not rewrite the destination Port.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>To fix that you would have to use <strong>resolution: DNS</strong> or specify the Endpoints. In Endpoints you must specify the address (required field):</p>
+
+<p><a href="https://istio.io/latest/docs/reference/config/networking/workload-entry/#WorkloadEntry" target="_self">Istio Documentation: WorkloadEntry</a></p>
+
+<p>You can use DNS name in the address field but then you will end up with the similar behavior as when ServiceEntry has the resolution set to DNS.</p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>According to Envoy&#39;s documentation, you cannot bind to address without setting how it is to be resolved (either STRICT or LOGICAL). Without being able to set the portValue, a rewrite cannot occur. For more information, refer to the following article:</p>
+
+<p><a href="https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/core/v3/address.proto#config-core-v3-socketaddress" target="_self">Envoy Documentation: config.core.v3.SocketAddress</a></p>
+
+<p>DNS_ROUND_ROBIN isn&#39;t included in AM 1.11, it was added with 1.12 release of Istio as an option for resolution in Service Entry. For more information, refer to the following article:</p>
+
+<p><a href="https://istio.io/latest/news/releases/1.12.x/announcing-1.12/change-notes/" target="_self">Istio 1.12 Change Notes</a></p>
+</article>
+</body>
+</html>

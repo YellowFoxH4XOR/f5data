@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161943: Intermittent packet loss due to pending forwarding table entries on BX520 blade in Velos chassis</title>
+<meta name="description" content="Support Solution: Intermittent packet loss due to pending forwarding table entries on BX520 blade in Velos chassis — On a VELOS chassis with BX520 blades running F5OS-C, BIG-IP tenants configured with translucent or transparent VLAN-groups may experience intermittent packet loss and pool member monitor flapping…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161943">
+</head>
+<body>
+<header>
+<h1>K000161943: Intermittent packet loss due to pending forwarding table entries on BX520 blade in Velos chassis</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-29</dd>
+<dt>Updated</dt><dd>2026-06-29</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS</li><li>F5OS-C: 1.8.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161943">https://my.f5.com/manage/s/article/K000161943</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<div class="page-wrapper">
+<div class="article-body">
+<div class="kcs-section">
+<h2>Description</h2>
+<p>On a VELOS chassis with <strong>BX520 blades</strong> running F5OS-C, BIG-IP tenants configured with <strong>translucent or transparent VLAN-groups</strong> may experience <strong>intermittent packet loss</strong> and <strong>pool member monitor flapping</strong> (monitors going down and recovering repeatedly). The issue occurs even when the VLANs involved are not shared with other tenants.</p>
+<p>Symptoms include:</p>
+<ul><li>Pool member ICMP or TCP monitors flapping, typically going down for 24–30 seconds before recovering</li><li>Intermittent packet loss when pinging self-IPs on VLANs that are members of a VLAN-group</li><li>The issue affects both Active and Standby tenants; on Standby tenants only monitor traffic is dropped, while on Active tenants user traffic is also impacted</li><li>Symptoms are <strong>not observed on BX110 blades</strong>, on VCMP guests on the same upstream switch, or on Viprion platforms with equivalent VLAN-group configuration</li><li>FPGA DLF (Destination Lookup Failure) drop counters incrementing at a high and sustained rate</li></ul>
+<p>Similar log messages may appear repeatedly in /var/log/ltm on the affected BIG-IP tenant:</p>
+<pre>notice mcpd[7822]: 01070638:5: Pool /partition/pool member /partition/node:0 monitor status down. [ /partition/monitor: down; last error: Connection reset @2026/02/17 14:30:38. ] [ was up for 115hrs:57mins:13sec ]</pre>
+<div class="warning-box"><strong>Important:</strong> This issue is specific ONLY to the <strong>BX520 blade</strong> due to its dual-ATSE architecture. BX110 blades, rSeries appliances, and Viprion platforms are not affected by this particular failure mechanism.</div>
+</div>
+<div class="kcs-section">
+<h2>Environment</h2>
+<table style="width: 99.8161%;height: 171px;"><tbody><tr style="height: 46px;"><td colspan="1" rowspan="1" style="width: 18.368%;"><strong>Platform</strong></td><td colspan="1" rowspan="1" style="width: 81.632%;">VELOS with <strong>BX520 blades</strong> (not BX110)</td></tr><tr style="height: 46px;"><td colspan="1" rowspan="1" style="width: 18.368%;"><strong>Affected Versions</strong></td><td colspan="1" rowspan="1" style="width: 81.632%;">F5OS-C 1.8.1, F5OS-C 1.8.2</td></tr></tbody></table>
+<div class="note-box"><strong>The issue is tracked under <a href="https://cdn.f5.com/product/bugtracker/ID2261481.html" target="_blank" rel="noopener noreferrer">https://cdn.f5.com/product/bugtracker/ID2261481.html</a></strong></div>
+<div class="note-box"> </div>
+<div class="note-box"><strong>Note:</strong> If the affected VLANs <em>are</em> also shared with other tenants, an additional failure mechanism (unicast traffic replication via the software rebroadcaster) is also present. See the companion article <em>F5OS VELOS: Packet loss or unicast traffic replication when a VLAN used in a tenant VLAN-group is shared with other tenants</em>.</div>
+</div>
+<div class="kcs-section">
+<h2>Cause</h2>
+<p>The root cause is a cascade of events unique to the BX520 blade&#39;s <strong>dual-ATSE architecture </strong>(ATSE being one of the internal FPGA components).</p>
+<p>The egress tenant traffic sent from different TMMs that are physically dispersed between different traffic processing units inside FPGA. This is leading to a situation in which same source MAC address is being learned from different internal host ports. This is happening very quickly due to constant egress traffic and causing FPGA to consider the entry as unstable and putting into Pending state, effectively not inserting into L2 forwarding table. This is similar to &quot;MAC address flapping&quot; between 2 L2 switch ports in switching environments.</p>
+<p>Since these MAC addresses are not part of the table, all return traffic destined to these MACs is therefore treated as a Destination Lookup Failure (DLF) and is intermittently dropped by the FPGA&#39;s built-in DLF rate-limiter.</p>
+<div class="blade-cards">
+<div class="blade-card">The issue affects both transparent and translucent VLAN-groups, in which the source MAC address can be either bit-flipped tenant MAC address or actual client/server MAC addresses (that are preserved in vlan-group implementation).</div>
+</div>
+</div>
+<div class="kcs-section">
+<h2>Recommended Actions</h2>
+<p>There are a few possible workarounds/approaches.</p>
+<h3>1. Configure a static FDB entry for the bit-flipped MAC (in translucent VLAN-groups)</h3>
+<p>This will make sure the entry won&#39;t be flapping during learning process.</p>
+<p>In the VELOS partition CLI, list all L2-LISTENER entries to find the bit-flipped MAC associated with the affected tenant. The bit-flipped MAC has the locally-administered (LA) bit set — the second hex digit of the first octet will be <strong>2, 6, A, or E</strong> (for example, 16:xx:xx:xx:xx:xx is bit-flipped from 12:xx:xx:xx:xx:xx).</p>
+<p>Then in VELOS partition CLI, show all the fdb entries and find the L2-LISTENER entry for the tenant.</p>
+<pre><span class="cmd">show fdb</span>
+
+<span class="cc"># Look for rows where ENTRY TYPE = L2-LISTENER and OWNER = &lt;affected-tenant-name&gt;
+# The bit-flipped MAC will have the second hex nibble as 2, 6, A, or E<br></span></pre>
+<p><span class="cc">Then in partition CLI add a static fdb entry that points towards the tenant. For example:</span></p>
+<pre><span class="cc"># Replace &lt;bit-flipped-MAC&gt;, &lt;vlan-id&gt;, &lt;tenant-name&gt; and svc with actual values. Note that for ingress static MAC (i.e. tenant is the forwarding destination), we configure L2-LISTENER with svc ID as destination.</span>
+
+<span class="cmd">conf t</span>
+<span class="cmd">fdb mac-table entries entry &lt;bit-flipped-MAC&gt; &lt;vlan-id&gt; tag_type_vid </span><span class="cmd">config entry-type L2-LISTENER </span><span class="cmd">owner &lt;tenant-name&gt; </span><span class="cmd">config ifh-fields svc 15 </span><span class="cmd">ifh-fields cmds 1</span>
+<span class="cmd">commit</span>
+
+<span class="cc"># To remove the static entry when no longer needed:</span>
+<span class="cmd">no fdb mac-table entries entry &lt;bit-flipped-MAC&gt; &lt;vlan-id&gt;</span>
+<span class="cmd">commit</span></pre>
+<div class="note-box"><strong>Limitation:</strong> This workaround must be applied for each VLAN in the VLAN-group in case of translucent one.</div>
+<div class="note-box">For transparent vlan-group, this workaround might not be practical as there are too many MAC Addresses involved.</div>
+<h3>2.  Switch to opaque VLAN-group mode</h3>
+<p>In opaque mode, BIG-IP uses its own static tenant MAC address as the source MAC for all bridged traffic. The static MAC is already part of the FDB and does not experience dynamic learning or flapping.</p>
+<pre><span class="cc"># On the BIG-IP tenant CLI:</span>
+<span class="cmd">tmsh modify net vlan-group &lt;vlan-group-name&gt; mode opaque</span>
+<span class="cmd">tmsh save sys config</span></pre>
+<div class="note-box"><strong>Note:</strong> Opaque mode changes bridging behavior. Validate this change for your specific deployment before applying it in production.</div>
+<h3>3. Consider migrating to virtual-wire (vWire) solution instead of VLAN-groups</h3>
+<p>Virtual-wire is the F5OS-native, hardware-based equivalent of VLAN-group for L2 inline deployments. vWire was designed for F5OS and uses MAC-learning-avoiding mechanisms that are fully compatible with the VELOS FPGA forwarding architecture. Migration to vWire is the recommended long-term solution. This solution needs dedicated planning and it is always recommended to have F5 Professional Services involved in such a deployment change.</p>
+</div>
+</div>
+</div>
+</article>
+</body>
+</html>

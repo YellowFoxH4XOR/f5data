@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162793: WebSocket traffic stalls after HTTP 101 handshake</title>
+<meta name="description" content="Support Solution: WebSocket traffic stalls after HTTP 101 handshake — A customer configured WebSocket traffic on a BIG-IP virtual server. After a successful WebSocket handshake (HTTP 101 Switching Protocols), subsequent WebSocket messages were not delivered to the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162793">
+</head>
+<body>
+<header>
+<h1>K000162793: WebSocket traffic stalls after HTTP 101 handshake</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-09-03</dd>
+<dt>Updated</dt><dd>2026-09-03</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162793">https://my.f5.com/manage/s/article/K000162793</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<p>A customer configured WebSocket traffic on a BIG-IP virtual server. After a successful WebSocket handshake (<em><strong>HTTP 101 Switching Protocols</strong></em>), subsequent WebSocket messages were not delivered to the backend server.</p>
+<p>The client received no data, an <strong><em>N/A response</em></strong>, or the connection silently stalled. The backend application team confirmed that no WebSocket frames were arriving at the server, despite the handshake completing successfully from the client’s perspective.</p>
+<p>The virtual server configuration was similar to the following:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ltm virtual /Common/test {
+    destination /Common/&lt;ip&gt;
+    ip-protocol tcp
+    mask 255.255.255.255
+    persist {
+        /Common/test {
+            default yes
+        }
+    }
+    policies {
+        /Common/asm_policy { }
+    }
+    profiles {
+        /Common/ASM_Profile { }
+        /Common/HTTP { }
+        /Common/clientssl {
+            context clientside
+        }
+        /Common/OPSWAT_ICAP/Metadefender_ICAP_Request {
+            context clientside
+        }
+        /Common/serverssl {
+            context serverside
+        }
+        /Common/tcp { }
+        /Common/websecurity { }
+        /Common/websocket { }
+    }</code></pre>
+<p>An error similar to the following may be logged in <em><strong>/var/log/ts/bd.log</strong></em>:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>IO_PLUGIN|ERR   |Jan 01 13:04:17.459|1599|websocket.c:0372|101 Switching Protocols HTTP status arrived, but the websocket handshake failed.
+IO_PLUGIN|ERR   |Jan 01 13:04:17.460|1599|websocket.c:0373|Possible reasons are websocket profile isn&#39;t assigned on a virtual server or handshake is illegal.</code></pre>
+<p>Removing the ASM policy, ASM profile, and websecurity profile did not resolve the issue. The virtual server still had the OPSWAT ICAP Request Adapt profile attached.</p>
+<h2><strong>Environment</strong></h2>
+<ul><li>BIG-IP LTM</li><li>Virtual Server configured with:
+<ul><li>ASM profile and policy</li><li>Websecurity profile</li><li>OPSWAT_ICAP profile</li><li>Websocket profile</li><li>HTTP profile</li><li>Client SSL and/or Server SSL profile</li></ul>
+</li></ul>
+<h2><strong>Cause</strong></h2>
+<p>In the reported configuration, the Request Adapt/ICAP profile is a suspected cause of the WebSocket stall. Request Adapt processing is HTTP-dependent. Confirm the cause by testing the WebSocket connection with the Request Adapt profile removed or bypassed.</p>
+<p>F5 documentation states that a standard virtual server using a Request Adapt profile must also have an HTTP profile. The Request Adapt profile sends traffic to an internal virtual server for processing by an ICAP service. More here: <a href="https://my.f5.com/manage/s/article/K15819" target="_blank" rel="noopener noreferrer">K15819</a></p>
+<ol><li>
+<p>The reported failure sequence was:</p>
+<ol><li>
+<p>The client sent an HTTP <code>GET</code> request containing the WebSocket upgrade headers:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>Upgrade: websocket
+Connection: Upgrade</code></pre>
+<pre></pre>
+</li><li>
+<p>The Request Adapt profile intercepted the request and forwarded it to the configured ICAP service.</p>
+</li><li>
+<p>The ICAP service inspected and returned the request, allowing the handshake to continue.</p>
+</li><li>
+<p>The backend server responded with:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>HTTP/1.1 101 Switching Protocols</code></pre>
+<pre></pre>
+</li><li>
+<p>The connection transitioned from HTTP processing to WebSocket traffic.</p>
+</li><li>
+<p>In the reported case, subsequent WebSocket frames were not delivered to the backend server.</p>
+</li></ol>
+</li></ol>
+<h2><strong>Recommended Actions</strong></h2>
+<p>Two resolution options are available depending on whether ICAP scanning must be retained for other traffic on the same virtual server.</p>
+<p><strong><em>Option 1</em></strong>: Remove the ICAP Request Adapt profile from the virtual server (Recommended)</p>
+<p>Use removal of the Request Adapt profile as the primary isolation test.</p>
+<p>If WebSocket traffic works after the profile is removed and fails when the profile is reattached, retain the profile removal as the resolution for that virtual server.</p>
+<p>If ICAP scanning must remain enabled for regular HTTP traffic on the same application, use a separate virtual server for the WebSocket traffic or selectively bypass ICAP for WebSocket upgrade requests.</p>
+<p><strong>Via CLI:</strong></p>
+<p>The following command is the configuration example for removing the Request Adapt profile:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify ltm virtual /Common/&lt;virtual-server-name&gt; profiles delete { &lt;icap-request-adapt-profile-name&gt; }
+tmsh save sys config</code></pre>
+<p>Verify the exact profile name, partition, context, and command syntax on the target BIG-IP release before applying the change.</p>
+<p><b>Via GUI:</b></p>
+<ol><li>Navigate to <b>Local Traffic › Virtual Servers › Virtual Server List.</b></li><li>Click the name of the affected virtual server.</li><li>From the <b>Configuration</b> drop-down, select <b>Advanced.</b></li><li>In the <b>Profiles</b> section, locate the Request Adapt profile (e.g.,<em> Metadefender_ICAP_Request</em>).</li><li>Click the <b>Delete (×)</b> button next to it.</li><li>Click <b>Update.</b></li><li>Re-test the WebSocket connection.</li></ol>
+<p><em><strong>Option 2</strong></em>: Selectively disable ICAP for WebSocket upgrade requests using an iRule<br>If ICAP scanning must remain on the virtual server for regular HTTP traffic (e.g., file uploads via HTTP POST), use an iRule to disable ICAP adaptation specifically for WebSocket upgrade requests. This allows ICAP to continue scanning normal HTTP traffic while bypassing it for WebSocket connections.</p>
+<p>This approach is based on the <strong><em>ADAPT::enable</em></strong> command documented in <a href="https://my.f5.com/manage/s/article/K000159822" target="_blank" rel="noopener noreferrer">K000159822</a>. This documents selective ICAP control for HTTP requests; it does not specifically validate this WebSocket use case. Test the following iRule on the target BIG-IP release before production deployment.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when HTTP_REQUEST {
+    if { [string tolower [HTTP::header &quot;Upgrade&quot;]] contains &quot;websocket&quot; } {
+        ADAPT::enable false
+    }
+}</code></pre>
+<p>Steps to apply in GUI:</p>
+<ol><li>Navigate to <b>Local Traffic</b> › <b>iRules.</b></li><li>Click <b>Create.</b></li><li>Enter a name (e.g., disable_icap_for_websocket).</li><li>Paste the iRule definition above into the <strong>Definition </strong>field.</li><li>Click <b>Finished.</b></li><li>Navigate to the affected virtual server.</li><li>Assign the iRule to the Virtual Server.</li><li>Re-test the WebSocket connection.</li></ol>
+<p><span style="color: #27ae60;"><strong>Note</strong>: This iRule disables ICAP adaptation for the WebSocket upgrade request. Once the connection upgrades to WebSocket (post-101), the HTTP filter enters passthrough mode and ICAP is no longer invoked for subsequent frames. This iRule ensures the upgrade request itself is not held by the ADAPT filter, allowing the protocol transition to complete cleanly.</span></p>
+<h2><strong>Additional Information</strong></h2>
+<p>None</p>
+<p> </p>
+<p> </p>
+</article>
+</body>
+</html>

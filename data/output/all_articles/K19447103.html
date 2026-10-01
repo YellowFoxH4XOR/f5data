@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K19447103: BIG-IP system occasionally actively close HTTP2 connection</title>
+<meta name="description" content="Support Solution: BIG-IP system occasionally actively close HTTP2 connection — HTTP/2 requests may get unexpected failures, this article describes one scenario.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K19447103">
+</head>
+<body>
+<header>
+<h1>K19447103: BIG-IP system occasionally actively close HTTP2 connection</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-09-11</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.X.X, 14.X.X, 13.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 15.X.X, 13.0.1, 13.0.0, 13.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K19447103">https://my.f5.com/manage/s/article/K19447103</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<span class="sectiontitle">Description:</span><br><br>HTTP/2 requests may get unexpected failures, this article describes one scenario.<br><br><span class="sectiontitle">Environment:</span>
+
+<ul><li>BIG-IP LTM</li><li>virtual server with HTTP/2 profile configured</li></ul>
+<span class="sectiontitle">Cause:</span><br><br>In RFC 7540:
+<ul><li>Section 5.1.2 Stream Concurrency:</li></ul>
+
+<div style="margin-left: 40px;">A peer can limit the number of concurrently active streams using the SETTINGS_MAX_CONCURRENT_STREAMS parameter within a SETTINGS frame.</div>
+
+<div style="margin-left: 40px;">Endpoints MUST NOT exceed the limit set by their peer.  An endpoint that receives a HEADERS frame that causes its advertised concurrent stream limit to be exceeded MUST treat this as a stream error of type PROTOCOL_ERROR or REFUSED_STREAM.</div>
+
+<ul><li>Section 5.4.2 Stream Error Handling:</li></ul>
+
+<div style="margin-left: 40px;">An endpoint that detects a stream error sends a RST_STREAM frame that contains the stream identifier of the stream where the error occurred. The RST_STREAM frame includes an error code that indicates the type of error.</div>
+<br>The BIG-IP system will send such a RST_STREAM FRAME which indicates REFUSED_STREAM Error when concurrent active streams exceeds the corresponding setting in HTTP/2 profile.<br><br><span class="code">HyperText Transfer Protocol 2<br>    Stream: RST_STREAM, Stream ID: 21, Length 4<br>        Length: 4<br>        Type: RST_STREAM (3)<br>        Flags: 0x00<br>        0... .... .... .... .... .... .... .... = Reserved: 0x0<br>        .000 0000 0000 0000 0000 0000 0001 0101 = Stream Identifier: 21<br>        Error: REFUSED_STREAM (7)</span><br><br><span class="sectiontitle">Recommended Actions:</span><br><br>In RFC 7540:
+<ul><li>Section 6.5.2 Defined SETTINGS Parameters:</li></ul>
+
+<div style="margin-left: 40px;">SETTINGS_MAX_CONCURRENT_STREAMS (0x3): ... It is recommended that this value be no smaller than <strong>100</strong>, so as to not unnecessarily limit parallelism.<br>So you can change the value of <strong>Concurrent Streams Per Connection</strong> in http/2 profile. Default value of this options is <strong>10</strong>.</div>
+<br><span class="subsectiontitle">To modify this setting, you can follow these steps:</span><br><br><span class="note">Please Note: It&#39;s not recommended to modify the system default profile directly, you&#39;d better create a customized profile and use default one as parent profile and then modify the settings you need.</span>
+
+<ol><li>Login to the <strong>GUI</strong></li><li>Navigate to Local Traffic &gt;&gt; Profiles &gt;&gt; Services &gt;&gt; HTTP/2</li><li>Click the name of the http/2 profile you want to modify</li><li>Rewrite the value of <strong>Concurrent Streams Per Connection</strong> to what you need.</li><li>Click Update.</li></ol>
+<br><span class="subsectiontitle">You can also use TMUI to change the setting by following these steps:</span>
+
+<ol><li>Login to the <strong>CLI</strong></li><li>Run the following command to modify setting:</li></ol>
+
+<div style="margin-left: 40px;"><span class="code">tmsh modify ltm profile http2 &lt;http_profile_name&gt; concurrent-streams-per-connection &lt;desired_value&gt;</span></div>
+
+<ol start="3"><li>Run the following command to save configuration:</li></ol>
+
+<div style="margin-left: 40px;"><span class="code">tmsh save sys config partitions all</span></div>
+<br><span class="sectiontitle">Additional Information:</span><br><br>HTTP2 profile statistics will also do some help when troubleshooting such an issue.<br>By typing the following command you will see the goaway reasons.
+<div style="margin-left: 40px;"><br><span class="code">tmsh show /ltm profile http2 &lt;http2_profile_name&gt;</span></div>
+
+<div> </div>
+<span class="note">It&#39;s recommended to run it several times, so that we can see the delta of each item.</span><br><br>For example:<br><span class="code">GoAway Reasons<br>  Compression Error                        0<br>  Decompression Error                      0<br>  Timeout                             194773<br>  Parse Error                             91<br>  Out Of Memory Error                      0<br>  Stream Error                             0<br>  Max Streams Exceeded                 80934<br>  Max Headers Exceeded                     0<br>  Insufficient Security                    0</span><br><br>If you find <strong>Max Streams Exceeded </strong>is keeping increase, that indicates a higher value of <strong>Concurrent Streams Per Connection</strong> in http/2 profile is required.
+</article>
+</body>
+</html>

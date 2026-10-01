@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000139426: When a  NGINX Plus JWT configuration is used, the IDP request times out. upstream: &quot;https://1.2.3.4:443/.well-known/openid-configuration/jwks</title>
+<meta name="description" content="Support Solution: When a  NGINX Plus JWT configuration is used, the IDP request times out. upstream: &quot;https://1.2.3.4:443/.well-known/openid-configuration/jwks — A POST request requiring JWT validation from an external IDP server fails.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000139426">
+</head>
+<body>
+<header>
+<h1>K000139426: When a  NGINX Plus JWT configuration is used, the IDP request times out. upstream: &quot;https://1.2.3.4:443/.well-known/openid-configuration/jwks</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-04-27</dd>
+<dt>Updated</dt><dd>2024-07-31</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Plus: R30, R13, R14, R15, R16, R17, R18, R19, R20, R21, R22, R23, R24, R25, R26, R27, R28, R29, R31</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000139426">https://my.f5.com/manage/s/article/K000139426</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>A POST request requiring JWT validation from an external IDP server fails.</p>
+<p>The error.log will have</p>
+<pre class="language-markup"><code>[warn] 2292589#2292589: *379 upstream server temporarily disabled while reading response header from upstream, client: 1.2.3.4, server: sp.example.com, request: &quot;POST /test/ping/ HTTP/1.1&quot;, subrequest: &quot;/_jwks_uri&quot;, upstream: &quot;https://4.5.6.7:443/.well-known/openid-configuration/jwks&quot;, host: &quot;idp.example.com&quot;
+
+[error] 2292589#2292589: *379 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 1.2.3.4, server: sp.example.com, request: &quot;POST /test/ping/ HTTP/1.1&quot;, subrequest: &quot;/_jwks_uri&quot;, upstream: &quot;https://4.5.6.7:443/.well-known/openid-configuration/jwks&quot;, host: &quot;idp.example.com&quot;</code></pre>
+<p>If NGINX debug logging is enabled you see.</p>
+<pre class="language-markup"><code>GET /.well-known/openid-configuration/jwks HTTP/1.0
+Host: idp.example.com
+Connection: close
+Content-Length: 79 &lt;&lt;&lt;&lt;===== ERROR
+Authorization: Bearer &lt;SNIP&gt;
+Content-Type: application/json</code></pre>
+<h2>Environment</h2>
+<p>NGINX Plus implementing JWT authentication that is configured to fetch JSON Web Keys from remote location (directive auth_jwt_key_request)</p>
+<p>For more information, refer to the <a href="https://docs.nginx.com/nginx/admin-guide/security-controls/configuring-jwt-authentication/" target="_blank">Setting up JWT Authentication</a> section of the NGINX Plus <strong>Admin Guide</strong></p>
+<pre class="language-markup"><code>        location = /_jwks_uri {
+            internal;
+            proxy_method      GET;
+            proxy_cache       jwk; # Cache responses
+            proxy_cache_valid 200 12h;
+            proxy_pass        https://idp.example.com/oauth2/keys; # Obtain keys from here
+        }</code></pre>
+<h2>Cause</h2>
+<p><span>NGINX forwards client request headers into subrequests. This means the <strong>Content-Length</strong> and <strong>Content-Type</strong> headers from the client&#39;s POST request are passed to the GET method subrequest. These headers are invalid in a GET method request and may cause the authentication server to fail or timeout.</span></p>
+<h2>Recommended Actions</h2>
+<p>Remove the headers before sending upstream by using Proxy_set_header.</p>
+<pre class="language-markup"><code>location = /_jwks_uri {
+internal;
+proxy_method GET;
+proxy_cache jwk; # Cache responses
+proxy_cache_valid 200 12h;
+proxy_set_header Content-Type &quot;&quot;;
+proxy_set_header Content-Length &quot;&quot;;
+proxy_pass https://idp.example.com/oauth2/keys; # Obtain keys from here
+}</code></pre>
+<h3>Warning. Setting proxy_set_header in a &quot;Location&quot; <strong>overrides all</strong> proxy_set_header from a higher level. <strong>They are not merged</strong>. This is true even for different headers. Any proxy_set_header at &quot;server&quot; must be reproduced in &quot;Location&quot;. This is by design.</h3>
+<h2>Additional Information</h2>
+<p>Similar issues can come from other causes. Confirm that:</p>
+<ul><li>NGINX can contact the IDP.</li><li>The IDP returns the JWT in uncompressed form.</li><li>The upstream resolves to the correct IDP server.</li></ul>
+<p>Be aware of limitations on using proxy_pass FQDN&#39;s. These are not re-resolved dynamically. If the A record is subject to change, configure using a &quot;Upstream&quot; with a resolve option. For more information, refer to the <strong>Using DNS for Service Discovery with NGINX</strong> section of <a href="https://www.f5.com/company/blog/nginx/dns-service-discovery-nginx-plus" target="_blank">Using DNS for Service Discovery with NGINX and NGINX Plus</a>.</p>
+<p>If this is the issue but the configuration change does not solve it, restart the host. This may be the case when the NGINX debug binary is in service.</p>
+</article>
+</body>
+</html>

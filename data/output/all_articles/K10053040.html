@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K10053040: SSLO &#x27;&#x27;peer HA verification response&#x27;&#x27; Showing &#x27;&#x27;Bad&#x27;&#x27; Status</title>
+<meta name="description" content="Support Solution: SSLO &#x27;&#x27;peer HA verification response&#x27;&#x27; Showing &#x27;&#x27;Bad&#x27;&#x27; Status — After booting to 15.1.x volume, SSLO 7.1.9 dashboard is showing &quot;Bad&quot; status in &quot;peer HA verification response&quot; section. This causes overall status of SSLO to be &quot;Bad&quot;.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K10053040">
+</head>
+<body>
+<header>
+<h1>K10053040: SSLO &#x27;&#x27;peer HA verification response&#x27;&#x27; Showing &#x27;&#x27;Bad&#x27;&#x27; Status</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-09-05</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP Platforms</li><li>F5 App Protect</li><li>F5 SSL Orchestrator: 15.X.X, 15.0.X, 15.1.1, 15.1.0, 15.1.X, 15.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K10053040">https://my.f5.com/manage/s/article/K10053040</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>After booting to 15.1.x volume, SSLO 7.1.9 dashboard is showing &quot;Bad&quot; status in &quot;peer HA verification response&quot; section. This causes overall status of SSLO to be &quot;Bad&quot;.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>SSLO</li><li>After BIG-IP Upgrade</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>In SSLO 7 it is required to break HA Trust before upgrading. <span class="note">See <a href="https://techdocs.f5.com/en-us/bigip-15-1-0/ssl-orchestrator-setup/setting-up-f5-ssl-orchestrator-in-a-high-availability-environment.html#concept-959" target="_self">Upgrading BIG-IP ISO with F5 Guided Configuration for SSL Orchestrator in high availability</a> for more details.</span></p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>Perform any of the following actions.</p>
+
+<p><span class="subsectiontitle">Re-Create Device Trust Using iControl REST API</span></p>
+
+<ol><li>
+	<p>Execute the command below to collect <strong>uuid</strong> of both units.</p>
+
+	<p><span class="code">restcurl shared/resolver/device-groups/tm-shared-all-big-ips/devices | jq -r &#39;.items[] | .uuid,.address&#39; | xargs printf &quot;restcurl -X DELETE shared/resolver/device-groups/tm-shared-all-big-ips/devices/%s # %s\n&quot;</span></p>
+
+	<p>Example Output:</p>
+
+	<p><span class="example2">restcurl -X DELETE shared/resolver/device-groups/tm-shared-all-big-ips/devices/a07ece78-2d9d-40c7-9de4-ff38f1f732a4 # 10.0.116.225</span></p>
+	</li><li>
+	<p>On both units, perform the commands from the output of Step 1 to delete existing device information in the REST.</p>
+
+	<p><span class="code">restcurl -X DELETE shared/resolver/device-groups/tm-shared-all-big-ips/devices/&lt;uuid&gt;</span></p>
+	</li><li>
+	<p>On both units: Restart the restjavad service.</p>
+
+	<p><span class="code">bigstart restart restjavad</span></p>
+	</li><li>
+	<p>On the Active or good unit, poke BigIpFailoverStateWorker to pull configuration from CMI and retry device trust.</p>
+
+	<p><span class="code">restcurl -X POST -d &#39;{}&#39; tm/shared/bigip-failover-state</span><br>	<span class="note"><strong>Note</strong>: If you receive a <strong>&quot;code&quot;: 400,</strong> response; try the command again until you receive a <strong>{}</strong> response.</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle">Remove and Re-Create Device Trust</span></p>
+Break HA; Break Trust; Recreate Trust; Recreate HA (all this after the upgrade):
+
+<ol><li>Go to Device Management &gt; Device Groups.</li><li>Click on the device group &lt;device group name&gt;. I believe this can be done on any of the devices at this point.</li><li>Remove both the members &amp; click on update.</li><li>Go to Device Management &gt; Device Trust. =&gt; Perform this step on both devices</li><li>Click on Reset Device Trust &amp; select the option Generate new self-signed authority. =&gt; Perform this step on both devices</li><li>Go to Device Management &gt; Device Trust &gt; Device Trust Members &amp; add the peer device.</li><li>Go to Device Management &gt; Device Groups.</li><li>Click on the device group &lt;device group name&gt;.</li><li>Add both the devices &amp; click on update.</li><li>Go to Device Management &gt; Overview &amp; do a sync.</li><li>Now verify the HA status is good &amp; both the devices are in sync.</li></ol>
+
+<p><span class="subsectiontitle">Boot to Previous Volume and Follow Upgrade Guidance</span></p>
+
+<p>Another solution is to boot back to previous volume on both device and then break HA and follow the upgrade procedure as before (as per <a href="https://techdocs.f5.com/en-us/bigip-15-1-0/ssl-orchestrator-setup/setting-up-f5-ssl-orchestrator-in-a-high-availability-environment.html#concept-959" target="_self">Upgrading BIG-IP ISO with F5 Guided Configuration for SSL Orchestrator in high availability</a>.</p>
+
+<p><span class="subsectiontitle">Additional Commands</span></p>
+
+<p>Additional solution that was found to be helpful is to run the following commands:</p>
+
+<p style="margin-left: 40px;"><span class="code">restcurl -X DELETE shared/resolver/device-groups/tm-shared-all-big-ips/devices<br>restcurl -X POST -d &#39;{}&#39; tm/shared/bigip-failover-state</span></p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

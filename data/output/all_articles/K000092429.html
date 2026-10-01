@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000092429: Regular expressions with &quot;?!&quot; are not supported in VirtualServer</title>
+<meta name="description" content="Support Solution: Regular expressions with &quot;?!&quot; are not supported in VirtualServer — Invalid value: &quot;~ ^/path/(?!.*\/value)(.*)&quot;: must be a valid regular expression: error parsing regexp: invalid or unsupported Perl syntax: `(?!`">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000092429">
+</head>
+<body>
+<header>
+<h1>K000092429: Regular expressions with &quot;?!&quot; are not supported in VirtualServer</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-10-07</dd>
+<dt>Updated</dt><dd>2022-10-07</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000092429">https://my.f5.com/manage/s/article/K000092429</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Description</strong></h2>
+
+<p>When attempting to create a Virtualserver resource with a regex path that uses the &quot;?!&quot; negative lookahead syntax, you&#39;ll encounter an error similar to the following:</p>
+
+<pre class="ckeditor_codeblock">
+Invalid value: &quot;~ ^/path/(?!.*\/value)(.*)&quot;: must be a valid regular expression: error parsing regexp: invalid or unsupported Perl syntax: `(?!`</pre>
+
+<p> </p>
+
+<h2><span style="font-size: 11pt;font-family: Calibri, sans-serif;"> </span><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Environment</strong></h2>
+
+<p>Kubernetes<br>Nginx+ Ingress Controller<br>Custom Resource Definition(CRD) Virtualserver<br>golang</p>
+
+<h2><span style="font-size: 11pt;font-family: Calibri, sans-serif;"> </span><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Cause</strong></h2>
+
+<p>The golang regex libraries used to validate the regex input into our Ingress Controller do not recognize &quot;?!&quot; as a valid syntax string. This is known issue documented here:<br>https://github.com/nginxinc/kubernetes-ingress/issues/797<br><br>Here is a resource that shows the syntax as currently &quot;NOT SUPPORTED&quot; in golang:<br>https://github.com/google/re2/wiki/Syntax<br>   &quot;(?!re) before text not matching re (NOT SUPPORTED)&quot;</p>
+
+<h2><span style="font-size: 11pt;font-family: Calibri, sans-serif;"> </span><br><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Recommended Actions</strong></h2>
+
+<p>First, lets take a quick look at what this &quot;?!&quot; negative lookahead syntax does.<br>The &quot;?!&quot; is used in Perl Compatible Regular Expressions(PCRE) to negate a preceding value as mentioned in the above google github link<br>In short though, the &quot;?!&quot; negates the value following it, so if the value is present the regex won&#39;t match.</p>
+
+<p><span style="font-size: 10.5pt;font-family: Arial, sans-serif;">Example: </span></p>
+
+<ul><li><span style="font-size: 10.5pt;font-family: Arial, sans-serif;">regex: ~*^/path/((?!ABC123)[^/]*)(.*\.json.*) </span>
+
+	<ul><li><span style="font-size: 10.5pt;font-family: Arial, sans-serif;"> would match on &quot;/path/DEF456/foo.json&quot; </span></li><li><span style="font-size: 10.5pt;font-family: Arial, sans-serif;">but would <strong>NOT</strong> match on &quot;/path/ABC123/foo.json&quot;</span></li></ul>
+	</li></ul>
+
+<p> </p>
+
+<p><span style="font-size: 10.5pt;font-family: Arial, sans-serif;">Either alter your regex to avoid using the &quot;?!&quot; if possible, or try using multiple paths in your yaml definition to create separate Nginx Location directives like the following example:</span></p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: k8s.nginx.org/v1
+kind: VirtualServer
+metadata:
+  name: regex-vs
+spec:
+  host: webapp.example.com
+  upstreams:
+  - name: webapp1
+    service: webapp1-svc
+    port: 80
+  - name: webapp2
+    service: webapp2-svc
+    port: 80	
+  routes:
+  - path: ~*^/path/ABC123/(.*\.json.*)
+    action:
+      pass: webapp1
+  - path: ~*^/path/([^/]*)(.*\.json.*)
+    action:
+      pass: webapp2</pre>
+
+<p><br> </p>
+
+<h2><span style="font-size: 11pt;font-family: Calibri, sans-serif;"> </span><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Additional Information</strong></h2>
+
+<p>None</p>
+</article>
+</body>
+</html>

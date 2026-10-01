@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161381: Duplicate nginx_uid Persists on Cloned NGINX Plus Images Due to Shell Glob Expansion Failure When Deleting State File</title>
+<meta name="description" content="Support Solution: Duplicate nginx_uid Persists on Cloned NGINX Plus Images Due to Shell Glob Expansion Failure When Deleting State File — You have NGINX Plus instances that were deployed from a cloned image, such as an AWS AMI or VM template, resulting in all instances sharing the same nginx_uid.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161381">
+</head>
+<body>
+<header>
+<h1>K000161381: Duplicate nginx_uid Persists on Cloned NGINX Plus Images Due to Shell Glob Expansion Failure When Deleting State File</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-07-16</dd>
+<dt>Updated</dt><dd>2026-07-22</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX One Console</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161381">https://my.f5.com/manage/s/article/K000161381</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<ul><li>You have NGINX Plus instances that were deployed from a cloned image, such as an AWS AMI or VM template, resulting in all instances sharing the same nginx_uid.</li><li>You attempt to regenerate the nginx_uid by following these steps:
+<ol style="list-style-type: decimal;"><li>Stop the NGINX service: <span style="background-color: #dddddd;">sudo systemctl stop nginx</span></li><li>Delete the state file: <span style="background-color: #dddddd;">sudo rm -rf /var/lib/nginx/state/*</span></li><li>Restart the NGINX service: <span style="background-color: #dddddd;">sudo systemctl start nginx</span></li></ol>
+</li><li>However, after restarting, the nginx_uid remains unchanged — the same UID is still present in <span style="background-color: #dddddd;">/var/lib/nginx/state/nginx-mgmt-state</span>.</li></ul>
+<p> </p>
+<ul></ul>
+<ul></ul>
+<h2>Environment</h2>
+<p>NGINX instances deployed on AWS from a shared AMI</p>
+<p>NGINX Plus with NGINX Agent installed.</p>
+<p> </p>
+<h2>Cause</h2>
+<p>The failure to regenerate nginx_uid was due to shell glob expansion failure caused by directory permissions. When the command &quot;<em>sudo rm -rf /var/lib/nginx/state/*</em>&quot; is used, glob expansion (the process where the shell converts wildcard patterns into a list of matching filenames) occurs before sudo elevation, using the logged-in user&#39;s permissions. If the user lacks read permission on <em>/var/lib/nginx/state/</em>, the wildcard is not expanded, and the file remains present, causing the UID to persist across restarts.</p>
+<p> </p>
+<h2>Answer/Recommended Actions</h2>
+<p>To reliably regenerate the <em>nginx_uid</em> and prevent duplication when using cloned images:</p>
+<p>1. Check the current UID: </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>sudo cat /var/lib/nginx/state/nginx-mgmt-state</code></pre>
+<p>2. Check running processes: </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ps aux | grep nginx</code></pre>
+<p>3. Stop NIGNX service: </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>sudo systemctl stop nginx</code></pre>
+<p>4. Verify no NGINX proces remain: </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ps aux | grep nginx</code></pre>
+<p>5. Confirm the state file exists: </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>sudo ls -l /var/lib/nginx/state/</code></pre>
+<p>6. Explicitly delete the state file using the full path:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>sudo rm /var/lib/nginx/state/nginx-mgmt-state</code></pre>
+<p>7. Confirm the directory is empty: </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>sudo ls -l /var/lib/nginx/state/</code></pre>
+<p>8. Start NGINX service: </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>sudo systemctl start nginx</code></pre>
+<p>9. Verify a new UID was generated: </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>sudo cat /var/lib/nginx/state/nginx-mgmt-state</code></pre>
+<p> </p>
+<h2>Additional Information</h2>
+<ul><li><strong>Note: </strong>Using a wildcard (*) in the deletion command may fail if the user does not have read permissions on the directory. 
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>sudo rm -rf /var/lib/nginx/state/*</code></pre>
+<p>Always use the explicit file path.</p>
+</li><li>To prevent UID duplication when deploying NGINX Plus from a cloned image:
+<ul><li>The only thing you need to take into account when creating cloned images is: If there is an existing <span style="background-color: #dddddd;">/var/lib/nginx/state/nginx-mgmt-state</span> file, you should remove it before capturing the image.</li><li>Alternatively, you can clone the image before starting the NGINX service, which prevents the <em>nginx-mgmt-state</em> file from being created. When you then start each instance for the first time, NGINX Plus will generate a unique <em>nginx_uid</em> for each system.</li></ul>
+</li></ul>
+<p> </p>
+</article>
+</body>
+</html>

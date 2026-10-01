@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000149262: BIG-IP 17.x Advanced WAF change in behavior - update configuration to bd</title>
+<meta name="description" content="Support Solution: BIG-IP 17.x Advanced WAF change in behavior - update configuration to bd — Slow or inconsistent runtimes for tasks such as &quot;Importing&quot; or &quot;Applying&quot; policies">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000149262">
+</head>
+<body>
+<header>
+<h1>K000149262: BIG-IP 17.x Advanced WAF change in behavior - update configuration to bd</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-03-27</dd>
+<dt>Updated</dt><dd>2025-04-30</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 17.X.X, 17.5.X, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000149262">https://my.f5.com/manage/s/article/K000149262</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<h3>Symptoms</h3>
+<ol><li>/var space exhaustion</li><li>Slow or inconsistent runtimes for tasks such as &quot;Importing&quot; or &quot;Applying&quot; policies</li><li>Prolonged upgrade time</li></ol>
+<h3>Potential Results</h3>
+<ol><li>May result in configuration corruption in bd memory causes include but not limited to; false positives, inaccurate or unexpected blocking behavior</li><li>asm_config_server core events</li><li>asm_config_server rpc handler processes may cycle quickly</li><li>Other processes may be unable to write to /var resulting in other unexpected behavior</li></ol>
+<h2>Cause</h2>
+<p>Prior to BIG-IP 17.x, the process of updating the configuration in bd relied on the bd_agent process. To align with other bd dependent products BIG-IP 17.x has moved to using the manifest generation process. The manifest generation process compiles the configuration and writes the results to an incrementing manifest generation version folder under &quot;/ts/files/site_{site_id}/config/&quot;, where site_id is often &quot;1&quot; unless configured otherwise. The manifest generation to the incrementing version folder can consume /var during heavy change times such as automated configuration changes or on devices with larger configurations. A large configuration is not simply the number of policies. Policies with large numbers of objects can contribute to the size of a manifest generation version.</p>
+<p>Under the manifest generation method the asm_config_sync_rpc_handler processes require significantly more memory to fully process an update from the generation. Currently there is a max memory limit for asm_config_server_rpc_handler processes, 200,000,000 bytes (~191MB) which causes the process to write out the current state of unprocessed memory and any outstanding calls to disk. Then start a new process, which reads in the prior state and outstanding calls. With large configurations this process can cause the asm_config_sync_rpc_handler processes to perform the shutdown/spawn cycle frequently. At times this can introduce significant time into task completion as the task must wait for these processes to perform the shutdown/spawn cycle before continuing. Potentially multiple times during the manifest generation update process for larger configurations.</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">asm_config_server.pl|INFO|Jan 13 07:06:44.442|5003|F5::ASMConfig::Handler::write_async_shutdown_file,,Writing async shutdown file /var/asmdata1/tmp/async_shutdown__parent_23058__child_5003</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">asm_config_server.pl|INFO|Jan 13 07:06:49.448|5003|F5::ASMConfig::Handler::write_async_calls_to_file,,Saving remaining async calls for parent pid 23058 to file /var/asmdata1/tmp/saved_async_calls_for_pid_23058</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">asm_config_server.pl|INFO|Jan 13 07:08:24.380|23058|F5::ASMConfig::Handler::spawn_async_handler,,Spawned new async pid 5780</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">asm_config_server.pl|INFO|Jan 13 07:08:24.384|5780|F5::ASMConfig::Handler::spawn_async_handler,,Async handler starting</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">asm_config_server.pl|INFO|Jan 13 07:08:38.207|5780|F5::ASMConfig::Handler::load_async_calls_from_file,,Loading preserved async calls from file /var/asmdata1/tmp/async_shutdown__parent_23058__child_5003 (size = 311)</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">asm_config_server.pl|INFO|Jan 13 07:08:39.775|5780|F5::ASMConfig::Handler::write_async_calls_to_file,,Saving remaining async calls for parent pid 23058 to file /var/asmdata1/tmp/saved_async_calls_for_pid_23058</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">asm_config_server.pl|INFO|Jan 13 07:09:13.825|5873|F5::ASMConfig::Handler::write_async_shutdown_file,,Writing async shutdown file /var/asmdata1/tmp/async_shutdown__parent_3084__child_5873</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">asm_config_server.pl|INFO|Jan 13 07:09:18.831|5873|F5::ASMConfig::Handler::write_async_calls_to_file,,Saving remaining async calls for parent pid 3084 to file /var/asmdata1/tmp/saved_async_calls_for_pid_3084</span></p>
+<h2>Recommended Actions</h2>
+<h3>Workarounds</h3>
+<p>Space exhaustion prevention for /var volume:</p>
+<p style="padding-left: 40px;"><a href="https://cdn.f5.com/product/bugtracker/ID1694693.html" target="_self"><span id="alias_nonedit_display">Bug 1694693</span> &quot;</a><span id="short_desc_nonedit_display"><a href="https://cdn.f5.com/product/bugtracker/ID1694693.html" target="_self">Var exhaustion due to the files in /var/ts/files/site_1/config&quot;</a></span></p>
+<ul><li style="list-style-type: none;">
+<ul><li><span id="short_desc_nonedit_display">Reduces runtime of internal tasks and the number of previous versions filling /var during manifest generation.</span></li></ul>
+</li></ul>
+<p style="padding-left: 40px;"><span>Extending the /var volume prior to boot into new volume can also help mitigate space concerns.</span></p>
+<p> </p>
+<p><span>Task runtime improvement - reduce asm_config_server_rpc_handler cycling.</span><span style="color: #e74c3c;"></span></p>
+<ol><li><span>Edit /etc/ts/tools/asm_config_server.cfg<br><span style="background-color: #f1f1f1;">vim /etc/ts/tools/asm_config_server.cfg</span><br><br></span><span></span></li><li><span>Add a line to increase the &quot;AsyncMaxMemorySize&quot; threshold</span><span><br></span><span>Example sets the limit to 500MB:</span><span><br>               AsyncMaxMemorySize=524288000</span><span><br>    *To ensure a single process handles a manifest generation update the limit may require a much larger size. Ensure there is enough host memory resources before increasing the variable and monitor the device memory following the change.<br><br></span></li><li><span>Save and exit<br><span style="background-color: #f1f1f1;">:wq!<br><br></span></span></li><li><span>Restart the asm_config_server processes<br></span><span style="background-color: #f1f1f1;">pkill -f asm_config_serv<br><br></span></li><li>Monitor the host memory as increasing the limit allows a single process to consume more memory. The following articles provide an overview of the different types of memory on the BIG-IP system as well as how to interpret the results from the top command:
+<ul><li><a href="https://my.f5.com/manage/s/article/K16419" target="_blank">K16419: Overview of BIG-IP memory usage</a></li><li><a href="https://my.f5.com/manage/s/article/K16739" target="_blank">K16739: Understanding &#39;top&#39; output on the BIG-IP system</a></li></ul>
+</li></ol>
+<p><span style="color: #c20025;background-color: #f1f1f1;"><strong>Important: Changes to this file do not survive upgrade</strong></span></p>
+<p>Changes to flat files such as /etc/ts/tools/asm_config_server.cfg can be copied forward to the destination volume prior to upgrade.</p>
+<ol><li>Make a directory to mount the target volume to<br><span style="background-color: #f1f1f1;">mkdir /var/tmp/mnt</span><br><br></li><li>Mount the target volume read-write<br><span style="background-color: #f1f1f1;">mount -o rw /var/vg-bd-sda/set.N.root /var/tmp/mnt #where N is the target volume. Example: HD1.3 = 3</span><br><br></li><li>Copy the flat file to the target location<br><span style="background-color: #f1f1f1;">cp /etc/ts/tools/asm_config_server.cfg /var/tmp/mnt/etc/ts/tools/asm_config_server.cfg</span><br><br></li><li>Unmount the target volume<br><span style="background-color: #f1f1f1;">umount /var/tmp/mnt</span><span style="background-color: #f1f1f1;"></span></li></ol>
+</article>
+</body>
+</html>

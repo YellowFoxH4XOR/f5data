@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161608: AS3 Declaration Fails with &quot;double quotes are not balanced&quot; Error When Using Encrypted Passphrase in Cookie Persistence</title>
+<meta name="description" content="Support Solution: AS3 Declaration Fails with &quot;double quotes are not balanced&quot; Error When Using Encrypted Passphrase in Cookie Persistence — When posting an AS3 declaration that includes a cookie persistence profile with an encrypted passphrase, the deployment fails with a 500 response error.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161608">
+</head>
+<body>
+<header>
+<h1>K000161608: AS3 Declaration Fails with &quot;double quotes are not balanced&quot; Error When Using Encrypted Passphrase in Cookie Persistence</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-05</dd>
+<dt>Updated</dt><dd>2026-06-05</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Automation and Orchestration</li><li>BIG-IP</li><li>F5 Application Services 3 Extension</li><li>BIG-IP APM</li><li>BIG-IP LTM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161608">https://my.f5.com/manage/s/article/K000161608</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When posting an AS3 declaration that includes a cookie persistence profile with an encrypted passphrase, the deployment fails with a 500 response error.</p>
+<p>The error message references a RADIUS server object and a syntax error, which may appear unrelated to the actual configuration issue.</p>
+<p><strong>Error message observed:</strong></p>
+<pre class="language-c" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>{
+  &quot;code&quot;: 500,
+  &quot;message&quot;: &quot;POST .../mgmt/tm/ltm/auth/radius-server/ response=400 body={\&quot;code\&quot;:400,\&quot;message\&quot;:\&quot;double quotes are not balanced\&quot;,\&quot;errorStack\&quot;:[],\&quot;apiError\&quot;:26214401}&quot;
+}</code></pre>
+<p> </p>
+<p>The declaration passes schema validation but fails during deployment. Declarations without the <span style="font-family: terminal, monaco, monospace;">passphrase</span> field, or using a plain base64-encoded passphrase, deploy successfully.</p>
+<h2>Environment</h2>
+<ul><li><strong>Product:</strong> BIG-IP LTM</li><li><strong>BIG-IP Version:</strong> 17.5.x</li><li><strong>AS3 Version:</strong> 3.5x</li><li><strong>Configuration:</strong>
+<ul><li>AS3 declaration containing a Persist object with <span style="font-family: terminal, monaco, monospace;">persistenceMethod: cookie</span></li><li><span style="font-family: terminal, monaco, monospace;">encrypt: true</span> enabled on the cookie persistence profile</li><li><span style="font-family: terminal, monaco, monospace;">passphrase</span> object set with the following fields
+<ul><li><span style="font-family: terminal, monaco, monospace;">ciphertext:</span> containing SecureVault-encrypted binary data (not a plain base64 string)</li><li><span style="font-family: terminal, monaco, monospace;">protected</span>: set to <span style="font-family: terminal, monaco, monospace;">eyJhbGciOiJkaXIiLCJlbmMiOiJub25lIn0</span> (default value, indicating <span style="font-family: terminal, monaco, monospace;">enc=none)</span></li></ul>
+</li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p>A mismatch between the <span style="font-family: terminal, monaco, monospace;">protected</span> field and the <span style="font-family: terminal, monaco, monospace;">ciphertext</span> field in the AS3 declaration&#39;s <span style="font-family: terminal, monaco, monospace;">passphrase</span> object</p>
+<ul><li>The protected field was set to its default value <span style="font-family: terminal, monaco, monospace;">eyJhbGciOiJkaXIiLCJlbmMiOiJub25lIn0</span> which base64 decodes to <span style="font-family: terminal, monaco, monospace;">{&quot;alg&quot;:&quot;dir&quot;,&quot;enc&quot;:&quot;none&quot;} </span>indicating the <span style="font-family: terminal, monaco, monospace;">ciphertext </span>is a plain base64-encoded string</li><li>However, the <span style="font-family: terminal, monaco, monospace;">ciphertext</span> value contained SecureValue-encrypted binary data, not plaintext base64 string</li><li>This mismatch caused AS3 to generate malformed TMSH configuration resulting in the &quot;double quotes are not balanced&quot; syntax error when attempting to create the RADIUS server object used internally while the declaration is processed</li></ul>
+<h2>Answer/Recommended Actions</h2>
+<p>Choose the appropriate option based on the type of data in the <span style="font-family: terminal, monaco, monospace;">ciphertext</span> field:</p>
+<p><span style="font-size: 16px;"><strong>Option A</strong></span> - If <span style="font-family: terminal, monaco, monospace;">ciphertext </span>contains SecureVault-encrypted binary data:</p>
+<ol><li> Update the <span style="font-family: terminal, monaco, monospace;">protected</span> field in the <span style="font-family: terminal, monaco, monospace;">passphrase</span> object to indicate SecureVault encryption:</li></ol>
+<p>        The value <span style="font-family: terminal, monaco, monospace;">eyJhbGciOiJkaXIiLCJlbmMiOiJub25lIn0 </span>decodes to <span style="font-family: terminal, monaco, monospace;">{&quot;alg&quot;:&quot;dir&quot;,&quot;enc&quot;:&quot;f5sv&quot;} i</span>ndicating SecureVault encryption</p>
+<p> </p>
+<pre class="language-c" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>&quot;passphrase&quot;: {
+  &quot;ciphertext&quot;: &quot;4zqHHA5CeGyvDPYTPDO81ohFlCZ98kFiNDGPAV6sWPR7&quot;,
+  &quot;protected&quot;: &quot;eyJhbGciOiJkaXIiLCJlbmMiOiJmNXN2In0&quot;
+}</code></pre>
+<p>   2. Re-POST the updated declaration to AS3 declare endpoint</p>
+<p><span style="font-size: 16px;"><strong>Option B</strong></span> - If the <span style="font-family: terminal, monaco, monospace;">passphrase</span> is a plaintext secret (not SecureVault-encrypted);</p>
+<ol><li>Base64-encode the plaintext <span style="font-family: terminal, monaco, monospace;">passphrase </span>value. For example:</li></ol>
+<p>       </p>
+<pre class="language-c" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>echo &lt;your_passphrase&gt; | base64</code></pre>
+<p>   </p>
+<p>    2.  Use the resulting base64 string as the <span style="font-family: terminal, monaco, monospace;">ciphertext </span>value and leave the <span style="font-family: terminal, monaco, monospace;">protected</span> field at it&#39;s default value of <span style="font-family: terminal, monaco, monospace;">eyJhbGciOiJkaXIiLCJlbmMiOiJub25lIn0</span> or omit it entirely:</p>
+<p> </p>
+<pre class="language-c" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>&quot;passphrase&quot;: {
+  &quot;ciphertext&quot;: &quot;&lt;base64_encoded_passphrase&gt;&quot;
+}</code></pre>
+<h4></h4>
+<p><span style="font-size: 14px;">     3. Re-POST the updated declaration to AS3</span></p>
+<h2>Additional Information</h2>
+<p>If you encounter this error, review your AS3 declaration and ensure the &quot;<span style="font-family: terminal, monaco, monospace;">protected</span>&quot; field in the passphrase object matches the encoding of the &quot;<span style="font-family: terminal, monaco, monospace;">ciphertext</span>&quot; value.</p>
+<p>The <span style="font-family: terminal, monaco, monospace;">protected</span> field in the AS3 passphrase object is a <span style="font-family: terminal, monaco, monospace;">JOSE</span> header marker that tells AS3 how to interpret the ciphertext value:</p>
+<ul><li><span style="font-family: terminal, monaco, monospace;">eyJhbGciOiJkaXIiLCJlbmMiOiJub25lIn0 → enc=none → ciphertext </span>is a plain base64url-encoded string</li><li><span style="font-family: terminal, monaco, monospace;">eyJhbGciOiJkaXIiLCJlbmMiOiJmNXN2In0 → enc=f5sv → ciphertext i</span>s a base64url-encoded SecureVault cryptogram</li></ul>
+<p>F5 recommends leaving the <span style="font-family: terminal, monaco, monospace;">protected</span> field either empty or the default value unless the <span style="font-family: terminal, monaco, monospace;">ciphertext</span> has been encrypted with SecureVault</p>
+<p>The error message referencing a RADIUS server <span style="font-family: terminal, monaco, monospace;">/mgmt/tm/ltm/auth/radius-server/ </span>is misleading - It does not indicate a RADIUS configuration problem. </p>
+<p>This is an internal AS3 endpoint used during declaration processing</p>
+</article>
+</body>
+</html>

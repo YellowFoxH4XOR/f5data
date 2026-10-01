@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000152257: High Control Plane CPU Usage on BIG-IP LTM Due to dynconfd and mcpd Interaction causing high mcpd CPU use</title>
+<meta name="description" content="Support Solution: High Control Plane CPU Usage on BIG-IP LTM Due to dynconfd and mcpd Interaction causing high mcpd CPU use — Large configuration scale (many FQDN nodes, pools, monitors)">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000152257">
+</head>
+<body>
+<header>
+<h1>K000152257: High Control Plane CPU Usage on BIG-IP LTM Due to dynconfd and mcpd Interaction causing high mcpd CPU use</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-06-30</dd>
+<dt>Updated</dt><dd>2025-10-13</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.1.6, 16.1.0, 16.1.1, 15.0.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 16.0.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 14.1.2, 14.0.X, 14.0.1, 14.0.0, 14.1.0, 13.1.1, 13.1.3, 13.1.4, 13.1.5, 14.X.X, 17.0.X, 17.1.0, 17.1.1, 17.5.0, 17.5.1, 17.0.0, 16.0.1, 16.0.0, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 17.1.2</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000152257">https://my.f5.com/manage/s/article/K000152257</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>High CPU utilization can occur on the control and analysis plane CPUs of a BIG-IP LTM tenant, with the <span style="background-color: #f1f1f1;">mcpd</span> process consuming significant resources. This is typically observed when there are frequent or excessive messages from the <span style="background-color: #f1f1f1;">dynconfd</span> process to <span style="background-color: #f1f1f1;">mcpd</span>. The issue may be accompanied by a large number of FQDN nodes (some not resolving), a high number of monitor instances, and no production traffic required to trigger the problem. Restarting <span style="background-color: #f1f1f1;">dynconfd</span> temporarily reduces CPU usage, but it gradually increases again. System logs may show repeated dynconfd-to-mcpd messaging, and symptoms include:</p>
+<ul><li>High <span style="background-color: #f1f1f1;">mcpd</span> CPU usage (up to 80% or higher)</li><li>Gradual increase in CPU after restarting dynconfd</li><li>Large configuration scale (many FQDN nodes, pools, monitors)</li><li>No significant events in LTM or audit logs at time of spike</li></ul>
+<h2>Environment</h2>
+<ul><li><strong>Product:</strong> BIG-IP</li><li><strong>Configuration characteristics:</strong></li><ul><li>Using FQDN nodes and FQDN pool members.</li></ul></ul>
+<h2>Cause</h2>
+<p>This issue is caused by a known software defect (<a href="https://cdn.f5.com/product/bugtracker/ID990173.html" target="_blank">Bug ID 990173</a>) where the <span style="background-color: #f1f1f1;">dynconfd</span> process repeatedly sends duplicate or excessive messages to <span style="background-color: #f1f1f1;">mcpd</span>, after a message validation failure, resulting in high control plane CPU usage. The problem may be exacerbated by large configurations with many FQDN nodes and monitor instances.</p>
+<h2>Recommended Actions</h2>
+<p><strong>Upgrade</strong> to a version where ID990173 is fixed - 15.1.10.8, 16.1.6.1, 17.1.3, 17.5.1.3 and above.</p>
+<p><strong>Configuration Cleanup: </strong>Remove or correct any FQDN nodes that are not resolving.</p>
+<p><strong>Check statistics: </strong>You can use statistics from the <span style="background-color: #f1f1f1;">mcp_transaction_stat</span> table to see if <span style="background-color: #f1f1f1;">dynconfd</span> is one of the large users of mcpd. If it is it may well sort very near the top when sorted on total_transactions, but with a bit more processing with awk we can get a sense of the total transaction CPU use by multiplying that by the average time for a transaction. The units aren&#39;t very important, just the relative values. If you then sort on this use you can see if it&#39;s plausible <span style="background-color: #f1f1f1;">dynconfd</span> could be driving mcpd use.</p>
+<h3>Starting with the current values</h3>
+<p>The column titles will not show, but were added by hand for clarity. The fourth column below is created by awk and represents use, and this is also the sort key. There&#39;s nothing magical about showing only top three, but probably if <span style="background-color: #f1f1f1;">dynconf</span> isn&#39;t fairly close to top it may not be driving mcpd CPU.</p>
+<p>On a BIG-IP use <strong>-d blade</strong> or use the full path to the relevant tmstat table <strong>-f /var/tmstat/blade/mcp_stat_segment</strong>.</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"># tmctl -q -d blade mcp_transaction_stat -s user,total_transactions,process_time_mean | awk &#39;{use=$2*$3; print $0&quot;   &quot;use}&#39; | sort -k 4 -rn | head -3</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">user                            total_transactions process_time_mean</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">------------------------------- ------------------ -----------------</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">%dynconf                                7585285874               159   1206060453966</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">%statsd                                     512773              5124   2627448852</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">%bigd.2                                    1975331               579   1143716649</span></p>
+<p> </p>
+<p>In this case it&#39;s very clear that <span style="background-color: #f1f1f1;">dynconfd</span> is a big user of <span style="background-color: #f1f1f1;">mcpd</span> CPU. Usually the use falls of very quickly as you show more rows so typically the first few rows account for nearly all <span style="background-color: #f1f1f1;">mcpd</span> CPU use.</p>
+<p>For completeness, the command below would give a similar output sorted on total_transactions, showing top three, and this does show column titles:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"># tmctl -d blade mcp_transaction_stat -s user,total_transactions,process_time_mean -OK total_transactions -L 3</span></p>
+<p> </p>
+<h3>Looking at snapshot data</h3>
+<p>You can also look at the snapshot data, and this is advisable because you can see what happening recently. On a system with high uptime and a long <span style="background-color: #f1f1f1;">mcpd</span> process uptime conditions my change over time and total transactions over a long period may be misleading if they have. For instance new FQDN monitors may have been set up recently.</p>
+<p>Change directory to /shared/tmstat/snapshots/blade0/public/3600 (or 86400) or use &#39;-T public&#39; argument to tmctl. On a multi-blade capable system replace blade0 with the primary blade number, often 1.</p>
+<p>cd /shared/tmstat/snapshots/blade0/public/3600</p>
+<p>Pick a snapshot file and put in place of placeholder below.</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">/shared/tmstat/snapshots/blade0/public/3600$ tmctl -q -f  &lt;blade0-public-3600-20XX-XX-XXTXX:00:00&gt; mcp_transaction_stat -s user,total_transactions,process_time_mean -OK total_transactions | awk &#39;{use=$2*$3; print $0&quot;   &quot;use}&#39; | sort -k 4 -rn | head -3</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">%dynconf                       9472078324    159   1506060453594</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">%statsd                           1048994   1752   1855357488</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">%cmi-mcpd-peer-/Common/ltm2        711704    816   580750464</span></p>
+<p>Next we can see see how total_transactions for <span style="background-color: #f1f1f1;">dynconf</span> increases through the set of snapshot files.</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">/shared/tmstat/snapshots/blade0/public/3600$ tmctl -D . mcp_transaction_stat -s time,user,total_transactions,process_time_mean user=%dynconf | awk &#39;/^2/{p3 ? delta=($3-p3)*$4 : delta=&quot;&quot;; p3=$3; print $0&quot;   &quot;delta;next}{print $0}&#39;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">mcp_transaction_stat</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">====================</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">time                user  total_transactions process_time_mean</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">------------------- ----- ------------------ -----------------</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">2025-04-22T03:00:00 %dynconf      1613981725               159   735421</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">2025-04-22T04:00:00 %dynconf      1614723865               159   742140</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">2025-04-22T05:00:00 %dynconf      1615474487               159   750622</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">2025-04-22T06:00:00 %dynconf      1616232175               159   757688</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">2025-04-22T07:00:00 %dynconf      1616994557               159   762382</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">2025-04-22T08:00:00 %dynconf      1617766031               159   771474</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">2025-04-22T09:00:00 %dynconf      1618543210               159   777179</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">2025-04-22T10:00:00 %dynconf      1619327171               159   783961</span></p>
+<p>The last column above shows the increase in total_transactions from previous row. Since the interval here is one hour this means there were roughly over 200 <span style="background-color: #f1f1f1;">dynconfd</span> messages per second on average arriving at <span style="background-color: #f1f1f1;">mcpd</span>, and this was enough on this particular system to make <span style="background-color: #f1f1f1;">mcpd</span> busy.</p>
+<h2>Additional Information</h2>
+<p>&lt; strong &gt; Relevant Links</p>
+<ul><li><a href="https://support.f5.com/csp/article/K000139100" target="_blank">K000139100: Troubleshooting high mcpd CPU usage driven by SNMP polling <br><br></a><hr></hr><em>This document was generated according to strict HTML conversion rules for F5 technical documentation.<br></em> &lt; / html &gt;</li></ul>
+</article>
+</body>
+</html>

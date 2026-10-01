@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160584: Packets are intermittently dropped when using immediate timeout with firewall nat policy</title>
+<meta name="description" content="Support Solution: Packets are intermittently dropped when using immediate timeout with firewall nat policy — Packets received by BIG-IP are intermittently dropped and fails to create a new connection to be forwarded when the virtual server uses a connection profile with immediate timeout and a firewall nat…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160584">
+</head>
+<body>
+<header>
+<h1>K000160584: Packets are intermittently dropped when using immediate timeout with firewall nat policy</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-04-02</dd>
+<dt>Updated</dt><dd>2026-04-08</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP AFM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160584">https://my.f5.com/manage/s/article/K000160584</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Packets received by BIG-IP are intermittently dropped and fails to create a new connection to be forwarded when the virtual server uses a connection profile with immediate timeout and a firewall nat policy is applied.</p>
+<p>This may appear as lowered call quality in VoIP applications, missing UDP packets, or ICMP unreachables from the BIG-IP.</p>
+<p> </p>
+<h2>Environment</h2>
+<p>This can happen on a BIG-IP with the following configuration:</p>
+<ul><li>The virtual server uses a connection profile with immediate timeout</li><li>The virtual server uses a firewall nat policy</li></ul>
+<p>An example of a connection profile with immediate timeout:</p>
+<p><code>ltm profile fastl4 /Common/myfastl4-timeout_immediate {<br>    app-service none<br>    defaults-from /Common/fastL4<br>    idle-timeout immediate<br>}</code></p>
+<p>An example of a firewall nat policy:</p>
+<p style="line-height: 1;"><code>security nat policy /Common/outbound_policy {
+    rules {
+        snat-rtp-policy {
+            ip-protocol any
+            translation {
+                destination /Common/snat_rtp
+                source none
+            }
+        }
+    }
+}
+
+security nat destination-translation /Common/snat_rtp {
+    addresses {
+        192.168.1.100 { }
+    }
+    type static-nat
+}
+</code></p>
+<p> </p>
+<h2>Cause</h2>
+<p>When using immediate timeout, each new packet creates a new connection. These connections are queued and flagged to not be matched to any subsequent new incoming packets. When packets are sent in quick succession, there is a fair chance previous immediately timed out connections may still exist in tmm, and therefore the firewall nat will reject to create a new nat, causing the connection to be rejected and the new packet dropped. This is unique to the firewall nat implementation, which is different from the regular LTM nat implementation that does not exhibit this issue.</p>
+<p>F5&#39;s reference identification of this known behavior is ID 2261017.</p>
+<p> </p>
+<h2>Symptoms</h2>
+<p>Observe the relevant stats showing connectfails stats increase under the fastl4 profile statistics</p>
+<p><code># tmctl -w 999 profile_bigproto_stat -s name,vs_name,connectfails<br>name                               vs_name                                      connectfails<br>---------------------------------- -------------------------------------------- ------------<br>/Common/myfastl4-timeout_immediate /Common/vs-udp                               1035993738</code></p>
+<p><span style="color: #16a085;">Note: connectfails does not show up by default on a tmsh output</span></p>
+<p>Observe the relevant stats firewall nat stats increasing under the err_flow_collision statistics.  Example:</p>
+<p style="line-height: 1;"><code>tmctl -w 999 fw_nat_trans_stat -s type,name,translation_requests,translation_request_failures,err_flow_collision
+ 
+type         name              translation_requests translation_request_failures err_flow_collision
+------------ ----------------- -------------------- ---------------------------- ------------------
+fw_src_trans /Common/snat_rtp  67899055917          510828338                    510828338
+</code></p>
+<p>You might see the following ICMP destination unreachables messages in your packet captures:</p>
+<p><code># tcpdump -nnvs 0 -i 0.0:nnn
+No. ID  Source      SPort Destination   DPort Proto Info
+  3 123 192.168.0.1 12345 192.168.1.101 39328 UDP   IN s1/tmm3 : 12345 → 39328 Len=9 
+  4 123 192.168.0.1 12345 192.168.1.101 39328 UDP   IN s1/tmm3 : 12345 → 39328 Len=9 
+  5 456 192.168.1.1 39328 192.168.1.101 12345 ICMP  OUT s1/tmm0 : Destination unreachable (Communication administratively filtered)
+  6 456 192.168.1.1 39328 192.168.1.101 12345 ICMP  OUT s1/tmm0 : Destination unreachable (Communication administratively filtered)
+</code></p>
+<h2>Recommended Actions</h2>
+<p>The general recommendation is to increase the connection immediate timeout to one second or higher. Increasing the timeout, even to one second, will significantly avoid these race conditions and will allow tmm to much more efficiently process network traffic.</p>
+<p>The reason is that tmm is designed from the ground up to be a distributed, parralel processing, full-proxy, connection-based architecture, which means tmm accelerates network processing by distributing the computation of network traffic resources among multiple CPUs that is keyed to its connection (generally a unique IP/port tuple). Configuring immediate timeout to unecessarily process network traffic packet by packet will significantly increase the processing overhead, causing each packet to be searched, matched, and processed as spearate full-proxied connections that are immediately deleted, instead of the system accelerating network processing by treating each packet using the existing pre-processing of connections.</p>
+<p>Immediate timeout do have some use cases, such as DNS request/responses, in which the Datagram LB option can be used instead. However, most other protocols with UDP streams, such as VPN and VoIP protocols, use a unique IP/port tuple which greatly benefits from BIG-IP full-proxy connections.</p>
+<p>Even when the use case is to allow packets in and out bidirectionally, connection flows already handle bidirectional packets because each connection flow consists of two flows: a clientside connection and a serverside connection, each that have its own bidirectional unique IP/port tuple. Depending on where the packet hits the virtual server, the clientside is created first, followed by the serverside connection.</p>
+<p>For example:</p>
+<p><code>
+client &lt;=&gt; &lt; src ip:port &lt;-&gt; dst ip:port &gt; clientside connection &lt;---&gt; tmm proxy &lt;---&gt; serverside connection &lt; src ip2:port2 &lt;-&gt; dst ip2:port2 &gt; &lt;=&gt; server
+</code></p>
+<p>Therefore, as long as there are packets belonging to the IP/port tuple in both directions, both connections are kept alive and return packets are processed and returned to the client.</p>
+<p style="line-height: 1;"><code>ltm profile fastl4 /Common/myfastl4-timeout_15s {
+    app-service none
+    defaults-from /Common/fastL4<br>  idle-timeout 15}</code></p>
+</article>
+</body>
+</html>

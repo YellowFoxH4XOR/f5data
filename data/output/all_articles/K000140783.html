@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000140783: How to provide a blank/empty CRL signed by the CA for SSL Orchestrator (SSLO)</title>
+<meta name="description" content="Support Solution: How to provide a blank/empty CRL signed by the CA for SSL Orchestrator (SSLO) — The issue we are trying to resolve is how to provide a blank CRL signed by the CA. The key is stored in the hardware HSM on the device. The current sticking point is how do we interact with the key…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000140783">
+</head>
+<body>
+<header>
+<h1>K000140783: How to provide a blank/empty CRL signed by the CA for SSL Orchestrator (SSLO)</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-08-22</dd>
+<dt>Updated</dt><dd>2024-08-22</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000140783">https://my.f5.com/manage/s/article/K000140783</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>The issue we are trying to resolve is how to provide a blank CRL signed by the CA. The key is stored in the hardware HSM on the device. The current sticking point is how do we interact with the key in the HSM to sign the CRL.</p>
+<h2>Environment</h2>
+<p>Relevant environmental factors specific to the topic</p>
+<ul><li>Configuration objects and settings Certificate Authority (CA), Hardware Security Modules (HSM), Certificate Revocation List (CRL)</li><li>SSL Orchestrator (SSLO)</li></ul>
+<h2>Cause</h2>
+<p>The openssl binaries on cBIP are compiled with HSM support. This basically means you can point openssl at the “stub” key in the file system and that will engage the real key in the HSM.”</p>
+<h2>Recommended Actions</h2>
+<p>1) Create a blank CRL:</p>
+<p class="ql-indent-1">openssl ca -config ca.conf -gencrl -keyfile &lt;path to CA key&gt; -cert &lt;path to CA cert&gt; -out testcrl.crl</p>
+<p>Note; An assumption is made here that you not running appliance mode and have access to shell.</p>
+<p>2) Paths to CA key and certificate are their respective paths in the file store (disk).</p>
+<p class="ql-indent-1">Example:</p>
+<p class="ql-indent-1">root@(localhost)(cfg-sync Standalone)(Active)(/Common)(tmos)# list sys crypto key testca</p>
+<p class="ql-indent-1">sys crypto key testca {</p>
+<p class="ql-indent-1">key-id 8dadaf59bbf735e138147d6a677ffd7b</p>
+<p class="ql-indent-1">key-size 2048</p>
+<p class="ql-indent-1">key-type rsa-private</p>
+<p class="ql-indent-1">security-type fips</p>
+<p class="ql-indent-1">}</p>
+<p class="ql-indent-1">root@(localhost)(cfg-sync Standalone)(Active)(/Common)(tmos)# list sys crypto cert testca</p>
+<p class="ql-indent-1">sys crypto cert testca {</p>
+<p class="ql-indent-1">cert-validation-options none</p>
+<p class="ql-indent-1">cert-validators {</p>
+<p class="ql-indent-1">{ }</p>
+<p class="ql-indent-1">}</p>
+<p class="ql-indent-1">certificate-key-size 2048</p>
+<p class="ql-indent-1">city</p>
+<p class="ql-indent-1">common-name <a href="https://internal-ca.com" target="_blank">internal-ca.com</a></p>
+<p class="ql-indent-1">country US</p>
+<p class="ql-indent-1">email-address</p>
+<p class="ql-indent-1">expiration Aug 18 22:46:00 2034 GMT</p>
+<p class="ql-indent-1">fingerprint SHA256/B5:99:E7:7D:EC:FE:B7:42:3D:4B:FD:B9:76:07:0B:83:43:FA:0E:0A:4A:6A:67:A7:4B:00:FD:CC:D6:1B:F8:34</p>
+<p class="ql-indent-1">issuer CN=<a href="https://internal-ca.com" target="_blank">internal-ca.com</a>,C=US</p>
+<p class="ql-indent-1">issuer-certificate</p>
+<p class="ql-indent-1">organization</p>
+<p class="ql-indent-1">ou</p>
+<p class="ql-indent-1">public-key-type RSA</p>
+<p class="ql-indent-1">state</p>
+<p class="ql-indent-1">subject-alternative-name</p>
+<p class="ql-indent-1">}</p>
+<p> </p>
+<p>3) Get the paths to the files stored on disk:</p>
+<p class="ql-indent-1">ls /config/filestore/files_d/Common_d/certificate_key_d/</p>
+<p class="ql-indent-1">…</p>
+<p class="ql-indent-1">/config/filestore/files_d/Common_d/certificate_key_d/:Common:testca_143018_1</p>
+<p class="ql-indent-1"> </p>
+<p class="ql-indent-1">ls /config/filestore/files_d/Common_d/certificate_d/</p>
+<p class="ql-indent-1">…</p>
+<p class="ql-indent-1">/config/filestore/files_d/Common_d/certificate_d/:Common:testca_143020_1</p>
+<p>4) Generate the CRL:</p>
+<p class="ql-indent-1">openssl ca -config ./etc/pki/tls/openssl.cnf -gencrl \</p>
+<p class="ql-indent-1">-keyfile &quot;/config/filestore/files_d/Common_d/certificate_key_d/:Common:testca_143018_1&quot; \</p>
+<p class="ql-indent-1">-cert &quot;/config/filestore/files_d/Common_d/certificate_d/:Common:testca_143020_1&quot; \</p>
+<p class="ql-indent-1">-out testcrl.crl</p>
+<p class="ql-indent-1"> </p>
+<p class="ql-indent-1">[root@localhost:Active:Standalone] / # openssl crl -in testcrl.crl -noout -text</p>
+<p class="ql-indent-1">Certificate Revocation List (CRL):</p>
+<p class="ql-indent-1">Version 2 (0x1)</p>
+<p class="ql-indent-1">Signature Algorithm: sha256WithRSAEncryption</p>
+<p class="ql-indent-1">Issuer: /C=US/CN=<a href="https://internal-ca.com" target="_blank">internal-ca.com</a></p>
+<p class="ql-indent-1">Last Update: Aug 20 22:50:46 2024 GMT</p>
+<p class="ql-indent-1">Next Update: Sep 19 22:50:46 2024 GMT</p>
+<p class="ql-indent-1">CRL extensions:</p>
+<p class="ql-indent-1">X509v3 CRL Number: 4096</p>
+<p class="ql-indent-1">No Revoked Certificates.</p>
+<p class="ql-indent-1">Signature Algorithm: sha256WithRSAEncryption</p>
+<p class="ql-indent-1">4f:69:21:e9:b8:50:2c:d7:65:cf:e1:3a:8d:5f:64:c3:c0:3a:</p>
+<p class="ql-indent-1">80:7e:70:41:71:f7:ba:f9:2f:60:f6:9b:b2:21:f4:7a:8b:d7:</p>
+<p class="ql-indent-1">c8:0c:ba:3a:01:83:3f:8a:d9:50:f2:be:2a:b3:19:65:18:f5:</p>
+<p class="ql-indent-1">1a:1b:cb:ff:c8:88:e9:1e:09:72:a1:01:d8:ee:3b:34:43:68:</p>
+<p class="ql-indent-1">ee:7d:15:ec:43:2a:e3:f0:18:18:c9:b7:b6:38:5f:87:a7:ca:</p>
+<p class="ql-indent-1">fe:55:66:2b:55:52:fb:0a:11:fd:42:f6:a8:33:ae:27:77:af:</p>
+<p class="ql-indent-1">4b:f6:87:3f:12:34:7e:81:8e:fe:a8:82:f4:e2:91:7a:37:b3:</p>
+<p class="ql-indent-1">dd:97:27:d2:09:c6:7e:17:75:d7:7a:51:80:60:39:81:ed:0a:</p>
+<p class="ql-indent-1">ce:19:85:82:55:48:9d:fe:21:16:b0:20:7e:c1:77:09:fd:b8:</p>
+<p class="ql-indent-1">15:a4:1d:0d:c5:04:c9:e6:ab:86:9d:0d:1d:0a:93:5e:43:1d:</p>
+<p class="ql-indent-1">b3:26:9c:61:9f:85:d1:57:a6:e6:db:d1:83:3e:60:96:c2:47:</p>
+<p class="ql-indent-1">e9:81:ac:ae:c8:49:6f:a6:04:8a:86:ba:5c:a5:2c:9f:4a:83:</p>
+<p class="ql-indent-1">e0:cb:61:65:93:39:61:ab:73:0c:e6:b1:68:e5:60:05:a6:24:</p>
+<p class="ql-indent-1">40:29:c2:bb:f6:c6:03:96:e8:39:72:da:4b:bc:07:7f:88:a8:</p>
+<p class="ql-indent-1">39:0c:8a:5e</p>
+<p>5) So, then the way it would work:</p>
+<ol><li>Generate your CRL from the forging CA. Assuming the CRL lasts for a few days/weeks, you’ll probably want some sort of automated process to update this.</li><li>Base64 the CRL or dump directly into an iFile.</li><li>Add an iRule to the SSLO topology VIP that inserts the CRLDP extension on the outgoing forged cert:</li></ol>
+<p class="ql-indent-1">SSL::forward_proxy extension CRLDP &quot;<a href="http://something.com/forgingca.crl" target="_blank">http://something.com/forgingca.crl</a>&quot;</p>
+<p>6) Create a separate HTTP VIP listening on the client side that resolves to the name used in the above CRLDP value, then add an iRule that simply returns the CRL data on HTTP request.</p>
+<p> </p>
+<h2>Additional Information</h2>
+<p> </p>
+</article>
+</body>
+</html>

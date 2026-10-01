@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162774: Enable the multi_accept directive (or any events block directive) in NGINX Ingress Controller</title>
+<meta name="description" content="Support Solution: Enable the multi_accept directive (or any events block directive) in NGINX Ingress Controller — NIC&#x27;s ConfigMap snippet keys (main-snippets, http-snippets, location-snippets, server-snippets, stream-snippets) do not include an events context, so no snippet can place a directive inside events {}.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162774">
+</head>
+<body>
+<header>
+<h1>K000162774: Enable the multi_accept directive (or any events block directive) in NGINX Ingress Controller</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-04</dd>
+<dt>Updated</dt><dd>2026-08-04</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Ingress Controller: 5.0.0, 5.1.0, 5.0.X, 5.X.X, 5.5.X, 5.5.4, 5.5.3, 5.5.2, 5.5.1, 5.5.0, 5.4.X, 5.4.3, 5.4.2, 5.4.1, 5.4.0, 5.3.X, 5.3.4, 5.3.3, 5.3.2, 5.3.1, 5.3.0, 5.2.X, 5.2.1, 5.2.0, 5.1.X, 5.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162774">https://my.f5.com/manage/s/article/K000162774</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>You are running F5 NGINX Ingress Controller (NIC) and want to enable an NGINX directive that lives inside the NGINX events {} block — for example multi_accept on;. You have found that:</p>
+<ul><li>NIC&#39;s ConfigMap <strong>snippet</strong> keys (main-snippets, http-snippets, location-snippets, server-snippets, stream-snippets) do not include an events context, so no snippet can place a directive inside events {}.</li><li>The default NIC main template only renders worker_connections inside the events {} block.</li></ul>
+<p>This article explains the only supported way to add such a directive, and the critical version-matching requirement.</p>
+<h2>Environment</h2>
+<ul><li>F5 NGINX Ingress Controller (NGINX Plus and NGINX Open Source)</li><li>Configuration via the nginx-config ConfigMap</li></ul>
+<h2>Cause</h2>
+<p>NIC generates the main nginx.conf from a Go template (nginx-plus.tmpl / nginx.tmpl). Snippets are injected only into predefined contexts; there is no snippet hook for the events context. The main-snippets key renders into the <strong>main</strong> context (top level of nginx.conf, outside events {}), so it cannot be used to inject a directive inside the events block.</p>
+<p>The only supported mechanism to modify the events {} block is to override the entire main template using the main-template ConfigMap key (documented under <a href="https://docs.nginx.com/nginx-ingress-controller/configuration/global-configuration/custom-templates/" target="_blank" rel="noopener noreferrer">Custom templates</a>).</p>
+<h2>Recommended Actions</h2>
+<h3>Step 1 — Identify the exact running NIC version</h3>
+<p>The template you supply must match the version of the running NIC binary. Determine it with:</p>
+<pre>kubectl get pod -n nginx-ingress &lt;nic-pod&gt; -o jsonpath=&#39;{.spec.containers[*].image}&#39;</pre>
+<h3>Step 2 — Download the template for that exact version tag</h3>
+<p>Pull nginx-plus.tmpl (NGINX Plus) or nginx.tmpl (NGINX OSS) from the nginx/kubernetes-ingress GitHub repository, using the tag that matches Step 1. For example, for v5.2.1:</p>
+<pre>curl -k -o nginx-plus.tmpl \
+  https<strong>:</strong>//raw<strong>.g</strong>ithubusercontent<strong>.</strong>com/nginx/kubernetes-ingress/v5<strong>.</strong>2.1/internal/configs/version1/nginx-plus<strong>.</strong>tmpl</pre>
+<h3>Step 3 — Add the directive inside the events block</h3>
+<p>Edit only the events {} block; leave every {{ ... }} template action unchanged:</p>
+<pre>events {
+    worker_connections  {{.WorkerConnections}};
+    multi_accept on;
+}</pre>
+<h3>Step 4 — Place the template into the nginx-config ConfigMap under main-template</h3>
+<pre>apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: nginx-ingress
+data:
+  worker-connections: &quot;16384&quot;
+  main-template: |
+    &lt;full contents of the edited nginx-plus.tmpl, indented 4 spaces&gt;</pre>
+<p>YAML rules for the main-template block:</p>
+<ul><li>Use the | block scalar.</li><li>Indent <strong>every</strong> template line consistently (e.g. 4 spaces). <strong>No tab characters</strong> — tabs are the most common cause of apply failures.</li><li>Do not alter the {{ ... }} Go-template actions.</li></ul>
+<h3>Step 5 — Apply and verify</h3>
+<pre>kubectl apply -f nginx-config.yaml --dry-run=server   # validates first
+kubectl apply -f nginx-config.yaml
+kubectl exec -it -n nginx-ingress &lt;nic-pod&gt; -- grep -A3 &#39;events {&#39; /etc/nginx/nginx.conf</pre>
+<p>You should see both worker_connections and multi_accept on; inside the events {} block.</p>
+<p><strong>Important: the template version MUST match the running NIC binary</strong></p>
+<p>If the template references a field that does not exist in the running binary&#39;s Go struct, NIC fails to start with a fatal error such as:</p>
+<pre>Error generating NGINX main config: template: nginxTemplate:42:11:
+executing &quot;nginxTemplate&quot; at &lt;.ClientBodyBufferSize&gt;:
+can&#39;t evaluate field ClientBodyBufferSize in type *version1.MainConfig </pre>
+<p><strong>Example:</strong> the ClientBodyBufferSize field was introduced in NIC <strong>5.3.0</strong>. Using a 5.3.0-or-newer template against a 5.2.x binary triggers the error above. Always pull the template from the tag matching the deployed version.</p>
+<h2>Additional Information</h2>
+<ul><li>A main-template override is a <strong>full copy</strong> of the template. It does <strong>not</strong> inherit future template changes. On every NIC upgrade you must re-download the new version&#39;s template, re-add your directive, and re-apply — otherwise you either lose new features/fixes or hit the field-mismatch error.</li><li>kubectl apply replaces the ConfigMap object. Merge back any other existing keys (proxy timeouts, SSL settings, log formats, etc.) so they are not dropped.</li><li>worker_connections remains driven by the worker-connections ConfigMap key because the {{.WorkerConnections}} placeholder is preserved.</li><li>On Linux, NGINX auto-selects the epoll event method; an explicit use epoll; is redundant (harmless).</li><li>A malformed template causes an nginx: [emerg] config-test failure or a render error in NIC logs; NIC keeps the last known-good configuration. Check kubectl logs -n nginx-ingress &lt;nic-pod&gt;.</li></ul>
+<p><strong>Related documentation:</strong></p>
+<ul><li><a href="https://docs.nginx.com/nginx-ingress-controller/configuration/global-configuration/custom-templates/" target="_blank" rel="noopener noreferrer">Custom templates</a>: </li><li><a href="https://docs.nginx.com/nginx-ingress-controller/configuration/global-configuration/configmap-resource/" target="_blank" rel="noopener noreferrer">ConfigMap resources</a>: </li></ul>
+</article>
+</body>
+</html>

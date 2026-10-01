@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000138638: AS3 error Declaration failed: 0107082a:3: All objects must be removed from a partition</title>
+<meta name="description" content="Support Solution: AS3 error Declaration failed: 0107082a:3: All objects must be removed from a partition — AS3 error &quot;Declaration failed: 0107082a:3: All objects must be removed from a partition (services) before the partition may be removed, type ID (28726)&quot;,&quot;level&quot;:&quot;error&quot; When trying to delete a Tenant">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000138638">
+</head>
+<body>
+<header>
+<h1>K000138638: AS3 error Declaration failed: 0107082a:3: All objects must be removed from a partition</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-02-16</dd>
+<dt>Updated</dt><dd>2024-02-16</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Automation and Orchestration</li><li>F5 Application Services 3 Extension</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000138638">https://my.f5.com/manage/s/article/K000138638</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+
+<p>AS3 error &quot;Declaration failed: 0107082a:3: All objects must be removed from a partition (services) before the partition may be removed, type ID (28726)&quot;,&quot;level&quot;:&quot;error&quot; When trying to delete a Tenant</p>
+
+<p> </p>
+
+<h2>Environment</h2>
+
+<ul><li>AS3</li><li>Partition</li><li>POSTing declaration to BIG-IP</li></ul>
+
+<h2>Cause</h2>
+
+<p> </p>
+
+<p>Config added to the tenant manually after previously posting config via AS3</p>
+
+<h2>Recommended Actions</h2>
+
+<p> </p>
+
+<p>To resolve the issue you need to POST a dummy config  on the same tenant &quot;services&quot; via AS3. Then you will need to comment the config which was manually added to the partition.<br>Example: Dummy AS3 config below</p>
+<span style="font-family: Courier New,Courier,monospace;">{<br>   &quot;class&quot;: &quot;AS3&quot;,<br>   &quot;action&quot;: &quot;deploy&quot;,<br>   &quot;persist&quot;: true,<br>   &quot;declaration&quot;: {<br>      &quot;class&quot;: &quot;ADC&quot;,<br>      &quot;schemaVersion&quot;: &quot;3.0.0&quot;,<br>      &quot;id&quot;: &quot;urn:uuid:33045210-3ab8-4636-9b2a-c98d22ab915d&quot;,<br>      &quot;label&quot;: &quot;Sample 1&quot;,<br>      &quot;remark&quot;: &quot;Simple HTTP application with RR pool&quot;,<br>      &quot;services&quot;: {<br>         &quot;class&quot;: &quot;Tenant&quot;,<br>         &quot;A1&quot;: {<br>            &quot;class&quot;: &quot;Application&quot;,<br>            &quot;service&quot;: {<br>               &quot;class&quot;: &quot;Service_HTTP&quot;,<br>               &quot;virtualAddresses&quot;: [<br>                  &quot;10.1.1.113&quot;<br>               ],<br>               &quot;pool&quot;: &quot;web_pool&quot;<br>            },<br>            &quot;web_pool&quot;: {<br>               &quot;class&quot;: &quot;Pool&quot;,<br>               &quot;monitors&quot;: [<br>                  &quot;http&quot;<br>               ],<br>               &quot;members&quot;: [{<br>                  &quot;servicePort&quot;: 80,<br>                  &quot;serverAddresses&quot;: [<br>                     &quot;172.10.10.10&quot;,<br>                     &quot;172.10.10.11&quot;<br>                  ]<br>               }]<br>            }<br>         }<br>      }<br>   }<br>}</span>
+
+<p>Now after the above dummy AS3 config is successfully POSTed on the BIG-IP, you will need to go to the bigip.conf file on the partition <strong>services </strong>and edit the file via <strong>vi </strong>editor and comment the lines as shown below:</p>
+
+<p><span style="color: #27ae60;"><strong>Note</strong>: In the below config we have created a bot profile (<span style="font-family: Arial,Helvetica,sans-serif;"><strong>/services/example-bot-profile</strong>)</span> manually in the partition <strong>services</strong></span></p>
+<span style="font-family: Courier New,Courier,monospace;">#TMSH-VERSION: 14.1.5.3<br><br>ltm pool /services/A1/web_pool {<br>    members {<br>        /Common/172.10.10.10:80 {<br>            address 172.10.10.10<br>            description &quot;(replaces AS3 172.10.10.10)&quot;<br>        }<br>        /Common/172.10.10.11:80 {<br>            address 172.10.10.11<br>            description &quot;(replaces AS3 172.10.10.11)&quot;<br>        }<br>    }<br>    min-active-members 1<br>    monitor min 1 of { /Common/http }<br>}<br><br>ltm virtual /services/A1/service {<br>    creation-time 2024-02-06:09:31:51<br>    description A1<br>    destination /services/10.1.1.113:80<br>    ip-protocol tcp<br>    last-modified-time 2024-02-06:09:31:51<br>    mask 255.255.255.255<br>    persist {<br>        /Common/cookie {<br>            default yes<br>        }<br>    }<br>    pool /services/A1/web_pool<br>    profiles {<br>        /Common/f5-tcp-progressive { }<br>        /Common/http { }<br>    }<br>    source 0.0.0.0/0<br>    source-address-translation {<br>        type automap<br>    }<br>    translate-address enabled<br>    translate-port enabled<br>}<br><br>ltm virtual-address /services/10.1.1.113 {<br>    address 10.1.1.113<br>    arp enabled<br>    icmp-echo enabled<br>    inherited-traffic-group true<br>    mask 255.255.255.255<br>    traffic-group /Common/traffic-group-1<br>}<br><br><strong>#security bot-defense asm-profile /services/example-bot-profile {<br>#    app-service none<br>#}</strong></span>
+
+<p><br>Then save the config file.</p>
+
+<p>Once done run the command</p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">tmsh load sys config verify</span></p>
+
+<p>If the comand does not return any errors then you can run the command</p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">tmsh load sys config</span></p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">tmsh save sys config</span></p>
+
+<p> </p>
+
+<p>After this <strong>DELETE </strong>the config via AS3 and now you will be able to remove the partition.</p>
+
+<h2>Additional Information</h2>
+
+<p>None</p>
+</article>
+</body>
+</html>

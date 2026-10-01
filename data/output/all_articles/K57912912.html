@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K57912912: Workaround to filter Log messages:  Error message: httpd&lt;pid&gt;: [error] &lt;client_ip&gt; AUTHCACHE Error processing cookie &lt;cookie_string&gt; - Cookie user mismatch</title>
+<meta name="description" content="Support Solution: Workaround to filter Log messages:  Error message: httpd&lt;pid&gt;: [error] &lt;client_ip&gt; AUTHCACHE Error processing cookie &lt;cookie_string&gt; - Cookie user mismatch — Workaround to filter Log messages: Error message: httpd&lt;pid&gt;: [error] &lt;client_ip&gt; AUTHCACHE Error processing cookie &lt;cookie_string&gt; - Cookie user mismatch">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K57912912">
+</head>
+<body>
+<header>
+<h1>K57912912: Workaround to filter Log messages:  Error message: httpd&lt;pid&gt;: [error] &lt;client_ip&gt; AUTHCACHE Error processing cookie &lt;cookie_string&gt; - Cookie user mismatch</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-02-16</dd>
+<dt>Updated</dt><dd>2026-09-07</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP Platforms</li><li>BIG-IP</li><li>BIG-IP LTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K57912912">https://my.f5.com/manage/s/article/K57912912</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+<p>Workaround to filter Log messages:  <span class="example2">Error message: httpd&lt;pid&gt;: [error] &lt;client_ip&gt; AUTHCACHE Error processing cookie &lt;cookie_string&gt; - Cookie user mismatch</span><br><br>If you are concern about excessive Logs like the following example on your BIGIP device under <strong>/var/log/ltm</strong></p>
+<pre><span class="example2">Oct 28 04:14:21 LTM-1 warning httpd[18770]: [warn] [client 10.10.10.11] AUTHCACHE Error processing cookie 09B4151A00F5C69150CECC7300CCC29EAE1D31AF - Cookie user mismatch
+Oct 28 04:14:21 LTM-1 warning httpd[18770]: [warn] [client 10.10.10.11] AUTHCACHE Error processing cookie 75D49454FA28443B9D3942590658F96772C6A644 - Cookie user mismatch
+Oct 28 04:14:21 LTM-1 warning httpd[18770]: [warn] [client 10.10.10.11] AUTHCACHE Error processing cookie 8D3A13C4BB3E9D327A8A701A87BCD748F4CAEE0F - Cookie user mismatch
+Oct 28 04:14:21 LTM-1 warning httpd[18770]: [warn] [client 10.10.10.11] AUTHCACHE Error processing cookie CA2B2707289CD5F9B39667397C22D36A634790AE - Cookie user mismatch
+Oct 28 04:14:23 LTM-1 warning httpd[20698]: [warn] [client 10.10.10.11] AUTHCACHE Error processing cookie 8D3A13C4BB3E9D327A8A701A87BCD748F4CAEE0F - Cookie user mismatch</span>
+</pre>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>BIG-IP LTM</li><li>AUTHCACHE Error</li><li>Cookie Missmatch</li></ul>
+<p><span class="sectiontitle">Cause</span></p>
+<p>This logs can be caused due to:</p>
+<ul><li>A client or an iControl application makes frequent connections to the BIG-IP Configuration utility; if that&#39;s the case, then you can follow up the recommendations described in here:   </li><li>
+<p><a href="https://my.f5.com/manage/s/article/K11140735" target="_self">K11140735: Error message: httpd&lt;pid&gt;: [error] &lt;client_ip&gt; AUTHCACHE Error processing cookie &lt;cookie_string&gt; - Cookie user mismatch</a></p>
+</li><li>
+<p>Similar messages may also be logged when a user logs in to either REST or the GUI and remote authentication is configured (ldap/tacacs/radius/etc). This is regardless of the auth-pam-validate-ip setting described in <a href="https://my.f5.com/manage/s/article/K13048" target="_self">K13048</a> .</p>
+</li></ul>
+<p><br><span class="sectiontitle">Recommended Actions</span></p>
+<p>Despite the conditions on which you are facing these logs and if you want to get rid of them, what you can do is to create a Syslog filter to do it.<br>You can use one like of the following example:</p>
+<p><span class="code">==============================</span><br><span class="example2">sys syslog { include &quot;<br># remote logging<br># Log level : Warning - Emergency<br>destination d_loghost {<br>    udp(\&quot;172.27.9.200\&quot; port(514));<br>};<br><br>filter f_remote_severity {<br>    level(warn..emerg);<br>};<br><br>filter f_remote_ft {<br>    not match(&quot;AUTHCACHE&quot;);<br>};<br><br>log {<br>   source(s_syslog_pipe);<br>   filter(f_remote_severity);<br>   filter(f_remote_ft);<br>   destination(d_loghost);<br>};<br><br>filter f_local6 {<br>   facility(local6) and<br>   not (level(warning) and (match(&#39;Cookie user mismatch&#39;) or match(&#39;AUTHCACHE Error processing cookie&#39;)));<br>};<br><br>&quot;}</span><br><span class="code">==============================</span><br><br><br>So, after you save it, you should see it like this using the CLI:<br><br><br><span class="code">root@(gallery-big-ip-13-1-3-4)(cfg-sync Standalone)(TimeLimitedModules::Active)(/Common)(tmos)# edit  /sys syslog all-properties</span><br><span class="example2">modify syslog {<br>    auth-priv-from notice<br>    auth-priv-to emerg<br>    clustered-host-slot enabled<br>    clustered-message-slot disabled<br>    console-log enabled<br>    cron-from warning<br>    cron-to emerg<br>    daemon-from notice<br>    daemon-to emerg<br>    description none<br>    include &quot; <strong>                                                                           &lt;&lt;---------------------  the filter starts here</strong><br>    # remote logging<br>    # Log level : Warning - Emergency<br>    destination d_loghost {<br>             udp(\&quot;10.10.10.11\&quot; port(514));<strong>               &lt;&lt;------------ you will need to change the ip for your remote syslog-ip</strong><br>    };<br><br>    filter f_remote_severity {<br>           level(warn..emerg);<br>    };<br><br>    filter f_remote_ft {<br>           not match(AUTHCACHE);<br>    };<br><br>    log {<br>        source(s_syslog_pipe);<br>        filter(f_remote_severity);<br>        filter(f_remote_ft);<br>        destination(d_loghost);<br>    };<br><br>    filter f_local6 {<br>        facility(local6) and<br>        not (level(warning) and (match(&#39;Cookie user mismatch&#39;) or match(&#39;AUTHCACHE Error processing cookie&#39;)));<br>    };</span><br><br><span class="code">    </span><span class="example2">&quot; <strong>                                                                                          &lt;&lt;------------------------ and filter finishes here</strong><br>    iso-date disabled<br>    kern-from debug<br>    kern-to emerg<br>    local6-from notice<br>    local6-to emerg<br>    mail-from notice<br>    mail-to emerg<br>    messages-from notice<br>    messages-to warning<br>    remote-servers replace-all-with {<br>        remotesyslog1 {<br>            description none<br>            host 10.10.10.11<br>            local-ip none<br>            remote-port 514<br>        }<br>    }<br>    user-log-from notice<br>    user-log-to emerg<br>}</span><br><br><br>Another example of filter to get rid of this messages is:<br><br><span class="code">==============================</span><br><span class="example2">include &quot;<br>filter f_authpriv {<br>((facility(auth, authpriv) and level(notice..emerg)) and not match (&#39;AUTHCACHE&#39;))<br>or program(sshd)<br>or ((facility(auth,authpriv) and (program(httpd) or program(tamd))) and not match(&#39;AUTHCACHE&#39;))<br>or message(pam_audit)<br>;<br>};<br><br>filter f_local0 {<br>facility(local0) and not match(soap);<br>};<br>&quot;</span><br><span class="code">==============================</span><br><br><strong style="font-size: 12pt;font-weight: bold;">Additional Information</strong></p>
+<p>None</p>
+</article>
+</body>
+</html>

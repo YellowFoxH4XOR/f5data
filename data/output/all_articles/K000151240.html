@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000151240: Directly connected Routes not Showing as BGP Kernal Route</title>
+<meta name="description" content="Support Solution: Directly connected Routes not Showing as BGP Kernal Route — A Virtual Server configured for the same subnet as a directly connected interface on the BIG-IP will not show up in the routing table as a Kernel Route.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000151240">
+</head>
+<body>
+<header>
+<h1>K000151240: Directly connected Routes not Showing as BGP Kernal Route</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-05-08</dd>
+<dt>Updated</dt><dd>2025-05-15</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>F5 Distributed Cloud Services</li><li>BIG-IP LTM: 15.0.0, 15.1.0, 15.0.X, 15.0.1, 17.X.X, 16.X.X, 15.X.X, 17.5.X, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000151240">https://my.f5.com/manage/s/article/K000151240</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>A Virtual Server configured for the same subnet as a directly connected interface on the BIG-IP will not show up in the routing table as a Kernel Route.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP</li><li>Zebos</li></ul>
+<h2>Cause</h2>
+<p>  When a forwarding virtual server is configured on the same subnet as a locally assigned IP subnet (configured on a VLAN or self IP), the system already considers that subnet as directly connected to the BIG-IP system. In the BIG-IP&#39;s kernel routing table, the locally configured subnet is already marked as a &quot;connected&quot; route. Therefore, the forwarding virtual server does not create a new or distinct kernel route. Instead, it relies on the existing connected route associated with the self IP or the VLAN.</p>
+<p>  The &quot;redistribute connected&quot; option in BIG-IP (via BGP in ZebOS) announces directly connected routes from the kernel routing table into the BGP routing table. However, this redistribution only applies to routes explicitly marked as &quot;connected&quot; in the kernel routing table. Since the forwarding virtual server does not introduce a new route and simply overlaps with the existing locally configured subnet, it does not generate an additional connected route. As a result, there is no new kernel route to redistribute.</p>
+<p> The &quot;redistribute kernel&quot; command in BGP does not redistribute directly connected routes; it only redistributes non-connected routes present in the kernel routing table. As such, unless a network statement is manually added or &quot;redistribute connected&quot; is used, the desired subnet will not be advertised via BGP.  As such, using &quot;redistribute connected&quot; may result in all connected subnets being advertised, which may be undesirable.</p>
+<h2>Recommended Actions</h2>
+<p>To have this forwarding virtual server to be added into the route table, you must configure &#39;redistribute connected&#39;.</p>
+<p>If it is necessary to only advertise some directly connected routes the creation of route-maps and ip prefix-lists can be used to filter route advertisements. </p>
+<p>For example to prevent Advertising the &#39;192.168.21.0/24&#39; subnet, this must be added to a prefix-list which is applied to a route-map.   This route-map then is applied to the neighbor.   Note that the DENY_NETS route-map must include the allowed prefixes to ensure that the subnets that are necessary are included to be advertised.  In this case &#39;10.120.6.0/24&#39; subnet.   </p>
+<pre class="language-python" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>router bgp 65502
+ max-paths ebgp 4
+ bgp log-neighbor-changes
+ bgp graceful-restart restart-time 120
+ redistribute kernel
+ redistribute connected
+ neighbor 10.77.0.30 remote-as 65505
+ neighbor 10.77.0.30 soft-reconfiguration inbound 
+ neighbor 10.77.0.30 route-map DENY_NETS out      
+!
+ip prefix-list ALLOW seq 5 permit 10.120.6.0/24
+ip prefix-list LOCAL_NETWORKS seq 10 permit 192.168.21.0/24
+!
+route-map DENY_NETS deny 10
+ match ip address prefix-list LOCAL_NETWORKS
+!
+route-map DENY_NETS permit 20
+ match ip address prefix-list ALLOW</code></pre>
+<h2>Additional Information</h2>
+<p>None.</p>
+</article>
+</body>
+</html>

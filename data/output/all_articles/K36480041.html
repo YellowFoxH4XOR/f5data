@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K36480041: Support for fast failover of PIM-SM multicast traffic in BIG-IP LTM HA systems</title>
+<meta name="description" content="Knowledge: Support for fast failover of PIM-SM multicast traffic in BIG-IP LTM HA systems — This article discusses the runtime state change that occurs when a redundant BIG-IP LTM high availability (HA) system configured with Protocol Independent Multicast-Sparse Mode (PIM-SM) experiences a…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K36480041">
+</head>
+<body>
+<header>
+<h1>K36480041: Support for fast failover of PIM-SM multicast traffic in BIG-IP LTM HA systems</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2019-12-11</dd>
+<dt>Updated</dt><dd>2026-04-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K36480041">https://my.f5.com/manage/s/article/K36480041</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>This article discusses the runtime state change that occurs when a redundant BIG-IP LTM high availability (HA) system configured with Protocol Independent Multicast-Sparse Mode (PIM-SM) experiences a failover event.</p><h3>Description</h3><p>The BIG-IP system uses PIM-SM to populate the multicast routing table in Traffic Management Microkernel (TMM) for data-plane traffic. When the PIM-SM routing protocol is first enabled (or disabled and re-enabled), traffic is not forwarded until the protocol is converged and the multicast routes (mroutes) corresponding to the traffic are learned and installed. In a multicast network, traffic forwarding requires both the unicast and the multicast routing protocols to converge. When a BIG-IP system in an HA configuration is running PIM and a failover event occurs, the re-convergence process requires time.</p>
+
+<p>Beginning in BIG-IP 15.1.0, support for fast failover of PIM-SM multicast traffic in a BIG-IP HA pair is introduced. The implementation uses Border Gateway Protocol (BGP) to learn the network routes for unicast traffic and the PIM-SM protocol to calculate the path for multicast traffic. This feature is an HA multicast enhancement that improves the convergence of mroutes after a failover event and is achieved with the following elements:</p>
+
+<p><span class="note"><strong>Note</strong>: In BIG-IP 15.1.0, the supported unicast routing protocol is BGP. In addition, PIM-DM is not supported.</span></p>
+
+<ul><li><strong>BGP with PIM-SM</strong>: The deployment uses BGP to learn the network routes for unicast traffic and the PIM-SM protocol to calculate the path for multicast traffic. The knowledge of PIM mroutes is on the active BIG-IP system only.</li><li><strong>Floating IP address</strong>: The BIG-IP HA pair must use the floating IP address on both the ingress and egress VLANs. This requires configuring <strong>ip pim use-floating-address</strong> on both ingress and egress VLANs. To do so, refer to the <strong>Make configuration changes through imish</strong> procedure in this article.</li><li><strong>Next-hop</strong>: The floating IP address assigns the next-hop in the routes sent to the peers.</li><li><strong>PIM State sharing</strong>: The multicast processes (<strong>PIMD</strong> and <strong>MRIBD</strong>) run on the standby BIG-IP system and operate in the same manner as the active system but do not forward traffic. Multicast Forwarding Cache (MFC) entries should be the same between the HA systems. For example, in the PIM-SM routes, the standby device should also have multicast neighborship with other multicast nodes, and in the case of PIM-SM, the standby device should have neighborship with the rendezvous point (RP) as well.</li></ul>
+
+<p>The failover feature works as follows:</p>
+
+<ol><li>In steady state, PIM neighbors exchange periodic PIM hello messages and update the RP with PIM joins to periodically refresh mroute states.</li><li>When a failover event occurs, the standby BIG-IP system becomes active.</li><li>With PIM state sharing between the BIG-IP HA pair, the new active system uses the routes to route multicast traffic as PIM and BGP continues to update the unicast and multicast routes in the data plane.</li><li>PIM neighbor information is flushed and the new active BIG-IP system generates a new PIM generation ID.</li><li>The newly active BIG-IP system begins sending PIM hello packets with the new GenID from the floating self IP address, re-instantiating PIM neighboring.</li><li>PIM Passive: Do not use <strong>ip pim passive</strong> with an HA pair. Its usage can result in neighbors becoming unaware of the <strong>GenID </strong>changes, and therefore network may not properly converge during a failover event. If you need to verify that you are using PIM Passive mode and remove the configuration, refer to the following procedures in this article: <strong>Verify floating multicast configurations</strong> and <strong>Make configuration changes through imish</strong>, respectively.</li><li>In order to process the <strong>GenID </strong>value in PIM hello messages, PIM neighbors must comply with the implementation of PIM as described in <a href="https://tools.ietf.org/html/rfc4601#section-4.5.5" target="_blank">RFC 4601 Section 4.5.5</a>.
+	<p><span class="note"><strong>Note</strong>: This link takes you to a resource outside of AskF5, and it is possible that the document may be removed without our knowledge.</span></p>
+	</li></ol>
+
+<p><span class="sectiontitle">Troubleshooting</span></p>
+
+<p>When troubleshooting a BIG-IP HA system for PIM multicast traffic, you should consider the following procedures:</p>
+
+<p>For more information on configuring PIM, refer to the <em><strong>BIG-IP Advanced Routing Multicast Configuration Guide</strong></em>.</p>
+
+<p><span class="note"><strong>Note</strong>: For information about how to locate F5 product manuals, refer to <a href="https://my.f5.com/manage/s/article/K98133564" target="_blank">K98133564: Tips for searching AskF5 and finding product documentation</a>.</span></p>
+
+<ul><li><a href="#verify_config">Verify floating multicast configurations</a></li><li><a href="#verify_mroutes">Verify the mroutes on the BIG-IP HA systems</a></li><li><a href="#review_state">Review the PIM states on the BIG-IP HA systems</a></li><li><a href="#logs">Review the log files</a></li><li><a href="#config" target="_self">Make configuration changes through imish</a></li></ul>
+
+<p><span class="subsectiontitle"><a id="verify_config" name="verify_config"></a>Verify floating multicast configurations</span></p>
+
+<p>To display the multicast configuration on your BIG-IP system, enter the following command:</p>
+
+<p><span class="code">imish -e &#39;sh ru&#39;</span></p>
+
+<p>From the output, verify that PIM is using the floating IP address at the appropriate interface and that multicast routing is enabled and PIM mode is correctly configured. For PIM sparse mode, you need to configure the PIM RR.</p>
+
+<p>You may observe an output similar to the following example:</p>
+
+<p><span class="example2">[...]<br>!<br>ip multicast-routing<br>!</span><br><span class="example2">ip pim rp-address 100.100.100.100<br>!</span><br><span class="example2">interface lo<br>!<br>interface tmm<br>!<br>interface external<br> ip pim sparse-mode<br> ip pim use-floating-address<br>!<br>interface internal<br> ip pim sparse-mode<br> ip pim use-floating-address<br>!<br>[...]</span></p>
+
+<p><span class="subsectiontitle"><a id="verify_mroutes" name="verify_mroutes"></a>Verify the mroutes on the BIG-IP HA systems</span></p>
+
+<p>You can display the mroutes on the BIG-IP system by entering the following commands:</p>
+
+<ul><li><span class="code">imish -e &#39;show ip pim mroute&#39;</span></li><li><span class="code">imish -e &#39;show ip mroute&#39; </span>
+	<p><span class="note"><strong>Note&gt;</strong>: This command displays routes in ZebOS.</span></p>
+	</li><li><span class="code">tmsh show net mroute</span>
+	<p><span class="note"><strong>Note&gt;</strong>: This command displays routes in TMM.</span></p>
+	</li></ul>
+
+<p><span class="subsectiontitle"><a id="review_state" name="review_state"></a>Review the PIM states on the BIG-IP HA systems</span></p>
+
+<p>You can display the PIM state of your BIG-IP systems by entering the following commands:</p>
+
+<ul><li><span class="code">imish -e &#39;show ip pim interface&#39;</span></li><li><span class="code">imish -e &#39;show ip mroute count&#39; </span></li><li><span class="code">imish -e &#39;sh ip pim rp mapping&#39; </span></li><li><span class="code">imish -e &#39;sh ip pim neighbor&#39; </span></li></ul>
+
+<p><span class="subsectiontitle"><a id="logs" name="logs"></a>Review the log files</span></p>
+
+<p>You should also review the log files which describe the multicast and failover events including error messages. Review the following log files:</p>
+
+<ul><li><strong>/var/log/ltm</strong></li><li><strong>/var/log/messages</strong></li><li><strong>/var/log/zebos/zebos.log</strong></li></ul>
+
+<p><a id="config" name="config"></a><span class="subsectiontitle">Make configuration changes through imish</span></p>
+You manage a dynamic routing configuration through the IMI shell (<strong>imish</strong>). To make changes to the dynamic routing configuration for a specific route domain, perform the following procedure:
+
+<ol><li>Enter the IMI shell (<strong>imish</strong>) shell by entering the following command in bash:
+
+	<p><span class="note"><strong>Note</strong>: If the route domain for the protocol you want to configure is the default route domain for the current partition, you do not need to use the <strong>-r</strong> option to specify the route domain ID.</span></p>
+
+	<p><span class="code">imish -r &lt;route domain ID&gt;</span></p>
+	</li><li>In the IMI shell (<strong>imish</strong>), enter the following commands to enter configuration mode:
+	<p><span class="code">enable<br>	configure terminal</span></p>
+
+	<p>You may observe the following output and prompt in configuration mode:<br>	<span class="code">Enter configuration commands, one per line. End with CNTL/Z.<br>	examplehostname[0](config)#</span></p>
+	</li><li>Enter Interface mode by specifying the name of the interface you want to configure:
+	<p><span class="code">interface &lt;interface name&gt;</span></p>
+	For example, enter
+
+	<p><span class="example2">interface external</span></p>
+
+	<p>You may observe the following prompt in interface mode:<br>	<span class="code">examplehostname[0](config-if)#</span></p>
+	</li><li>Enter commands to make changes to your dynamic routing configuration. The following provide some examples:
+	<ul><li>To remove the <strong>ip pim passive</strong> configuration, enter the following command:
+		<p><span class="code">no ip pim passive</span></p>
+		</li><li>To configure PIM to use floating address, enter the following command:
+		<p><span class="code">ip pim use-floating address</span></p>
+		</li></ul>
+	</li><li>Exit configuration mode by entering the following command:
+	<p><span class="code">exit</span></p>
+	</li><li>Exit Interface mode by entering the following command:
+	<p><span class="code">exit</span></p>
+	</li></ol>
+</article>
+</body>
+</html>

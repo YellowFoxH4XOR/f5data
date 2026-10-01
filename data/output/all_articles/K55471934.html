@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K55471934: APM access-profile can be assigned from iRule only</title>
+<meta name="description" content="Support Solution: APM access-profile can be assigned from iRule only — root@(bigip)(cfg-sync Standalone)(Active)(/Common)(tmos)# list ltm virtual vs">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K55471934">
+</head>
+<body>
+<header>
+<h1>K55471934: APM access-profile can be assigned from iRule only</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-04-06</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Virtual Editions</li><li>rSeries Platforms</li><li>BIG-IP Platforms</li><li>VIPRION Platforms</li><li>BIG-IP</li><li>BIG-IP APM: 15.X.X, 14.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 16.X.X, 16.1.2, 16.1.1, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 16.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K55471934">https://my.f5.com/manage/s/article/K55471934</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br><br>Due to specific needs, it&#39;s possible to assign the access-profile logic from irule only. Then the irule is assigned under virtual-server. The configuration example:<br><br><span class="example2">root@(bigip)(cfg-sync Standalone)(Active)(/Common)(tmos)# list ltm virtual vs<br>ltm virtual vs {  <strong>#### we don&#39;t assign the access-profile /Common/ap_test under Virtual server</strong><br>    destination 10.1.1.1:https<br>    ip-protocol tcp<br>    last-modified-time 2022-04-05:02:34:05<br>    mask 255.255.255.255<br>    pool pool_dummy<br>    profiles {<br>        clientssl {<br>            context clientside<br>        }<br>        http { }<br>        tcp { }<br>    }<br>    rules {<br>        <strong>irule_article</strong><br>    }<br>    serverssl-use-sni disabled<br>    source 0.0.0.0/0<br>    translate-address enabled<br>    translate-port enabled<br>    vs-index 4<br>}<br><br>root@(bigip)(cfg-sync Standalone)(Active)(/Common)(tmos)# list ltm rule irule_article<br>ltm rule irule_article {<br>when HTTP_REQUEST {<br>  # Set session authentication, idle and lifetime timeouts<br>  set auth_timeout 300<br>  set apm_timeout 600<br>  set apm_lifetime 1800<br>  # Set Virtual server name<br>  set vs_name [lindex [split [virtual name] &quot;/&quot;] end]  <br>  # Set the APM profile used<br>  <strong>set apm_profile &quot;/Common/ap_test&quot;</strong><br>  set apm_sid &quot;&quot;<br>  # Here can be different checks whether the session already exists. This code portion is omitted.<br>  if { $apm_sid eq &quot;&quot; } {<br>    # create a new APM session for this request<br>    set apm_sid [ACCESS::session create -timeout $apm_timeout -lifetime $apm_lifetime]<br>  }<br>  # now evaluate APM policy for this request<br>  ACCESS::policy evaluate -sid $apm_sid -profile $apm_profile<br>  # Check the outcome of the APM policy evaluation and do some action based on evaluation result<br>  switch -- [ACCESS::policy result -sid $apm_sid] {<br>    &quot;allow&quot; {<br>      log local0. &quot;we are in allow section&quot;<br>  }<br>    &quot;deny&quot; {<br>        log local0. &quot;we are in deny section&quot;<br>      }<br>    default {<br>        log local0. &quot;we are in default section&quot;<br>      }<br>  }<br>  }<br>}<br>root@(bigip)(cfg-sync Standalone)(Active)(/Common)(tmos)# list apm profile access /Common/ap_test<br>apm profile access ap_test {<br>    accept-languages { en }<br>    access-policy ap_test<br>    app-service none<br>    customization-group ap_test_logout<br>    customization-key 77256eeccf57cf00e5207b13ff0cdbb5<br>    default-language en<br>    domain-cookie none<br>    eps-group ap_test_eps<br>    errormap-group ap_test_errormap<br>    exchange-profile none<br>    framework-installation-group ap_test_framework_installation<br>    general-ui-group ap_test_general_ui<br>    generation 4<br>    generation-action noop<br>    httponly-cookie false<br>    log-settings {<br>        default-log-setting<br>    }<br>    logout-uri-include none<br>    logout-uri-timeout 5<br>    modified-since-last-policy-sync true<br>    named-scope none<br>    oauth-profile none<br>    persistent-cookie false<br>    scope profile<br>    secure-cookie true<br>    sso-name none<br>    type all<br>    user-identity-method http<br>}</span></p>
+As the result of such configuration, there are following symptoms can be observed:
+
+<ol><li>The apm session can&#39;t be deleted in GUI, but can be deleted in CLI. The session checkmark in GUI is greyed out. When we move the mouse to the checkmark, we can see the following statement:
+	<p>&quot;This item can not be deleted here because the device is in standby or the profile type is unknown&quot;.</p>
+	</li><li>The session created by this irule is seen in GUI &quot;Access  ››  Overview : Active Sessions, the column &#39;Session Type&#39;  as &#39;irule&#39;</li><li>The session count and statistical information is not seen in tmsh command outputs. For example, in &#39;tmsh list apm profile access&#39; .  </li></ol>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>apm</li><li>access-profile</li><li>irule</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br><br>Such limitations are expected and by current design. There is an existing ID1089957 opened for tracking these limitations.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span><br><br>Should you experience the same symptoms, then open the ticket with F5 Support and request to add your case to ID1089957.<br><br><a href="https://my.f5.com/manage/s/article/K2633" target="_self">K2633: Instructions for submitting a support case to F5</a></p>
+
+<p><span class="sectiontitle">Additional Information</span><br>None</p>
+</article>
+</body>
+</html>

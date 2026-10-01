@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160045: BIG-IP Tenants on F5OS Lose Data Plane Connectivity After Failover Due to Upstream Switch Misconfiguration</title>
+<meta name="description" content="Support Solution: BIG-IP Tenants on F5OS Lose Data Plane Connectivity After Failover Due to Upstream Switch Misconfiguration — All tenants function normally on one host but lose network connectivity when moved to the standby host">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160045">
+</head>
+<body>
+<header>
+<h1>K000160045: BIG-IP Tenants on F5OS Lose Data Plane Connectivity After Failover Due to Upstream Switch Misconfiguration</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-17</dd>
+<dt>Updated</dt><dd>2026-02-19</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>F5OS</li><li>F5OS-C: 1.1.0, 1.X.X, 1.8.X, 1.8.2, 1.8.1, 1.8.0, 1.6.X, 1.6.4, 1.6.2, 1.6.1, 1.6.0, 1.5.X, 1.5.1, 1.5.0, 1.3.X, 1.3.2, 1.3.1, 1.3.0, 1.2.X, 1.2.2, 1.2.1, 1.2.0, 1.1.X, 1.1.4, 1.1.3, 1.1.2, 1.1.1</li><li>F5OS-A: 1.X.X, 1.8.X, 1.8.3, 1.8.0, 1.7.X, 1.7.0, 1.5.X, 1.5.4, 1.5.3, 1.5.2, 1.5.1, 1.5.0, 1.4.X, 1.4.0, 1.3.X, 1.3.2, 1.3.1, 1.3.0, 1.2.X, 1.2.0, 1.1.X, 1.1.1, 1.1.0, 1.0.X, 1.0.1, 1.0.0</li><li>BIG-IP LTM: 21.X.X, 17.X.X, 16.X.X, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160045">https://my.f5.com/manage/s/article/K000160045</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>BIG-IP tenants running on F5OS appliances in an active/standby HA configuration experience complete loss of data plane connectivity when failed over from one host to another. The symptoms include:</p>
+<ul><li>All tenants function normally on one host but lose network connectivity when moved to the standby host</li><li>Interfaces show &quot;up&quot; status with no errors, but traffic does not pass</li><li>ICMP and other traffic to virtual servers, self-IPs, and pool members fail after failover</li><li>LAG (Link Aggregation Group) statistics show significant traffic differences between hosts (terabytes on working host vs. megabytes on non-working host)</li><li>ARP requests are visible on the F5OS layer but do not reach the peer device or upstream switch</li><li>ARP requests may be reflected back to the tenant (egress OUT s1/tmm1, immediately followed by ingress IN s1/tmm0)</li><li>After adding static ARP entries, traffic egresses the F5OS but no return traffic is received</li><li>Pool members remain down despite correct configuration</li><li>Qkview generation on the affected host is significantly slower than on the working host</li></ul>
+<h2>Environment</h2>
+<ul><li>Product: F5OS (R10600 appliances, C128)</li><li>F5OS version: 1.8.3</li><li>BIG-IP tenants: v17.5.1.3</li><li>Configuration: Active/Standby HA, each host running multiple BIG-IP tenants</li><li>Network: LAG (Link Aggregation Group) interfaces with LACP, multiple VLANs configured</li><li>Upstream Switch: Cisco with trunk/access ports and VLAN tagging</li><li>Recent actions: Tenant failover between hosts, VLAN configuration synchronization, interface troubleshooting, fiber reseating</li><li>Issue observed consistently when tenants are failed over to specific host</li></ul>
+<h2>Cause</h2>
+<p>Misconfiguration on the upstream network switch. Packets egress the F5OS appliance correctly but are not received or processed by the switch, resulting in loss of data plane connectivity for tenants on the affected host.</p>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>Verify F5OS and Tenant Configuration</strong></p>
+<ol><li>Ensure all VLANs and interfaces are consistently configured across both F5OS hosts</li><li>Remove any unnecessary VLAN assignments or interface configurations used during troubleshooting</li><li>Verify tenant VLAN assignments match between hosts</li></ol>
+<p><strong>Diagnose Network Path Issues</strong></p>
+<ol><li><strong>Synchronize and compare counters:</strong>
+<ul><li>On F5OS: Run <span style="background-color: #f1f1f1;">reset counters all</span></li><li>On the switch: Reset interface counters for ports connected to the affected host</li><li>Compare egress counters on F5OS with ingress counters on the switch to identify silent drops</li></ul>
+</li><li><strong>Perform LACP member isolation:</strong>
+<ul><li>Administratively down each LACP port member one at a time</li><li>Test if traffic flows correctly on remaining active links</li><li>This helps identify if the issue is isolated to a specific physical link</li></ul>
+</li><li><strong>Capture and analyze traffic:</strong>
+<ul><li>Start packet captures on both F5OS hosts:</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">system diagnostics tcpdump interface &lt;VLAN_NAME&gt; outfile &lt;HOSTNAME&gt;.pcap</span></p>
+<ul><li>Start packet captures on affected tenants:</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tcpdump -nni 0.0:nnn -s0 -w /shared/tmp/$(date +%Y%m%d_%H%M%S)_$HOSTNAME.pcap</span></p>
+<ul><li>Perform connectivity tests (ping virtual servers, self-IPs, pool members)</li><li>Review captures for ARP behavior and packet flow</li></ul>
+</li><li><strong>Test with static ARP entries (diagnostic only):</strong>
+<ul><li>Add static ARP entries for pool members on affected tenants per K16221</li><li>Test if traffic can be forced through</li><li>This helps isolate whether the issue is ARP-related or deeper in the network path</li></ul>
+</li></ol>
+<p><strong>Coordinate with Network Team</strong></p>
+<ol><li>Review and correct upstream switch configuration</li><li>Check switch-side logs for:
+<ul><li>Port flapping</li><li>LACP synchronization issues</li><li>CRC errors</li><li>Input/output drops</li><li>Error-disabled ports (e.g., UDLD empty echo)</li></ul>
+</li><li>Verify switch ports are correctly configured for:
+<ul><li>Trunk/access mode</li><li>VLAN tagging/untagging</li><li>LACP settings matching F5OS configuration</li></ul>
+</li><li>Obtain switch-side packet captures to verify traffic ingress/egress</li></ol>
+<p><strong>Physical Layer Verification</strong></p>
+<ol><li>Reseat SFPs and recertify fiber connections</li><li>Verify cable integrity</li><li>Confirm switch ports are not error-disabled</li></ol>
+<p><strong>Resolution</strong></p>
+<p>Once the switch misconfiguration is identified and corrected, all tenants should regain data plane connectivity and HA functionality will be restored.</p>
+<h2>Additional Information</h2>
+<ul><li>This issue was not related to F5OS or BIG-IP software bugs, but rather to upstream network infrastructure misconfiguration</li><li>The discrepancy between tenant MCPD reporting trunk DOWN while F5OS reports trunk UP is a key diagnostic indicator of network path issues</li><li>ARP requests being reflected back to the tenant (visible as OUT followed immediately by IN in the same capture) indicates a network path problem rather than an F5OS or BIG-IP issue</li><li>Significant differences in qkview generation time between hosts may indicate underlying system issues but were not the root cause in this scenario</li><li>Consistent configuration and close coordination between F5 and network teams is critical for troubleshooting HA environments</li><li>When troubleshooting, always collect diagnostics from both F5OS hosts and all affected tenants simultaneously to see the complete picture</li></ul>
+</article>
+</body>
+</html>

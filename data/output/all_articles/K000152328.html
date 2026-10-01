@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000152328: [F5OS] Potential issues when incoming traffic does not match FDB entries</title>
+<meta name="description" content="Support Solution: [F5OS] Potential issues when incoming traffic does not match FDB entries — This article dicusses potential network performance degradation that may arise when there is incoming traffic matching an F5OS Layer 2 Forwarding Database (FDB) entry that was removed (and not yet…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000152328">
+</head>
+<body>
+<header>
+<h1>K000152328: [F5OS] Potential issues when incoming traffic does not match FDB entries</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-07-11</dd>
+<dt>Updated</dt><dd>2026-09-10</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS Products</li><li>F5OS-A: 1.8.X, 1.5.X, 1.7.X, 1.8.0, 1.7.0, 1.5.3, 1.5.2, 1.5.1, 1.5.0</li><li>F5OS-C: 1.6.X, 1.8.X, 1.5.X, 1.8.1, 1.8.0, 1.6.2, 1.6.1, 1.6.0, 1.5.1, 1.5.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000152328">https://my.f5.com/manage/s/article/K000152328</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<div>
+<div>This article dicusses potential network performance degradation that may arise when there is incoming traffic matching an F5OS Layer 2 Forwarding Database (FDB) entry that was removed (and not yet re-learned), or was created (learned) on a different port.</div>
+<div>This can happen in deployments matching the below conditions:</div>
+<div> </div>
+<h5><span style="font-size: 14px;"><strong>Condition 1 (Applies to r5k, r10k, r12k, and Multi-Blade VELOS systems):</strong></span></h5>
+<div>
+<p>Tenant being configured to send traffic via MAC address <strong>A (typically a virtual MAC)</strong>, but the returning traffic coming via MAC address <strong>B (typically a physical MAC)</strong>. One of known examples is Arista IP anycast technology, where tenant egresses traffic via a gateway that is resolved to virtual MAC address (due to IP anycast), but the returning traffic comes from real VLAN MAC address.</p>
+</div>
+<div> </div>
+<div>A F5OS FDB entry is created when the tenant issues an ARP request for gateway MAC, and Arista responds with a virtual MAC address. The F5OS FDB entry age expires due to returning traffic coming from real VLAN MAC address. When F5OS FDB entry is removed, and tenant keeps egressing the traffic via gateway, F5OS FPGA (packet processing component) will consider this traffic internally as DLF (Destination Lookup Failure).</div>
+<div> </div>
+<div>Since F5OS 1.8.0, DLF traffic is rate-limited internally to a relatively low value. This in turn will cause most of the outgoing traffic towards the network to be dropped internally. These internal drops will naturally cause TCP retransmissions and eventually applications timeouts.<span style="text-decoration: underline;"></span></div>
+<span style="text-decoration: underline;"></span></div>
+<h5><span style="font-size: 14px;">Condition 2 (Applies to r10, r12k and Multi-Blade VELOS systems):</span></h5>
+<h6><strong>rSeries:</strong></h6>
+<p>LACP trunk (or static LAG) comprising interfaces from different FPGAs. This applies only to rSeries 10XXX/12XXX and <strong>does not apply to</strong> multi-blade Velos partition.</p>
+<div> </div>
+<div>On rSeries, FPGA-1 handles ports 1.0 to 10.0, and FPGA-2 handles ports 11.0 to 20.0. On Velos, each blade has its own FPGA. </div>
+<div>The FDB entries are synchronized between the FPGAs. But aging events are processed only on FPGA that learned the entry first.</div>
+<p>When LACP trunk (or static LAG) is, for example comprising interfaces 1.0 and 11.0, and certain MAC address is learned via port of FPGA-1, subsequent packets that are hashed to port of FPGA-2 will not refresh the aging of this MAC address entry in FDB table. </p>
+<p>The issue is tracked under <a href="https://cdn.f5.com/product/bugtracker/ID1934005.html" target="_self">ID1934005</a>, and only affects rSeries 10k and 12k. After the fix, the aging events will be tracked on both FPGAs.</p>
+<p> </p>
+<p><strong>Multi-Blade Velos:</strong></p>
+<p>When LACP trunk (or static LAG) is, for example comprising interfaces from blade-1 and blade-2, and a certain MAC address is learned via port on blade-1, subsequent packets that are hashed to port on blade-2, will not refresh the aging of this MAC address entry in FDB table. This is expected since only owner blade updates the aging of the MAC address entry. If packets consistently hit a non-owner blade, the entry on the owner blade will age out.</p>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: In most of the traffic patterns, this issue will not occur as MAC address entries aging will be updated due to packets consistent arrival to all the blades. It is only when the traffic is sent out periodically with high interval between the packets, in conjunction with load-balancing decision causing packets to stick to non-owner blade for a while, the problem will surface.</em></span></p>
+<h2>Environment</h2>
+<div>
+<ul><li>rSeries 5XXX (only condition 1), 10XXX, 12XXX</li><li>F5OS-C 1.6.x, 1.8.x</li><li>F5OS-A 1.5.x, 1.8.x</li><li>Infrequent traffic hitting F5OS from a certain MAC address</li></ul>
+</div>
+<h2>Cause</h2>
+<div>
+<div>F5OS is infrequently receiving traffic from a certain MAC address.</div>
+<div>When F5OS FDB entry ages out and traffic is coming to F5OS platform from a matching destination MAC address that was removed from the table and not yet re-learned, FPGA will consider this traffic internally as DLF (Destination Lookup Failure).</div>
+<div>Since F5OS 1.8.0, DLF traffic is rate-limited internally to a relatively low value. This in turn will cause most of the outgoing traffic towards the network (traffic that came in from the client) to be dropped internally.</div>
+</div>
+<h2>Recommended Actions</h2>
+<p>1) Data collection and verification.</p>
+<ul><li>Depending on platform, run one of the docker commands to check DLF counters in the software rebroadcaster component.</li></ul>
+<p>F5OS-A:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>[root@appliance-1:Active] ~ # docker exec -it system_fpga tmctl -d blade -w 200 rbcast_pkt_stat
+name         connected rx_pkts   rx_bytes rx_bytes_copied rx_partial rx_truncated rx_lowmem rx_wouldblock tx_pkts tx_bytes tx_wouldblock rx_no_vlan  rx_dlf rx_bcast
+------------ --------- ------- ---------- --------------- ---------- ------------ --------- ------------- ------- -------- ------------- ---------- ------- --------
+SwRbcaster-1         1 1142650 1133909918      1133909918          0            0         0             0       0        0             0        461 1142189      461</code></pre>
+<p>F5OS-C:</p>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: The below example output is from blade-1 which is assigned to a partition. SSH into a proper partition blade. Docker command needs to be run on each partition blade separately.</em></span></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>[root@controller-1 ~]# ssh blade-1
+[root@blade-1 ~]# docker exec -it partition_fpga tmctl -d blade -w 200 rbcast_pkt_stat
+name         connected rx_pkts rx_bytes rx_bytes_copied rx_partial rx_truncated rx_lowmem rx_wouldblock tx_pkts tx_bytes tx_wouldblock rx_no_vlan rx_dlf rx_bcast
+------------ --------- ------- -------- --------------- ---------- ------------ --------- ------------- ------- -------- ------------- ---------- ------ --------
+SwRbcaster-1         1     257    24158           24158          0            0         0             0     195    18330             0         67      0      257</code></pre>
+<p>If &#39;rx_dlf&#39; column has a high value and increases over time, it is likely traffic is rate limited due to excessive DLF packet rate. Consider the below recommendations to remediate DLFs.</p>
+<ul><li>Check MAC addresses in FDB table that are potentially aging-out and could cause DLFs:</li></ul>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: This output is an equivalent to &quot;show net fdb&quot; on older systems, which would show entries including for external links on the system.</em></span></p>
+<p>F5OS-A:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>[root@appliance-1:Active] ~ # docker exec -it system_fpga tmctl -d blade -w 200 nse_l2
+mac               nti l2_tag tag_type entry_type owner fpga nse_unit table address age ifh.nti ifh.nti_en ifh.did ifh.did_en ifh.vtc ifh.vtc_en ifh.trunk ifh.ld ifh.rd ifh.svc
+----------------- ---- ------ -------- ---------- ----- ---- -------- ----- ------- --- ------- ---------- ------- ---------- ------- ---------- --------- ------ ------ -------
+00:94:A1:6B:21:3F 4095   888       1         3    1   1       0 Hash    247C  0     60         0      0         0      0         0        0     0     0     10
+00:94:A1:6B:21:24 4095  4089       1         3    1   1       0 Hash    3ADC  0      0         0      0         0      0         0        0     0     0     23
+00:94:A1:6B:21:24 4095  4087       1         3    1   1       0 Hash    4980  0      0         0      0         0      0         0        0     0     0     23
+00:94:A1:6B:21:24 4095  4088       1         3    1   1       0 Hash     7EC  0      0         0      0         0      0         0        0     0     0     23
+&lt;snip&gt;</code></pre>
+<p>In this example, by looking at &#39;age&#39; column, 00:94:A1:6B:21:3F on VLAN888 is aging out.</p>
+<p>F5OS-C:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>[root@blade-1 ~]# docker exec -it partition_fpga tmctl -d blade -w 200 nse_l2
+mac                nti l2_tag tag_type entry_type owner fpga table address age ifh.nti ifh.nti_en ifh.did ifh.did_en ifh.vtc ifh.vtc_en ifh.trunk ifh.ld ifh.rd ifh.svc ifh.svc_en ifh.dm_sel
+----------------- ---- ------ -------- ---------- ----- ---- ----- ------- --- ------- ---------- ------- ---------- ------- ---------- --------- ------ ------ ------- ---------- ----------
+F4:15:63:FB:54:09 4095   1111        1          3     1    0 Hash      AD4  60       0          0       0          0       0          0         0      0      0      14          1          0
+F4:15:63:FB:54:09 4095    901        1          3     1    0 Hash     127C   0       0          0       0          0       0          0         0      0      0      14          1          0
+F4:15:63:FB:54:09 4095    321        1          3     1    0 Hash     302C   0       0          0       0          0       0          0         0      0      0      14          1          0
+F4:15:63:FB:54:09 4095    823        1          3     1    0 Hash     5DB8   0       0          0       0          0       0          0         0      0      0      14          1          0
+F4:15:63:FB:54:0B 4095    823        1          3     1    0 Hash     2520   0       0          0       0          0       0          0         0      0      0       8          1          0
+F4:15:63:FB:54:89 4095    321        1          3     1    0 Hash     6CAC   0       0          0       0          0       0          0         0      0      0      30          1          0
+F4:15:63:FB:54:0B 4095   1111        1          3     1    0 Hash     724C   0       0          0       3          1       0          0         1      0      0       0          0          0
+&lt;snip&gt;</code></pre>
+<p>In this example, by looking at &#39;age&#39; column, F4:15:63:FB:54:09 on VLAN1111 is aging out.</p>
+<p>2) <span>Consider the below steps when virtual MAC addresses are in use (for example due to Arista IP anycast technology) </span>.</p>
+<ul><li>Add static FDB entry for aging-out MAC address via confd:</li></ul>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>(config)# fdb mac-table entries entry &lt;mac-address&gt; &lt;vlan-id&gt; tag_type_vid interface interface-ref config interface &lt;interface&gt;
+(config)# commit</code></pre>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: If an FDB entry is learned via a trunk interface, make sure you add an FDB entry for that trunk interface, not an interface being part of a trunk. The same command works on rSeries as well as on Velos partition.</em></span></p>
+<ul><li>Lower ARP cache timeout on tenant via &#39;arp.timeout&#39; sys db.</li></ul>
+<p>CLI:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># tmsh modify sys db arp.timeout value 98
+# tmsh save sys config</code></pre>
+<p>GUI:</p>
+<p>Network ›› ARP : Options and change value of &#39;Dynamic Timeout&#39; field.</p>
+<p>The tenant will now send an ARP request every 98 seconds, before FDB expires on F5OS (300 seconds).</p>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: A lower value generates more ARP traffic, but the impact of the extra ARP traffic should be negligible in most environments.</em></span></p>
+<ul><li>Configure LTM pool and add IP address resolved to virtual MAC. Assign ICMP health monitor to the pool. The pool does not need to be referenced by any object like virtual server or iRule. The health monitor will send ICMP echo requests and will wait for replies. If the IP address sends back ICMP echo reply, it will refresh timeout of ARP entry on the tenant as well as FDB entry on F5OS.</li></ul>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: This solution will work only when the IP address is able to respond to ICMP requests. If you choose this solution, make sure the interval in ICMP health monitor is lower than 300 seconds (default timeout of ARP and FDB entries).</em></span></p>
+<p>3) Consider the below steps when using LACP trunk (or static LAG) comprising interfaces from different FPGAs.</p>
+<ul><li>Add static FDB entry for aging-out MAC address via confd:</li></ul>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>(config)# fdb mac-table entries entry &lt;mac-address&gt; &lt;vlan-id&gt; tag_type_vid interface interface-ref config interface &lt;interface&gt;
+(config)# commit</code></pre>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: If an FDB entry is learned via a trunk interface, make sure you add an FDB entry for that trunk interface, not an interface being part of a trunk. The same command works on rSeries as well as on Velos partition.</em></span></p>
+<ul><li>Contact F5 Support to get F5OS-A 1.8.0 Engineering Hotfix for <a href="https://cdn.f5.com/product/bugtracker/ID1934005.html" target="_self">ID1934005</a> or upgrade to the official fix in the next F5OS-A 1.8.x release for the <strong>condition 2</strong> on rSeries 10k and 12k.</li></ul>
+<h2>Additional Information</h2>
+<p>None.</p>
+</article>
+</body>
+</html>

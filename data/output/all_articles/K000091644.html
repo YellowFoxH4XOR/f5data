@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000091644: JWT authentication fails with error &quot;invalid JWK set while sending to client&quot;</title>
+<meta name="description" content="Support Solution: JWT authentication fails with error &quot;invalid JWK set while sending to client&quot; — You configured NGINX Ingress Controller to perform JWT Authentication">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000091644">
+</head>
+<body>
+<header>
+<h1>K000091644: JWT authentication fails with error &quot;invalid JWK set while sending to client&quot;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-06-29</dd>
+<dt>Updated</dt><dd>2026-07-22</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000091644">https://my.f5.com/manage/s/article/K000091644</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<ul><li>You configured NGINX Ingress Controller to perform JWT Authentication</li><li>JWT Keys are retrieved from an external Identity Provider (IDP) via subrequest</li><li>JWT authentication fails and Nginx Ingress controller logs the following error :</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">22/06/27 10:07:22 [info] 28#28: *11085 invalid JWK set while sending to client, client: 192.168.1.1, server: example.local.com</span></p>
+<h2>Environment</h2>
+<ul><li>NGINX Ingress Controller</li><li>JWK set</li><li>oAuth Identity Provider {for example, Keycloak}</li><li>Kubernetes</li><li>JSON</li></ul>
+<h2>Cause</h2>
+<p>The reported error may occur due one of the following causes:</p>
+<ul><li>Malformed JSON data in the HTTP response</li><li>The JSON data is compressed but the NGINX Ingress Controller is not configured to handle compressed data</li></ul>
+<h2>Recommended Actions</h2>
+<p>To validate if JSON data is malformed:</p>
+<ul><li>Identify the URL of the authentication server where the JWT keys reside</li></ul>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>location /jwt_authentication {
+proxy_pass http://10.0.0.1/auth/certs;
+}</code></pre>
+<ul><li>Run the following command to retrieve the JWT keys manually:</li></ul>
+<p><span style="color: #15891f;"><strong>Note:</strong> Make sure you have <em>curl</em> and <em>jq</em> installed on the system you use for testing and replace the URL with your actual URL</span></p>
+<p><span style="background-color: #f1f1f1;">curl http://10.0.0.1/auth/certs | jq</span></p>
+<ul><li>If the above command returned any parsing errors, then you need to check on the server side or any other upstream devices why the JSON data arrives malformed on the NGINX Ingress Controller</li><li>If the command returned the JWK set successfully, then proceed with the steps in the next section to check compression</li></ul>
+<p>To Validate if the response is compressed:</p>
+<ul><li>Check if the header <strong>Content-Encoding</strong> is present in the output of the following command:</li></ul>
+<p><span style="background-color: #f1f1f1;">curl -v -H &quot;Accept-Encoding: gzip , deflate&quot; http://10.0.0.1/auth/certs</span></p>
+<ul><li>If response is confirmed to include <strong>Content-Encoding</strong> header, then you can either turn off compression on the upstream side or configure NGINX Ingress Controller to handle compressed data as following:</li></ul>
+<p>1. Edit the existing <strong>ConfigMap</strong> for the ingress pod as following:</p>
+<p><span style="background-color: #f1f1f1;">kubectl edit cm &lt;ConfigMap_NAME&gt; -n &lt;NAMESPACE&gt;</span></p>
+<p>2. Add the line &quot;gunzip on ;&quot; under &quot;http-snippets:&quot; and then save the change and exit</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>kind: ConfigMap
+apiVersion: v1
+metadata:
+ name: my -ingress-controller-nginx-ingress
+ namespace: default
+ labels:
+   app: my-ingress-controller
+data:
+  http-snippets: |
+      gunzip on ;
+/// YOUR CONFIG CONTINUES HERE ///     </code></pre>
+<p>3. To verify the change</p>
+<p><span style="background-color: #f1f1f1;">kubectl exec -it &lt;INGRESS POD NAME&gt; -n &lt;NAMESPACE&gt; -- nginx -T | grep gunzip</span></p>
+<p>4. Perform a new test and confirm solution</p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

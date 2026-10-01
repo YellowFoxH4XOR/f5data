@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000158152: F5OS-A: /var/export/chassis/IMAGES Does Not Exist and Tenant Deployment Fails with &quot;Insufficient Memory on Node&quot; and VDO/partition_image Volume Issues</title>
+<meta name="description" content="Support Solution: F5OS-A: /var/export/chassis/IMAGES Does Not Exist and Tenant Deployment Fails with &quot;Insufficient Memory on Node&quot; and VDO/partition_image Volume Issues — This article addresses an issue on F5OS-Appliance platforms where the directory /var/export/chassis/IMAGES does not exist, resulting in tenant deployment failures. Symptoms include tenants remaining…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000158152">
+</head>
+<body>
+<header>
+<h1>K000158152: F5OS-A: /var/export/chassis/IMAGES Does Not Exist and Tenant Deployment Fails with &quot;Insufficient Memory on Node&quot; and VDO/partition_image Volume Issues</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-07-02</dd>
+<dt>Updated</dt><dd>2026-07-02</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS Products</li><li>F5OS-A: 1.8.X, 1.8.4, 1.8.3, 1.8.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000158152">https://my.f5.com/manage/s/article/K000158152</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>This article addresses an issue on F5OS-Appliance platforms where the directory /var/export/chassis/IMAGES does not exist, resulting in tenant deployment failures. Symptoms include tenants remaining in a &quot;pending&quot; state with the message &quot;insufficient memory on node, retrying tenant deployment.&quot; System logs may show repeated timeouts and dependency failures related to dev-partition_image-export_chassis.device and var-export-chassis.mount. The issue is associated with <a href="https://cdn.f5.com/product/bugtracker/ID1388921.html" target="_blank">Bug ID 1388921</a>.</p>
+<p><strong>Example error/log messages:</strong></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Job dev-partition_image-export_chassis.device/start timed out.</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Timed out waiting for device dev-partition_image-export_chassis.device.</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Job var-export-chassis.mount/start failed with result &#39;dependency&#39;.</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Tenant status: &quot;pending&quot; and &quot;insufficient memory on node, retrying tenant deployment&quot;</span></p>
+<h2>Environment</h2>
+<ul><li>Product: F5OS - Appliance</li><li>Product Group: BIG-IP</li><li>Version: 1.8.0 (F5OS-A)</li><li>Platforms: F5-BIG-LTM-R2600, C130</li><li>Tenant image: BIG-IP 15.x (<span style="color: #15891f;"><em><strong>Note</strong>: v15.x is not supported on F5OS-Appliance; v17.x is recommended</em></span>))</li><li>Symptoms observed after tenant deployment attempts</li><li>Systemctl and platform logs show device and mount failures for partition_image and VDO volumes</li></ul>
+<h2>Cause</h2>
+<p><a href="https://cdn.f5.com/product/bugtracker/ID1388921.html" target="_blank">Bug ID 1388921</a></p>
+<h2>Recommended Actions</h2>
+<p><span style="color: #c20025;"><span style="background-color: #f1f1f1;"><em><strong>Important</strong>: Ensure you have backups of all important data (UCS, system backup files, etc.) before proceeding.<br>This workaround is intended for systems where:<br>- <span style="background-color: #f1f1f1;">mount | grep partition_image</span> returns no output<br>- <span style="background-color: #f1f1f1;">vdo list</span> returns no output</em></span></span></p>
+<p> </p>
+<ol><li><strong>Backup Data<br></strong>- Backup contents of relevant directories (such as ISO files and images) to a safe location.<br>- Use rsync or cp to copy files from /var/export/chassis/IMAGES and related directories.</li><li><strong>Stop Services<br></strong>- Stop software management service:<br><span style="background-color: #f1f1f1;">systemctl stop sw-mgmt</span></li><li><strong>Remove VDO and Create LVM Volume<br></strong>- Identify the device used for partition_image volume (e.g., /dev/sdX).)))<br>- Wipe the device:<br><p><code>wipefs -aq)<br>&lt;sCRub_LINUXPATH_qsfyvdxuuV1&gt;</code></p>
+- Create a new physical volume and volume group:<br><p><code>pvcreate<br>&lt;sCRub_LINUXPATH_qsfyvdxuuV1&gt;<br>vgcreate partition_image<br>&lt;sCRub_LINUXPATH_qsfyvdxuuV1&gt;</code></p>
+- Determine total physical extents:<br><p><code>TSZ=$(vgdisplay partition_image | awk &#39;/Total PE/{print $NF}&#39;)</code></p>
+- Create logical volume:<br><p><code>lvcreate partition_image -n export_chassis -l $((TSZ))</code></p>
+- Format new logical volume:<br><p><code>mkfs -t ext4 -E nodiscard<br>&lt;sCRub_LINUXPATH_ZfOnO3ruLEU3YAGk9EXvZPEeIxAPSLLThI9iWpOKHrvbuEW&gt;</code></p>
+</li><li><strong>Restore Data<br></strong>- Mount new logical volume to appropriate mount point.<br>- Restore previously backed-up files using rsync or cp.</li><li><strong>Finalise<br></strong>- Unmount the volume and remove any temporary directories used during restore.<br>- Reboot system:<br><span style="background-color: #f1f1f1;">reboot</span><br>- Wait 10–20 minutes for system to become active.</li><li><strong>Post-Recovery<br></strong>- After recovery, ensure only supported tenant versions (e.g., BIG-IP v17.x) are deployed.</li></ol>
+<h2>Additional Information</h2>
+<ul><li>The workaround script does not destroy the entire disk; it specifically targets the partition_image volume.</li><li>The process replaces a VDO-based logical volume with a plain LVM volume to resolve mounting/dependency issues.</li><li>Always ensure backups are taken before performing disk operations.</li><li>Running unsupported tenant versions (such as BIG-IP v15.x) on F5OS-Appliance is not recommended.</li></ul>
+</article>
+</body>
+</html>

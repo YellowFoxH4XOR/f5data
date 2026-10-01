@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000148145: How to configure rate limiting in F5® Distributed Cloud HTTP Load Balancer</title>
+<meta name="description" content="Support Solution: How to configure rate limiting in F5® Distributed Cloud HTTP Load Balancer — This article explains how to configure rate limiting in F5 Distributed CLoud HTTP Load Balancer. It covers the available options, key behaviors and step-by-step instructions to help you set up rate…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000148145">
+</head>
+<body>
+<header>
+<h1>K000148145: How to configure rate limiting in F5® Distributed Cloud HTTP Load Balancer</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-11-08</dd>
+<dt>Updated</dt><dd>2026-05-21</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Distributed Cloud Services</li><li>F5 Distributed Cloud Web App &amp; API Protection</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000148145">https://my.f5.com/manage/s/article/K000148145</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2 id="h_01HP0DFM2Y1X1ACWQEKMXGJV8C">Description</h2>
+<p>This article explains how to configure rate limiting in F5 Distributed CLoud HTTP Load Balancer. It covers the available options, key behaviors and step-by-step instructions to help you set up rate limiting correctly. </p>
+<h2 id="h_01HP0DFM2Z026WYYN340XRP5WJ">Environment</h2>
+<ul><li>F5® Distributed Cloud</li><li>HTTP Load Balancer (LB)</li></ul>
+<h2 id="h_01HP0DFM2ZTAVXHW09BC8Y280H">Answer / Recommended Actions</h2>
+<p>There are two ways to enable rate limiting, depending on your use case:</p>
+<ol><li>Enable it at the WAAP level for API Security and Control. It uses AI/ML learning engine and uniquely discovers API endpoints used during service-to-service communication.
+<ol><li><a href="https://docs.cloud.f5.com/docs-v2/web-app-and-api-protection/how-to/api-security/configure-api-rate-limiting" target="_blank">Configure API rate limiting</a></li></ol>
+</li><li>Enable it at HTTP Load Balancer (No WAAP dependency)
+<ol><li><a class="page-link lia-link-navigation lia-custom-event" id="link_3" href="https://community.f5.com/t5/technical-articles/introduction-to-f5-distributed-cloud-console-rate-limiting/ta-p/293606" target="_blank">Introduction to F5 Distributed Cloud Console Rate Limiting Feature</a></li></ol>
+</li></ol>
+<h3 id="h_01J093Q6VRXJ81E6HAHXCRWNZB">What is rate limit?</h3>
+<p>Rate limit is the number of times requests can be sent with the same telemetry data. The default value for this is 10 requests per 5 mins. <span class="s1">And this limiter is per RE location, not globally, if you set a limit of 50 req/s, then Per RE has the limit for 50 req/s.</span></p>
+<h3 id="01JCBZKFT2GVZJGTNYRCJWK0DF">Important Considerations for Rate Limit Behavior</h3>
+<p>Let&#39;s consider the following example configuration:</p>
+<ul dir="auto" style="list-style-type: none;"><li style="list-style-type: initial;">LB with &quot;<em>Custom Rate Limiting Parameters</em>&quot; of 5 requests per minute with 1X Burst Multiplier </li></ul>
+<p>Please understand the following contingencies:<br><br></p>
+<ul dir="auto" style="list-style-type: none;"><li style="list-style-type: initial;">If &quot;<em>Rate Limiter Policies</em>&quot; is configured with the value &quot;<em>No Rate Limiter Policies</em>&quot;, then all requests to the LB will be rate limited as per the originally specified configuration.</li><li style="list-style-type: initial;">If &quot;<em>Rate Limiter Policies</em>&quot; is configured with the value &quot;<em>Rate Limiter Policies</em>&quot; and a single policy &quot;<em>rate-limit</em>&quot; which contains no rules, then all requests to the LB will be rate limited as per the originally specified configuration. <strong>THIS IS IMPORTANT</strong>. <strong>If no rules are matched, then the rate limit values configured on the LB will be enforced. </strong>In other words, rate limiting will not be bypassed if no rules are matched. If needed/wanted, a final rule in the set must be created to bypass rate limiting in the case that no other rules are matched.</li></ul>
+<p><br>XC rate limiting abides by what&#39;s known as a leaky bucket algorithm (see <a href="https://www.techtarget.com/whatis/definition/leaky-bucket-algorithm#:~:text=The%20algorithm%20works%20similarly%20to,of%20data%2C%20the%20leaking%20stops." target="_blank">here</a> for reference). Each request you make adds a token to the rate limit bucket. The bucket drains at the rate configured on the Load Balancer, which is 5 req/min in our imagined example scenario from above (equivalently 1 req/12s). The below data shows how this works:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>401 1 09:48:28 [ * - - - - ]
+401 2 09:48:30 [ * * - - - ]
+401 3 09:48:32 [ * * * - - ]
+401 4 09:48:34 [ * * * * - ]
+401 5 09:48:36 [ * * * * * ]
+429 6 09:48:37 (this request overflows the bucket)
+429 7 09:48:38 (this request overflows the bucket)
+429 8 09:48:39 (this request overflows the bucket)
+***implicit drain around 9:48:28 + 60/5 = 9:48:40*** -&gt; [ * * * * - ] 
+401 9 09:48:41 [ * * * * * ]
+429 10 09:48:42 (this request overflows the bucket)
+429 11 09:48:43 (this request overflows the bucket)</code></pre>
+<h2 id="h_01HP0DFM2ZRRVWQ3X854ES8M5P">Additional Information</h2>
+<p><span>Rate limiting is at the LB level with the exception of API Security and Control described in above links. </span><span></span></p>
+<p><span>Rate limiting is not supported at the <span class="wysiwyg-underline">routes level</span> but you can do it following these steps:</span></p>
+<p><span>1. Go to <strong>HTTP Load Balancer </strong>configuration <strong>&gt;</strong> <strong>Common Security Controls &gt;</strong> <strong>Rate limiting</strong></span></p>
+<p><span>2. Select <strong>Custom Rate Limiting Parameters</strong></span></p>
+<p><span>3. Click <strong>View Configuration</strong></span></p>
+<p><span>Here are some screenshots of the process:</span></p>
+<p class="wysiwyg-text-align-center"><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000jufZ&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000GV35F" alt="" width="953" height="366"></img></p>
+<p class="wysiwyg-text-align-left"><span>4. Under <strong>Rate Limiter Policies </strong>select <strong>Rate Limiter Policies</strong> </span></p>
+<p class="wysiwyg-text-align-center"><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000jufZ&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000GV36r" alt="" width="880" height="487"></img></p>
+<p class="wysiwyg-text-align-left">5. Click <strong>Add Item</strong></p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000jufZ&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000GV38T" alt="" width="748" height="485"></img></p>
+<p><span>6. Under <strong>Rules</strong> click <strong>Configure</strong></span></p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000jufZ&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000GV3A5" alt="" width="751" height="335"></img></p>
+<p>7. Got to <strong>Add Item</strong> &gt;<strong> Domain Matcher</strong> option to cover that requirement</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000jufZ&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000GV3Bh" alt="" width="1034" height="452"></img></p>
+<p> </p>
+</article>
+</body>
+</html>

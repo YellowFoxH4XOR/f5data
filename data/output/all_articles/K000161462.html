@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161462: Persistence Misconfiguration: Cookie Insert with Match Across Causes Session Loss and Authentication failures</title>
+<meta name="description" content="Support Solution: Persistence Misconfiguration: Cookie Insert with Match Across Causes Session Loss and Authentication failures — Users intermittently experience authentication failures (&quot;User not authenticated&quot;) when accessing an application behind BIG-IP LTM. The issue occurs when Cookie Insert persistence is configured on…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161462">
+</head>
+<body>
+<header>
+<h1>K000161462: Persistence Misconfiguration: Cookie Insert with Match Across Causes Session Loss and Authentication failures</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-09</dd>
+<dt>Updated</dt><dd>2026-06-09</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161462">https://my.f5.com/manage/s/article/K000161462</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Users intermittently experience authentication failures (&quot;User not authenticated&quot;) when accessing an application behind BIG-IP LTM. The issue occurs when Cookie Insert persistence is configured on two HTTPS virtual servers sharing the same VIP on different ports (e.g., 443 and 9443), both backed by the same pool. Subsequent requests during an active session are routed to a different backend pool member than the one that handled the initial login, causing the application&#39;s authentication token to be missing on the alternate server.</p>
+<ul><li>&quot;User not authenticated&quot; errors during an active user session</li><li>Application session tokens (e.g., ASP.NET Session IDs) not found on the receiving pool member</li><li>Issue does not occur when only a single pool member is active</li><li>Issue does not occur when the application is accessed without a load balancer</li></ul>
+<h2>Environment</h2>
+<ul><li><strong>Product:</strong> BIG-IP LTM</li><li><strong>Version:</strong> 17.1.x</li><li><strong>Persistence type:</strong> Cookie Insert</li><li><strong>Setting attempted:</strong> Match Across Services / Match Across Virtual Servers enabled</li><li>Two HTTPS virtual servers sharing the same VIP on different ports (e.g., 443 and 9443)</li><li>Both virtual servers backed by the same two-member pool</li><li>Application flow: initial login request lands on the first virtual server (port 443); application subsequently redirects users to the second virtual server (port 9443)</li><li>Backend application uses session-based token authentication (e.g., ASP.NET Session IDs); session state is <strong>not</strong> shared between pool members</li><li>A firewall performing DNAT sits in front of BIG-IP, translating the public IP to the VIP</li></ul>
+<h2>Cause</h2>
+<p>Cookie Insert persistence is architecturally incompatible with the Match Across Services/Virtual Servers setting when traffic for a single user session spans two virtual servers on different ports sharing the same pool. BIG-IP does not maintain session affinity across virtual servers in this configuration, causing requests to be routed to a different pool member than the one that handled the initial login.</p>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>Option 1 (Recommended Production Approach): Use Cookie Hash Persistence with Match Across Virtual Servers</strong></p>
+<ol><li>Remove the Cookie Insert persistence profiles from both virtual servers.</li><li>Remove the Match Across Services/Virtual Servers settings from both virtual servers.</li><li>Configure <strong>Cookie Hash</strong> persistence on both virtual servers.</li><li>Enable <strong>Match Across Virtual Servers</strong> with Cookie Hash persistence — this is a supported combination for maintaining session affinity across multiple virtual servers sharing the same pool.</li></ol>
+<hr></hr>
+<p><strong>Option 2 (iRule-Based Workaround): Enforce Consistent Pool Member Routing via Custom Cookie</strong></p>
+<ol><li>Remove the Cookie Insert persistence profiles and Match Across settings from both virtual servers.</li><li>Apply the following iRule to <strong>both</strong> virtual servers:</li></ol>
+<p><code>when SERVER_CONNECTED {<br> set lbserver [IP::server_addr]<br>}<br>when HTTP_RESPONSE {<br> HTTP::cookie insert name &quot;LB-Across&quot; value &quot;$lbserver&quot; path &quot;/&quot;<br>}<br>when HTTP_REQUEST {<br> if { [HTTP::cookie exists &quot;LB-Across&quot;] } {<br> node [HTTP::cookie &quot;LB-Across&quot;] 80<br> }<br>}<br></code></p>
+<ol start="3"><li>Test thoroughly in a non-production environment before deploying to production.And the above example is when backend pools are listening on port 80</li></ol>
+<p><span style="color: #c20025;"><span style="background-color: #f1f1f1;"><em><strong>Important</strong>: This iRule stores the backend server address in <strong>plaintext</strong> within the cookie. This is a conceptual workaround only. For production use, implement cookie value encryption or obfuscation before deployment.Please enage Professional services if further assistance with irule creation is required based on the requirements</em></span></span></p>
+<hr></hr>
+<p><strong>Additional Troubleshooting Step:</strong></p>
+<ul><li>If authentication errors persist after addressing persistence configuration, engage the application team to investigate whether individual pool members have independent application-side issues (e.g., token or session errors occurring even in single-member testing scenarios).</li></ul>
+<h2>Additional Information</h2>
+<ul><li><strong>Cookie Insert + Match Across Services/Virtual Servers</strong> is <strong>not a supported combination</strong> on BIG-IP for cross-virtual-server session affinity. This behavior is by design and is not a bug.</li><li><strong>Source Address Affinity</strong> persistence with Match Across may also fail to maintain per-user session affinity in environments where multiple users share the same source IP address (e.g., behind a NAT or firewall performing DNAT), as BIG-IP cannot distinguish individual users by source IP alone in such scenarios.</li><li>If errors are observed when only a specific pool member is active (independent of persistence configuration), this may indicate a concurrent application-side issue on that member, which should be investigated separately by the application team.</li></ul>
+</article>
+</body>
+</html>

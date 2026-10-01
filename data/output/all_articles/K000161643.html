@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161643: Overview of BIG-IP certificate renewal with keymgmtd</title>
+<meta name="description" content="Knowledge: Overview of BIG-IP certificate renewal with keymgmtd — Certificate auto-renewal starts 14 days prior to expiry with tiered retries that never give up.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161643">
+</head>
+<body>
+<header>
+<h1>K000161643: Overview of BIG-IP certificate renewal with keymgmtd</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2026-06-09</dd>
+<dt>Updated</dt><dd>2026-06-09</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 21.X.X, 17.X.X, 16.1.X, 21.1.X, 21.1.0, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161643">https://my.f5.com/manage/s/article/K000161643</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Topic</span></p>
+<p>This article provides an overview of how certificates are renewed on the BIG-IP system with they <strong>keymgmtd</strong> daemon by describing the following:</p>
+<ul><li>Certificate auto-renewal starts 14 days prior to expiry with tiered retries that never give up.</li><li>BIG-IP only tries auto-renews CA-managed certificates. Manually imported certs are your responsibility.</li><li>The system performs key-matching verification and blocks installs when verification fails. The old certificate stays active if the new one does not match.</li><li>Only HA-active, primary (for clusters) and licensed devices run renewals. In the event of a failover, renewal resumes on the next timer cycle.</li></ul>
+<p><span class="sectiontitle">Description</span></p>
+<p>After a certificate is created and bound to a virtual server&#39;s SSL profile, <strong>keymgmtd</strong> — the control-plane daemon — takes over the certificate lifecycle management. It subscribes to certificate, key, and Certificate Signing Request (CSR) objects in real time through the MCP message bus, and evaluates renewal eligibility on a weekly sweep.</p>
+<p>The following two certificate categories exist:</p>
+<ul><li><strong>CA-managed system native certificates in BIG-IP</strong>: auto-renewed by keymgmtd. There are certificate orders for these.<sup>1</sup></li><li><strong>Manually imported certificates</strong>: you must track and rotate these yourself. There are no certificate orders for these.<sup>1</sup></li></ul>
+<p><sup>1</sup>To show counts of successful, failure and pending orders, enter <strong>tmsh show sys crypto cert-order-manager</strong>.</p>
+<p><span class="subsectiontitle">Example renewal timeline</span></p>
+<p>The following example describes the renewal timeline of a certificate that expires on 23 May 2026, 23:00 UTC.<br><span class="note"><strong>Note</strong>: T14 refers to 14 days to expiry and so on.</span></p>
+<p><strong>T14</strong>: Weekly validity sweep detects the certificate is within the auto-renewal window. <strong>keymgmtd</strong> creates a certificate order and submits a CSR to the configured CA (e.g. Comodo/Sectigo, Symantec/DigiCert, GoDaddy, or ACME).<br><strong>T14 to T7</strong>: Active polling. CA responses are mapped to one of the following:</p>
+<ul><li><strong>Approved</strong> (install immediately)</li><li><strong>Pending</strong> (poll again next cycle)</li><li><strong>Rejected</strong> or <strong>Error</strong> (retry on next cycle)</li></ul>
+<p><strong>T7 to T0</strong>: Escalation territory. If still unresolved, retries continue at longer intervals while alerts are logged into <strong>/var/log/ltm</strong> log file.<br><strong>T0</strong>: Certificate expires. New TLS handshakes fail for most modern clients. While existing sessions may persist briefly, a service outage occurs.</p>
+<p><span class="subsectiontitle">Retry timer tiers</span></p>
+<table style="width: 53.536755%;height: 178.90625px;" border="1"><tbody><tr style="height: 33.78125px;"><td colspan="1" rowspan="1" style="width: 14.307717%;"><strong>Tier</strong></td><td colspan="1" rowspan="1" style="width: 18.295897%;"><strong>Interval</strong></td><td colspan="1" rowspan="1" style="width: 67.396386%;"><strong>Scope</strong></td></tr><tr style="height: 10px;"><td colspan="1" rowspan="1" style="width: 14.307717%;">Quick retry</td><td colspan="1" rowspan="1" style="width: 18.295897%;">10 seconds</td><td colspan="1" rowspan="1" style="width: 67.396386%;">Only when the CA response explicitly requests it (disabled by default)</td></tr><tr style="height: 33.78125px;"><td colspan="1" rowspan="1" style="width: 14.307717%;">Tier 1</td><td colspan="1" rowspan="1" style="width: 18.295897%;">Every 15 minutes</td><td colspan="1" rowspan="1" style="width: 67.396386%;">Attempts 1–5</td></tr><tr style="height: 33.78125px;"><td colspan="1" rowspan="1" style="width: 14.307717%;">Tier 2</td><td colspan="1" rowspan="1" style="width: 18.295897%;">Every 1 hour</td><td colspan="1" rowspan="1" style="width: 67.396386%;">Attempts 6–15</td></tr><tr style="height: 33.78125px;"><td colspan="1" rowspan="1" style="width: 14.307717%;">Tier 3</td><td colspan="1" rowspan="1" style="width: 18.295897%;">Every 12 hours</td><td colspan="1" rowspan="1" style="width: 67.396386%;">Attempt 16+ ( no hard limit — retries indefinitely)</td></tr><tr style="height: 33.78125px;"><td colspan="1" rowspan="1" style="width: 14.307717%;">Validity sweep</td><td colspan="1" rowspan="1" style="width: 18.295897%;">Weekly</td><td colspan="1" rowspan="1" style="width: 67.396386%;">Discovers certificates entering the 14-day renewal window</td></tr></tbody></table>
+<p><span class="subsectiontitle">Certificate and private key verification</span></p>
+<p>Before installing any renewed certificate, <strong>keymgmtd</strong> verifies the new certificate matches the private key. If there&#39;s a mismatch, installation is refused, the temporary file is cleaned up, and the old certificate stays in place. When this occurs you may observe the following message in the <strong>/var/log/ltm</strong> log:<br><span class="code">Failed to install certificate due to mismatch of the certificate with key</span></p>
+<p><span class="subsectiontitle">HA and Clustering requirement</span></p>
+<p>The certificate order manager activates only when the device is HA-active for the default traffic group and the feature is licensed. For clustered devices, the device must be the <strong>primary</strong> device.</p>
+<p>After a failover, the new active device picks up all pending orders on the next timer cycle. No orders are lost as they persist in configuration, and not in memory. </p>
+<p><span class="sectiontitle">Recommendations</span></p>
+<p>Use the following command to troubleshoot issues:</p>
+<ul><li>
+<p>Certificate expiry check<br><span class="code">tmsh list sys file ssl-cert /Common/mycert.crt all-properties<br>openssl x509 -in /config/ssl/ssl.crt/mycert.crt -noout -dates -serial -subject</span></p>
+</li><li>OCSP certificate validation stats <br><span class="code">tmctl cert_validator_ocsp_stat</span></li><li>Client SSL profile stats (189 columns!) <br><span class="code">tmctl profile_clientssl_stat</span></li><li>Server SSL profile stats (152 columns)<br><span class="code">tmctl profile_serverssl_stat</span></li><li>OCSP responder profile stats <br><span class="code">tmctl profile_ocsp_responder_stat</span></li><li>Daemon health and logs<br><span class="code">bigstart status keymgmtd grep -i &quot;keymgmtd\|cert.*order\|CertOrder&quot; /var/log/ltm | tail -30</span></li><li>Enable debug logging<br><span class="code">tmsh modify sys db log.keymgmtd.level value debug</span></li><li>External handshake verification <br><span class="code">echo | openssl s_client -connect :443 -servername 2&gt;/dev/null \ | openssl x509 -noout -dates -serial -issuer<br><strong>Healthy</strong>: Verify return code: 0 (ok)<br><strong>Expired</strong>: Verify return code: 10 (certificate has expired)</span></li></ul>
+<p> </p>
+</article>
+</body>
+</html>

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K63545103: Maximum Concurrent TCP connection on BIND</title>
+<meta name="description" content="Support Solution: Maximum Concurrent TCP connection on BIND — TCP requests that are directed to the local BIND server on a Big-IP DNS either fail to connect or have a very slow response time.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K63545103">
+</head>
+<body>
+<header>
+<h1>K63545103: Maximum Concurrent TCP connection on BIND</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-04-28</dd>
+<dt>Updated</dt><dd>2025-02-03</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K63545103">https://my.f5.com/manage/s/article/K63545103</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>TCP requests that are directed to the local BIND server on a Big-IP DNS either fail to connect or have a very slow response time.<br> </p>
+<p><span class="sectiontitle">Environment</span></p>
+<p>This occurs:</p>
+<ul><li>Any version Big-IP DNS</li><li>A DNS listener is using a dns profile where &quot; <strong>Use BIND Server on BIG-IP</strong>&quot; is enabled.</li></ul>
+<p><span class="sectiontitle">Cause</span></p>
+<p>BIND 9 has a maximum number of concurrent TCP connection limit. See <a href="http://www.zytrax.com/books/dns/ch7/hkpng.html#tcp-clients" target="_self">http://www.zytrax.com/books/dns/ch7/hkpng.html#tcp-clients</a>.<br> </p>
+<pre>&quot;By default DNS uses UDP port 53 for queries but is defined to allow both TCP and UDP. The tcp-clients allows the user to define the maximum number of TCP connections to be supported. The BIND 9 default is 100. This statement may only be used in a global options clause.&quot;
+</pre>
+<p>So if this TCP maximum connections is exceeded then TCP requests to Big-IP DNS records that are directed to the local BIND server then these requests may get a connection refused or a very slow response.<br>To check if this limit is being reached, then the command:<br> </p>
+<pre>netstat -pano | grep &quot;127.0.0.1:53&quot; | grep LISTEN | grep tcp</pre>
+<p>Output may be similiar to below. Note the 2nd column with the number 11. This is the Recv-Q which shows the number of requests queued for the IP:port. So we can see 11 requests are waiting for a response from named on tcp port 53.</p>
+<pre>tcp       11      0 127.0.0.1:53            0.0.0.0:*               LISTEN      21261/named          keepalive (0.07/0/0)
+</pre>
+<p>The below command can also be executed to gauge the number of connections in various states to BIND on tcp port 53. A number close or over 100 means BIND is exceeding this limit.</p>
+<pre>netstat -pano | grep &quot;127.0.0.1:53&quot; | grep tcp | wc -l</pre>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<p>Change the BIND tcp client limit to a suitable value.</p>
+<ol><li>Follow <a href="https://my.f5.com/manage/s/article/K6963" target="_self">https://my.f5.com/manage/s/article/K6963</a> and follow section &quot;<span class="subsectiontitle">Using the ZoneRunner utility to manage the BIND configuration file</span>&quot;</li><li>Add a new line within the curly brackets of the options section with
+<ul><li>
+<pre>tcp-clients 300;</pre>
+</li></ul>
+</li><li>
+<p>See below where I added tcp-clients 300; to the last line of the options section. (Highlighted below)</p>
+<pre>options {
+    listen-on port 53 {
+        127.0.0.1;
+        &quot;zrd-acl-000-000&quot;;
+    }
+    recursion no;
+    directory &quot;/config/namedb&quot;;
+    allow-transfer {
+        localhost;
+    };
+    check-names master warn;
+    check-integrity yes;
+    max-journal-size 1M;
+    version &quot;none&quot;;
+    masterfile-format text;
+    <span class="highlight">tcp-clients 300;</span>
+};</pre>
+</li></ol>
+<p><span class="sectiontitle">Additional Information</span></p>
+<p>Refer to BIND 9 documentation for further information on this limit</p>
+<p>F5 support for BIND is limited to issues that impact security, critical defects, and <strong>configuration changes needed to support DNS Express</strong> within the BIND feature.  For more information, see:  <a href="https://my.f5.com/manage/s/article/K7176" target="_blank">K7176: F5 support for ZoneRunner, BIND, and the named process</a></p>
+</article>
+</body>
+</html>

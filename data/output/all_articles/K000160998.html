@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160998: BIG-IP GUI Management Inaccessibility Due to icrd/restjavad Timeout and Resource Exhaustion</title>
+<meta name="description" content="Support Solution: BIG-IP GUI Management Inaccessibility Due to icrd/restjavad Timeout and Resource Exhaustion — BIG-IP GUI Management interface becomes inaccessible, while CLI access and system uptime remain normal. Restarting &#x27;httpd&#x27; and &#x27;tomcat&#x27; services restores GUI access. Analysis shows repeated, slow…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160998">
+</head>
+<body>
+<header>
+<h1>K000160998: BIG-IP GUI Management Inaccessibility Due to icrd/restjavad Timeout and Resource Exhaustion</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-04-27</dd>
+<dt>Updated</dt><dd>2026-04-27</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.0.0, 17.1.0, 17.0.X, 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160998">https://my.f5.com/manage/s/article/K000160998</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>BIG-IP GUI Management interface becomes inaccessible, while CLI access and system uptime remain normal. Restarting &#39;<strong>httpd</strong>&#39; and &#39;<strong>tomcat</strong>&#39; services restores GUI access. Analysis shows repeated, slow REST API operations caused &quot;<strong>icrd_child</strong>&quot; processes to be killed by &#39;<strong>restjavad</strong>&#39; due to exceeding the default timeout, leading to resource exhaustion and instability in &#39;<strong>restjavad</strong>&#39;, which made the GUI unresponsive. No disk, CPU, or memory exhaustion was observed, and no custom scripts, cron jobs, or iCall handlers were found to trigger the issue.</p>
+<p><strong>Symptoms and log messages:</strong></p>
+<ul><li>GUI not loading or very slow, CLI access normal.</li><li>Tomcat logs show memory leak warnings and thread cleanup coinciding with service restarts.</li><li>Large numbers of suppressed messages from &#39;<strong>httpd.service</strong>&#39;, indicating high activity or stress.</li><li>&#39;<strong>restjavad</strong>&#39; logs show repeated forced termination of &quot;<strong>icrd_child</strong>&quot; processes due to timeout.</li><li>No evidence of external automation, scripts, or iCall handlers causing the issue.</li></ul>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP LTM</li><li>Default configuration for &quot;<strong>icrd.timeout</strong>&quot;, &quot;<strong>restjavad.timeout</strong>&quot;, and &quot;<strong>restnoded.timeout</strong>&quot; set to 60 seconds</li><li>No custom iCall handlers or cron jobs identified</li><li>System memory usage moderate (less than ~50-60%), no swap usage</li></ul>
+<h2><span style="font-family: NeusaNextProWideMedium-normal-expanded, Arial, Helvetica, sans-serif;font-size: 1em;font-weight: inherit;">Cause</span></h2>
+<p>Repeated termination of &quot;<strong>icrd_child</strong>&quot; processes by &#39;<strong>restjavad</strong>&#39; due to REST API operations exceeding the default <strong>60-second</strong> timeout led to resource exhaustion and instability in &#39;<strong>restjavad</strong>&#39;, causing the GUI to become unresponsive. Restarting &#39;<strong>httpd</strong>&#39; and &#39;<strong>tomcat</strong>&#39; temporarily restored service, but the underlying issue was the insufficient timeout for <strong>icrd/restjavad</strong> under the observed workload. No evidence of external scripts, cron jobs, or iCall handlers was found, suggesting the issue was triggered by normal but heavy REST API usage. </p>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>1.</strong> Increase the <strong>timeout </strong>values for &#39;<strong>icrd</strong>&#39;, &#39;<strong>restjavad</strong>&#39;, and &#39;<strong>restnoded</strong>&#39; to <strong>300 seconds</strong> to allow REST API operations sufficient time to complete:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># tmsh modify sys db icrd.timeout value 300
+# tmsh modify sys db restjavad.timeout value 300
+# tmsh modify sys db restnoded.timeout value 300
+
+# tmsh save sys config
+
+# bigstart restart restjavad &amp;&amp; sleep 20 &amp;&amp; bigstart restart restnoded</code></pre>
+<p><strong>2.</strong> Monitor the system for several days after applying these changes to confirm stability.</p>
+<p><strong>3.</strong> <strong>[Optionally]</strong> Increase &quot;<strong>provision.tomcat.extramb</strong>&quot; if memory usage increases, but this is not required unless further symptoms appear. [<a href="https://my.f5.com/manage/s/article/K63328426" title="K63328426" target="_blank"><strong>K63328426</strong></a>]</p>
+<p><strong>4.</strong> Continue to use &#39;<strong>httpd</strong>&#39; and &#39;<strong>tomcat</strong>&#39; restarts as a temporary workaround if the issue recurs before applying the recommended changes.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>bigstart restart httpd tomcat</code></pre>
+<p><span style="color: #e74c3c;"><em><strong>Important: </strong>Perform any changes during a planned maintenance window to avoid unexpected behavior. You need to apply the above changes on each individual F5 instance within the Device-Group.</em></span></p>
+<h2>Additional Information</h2>
+<ul><li>Restarting &#39;<strong>httpd</strong>&#39; and &#39;<strong>tomcat</strong>&#39; is a safe workaround and does not negatively impact traffic or memory, but it only resolves the symptom temporarily.</li><li>Increasing timeout values is considered preventive maintenance and is safe for environments with moderate memory usage.</li><li>The &quot;<strong>icrd_child</strong>&quot; process is managed by &#39;<strong>restjavad</strong>&#39;; repeated kills can cause &#39;<strong>restjavad</strong>&#39; to stall and stop logging, resulting in GUI/API unresponsiveness.</li><li>If the issue recurs, standard troubleshooting steps (QKview/log collection, analysis) can be repeated.</li><li>&#39;<strong>restjavad</strong>&#39; stopped logging means the process was stalled or unable to process further requests, not necessarily that it was stopped.</li></ul>
+</article>
+</body>
+</html>

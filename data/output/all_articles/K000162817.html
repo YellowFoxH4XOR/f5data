@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162817: How to Identify the Azure Storage Account used by Cloud Failover Extension</title>
+<meta name="description" content="Knowledge: How to Identify the Azure Storage Account used by Cloud Failover Extension — BIG-IP LTM Cloud: Identify the Azure Storage Account used by Cloud Failover Extension">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162817">
+</head>
+<body>
+<header>
+<h1>K000162817: How to Identify the Azure Storage Account used by Cloud Failover Extension</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2026-08-26</dd>
+<dt>Updated</dt><dd>2026-08-26</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>Public Cloud</li><li>BIG-IP Cloud Edition</li><li>Microsoft Azure</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162817">https://my.f5.com/manage/s/article/K000162817</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h1>BIG-IP LTM Cloud: Identify the Azure Storage Account used by Cloud Failover Extension</h1>
+<h2>Description</h2>
+<p>When you deploy BIG-IP Virtual Edition in Microsoft Azure with the F5 Cloud Failover Extension (CFE) configured for a high-availability (HA) pair, CFE uses an Azure Storage Account to store and manage the failover state file, <span style="font-family: &#39;courier new&#39;, courier, monospace;">f5cloudfailoverstate.json</span>. CFE reads and writes this state file during failover events.</p>
+<p>When multiple Storage Accounts exist, each with an <span style="font-family: &#39;courier new&#39;, courier, monospace;">f5_cloud_failover_label</span> tag for different BIG-IP deployments, you may be unable to determine which Storage Account a specific BIG-IP HA pair actively uses. This uncertainty can prevent you from safely applying network access restrictions or disabling public network access.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP Local Traffic Manager (LTM) Virtual Edition</li><li>Microsoft Azure</li><li>F5 Cloud Failover Extension</li><li>BIG-IP active/standby HA pair with CFE configured</li><li>BIG-IP 14.1.0 and later</li><li>CFE 1.5.0 and later</li></ul>
+<h2>Cause</h2>
+<p>CFE uses tag-based discovery through <span style="font-family: &#39;courier new&#39;, courier, monospace;">scopingTags</span> or explicit naming through <span style="font-family: &#39;courier new&#39;, courier, monospace;">scopingName</span> in its declaration to identify the Azure Storage Account that it manages. When multiple Storage Accounts exist across different BIG-IP deployments, you must match the value in the CFE declaration exactly against the tags on the Azure Storage Accounts to determine which account CFE uses.</p>
+<h2>Recommended Actions</h2>
+<p>Follow these steps in order. Each step progressively confirms the Storage Account that CFE uses.</p>
+<h3>Step 1: Query the CFE declaration on BIG-IP</h3>
+<ol><li>Log in to the BIG-IP bash shell and run the following command to retrieve the current CFE configuration:
+<p><span style="background-color: #f1f1f1;">curl -su admin:&lt;password&gt; http://localhost:8100/mgmt/shared/cloud-failover/declare | python3 -m json.tool</span></p>
+</li><li>Locate the <span style="font-family: &#39;courier new&#39;, courier, monospace;">externalStorage</span> section in the output.
+<ol style="list-style-type: lower-alpha;"><li>For tag-based discovery, look for a structure similar to the following:
+<pre style="background-color: #f1f1f1;padding: 12px 16px;overflow-x: auto;font-family: &#39;Courier New&#39;, Courier, monospace;font-size: 13px;line-height: 1.5;border: 1px solid #cccccc;white-space: pre;display: block;max-width: 100%;box-sizing: border-box;"><code>
+{
+    &quot;externalStorage&quot;: {
+        &quot;scopingTags&quot;: {
+            &quot;f5_cloud_failover_label&quot;: &quot;connectivity-prod-f5-rg-n10&quot;
+        }
+    }
+}
+</code></pre>
+</li><li>For explicit naming, look for a structure similar to the following:
+<pre style="background-color: #f1f1f1;padding: 12px 16px;overflow-x: auto;font-family: &#39;Courier New&#39;, Courier, monospace;font-size: 13px;line-height: 1.5;border: 1px solid #cccccc;white-space: pre;display: block;max-width: 100%;box-sizing: border-box;"><code>
+{
+    &quot;externalStorage&quot;: {
+        &quot;scopingName&quot;: &quot;your-storage-account-name&quot;
+    }
+}
+</code></pre>
+</li><li>If the declaration uses <span style="font-family: &#39;courier new&#39;, courier, monospace;">scopingTags</span>, record the exact tag value. CFE uses the Azure Storage Account that has this exact tag value.</li><li>If the declaration uses <span style="font-family: &#39;courier new&#39;, courier, monospace;">scopingName</span>, the Storage Account name is explicitly defined. No tag matching is required, but continue to Step 3 to confirm runtime discovery.</li></ol>
+</li></ol>
+<p><span style="color: #c20025;"><span style="background-color: #f1f1f1;"><em><strong>Important</strong>: The tag value is case-sensitive and must match exactly. For example, <span style="font-family: &#39;courier new&#39;, courier, monospace;">connectivity-prod-f5-rg-n10</span> and <span style="font-family: &#39;courier new&#39;, courier, monospace;">connectivity-prod-f5-rg-n01</span> are different values and resolve to different Storage Accounts.</em></span></span></p>
+<h3>Step 2: Match the tag against Azure Storage Accounts</h3>
+<p>Use the tag value from Step 1 to identify the matching Storage Account.</p>
+<h3>Using Azure Command-Line Interface</h3>
+<ol><li>Run the following command from Azure Cloud Shell or another system with Azure Command-Line Interface (CLI) access. Replace the tag value with the value retrieved in Step 1:
+<pre style="background-color: #f1f1f1;padding: 12px 16px;overflow-x: auto;font-family: &#39;Courier New&#39;, Courier, monospace;font-size: 13px;line-height: 1.5;border: 1px solid #cccccc;white-space: pre;display: block;max-width: 100%;box-sizing: border-box;"><code>
+az storage account list \
+  --query &quot;[?tags.f5_cloud_failover_label==&#39;connectivity-prod-f5-rg-n10&#39;].{Name:name, ResourceGroup:resourceGroup, Tag:tags.f5_cloud_failover_label}&quot; \
+  -o table
+</code></pre>
+</li><li>The Storage Account returned in the output is the account that CFE is configured to use.</li></ol>
+<h3>Using the Azure portal</h3>
+<ol><li>In the Azure portal, navigate to Storage accounts.</li><li>Open each Storage Account and select Tags.</li><li>Identify the Storage Account whose <span style="font-family: &#39;courier new&#39;, courier, monospace;">f5_cloud_failover_label</span> tag value exactly matches the value from Step 1.</li></ol>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: If more than one Storage Account has the same <span style="font-family: &#39;courier new&#39;, courier, monospace;">f5_cloud_failover_label</span> value, correct the duplicate tagging. Each BIG-IP HA deployment must use a uniquely tagged Storage Account.</em></span></p>
+<h3>Step 3: Confirm runtime discovery through the CFE inspect endpoint</h3>
+<ol><li>Run the following command from the BIG-IP bash shell to confirm which Storage Account CFE discovers at runtime:
+<p><span style="background-color: #f1f1f1;">curl -su admin:&lt;password&gt; http://localhost:8100/mgmt/shared/cloud-failover/inspect | python3 -m json.tool</span></p>
+</li><li>Locate the <span style="font-family: &#39;courier new&#39;, courier, monospace;">externalStorage</span> section. The <span style="font-family: &#39;courier new&#39;, courier, monospace;">name</span> field identifies the Storage Account that CFE resolves and actively uses at runtime:
+<pre style="background-color: #f1f1f1;padding: 12px 16px;overflow-x: auto;font-family: &#39;Courier New&#39;, Courier, monospace;font-size: 13px;line-height: 1.5;border: 1px solid #cccccc;white-space: pre;display: block;max-width: 100%;box-sizing: border-box;"><code>
+{
+    &quot;externalStorage&quot;: {
+        &quot;discovered&quot;: [
+            {
+                &quot;name&quot;: &quot;dcf5new&quot;,
+                &quot;scopingTags&quot;: {
+                    &quot;f5_cloud_failover_label&quot;: &quot;connectivity-prod-f5-rg-n10&quot;
+                }
+            }
+        ]
+    }
+}
+</code></pre>
+</li></ol>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: If the <span style="font-family: &#39;courier new&#39;, courier, monospace;">externalStorage</span> section is absent or empty, CFE cannot discover a matching Storage Account at the time of the query. Verify that the Storage Account tag exactly matches the value in the CFE declaration and that the BIG-IP system can reach the Storage Account.</em></span></p>
+<h3>Step 4: Verify the state file in the Azure Storage browser</h3>
+<ol><li>In the Azure portal, navigate to the Storage Account identified in Steps 2 and 3.</li><li>Go to the Storage browser and select Blob containers.</li><li>Locate the <span style="font-family: &#39;courier new&#39;, courier, monospace;">f5cloudfailover</span> container.</li><li>Confirm that the container contains the <span style="font-family: &#39;courier new&#39;, courier, monospace;">f5cloudfailoverstate.json</span> file.</li></ol>
+<p>The Storage Account containing this container and file is confirmed as the account that CFE uses for failover state management.</p>
+<h2>Additional Information</h2>
+<ul><li>The <span style="font-family: &#39;courier new&#39;, courier, monospace;">f5_cloud_failover_label</span> tag key is static and cannot be changed. You can customize only the tag value for each deployment.</li><li>Each BIG-IP HA deployment must use a uniquely tagged Storage Account. Multiple deployments that share the same tag value can cause unpredictable CFE behavior.</li><li>In environments with multiple BIG-IP HA pairs, each pair should have a separate CFE declaration with a unique tag value and a separate Storage Account.</li><li>CFE also caches the state file locally on BIG-IP in a data group named <span style="font-family: &#39;courier new&#39;, courier, monospace;">f5-cloud-failover-state</span> and synchronizes the state between HA peers through BIG-IP ConfigSync.</li><li>CFE requires the BIG-IP Managed Service Identity (MSI) to have read and write permissions for the Storage Account Blob service. Refer to the F5 CFE Azure role-based access control (RBAC) role definition for the minimum required permissions.</li><li>For guidance about restricting public access to the CFE Storage Account while maintaining CFE functionality, refer to the F5 CFE in Isolated Environments documentation.</li><li>For related information, refer to:
+<ul><li><a href="https://my.f5.com/manage/s/article/K81535301" target="_blank" rel="noopener noreferrer">K81535301: CFE isn&#39;t able to list the storage account</a></li><li><a href="https://my.f5.com/manage/s/article/K000152860" target="_blank" rel="noopener noreferrer">K000152860: Troubleshooting Azure BIG-IP HA Failover Issues</a></li><li><a href="https://my.f5.com/manage/s/article/K000158944" target="_blank" rel="noopener noreferrer">K000158944: Configuring and Operating F5 Cloud Failover Extension in Azure for BIG-IP High Availability</a></li></ul>
+</li></ul>
+</article>
+</body>
+</html>

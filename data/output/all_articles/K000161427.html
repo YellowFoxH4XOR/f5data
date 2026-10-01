@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161427: Critical TMM memory pressure and stale connection accumulation on Standby unit (Connection Mirroring)</title>
+<meta name="description" content="Support Solution: Critical TMM memory pressure and stale connection accumulation on Standby unit (Connection Mirroring) — Aggressive mode sweeper: /Common/default-eviction-policy (1) (global memory) X Connections killed">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161427">
+</head>
+<body>
+<header>
+<h1>K000161427: Critical TMM memory pressure and stale connection accumulation on Standby unit (Connection Mirroring)</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-25</dd>
+<dt>Updated</dt><dd>2026-06-25</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.0.0, 17.1.0, 17.0.X, 17.X.X, 21.X.X, 21.1.X, 21.1.0, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161427">https://my.f5.com/manage/s/article/K000161427</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Critical memory pressure and accumulation of stale mirrored connections occur on the Standby unit in a BIG-IP LTM high-availability pair. The Standby unit holds significantly more connections than the Active unit, resulting in repeated activation of aggressive mode sweeper and memory pressure warnings. The Standby unit fails to properly reap mirrored connections after closure or timeout on the Active unit. Log messages include:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Aggressive mode sweeper: /Common/default-eviction-policy (1) (global memory) X Connections killed</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">TCP: Memory pressure activated</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Limiting open port RST response from 501 to 500 packets/sec for traffic-group /Common/traffic-group-1</span></p>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP LTM</li><li>Version: 17.1.3</li><li>Configured as an HA pair (Active/Standby)</li><li>High volume of short-lived TCP/UDP connections</li><li>Connection Mirroring enabled on several virtual servers</li><li>FastL4 profile with PVA acceleration initially enabled</li><li>Asymmetric routing (nPath/DSR) configured on affected virtual servers</li></ul>
+<h2>Cause</h2>
+<p>The issue is caused by enabling PVA acceleration in the FastL4 profile on virtual servers configured for nPath routing with connection mirroring. This results in mirrored connections accumulating as stale entries on the Standby unit, leading to memory exhaustion and repeated aggressive sweeper activation.</p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li>Disable PVA acceleration in the FastL4 profile for all virtual servers using nPath routing and connection mirroring.</li><li>Temporarily enable the tmm.returnmemory database variable to allow the system to sweep and reclaim memory:<br><span style="background-color: #f1f1f1;">tmsh modify /sys db tmm.returnmemory value enable</span> <br>Allow the system to sweep the cache for at least 15 minutes, then disable:<br><span style="background-color: #f1f1f1;">tmsh modify /sys db tmm.returnmemory value disable</span></li><li>Monitor memory usage and connection table statistics to confirm resolution:<br><span style="background-color: #f1f1f1;">tmctl -s pages_used,pages_avail -d cluster page_stats | awk &#39;NR&gt;2 {used += $1; total += $2} END {print (used / total * 100)&quot;%&quot;}&#39;</span></li><li>Ensure that asymmetric routing and connection mirroring are not used together with PVA acceleration.</li><li>To view current connection statistics for virtual servers:<br><span style="background-color: #f1f1f1;">tmctl virtual_server_stat -s name,clientside.cur_conns,clientside.max_conns,tot_pva_assist_conn -K clientside.cur_conns -O -L 5</span></li></ol>
+<h2>Additional Information</h2>
+<ul><li>Disabling PVA acceleration and enabling tmm.returnmemory variable significantly reduces memory usage and improves system stability.</li><li>The issue is most prominent in environments with high-frequency, short-lived connections and connection mirroring enabled for stateful failover.</li><li>The Standby unit may accumulate more than three times the number of active connections compared to the Active unit if this configuration is present.</li><li>The aggressive mode sweeper may not clear all stale mirrored entries if the configuration issue is not addressed.</li></ul>
+</article>
+</body>
+</html>

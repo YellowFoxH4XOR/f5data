@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161343: Configuring BIG-IP L2 nPath Routing (DSR) for UDP/DNS Load Balancing</title>
+<meta name="description" content="Support Solution: Configuring BIG-IP L2 nPath Routing (DSR) for UDP/DNS Load Balancing — Configuring BIG-IP nPath Routing (DSR) for UDP/DNS Load Balancing">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161343">
+</head>
+<body>
+<header>
+<h1>K000161343: Configuring BIG-IP L2 nPath Routing (DSR) for UDP/DNS Load Balancing</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-16</dd>
+<dt>Updated</dt><dd>2026-08-16</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.X.X, 21.X.X, 21.1.X, 21.1.0, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161343">https://my.f5.com/manage/s/article/K000161343</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h1>Configuring BIG-IP nPath Routing (DSR) for UDP/DNS Load Balancing</h1>
+<h2>Description</h2>
+<p>This article describes how to configure BIG-IP nPath routing (also known as Direct Server Return or DSR) for UDP/DNS load balancing. In this topology, BIG-IP receives client DNS requests, selects a pool member, and forwards the packet using Layer 2 MAC rewrite only — without modifying the Layer 3 destination IP address. The backend DNS server replies directly to the client, bypassing the BIG-IP on the return path.</p>
+<p>This behavior is referred to as <strong>nPath routing</strong> in F5 documentation. It is also known as <strong>asymmetric routing</strong> or <strong>Direct Server Return (DSR)</strong>.</p>
+<div class="info"><strong>Reference:</strong> For the official F5 nPath configuration guide, refer to <a href="https://my.f5.com/manage/s/article/K11116" target="_blank" rel="noopener noreferrer">K11116: Configuring nPath routing</a>.</div>
+<hr></hr>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM (physical, virtual, or tenant)</li><li>BIG-IP version 13.1.x and later</li><li>FastL4 profile</li><li>UDP/DNS traffic (port 53)</li><li>Backend DNS servers (Linux-based) on the same L2 segment as the VIP</li><li>Virtual server with <code>translate-address disabled</code> and <code>translate-port disabled</code></li></ul>
+<hr></hr>
+<h2>Traffic Flow Overview</h2>
+<p>The following diagram illustrates the nPath/DSR traffic flow for UDP/DNS:</p>
+<pre>INBOUND: Client --&gt; BIG-IP --&gt; DNS Server
+=========================================
+
+  [CLIENT]                    [BIG-IP]                    [DNS SERVER]
+  IP  : 10.x.x.34             VIP : 10.x.x.37             IP  : 10.x.x.1
+  MAC : aa:bb:cc:11:22:33     MAC : 14:a9:d0:1e:bb:21     MAC : 00:50:56:93:e9:47
+                                                           LO  : 10.x.x.37  &lt;-- VIP on loopback
+
+  +------------+              +------------+              +------------+
+  |   CLIENT   |              |   BIG-IP   |              | DNS SERVER |
+  +------------+              +------------+              +------------+
+        |          TX              RX |  TX                   RX |
+        |                            |     |                     |
+        |  SrcMAC: aa:bb:cc:11:22:33 |     |                     |
+        |  DstMAC: 14:a9:d0:1e:bb:21 |     |                     |
+        |  SrcIP : 10.x.x.34:42483   |     |                     |
+        |  DstIP : 10.x.x.37:53      |     |                     |
+        |  Proto : UDP               |     |                     |
+        | --------------------------&gt;|     |                     |
+        |                            |     |  SrcMAC: 14:a9:d0:1e:bb:21  (CHANGED)
+        |                            |     |  DstMAC: 00:50:56:93:e9:47  (CHANGED)
+        |                            |     |  SrcIP : 10.x.x.34:42483    (UNCHANGED)
+        |                            |     |  DstIP : 10.x.x.37:53       (UNCHANGED)
+        |                            |     |  Proto : UDP
+        |                            |     | -------------------&gt;|
+        |                            |                           |
+        |                     [VS matched]                       |
+        |                     [translate-address: disabled]      |
+        |                     [translate-port  : disabled]       |
+        |                     [L2 MAC rewrite ONLY]              |
+        |                                                        |
+        |                                               [DstIP = VIP IP]
+        |                                               [matched on loopback]
+        |                                               [packet accepted]
+        |                                               [DNS query processed]
+
+
+RETURN: DNS Server --&gt; Client DIRECT (BIG-IP bypassed)
+=======================================================
+
+  +------------+              +------------+              +------------+
+  |   CLIENT   |              |   BIG-IP   |              | DNS SERVER |
+  +------------+              +------------+              +------------+
+        |          RX              X (NOT INVOLVED)    TX |
+        |                                                  |
+        |                                  SrcMAC: 00:50:56:93:29:59
+        |                                  DstMAC: aa:bb:cc:11:22:33
+        |                                  SrcIP : 10.x.x.37:53  (VIP from loopback)
+        |                                  DstIP : 10.x.x.34:42483
+        |                                  Proto : UDP
+        | &lt;================================================|
+        |
+        |  Client RX:
+        |  SrcIP : 10.x.x.37:53   &lt;-- VIP IP (client sees normal response)
+        |  DstIP : 10.x.x.34:42483
+
+
+LAYER CHANGE SUMMARY
+====================
+
+  Field      | Client TX --&gt; BIG-IP RX   | BIG-IP TX --&gt; Server RX   | Server TX --&gt; Client RX
+  -----------+----------------------------+----------------------------+----------------------------
+  L2 SrcMAC  | Client MAC                 | BIG-IP MAC    (CHANGED)    | Server MAC
+  L2 DstMAC  | BIG-IP MAC                 | Server MAC    (CHANGED)    | Client MAC
+  L3 SrcIP   | Client IP     (UNCHANGED)  | Client IP     (UNCHANGED)  | VIP IP
+  L3 DstIP   | VIP IP        (UNCHANGED)  | VIP IP        (UNCHANGED)  | Client IP
+  L4 SrcPort | 42483         (UNCHANGED)  | 42483         (UNCHANGED)  | 53
+  L4 DstPort | 53            (UNCHANGED)  | 53            (UNCHANGED)  | 42483
+  BIG-IP     | YES (RX)                   | YES (TX)                   | NO -- BYPASSED
+</pre>
+<hr></hr>
+<h2>Prerequisites</h2>
+<ul><li>BIG-IP must have a self-IP on the same subnet as the VIP and pool members</li><li>Backend DNS servers must be Linux-based (or equivalent OS supporting loopback IP configuration)</li><li>Client, BIG-IP VIP, and backend DNS server must be on the same L2 segment (for L2 nPath)</li><li>No SNAT configured on the virtual server</li></ul>
+<hr></hr>
+<h2>BIG-IP Configuration</h2>
+<h3>Step 1: Create FastL4 Profile</h3>
+<div class="warning"><strong>Important:</strong> Per <a href="https://my.f5.com/manage/s/article/K42623065" target="_blank" rel="noopener noreferrer">K42623065</a>, <code>loose-close enabled</code> is <strong>strictly required</strong> for nPath deployments on BIG-IP 13.1.5 and later, including 17.x. Failure to enable this will cause connection issues for TCP-based DSR. For UDP/DNS it is still recommended for consistency.</div>
+<pre>tmsh create ltm profile fastl4 /Common/fastL4_nPath \
+    defaults-from /Common/fastL4 \
+    loose-close enabled \
+    loose-initialization enabled \
+    idle-timeout 120 \
+    reset-on-timeout enabled \
+    syn-cookie-enable enabled \
+    tcp-close-timeout 5 \
+    tcp-handshake-timeout 5
+</pre>
+<h3>Step 2: Create Pool</h3>
+<pre>tmsh create ltm pool /Common/DNS_pool \
+    members add { 10.x.x.1:53 { address 10.x.x.1 } } \
+    monitor gateway_icmp \
+    min-active-members 1
+</pre>
+<h3>Step 3: Create Virtual Server</h3>
+<pre>tmsh create ltm virtual /Common/f5dns01-vip \
+    destination 10.x.x.37:0 \
+    mask 255.255.255.255 \
+    pool /Common/DNS_pool \
+    profiles add { /Common/fastL4_nPath { } } \
+    persist replace-all-with { source_addr { default yes } } \
+    translate-address disabled \
+    translate-port disabled \
+    source 0.0.0.0/0
+</pre>
+<div class="note"><strong>Note:</strong> <code>destination port 0</code> means the virtual server accepts all ports. <code>translate-address disabled</code> and <code>translate-port disabled</code> are the key settings that enable nPath/DSR behavior — BIG-IP will only rewrite the L2 MAC address, not the L3 destination IP.</div>
+<h3>Step 4: Save Configuration</h3>
+<pre>tmsh save sys config
+</pre>
+<h2>Verification</h2>
+<h3>1. Confirm ARP and Pool Status on BIG-IP</h3>
+<pre># ARP must show resolved for pool member
+tmsh show net arp | grep 10.x.x.1
+
+# Pool member must be up
+tmsh show ltm pool DNS_pool members
+
+# Virtual server must show traffic incrementing
+tmsh show ltm virtual hif5dns01-vip
+</pre>
+<h3>2. Connection Table — Understanding nPath DSR Behavior</h3>
+<div class="warning"><strong>Important — Expected Behavior:</strong> In an nPath/DSR configuration, querying the connection table by pool member IP <code>ss-server-addr &lt;pool_member_ip&gt;</code> will <strong>NOT</strong> show client-originated connections. This is expected and correct. The only entries visible against the pool member IP are health monitor connections <code>Type: self</code>. Client traffic connections are only visible when querying by VIP IP.<code>cs-server-addr &lt;vip_ip&gt;</code></div>
+<h4>Query by Pool Member IP — Shows Monitor Traffic Only (Expected)</h4>
+<pre>tmsh show sys connection ss-server-addr 10.x.x.1
+</pre>
+<p>Example output — all entries show <code>Type: self</code> (monitor traffic only):</p>
+<pre>root@(localhost)(tmos)# show sys connection ss-server-addr 10.x.x.1 all-properties
+Sys::Connections
+10.x.x.3:60796 - 10.x.x.1:53 - 10.x.x.3:53195 - 10.x.x.1:53
+----------------------------------------------------------------------
+  TMM           1
+  Type          self          &lt;-- BIG-IP health monitor, NOT client traffic
+  Acceleration  none
+  Protocol      udp
+  Idle Timeout  30
+  Virtual Path  10.x.x.1:53
+                      ClientSide        ServerSide
+  Client Addr  10.x.x.3:60796    10.x.x.3:53195
+  Server Addr     10.x.x.1:53       10.x.x.1:53
+  Bits In                376               320
+  Bits Out               320               376
+  Packets In               1                 1
+  Packets Out              1                 1
+
+Total records returned: 6   &lt;-- All 6 are monitor connections, zero client connections
+</pre>
+<div class="note"><strong>Why no client connections appear here:</strong> With <code>translate-address disabled</code>, BIG-IP does not perform L3 NAT on the destination IP. The server-side of the connection table records the <strong>VIP IP</strong> as the destination, not the pool member IP. Therefore, filtering by pool member IP returns no client traffic entries.</div>
+<h4>Query by VIP IP — Shows Actual Client Traffic (Correct Method for nPath)</h4>
+<pre>tmsh show sys connection cs-server-addr 10.x.x.37
+</pre>
+<p>Example output — client connections visible with VIP IP preserved on server-side:</p>
+<pre>root@(localhost)(tmos)# show sys connection cs-server-addr 10.x.x.37
+Sys::Connections
+10.x.x.34:45157  10.x.x.37:53  10.x.x.34:45157  10.x.x.37:53  udp  109  (tmm: 10)  none  none
+10.x.x.34:51676  10.x.x.37:53  10.x.x.34:51676  10.x.x.37:53  udp  64   (tmm: 10)  none  none
+10.x.x.34:36345  10.x.x.37:53  10.x.x.34:36345  10.x.x.37:53  udp  99   (tmm: 10)  none  none
+10.x.x.34:51536  10.x.x.37:53  10.x.x.34:51536  10.x.x.37:53  udp  44   (tmm: 10)  none  none
+10.x.x.34:42314  10.x.x.37:53  10.x.x.34:42314  10.x.x.37:53  udp  105  (tmm: 0)   none  none
+Total records returned: 24
+</pre>
+<h4>Connection Table Field Interpretation for nPath/DSR</h4>
+<table><tbody><tr><th colspan="1" rowspan="1">Field</th><th colspan="1" rowspan="1">Client-Side Value</th><th colspan="1" rowspan="1">Server-Side Value</th><th colspan="1" rowspan="1">Explanation</th></tr><tr><td colspan="1" rowspan="1">Source IP:Port</td><td colspan="1" rowspan="1">Client IP:ephemeral</td><td colspan="1" rowspan="1">Client IP:ephemeral</td><td colspan="1" rowspan="1">No SNAT — client IP preserved end-to-end</td></tr><tr><td colspan="1" rowspan="1">Destination IP:Port</td><td colspan="1" rowspan="1">VIP IP:53</td><td colspan="1" rowspan="1"><span class="highlight">VIP IP:53 (unchanged)</span></td><td colspan="1" rowspan="1">translate-address disabled — VIP IP not translated to pool member IP</td></tr><tr><td colspan="1" rowspan="1">Connection Type</td><td colspan="1" rowspan="1">any</td><td colspan="1" rowspan="1">any</td><td colspan="1" rowspan="1">Normal client connection via virtual server</td></tr></tbody></table>
+<div class="success"><strong>DSR Confirmed:</strong> The server-side destination IP remaining as the VIP IP (not the pool member IP) is the definitive proof that nPath/DSR is operating correctly. BIG-IP has no L3 NAT entry to maintain because no address translation occurred.</div>
+<h4>End-to-End Verification Test</h4>
+<p>Run the following sequence to confirm DSR is working end-to-end:</p>
+<pre># Step 1: Clear all connections (clean baseline)
+tmsh delete sys connection all
+
+# Step 2: From client, send DNS query to VIP
+dig @10.x.x.37 www.example.local
+
+# Expected client output:
+# ;; Got answer:
+# ;; ANSWER SECTION:
+# www.example.local.  604800  IN  A  x.x.x.x
+# ;; Query time: 4 msec
+# ;; SERVER: 10.x.x.37#53
+
+# Step 3: Immediately check connection table on BIG-IP
+tmsh show sys connection cs-server-addr 10.x.x.37
+# Expected: 1 entry with client IP and VIP IP on both sides
+
+tmsh show sys connection ss-server-addr 10.x.x.1
+# Expected: 0 client entries (monitor entries only)
+</pre>
+<p>Confirmed working output from lab validation:</p>
+<pre># BIG-IP timestamp: Tue May 19 09:52:38 PDT 2026
+# Client timestamp: Tue May 19 16:52:39 UTC 2026 (same time, different TZ)
+
+# Client received valid DNS response in 4ms:
+# www.example.local.  604800  IN  A  x.x.x.x
+
+# BIG-IP connection table (cs-server-addr VIP):
+10.x.x.34:50490  10.x.x.37:53  10.x.x.34:50490  10.x.x.37:53  udp  1  (tmm: 3)  none  none
+Total records returned: 1   &lt;-- Client connection visible via VIP
+
+# BIG-IP connection table (ss-server-addr pool member):
+Total records returned: 0   &lt;-- No client entry -- EXPECTED for nPath/DSR
+</pre>
+<h3>3. Packet Capture — Confirm L2 Rewrite and L3 Transparency</h3>
+<pre># On BIG-IP — capture with MAC addresses on TMM interface
+tcpdump -i 0.0:nnnp -evnn -s0 host 10.x.x.37
+
+# Expected output shows:
+# Packet 1 (inbound):  ClientMAC &gt; BIG-IP_MAC  SrcIP=Client  DstIP=VIP
+# Packet 2 (outbound): BIG-IP_MAC &gt; ServerMAC  SrcIP=Client  DstIP=VIP (unchanged)
+</pre>
+<div class="note"><strong>Note on PVA hardware acceleration:</strong> On platforms with PVA (r-series, VELOS blades), flows are offloaded to hardware after the first packet. Subsequent packets in the same flow will not appear in <code>tcpdump</code> output. This is expected behavior — use the connection table for ongoing verification instead.</div>
+<hr></hr>
+<h2>Troubleshooting</h2>
+<table><tbody><tr><th colspan="1" rowspan="1">Symptom</th><th colspan="1" rowspan="1">Likely Cause</th><th colspan="1" rowspan="1">Action</th></tr><tr><td colspan="1" rowspan="1">ARP for VIP shows <code>incomplete</code> on client</td><td colspan="1" rowspan="1">BIG-IP not responding to ARP for VIP</td><td colspan="1" rowspan="1">Check virtual address ARP is enabled:<br><code>tmsh show ltm virtual-address 10.x.x.37</code><br>Confirm VIP IP is within self-IP subnet on the correct VLAN</td></tr><tr><td colspan="1" rowspan="1">BIG-IP receives packets (pkts in &gt; 0) but pool member pkts out = 0</td><td colspan="1" rowspan="1">Pool member down or ARP for pool member incomplete</td><td colspan="1" rowspan="1"><code>tmsh show ltm pool DNS_pool members</code><br><code>tmsh show net arp</code></td></tr><tr><td colspan="1" rowspan="1">Pool member receives packets but sends no reply</td><td colspan="1" rowspan="1">VIP IP not configured on server loopback</td><td colspan="1" rowspan="1"><code>ip addr show lo</code> on backend server<br>Add VIP IP: <code>ip addr add 10.x.x.37/32 dev lo</code></td></tr><tr><td colspan="1" rowspan="1"><code>ss-server-addr &lt;pool_member_ip&gt;</code> shows no client connections</td><td colspan="1" rowspan="1"><strong>This is expected behavior for nPath/DSR</strong></td><td colspan="1" rowspan="1">Use <code>cs-server-addr &lt;vip_ip&gt;</code> instead.<br>Server-side dst IP remains VIP IP — pool member IP is never recorded as dst in connection table</td></tr><tr><td colspan="1" rowspan="1">Connection table shows client connections but server-side dst = pool member IP (not VIP)</td><td colspan="1" rowspan="1"><code>translate-address</code> is enabled — DSR not active</td><td colspan="1" rowspan="1">Verify: <code>tmsh list ltm virtual hif5dns01-vip translate-address</code><br>Must show <code>translate-address disabled</code></td></tr><tr><td colspan="1" rowspan="1">nPath stops working after BIG-IP upgrade</td><td colspan="1" rowspan="1"><code>loose-close disabled</code> on FastL4 profile</td><td colspan="1" rowspan="1">Enable loose-close per <a href="https://my.f5.com/manage/s/article/K42623065" target="_blank" rel="noopener noreferrer">K42623065</a>:<br><code>tmsh modify ltm profile fastl4 fastL4_nPath loose-close enabled</code></td></tr><tr><td colspan="1" rowspan="1">Client ARP for VIP resolves to server MAC instead of BIG-IP MAC</td><td colspan="1" rowspan="1">ARP suppression not configured on backend server loopback</td><td colspan="1" rowspan="1">Set <code>arp_ignore=1</code> and <code>arp_announce=2</code> on backend server</td></tr><tr><td colspan="1" rowspan="1">tcpdump shows no packets after first flow</td><td colspan="1" rowspan="1">PVA hardware offload active — expected behavior</td><td colspan="1" rowspan="1">Use connection table instead:<br><code>tmsh show sys connection cs-server-addr 10.x.x.37</code></td></tr></tbody></table>
+<hr></hr>
+<h2>Key Configuration Parameters</h2>
+<table><tbody><tr><th colspan="1" rowspan="1">Parameter</th><th colspan="1" rowspan="1">Required Value</th><th colspan="1" rowspan="1">Reason</th></tr><tr><td colspan="1" rowspan="1"><code>translate-address</code></td><td colspan="1" rowspan="1"><code>disabled</code></td><td colspan="1" rowspan="1">Prevents BIG-IP from rewriting L3 destination IP — core DSR requirement</td></tr><tr><td colspan="1" rowspan="1"><code>translate-port</code></td><td colspan="1" rowspan="1"><code>disabled</code></td><td colspan="1" rowspan="1">Prevents BIG-IP from rewriting L4 destination port</td></tr><tr><td colspan="1" rowspan="1"><code>loose-close</code> (FastL4)</td><td colspan="1" rowspan="1"><code>enabled</code></td><td colspan="1" rowspan="1">Required on 13.1.5+ / 17.x — BIG-IP never sees return traffic in DSR</td></tr><tr><td colspan="1" rowspan="1"><code>loose-initialization</code> (FastL4)</td><td colspan="1" rowspan="1"><code>enabled</code></td><td colspan="1" rowspan="1">Required for TCP DSR — BIG-IP never sees SYN-ACK. Not critical for UDP.</td></tr><tr><td colspan="1" rowspan="1">SNAT</td><td colspan="1" rowspan="1"><code>None</code></td><td colspan="1" rowspan="1">SNAT must not be configured — server must see real client IP for direct reply</td></tr><tr><td colspan="1" rowspan="1">Server loopback IP</td><td colspan="1" rowspan="1">= VIP IP</td><td colspan="1" rowspan="1">Server kernel must accept packets with dst IP = VIP IP</td></tr><tr><td colspan="1" rowspan="1">Server ARP suppression</td><td colspan="1" rowspan="1"><code>arp_ignore=1, arp_announce=2</code></td><td colspan="1" rowspan="1">Prevents ARP conflict with BIG-IP virtual address</td></tr></tbody></table>
+<hr></hr>
+<h2>Related Articles</h2>
+<ul><li><a href="https://my.f5.com/manage/s/article/K11116" target="_blank" rel="noopener noreferrer">K11116: Configuring nPath routing</a></li><li><a href="https://my.f5.com/manage/s/article/K42623065" target="_blank" rel="noopener noreferrer">K42623065: nPath virtual server stops working after upgrade</a></li><li><a href="https://my.f5.com/manage/s/article/K13403" target="_blank" rel="noopener noreferrer">K13403: Configuring L3 nPath load balancing and monitoring (Legacy)</a></li></ul>
+</article>
+</body>
+</html>

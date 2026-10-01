@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160246: AD password reset not enforcing password complexity check</title>
+<meta name="description" content="Support Solution: AD password reset not enforcing password complexity check — With AD Auth agent, users are allowed to change their password when it has expired on the AD server.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160246">
+</head>
+<body>
+<header>
+<h1>K000160246: AD password reset not enforcing password complexity check</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-03-13</dd>
+<dt>Updated</dt><dd>2026-03-13</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160246">https://my.f5.com/manage/s/article/K000160246</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>With AD Auth agent, users are allowed to change their password when it has expired on the AD server. </p>
+<p>When password has expired on AD server, it responds to APM with Kerberos error &quot;KRB5KDC_ERR_KEY_EXP NT Status: STATUS_PASSWORD_MUST_CHANGE&quot;. Then APM renders a new logon page back to the user to introduce the new password.</p>
+<p>Windows password policies are enforced on Windows server via Group Policy Objects (GPO) at the domain level or via Fine-Grained Password Policies (PSO) for specific users/groups. <br>GPO sets a default policy (globalPwdPolicy) for all domain users. <br>PSO policies at &#39;CN=Password Settings Container,CN=System,DC=&lt;domain&gt;&#39; bypasses the default domain policy for those users/groups.</p>
+<p>When &quot;Complexity check for Password Reset&quot; is enabled on AD Auth agent, APM fetches those Windows password policies from AD server, stores them in the PSO cache and validates the new password. If succeeds, it sends the new password to AD server (KPASSWD)</p>
+<h2>Environment</h2>
+<ul><li>BIGIP deployed with APM</li><li>APM access policy including an AD Auth agent</li><li>AD Auth agent with &quot;Complexity check for Password Reset&quot; enabled</li></ul>
+<h2>Causes</h2>
+<ul><li>A Firewall dropping packets to AD server or networking issue</li><li>PSO cache on APM not matching latest changes on AD server</li><li>AD server on APM configured with a pool of servers but not all them with the same data</li><li>Password policy changed on AD server but not yet applied</li><li>PSO policy is applied to a user which takes precedence over the GPO policy</li></ul>
+<h2>Recommended Actions</h2>
+<p>Check these ports are opened between APM and AD servers</p>
+<p><span style="background-color: #ffffff;">88/UDP,TCP (KRB5)</span><br><span style="background-color: #ffffff;">389/TCP (LDAP)</span><br><span style="background-color: #ffffff;">464/TCP (KPASSWD)</span></p>
+<p><br>Obtain password settings from default GPO policy.<br>(ie. AD server with ip &#39;10.1.1.1&#39; &amp; &#39;Administrator&#39; account &amp; &#39;lab.lan&#39; domain)</p>
+<p><span style="background-color: #bdc3c7;">ldapsearch -x -H <a style="background-color: #bdc3c7;" target="_blank">ldap://10.1.1.1</a> -D &quot;Administrator@lab.lan&quot; -W -b &quot;DC=lab,DC=lan&quot; -s base &quot;(objectClass=*)&quot; maxPwdAge minPwdAge minPwdLength pwdProperties pwdHistoryLength</span></p>
+<p> </p>
+<p>Check if a user account has assigned a PSO policy<br>(ie. AD server with ip &#39;10.1.1.1&#39; &amp; &#39;Administrator&#39; account &amp; &#39;user1&#39; account &amp; &#39;lab.lan&#39; domain)</p>
+<p><span style="background-color: #bdc3c7;">ldapsearch -x -H <a target="_blank" style="background-color: #bdc3c7;">ldap://10.1.1.1</a> -D &quot;Administrator@lab.lan&quot; -W -b &quot;CN=user1,CN=Users,DC=lab,DC=lan&quot; -s base &quot;(objectClass=user)&quot; msDS-ResultantPSO</span></p>
+<p> </p>
+<p>Obtain password settings from that PSO policy<br>(ie. AD server with ip &#39;10.1.1.1&#39; &amp; &#39;Administrator&#39; account &amp; &#39;lab.lan&#39; domain &amp; PSO policy &#39;LabTestPolicy&#39;)</p>
+<p><span style="background-color: #bdc3c7;">ldapsearch -x -H <a target="_blank" style="background-color: #bdc3c7;">ldap://10.1.1.1</a> -D &quot;Administrator@lab.lan&quot; -W -b &quot;CN=LabTestPolicy,CN=Password Settings Container,CN=System,DC=lab,DC=lan&quot;  msDS-PasswordComplexityEnabled  msDS-PasswordHistoryLength  msDS-MinimumPasswordLength  msDS-MaximumPasswordAge  msDS-MinimumPasswordAge  msDS-PasswordSettingsPrecedence</span></p>
+<p><br>Once you know the AD password policy to be applied to a user (PSO or GPO), Verify if the new password is compliant. </p>
+<p>password length  (from AD password policy)<br>minimum age   (from AD password policy)<br>password complexity   (from AD password policy)</p>
+<p>APM follows these rules to make the new password to meet Windows&#39;s complexity requirements</p>
+<p>Not contain the user&#39;s account name or parts of the user&#39;s full name that exceed two consecutive characters<br>Be at least six characters in length<br>Contain characters from three of the following four categories:<br>  English uppercase characters (A through Z)<br>  English lowercase characters (a through z)<br>  Base 10 digits (0 through 9)<br>  Non-alphabetic characters (for example, !, $, #, %)</p>
+<p><br>Clear PSO and Kerberos caches from the APM AAA AD server object to force fetching latest password policies from AD server.</p>
+<p>Check logs just before &#39;session.ad.last.errmsg&#39; is dumped to narrow down root cause.</p>
+<p>&#39;session.ad.last.errmsg&#39; can be one of these values:</p>
+<p>&#39;Your new password must be at least X characters length&#39;<br>&#39;Your new password must be at least X days old&#39;<br>&#39;Your new password must be more complex to meet domain password complexity requirements&#39;</p>
+<h2>Additional Information</h2>
+<p>None.</p>
+</article>
+</body>
+</html>

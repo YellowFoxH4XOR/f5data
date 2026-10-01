@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000159063: HTTP Only Flag is not seen even after setting up Persistence</title>
+<meta name="description" content="Support Solution: HTTP Only Flag is not seen even after setting up Persistence — The attributes are enabled in the persistence profile but do not appear in the first Set-Cookie header">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000159063">
+</head>
+<body>
+<header>
+<h1>K000159063: HTTP Only Flag is not seen even after setting up Persistence</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-20</dd>
+<dt>Updated</dt><dd>2026-02-20</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000159063">https://my.f5.com/manage/s/article/K000159063</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When using BIG-IP LTM with cookie persistence, the HttpOnly and Secure attributes may not appear in the first Set-Cookie HTTP response header for BIG-IP persistence cookies, even when these options are enabled in the persistence profile configuration. This can be confirmed when:</p>
+<ul><li>The attributes are enabled in the persistence profile but do not appear in the first Set-Cookie header</li><li>Security scans or browser developer tools show the attributes appear in separate Set-Cookie fields</li><li>Packet captures do not show the expected cookie security attributes</li></ul>
+<h2>Environment</h2>
+<ul><li>Virtual server with cookie persistence profile configured</li><li>HTTP Cookie Insert persistence method</li><li>HttpOnly and/or Secure attributes enabled in the persistence profile</li></ul>
+<h2>Cause</h2>
+<p>The default BIG-IP cookie persistence behavior does not always apply the HttpOnly and Secure attributes to persistence cookies in the first Set-Cookie header position, even when these options are enabled in the persistence profile configuration. An iRule is required to explicitly manipulate the HTTP response and insert these security attributes into the BIG-IP persistence cookies.</p>
+<h2>Recommended Actions</h2>
+<p>To ensure that the HttpOnly and Secure attributes are properly set on BIG-IP persistence cookies, implement the following iRule on the virtual server:</p>
+<ol><li>
+<p>Navigate to <strong>Local Traffic &gt; iRules &gt; iRule List</strong> in the BIG-IP Configuration utility.</p>
+</li><li>
+<p>Create a new iRule with the following code:</p>
+</li></ol>
+<pre><code>when HTTP_RESPONSE {
+    foreach x [HTTP::cookie names] {
+        if { $x starts_with &quot;BIGipServer&quot; } {
+            set ckname $x
+            set ckvalue [HTTP::cookie value $x]
+            HTTP::cookie remove $x
+            HTTP::cookie insert name $ckname value $ckvalue path &quot;/&quot; version 1
+            HTTP::cookie secure $ckname enable
+            HTTP::cookie httponly $ckname enable
+        }
+    }
+}
+</code></pre>
+<ol start="3"><li>
+<p>Assign the iRule to the virtual server:</p>
+<ul><li>Navigate to <strong>Local Traffic &gt; Virtual Servers &gt; Virtual Server List</strong></li><li>Select the virtual server</li><li>Go to the <strong>Resources</strong> tab</li><li>Under <strong>iRules</strong>, click <strong>Manage</strong></li><li>Move the iRule from <strong>Available</strong> to <strong>Enabled</strong></li><li>Click <strong>Finished</strong></li></ul>
+</li><li>
+<p>Verify the configuration by testing the application and checking that the persistence cookie includes both the HttpOnly and Secure attributes in browser developer tools or packet captures.</p>
+</li></ol>
+<p>This iRule intercepts HTTP responses, identifies BIG-IP persistence cookies (typically named with the &quot;BIGipServer&quot; prefix), removes the original cookie, and reinserts it with the Secure and HttpOnly flags explicitly enabled.<br>The iRule uses the HTTP_RESPONSE event, which processes server-side responses.</p>
+<h2>Additional Information</h2>
+<ul><li><a target="_blank" href="https://my.f5.com/manage/s/article/K11324">K11324: Setting the secure attribute for BIG-IP persistence cookies</a></li><li><a target="_blank" href="https://my.f5.com/manage/s/article/K38153093">K38153093: How to set the &#39;secure&#39; attribute for a specific HTTP cookie, by using an iRule</a></li><li><a target="_blank" href="https://my.f5.com/manage/s/article/K30524234">K30524234: The HTTPOnly and Secure attributes are enabled by default in the Cookie persistence profile</a></li><li>DevCentral discussion: <a target="_blank" href="https://community.f5.com/discussions/technicalforum/cookie-persistence-%E2%80%9Csecure%E2%80%9D-and-%E2%80%9Chttp-only%E2%80%9D/65038">Cookie Persistence &quot;Secure&quot; and &quot;HTTP Only&quot;</a></li></ul>
+</article>
+</body>
+</html>

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000134549: Clickhouse data is filling up allocated disk space, such as partition /var</title>
+<meta name="description" content="Support Solution: Clickhouse data is filling up allocated disk space, such as partition /var — [ERROR] /usr/bin/nms-ingestion clickhouse/sink.go:430 Insert failed: committing transaction: code: 243, message: Cannot reserve X.XX MiB, not enough space">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000134549">
+</head>
+<body>
+<header>
+<h1>K000134549: Clickhouse data is filling up allocated disk space, such as partition /var</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-05-11</dd>
+<dt>Updated</dt><dd>2026-09-28</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Instance Manager: 2.10.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000134549">https://my.f5.com/manage/s/article/K000134549</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<p>Clickhouse data can fill up allocated disk space such as partition /var. This can lead to out of disk space functionality issues and errors such as the following (from nms.log):</p>
+<pre class="ckeditor_codeblock">[ERROR] /usr/bin/nms-ingestion clickhouse/sink.go:430 Insert failed: committing transaction: code: 243, message: Cannot reserve X.XX MiB, not enough space
+</pre>
+<h2><strong>Environment</strong></h2>
+<p>NMS</p>
+<h2><strong>Cause</strong></h2>
+<p>Retained clickhouse data, such as security events, grows over time. Data retention TTL is a function of clickhouse and is based on time rather than by data size. The default TTL is 1 month.</p>
+<h2><strong>Recommended Actions</strong></h2>
+<p>Here are a couple of solutions that will help mitigate this issue:</p>
+<h4><strong>Change clickhouse data store to a different </strong><b style="background-color: var(--slds-g-color-neutral-base-100, var(--lwc-colorbackgroundinput,rgb(255, 255, 255)));">partition</b></h4>
+<p>The new partition size for data storage should be based on the size of the NMS environment. See <a href="https://docs.nginx.com/nginx-instance-manager/fundamentals/tech-specs/#system-sizing" target="_blank" rel="noopener noreferrer">Sizing Recommendations</a> for guidance.</p>
+<p>Using example directory <span style="font-family: Courier New,Courier,monospace;">/mnt/example</span> as the new partition, here is how to make the necessary change on the NMS server</p>
+<ul><li>Stop clickhouse server:
+<pre class="ckeditor_codeblock">sudo systemctl stop clickhouse-server.service</pre>
+</li><li>Edit <span style="font-family: Courier New,Courier,monospace;">/etc/clickhouse-server/config.xml</span>, find all of the paths with base directory <span style="font-family: Courier New,Courier,monospace;">/var/lib/clickhouse/</span> and change them to the new partition directory. Example: 
+<pre class="ckeditor_codeblock"><strong>&lt;path&gt;</strong> from <span style="font-family: Courier New,Courier,monospace;">/var/lib/clickhouse/</span> to <span style="font-family: Courier New,Courier,monospace;">/mnt/clickhouse/</span>
+<strong>&lt;tmp_path&gt;</strong> from <span style="font-family: Courier New,Courier,monospace;">/var/lib/clickhouse/tmp/</span> to <span style="font-family: Courier New,Courier,monospace;">/mnt/clickhouse/tmp</span>
+<strong>&lt;user_files_path&gt;</strong> from <span style="font-family: Courier New,Courier,monospace;">/var/lib/clickhouse/user_files/</span> to <span style="font-family: Courier New,Courier,monospace;">/mnt/clickhouse/user_files/</span>
+<strong>&lt;top_level_domains_path&gt;</strong> from <span style="font-family: Courier New,Courier,monospace;">/var/lib/clickhouse/top_level_domains/</span> to <span style="font-family: Courier New,Courier,monospace;">/mnt/clickhouse/top_level_domains/</span>
+<strong>&lt;format_schema_path&gt;</strong> from <span style="font-family: Courier New,Courier,monospace;">/var/lib/clickhouse/format_schemas/</span> to <span style="font-family: Courier New,Courier,monospace;">/mnt/clickhouse/format_schemas/</span></pre>
+<ul><li>There may be more or less paths to change depending on your environment.</li></ul>
+</li><li>(Optional) Copy the existing data to the new partition directory. For example use rsync to accomplish this task:
+<pre class="ckeditor_codeblock"> rsync -aH /var/lib/clickhouse/ /mnt/clickhouse</pre>
+<ul><li>This step is optional because clickhouse will rebuild missing files, directories and data upon startup.</li></ul>
+</li><li>(Optional) Delete old clickhouse data to recover disk space: 
+<pre class="ckeditor_codeblock">rm -rf /var/lib/clickhouse/*</pre>
+</li><li>Start clickhouse-server:
+<pre class="ckeditor_codeblock">sudo systemctl start clickhouse-server.service</pre>
+</li></ul>
+<h4><strong>Reduce retention time for Security Events</strong></h4>
+<p>Use <span style="font-family: Courier New,Courier,monospace;">clickhouse-client</span> to connect to clickhouse and reduce the Security Events data retention time.</p>
+<ul><li>Depending on how clickhouse is setup a password may be required to connect. The clickhouse password is configured within<span style="font-family: Courier New,Courier,monospace;"> /etc/clickhouse-server/users.xml</span>. Example: 
+<pre class="ckeditor_codeblock">$ sudo awk &#39;/&lt;users&gt;/,/&lt;password&gt;T/&#39; /etc/clickhouse-server/users.xml | egrep &quot;&lt;users&gt;|&lt;password&gt;&quot; -A2
+
+&lt;users&gt;
+    &lt;!-- If user name was not specified, &#39;default&#39; user is used. --&gt;
+    &lt;default&gt;
+--
+            Example: &lt;password&gt;qwerty&lt;/password&gt;.
+            Password could be empty.
+--
+         &lt;password&gt;examplepass&lt;/password&gt;
+</pre>
+</li><li>Connect to clickhouse: 
+<pre class="ckeditor_codeblock">$ clickhouse-client --password examplepass
+ClickHouse client version 22.8.4.7 (official build).
+Connecting to localhost:9000 as user default.
+Connected to ClickHouse server version 22.8.4 revision 54460.
+...
+nms :)</pre>
+</li><li>Run the following commands: 
+<pre class="ckeditor_codeblock">ALTER TABLE nms.v4_security_events MODIFY TTL timestamp + toIntervalDay(10)
+ALTER TABLE nms.v4_security_events_signatures_data MODIFY TTL timestamp + toIntervalDay(10)
+ALTER TABLE nms.v4_security_events_violation_data MODIFY TTL timestamp + toIntervalDay(10)</pre>
+<ul><li>This example sets the Security Events retention time to 10 days. This can be adjusted to weeks, hours, minutes and even seconds. See <a href="https://clickhouse.com/docs/en/sql-reference/functions/type-conversion-functions#tointervalyearquartermonthweekdayhourminutesecond" target="_blank" rel="noopener noreferrer">Clickhouse documentation</a> for more information.</li></ul>
+</li><li>Example: 
+<pre class="ckeditor_codeblock">nms :) ALTER TABLE nms.v4_security_events MODIFY TTL timestamp + toIntervalDay(10)
+
+ALTER TABLE nms.v4_security_events
+MODIFY TTL timestamp + toIntervalDay(10)
+
+Query id: d00e6ad4-957b-4be9-bc97-4611a544fbec
+
+Ok.
+
+0 rows in set. Elapsed: 0.804 sec.
+
+nms :) ALTER TABLE nms.v4_security_events_signatures_data MODIFY TTL timestamp + toIntervalDay(10)
+
+ALTER TABLE nms.v4_security_events_signatures_data
+MODIFY TTL timestamp + toIntervalDay(10)
+
+Query id: 25a25559-553c-4650-b5b1-ae07c0ba572a
+
+Ok.
+
+0 rows in set. Elapsed: 0.017 sec.
+
+nms :) ALTER TABLE nms.v4_security_events_violation_data MODIFY TTL timestamp + toIntervalDay(10)
+
+ALTER TABLE nms.v4_security_events_violation_data
+MODIFY TTL timestamp + toIntervalDay(10)
+
+Query id: 029777cc-a72c-44bf-808c-59e2499207dd
+
+Ok.
+
+0 rows in set. Elapsed: 0.010 sec.
+
+nms :)</pre>
+</li><li>Quit (<span style="font-family: Courier New,Courier,monospace;">Q+&lt;Enter&gt;</span>) and restart clickhouse-server: 
+<pre class="ckeditor_codeblock">sudo systemctl restart clickhouse-server</pre>
+</li><li>Restart nms 
+<pre class="ckeditor_codeblock">sudo systemctl restart nms
+</pre>
+</li></ul>
+</article>
+</body>
+</html>

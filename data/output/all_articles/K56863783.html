@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K56863783: Recursive BGP routes no longer dropped by BIG-IP</title>
+<meta name="description" content="Support Solution: Recursive BGP routes no longer dropped by BIG-IP — The fix for ID919317 results in the BIG-IP no longer dropping all routes advertised by a BGP neighbor which are reached recursively. The BGP RFC 4271 does not specify if such routes must or must not…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K56863783">
+</head>
+<body>
+<header>
+<h1>K56863783: Recursive BGP routes no longer dropped by BIG-IP</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-08-19</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP FPS: 16.1.3, 16.1.X, 16.1.0, 16.1.2, 16.1.1</li><li>BIG-IP AFM: 16.1.X, 16.1.3, 16.1.2, 16.1.1, 16.1.0</li><li>BIG-IP Analytics: 16.1.X, 16.1.3, 16.1.2, 16.1.1, 16.1.0</li><li>BIG-IP APM: 16.1.X, 16.1.3, 16.1.2, 16.1.1, 16.1.0</li><li>BIG-IP ASM: 16.1.X, 16.1.0, 16.1.3, 16.1.2, 16.1.1</li><li>BIG-IP PEM: 16.1.X, 16.1.3, 16.1.2, 16.1.1, 16.1.0</li><li>BIG-IP Link Controller: 16.1.X, 16.1.3, 16.1.2, 16.1.1, 16.1.0</li><li>BIG-IP LTM: 16.1.X, 16.1.3, 16.1.2, 16.1.1, 16.1.0</li><li>BIG-IP DNS: 16.1.X, 16.1.1, 16.1.0, 16.1.3, 16.1.2</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K56863783">https://my.f5.com/manage/s/article/K56863783</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>The fix for <a href="https://cdn.f5.com/product/bugtracker/ID919317.html" target="_self">ID919317</a> results in the BIG-IP no longer dropping all routes advertised by a BGP neighbor which are reached recursively. The BGP <a href="https://www.rfc-editor.org/rfc/rfc4271" target="_self">RFC 4271</a> does not specify if such routes must or must not be dropped so the BIG-IP behavior before and after the change is permissible. This can result in unanticipated behavior when upgrading to a software version containing the fix for <a href="https://cdn.f5.com/product/bugtracker/ID919317.html" target="_self">ID919317</a> if the administrator is unaware of the change.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BGP configured</li><li>One or more BGP neighbors providing BIG-IP with routes reached recursively</li><li>Upgrade from version without <a href="https://cdn.f5.com/product/bugtracker/ID919317.html" target="_self">ID919317</a> to version containing the fix (only 16.1.0 currently)</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br>In versions without the fix for <a href="https://cdn.f5.com/product/bugtracker/ID919317.html" target="_self">ID919317</a>, when the BIG-IP receives routes which are reached recursively, they will be discarded. The /var/log/ltm log may contain messages like below:<br><span class="example2">Aug 17 10:57:17 bigip err tmm[18025]: 01010036:3: Route 198.51.100.1%0/32 loops back to itself<br>Aug 17 10:57:17 bigip err tmm[18025]: 01010037:3: Route 192.0.2.0%0/24 is unreachable<br>Aug 17 10:57:17 bigip err tmm[18025]: 01010036:3: Route 198.51.100.1%0/32 loops back to itself<br>Aug 17 10:57:17 bigip err tmm[18025]: 01010037:3: Route 203.0.113.0%0/24 is unreachable</span><br>In this example there is a BGP peer of the BIG-IP advertising route for 198.51.100.1/32 where the next hop is 198.51.100.1, which is recursive. 198.51.100.1 is also the next hop for two other routes that peer is advertising, 192.0.2.0/24 and 203.0.113.0/24 which are both reported as unreachable.<br><br>Reviewing the ZebOS &quot;show ip route&quot; in versions without the <a href="https://cdn.f5.com/product/bugtracker/ID919317.html" target="_self">ID919317</a> fix will show the absence of the routes which are reached recursively. In versions with the fix for <a href="https://cdn.f5.com/product/bugtracker/ID919317.html" target="_self">ID919317</a> however, those routes are no longer discarded and are visible with the notation &#39;<span class="example2"><strong>recursive via [IP Address]&#39;</strong></span> as seen below:<br><span class="example2">C       198.51.100.0/24 is directly connected, Internal-VLAN<br>B       <strong>198.51.100.1/32</strong> [200/0] via <strong>198.51.100.1</strong>, Internal-VLAN, 00:00:54<br>B       192.0.2.0/24 [200/0] via 198.51.100.1 (<strong>recursive via 198.51.100.1</strong>), 00:11:27<br>B       203.0.113.0/24 [200/0] via 198.51.100.1 (<strong>recursive via 198.51.100.1</strong>), 00:11:27<br>C       127.0.0.1/32 is directly connected, lo<br>C       127.1.1.254/32 is directly connected, tmm</span><br>The two routes which are reached recursively are noted in the output and traffic can still be routed to them.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span><br>Review BGP configuration on BGP neighbor(s) of BIG-IP and verify all configured routes are required as recursive routing is rarely intentional. In the above example, there is likely no value in the BIG-IP&#39;s BGP neighbor advertising a /32 route that matches the interface it uses to communicate with BGP peers. In this example, removing the /32 route from the BGP neighbor will have no adverse impact and improve the BGP routing and advertisement.</p>
+
+<p><span class="sectiontitle">Additional Information</span><br>None.</p>
+</article>
+</body>
+</html>

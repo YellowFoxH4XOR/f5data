@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000159878: Guided Configuration deployments missing or not visible in GUI on HA peer after upgrade</title>
+<meta name="description" content="Support Solution: Guided Configuration deployments missing or not visible in GUI on HA peer after upgrade — After upgrading BIG-IP APM systems and Guided Configuration to newer versions, Guided Configuration deployments may become missing or inaccessible in the GUI on one device in an HA pair, while…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000159878">
+</head>
+<body>
+<header>
+<h1>K000159878: Guided Configuration deployments missing or not visible in GUI on HA peer after upgrade</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-04</dd>
+<dt>Updated</dt><dd>2026-02-04</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000159878">https://my.f5.com/manage/s/article/K000159878</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>After upgrading BIG-IP APM systems and Guided Configuration to newer versions, Guided Configuration deployments may become missing or inaccessible in the GUI on one device in an HA pair, while remaining visible on the other device.</p>
+<p><strong>Symptoms include:</strong></p>
+<ul><li>&quot;Not Found - The requested URL was not found on this server&quot; error when accessing <strong>Access</strong> &gt; <strong>Guided Configuration</strong></li><li>Guided Configuration deployments visible in GUI on active device but not on standby device</li><li>Underlying configuration objects (virtual servers, access policies, pools, iRules) remain present and functional on both devices</li><li>Configuration sync shows devices are in sync at TMOS level</li><li>Error message during GC operations: &quot;Config processor is not available: java.util.concurrent.TimeoutException: Unavailable&quot;</li></ul>
+<p><strong>Log messages:</strong></p>
+<p><span style="font-size: 11.8125px;font-family: monospace;">info iAppsLX_save_pre[xxxxx]: Skipping f5-iappslx-access-framework iapp package that does not have iapp path: /var/config/rest/iapps/f5-iappslx-access-framework</span></p>
+<h2></h2>
+<h2>Environment</h2>
+<ul><li>BIG-IP APM version 17.1.1 or later</li><li>Platform: Any BIG-IP platform (including iSeries) running in HA configuration</li><li>Guided Configuration upgraded from version 3.0 to 10.0 (or other major version jumps skipping intermediate versions)</li><li>iAppLX packages (f5-iappslx-access-framework) installed</li><li>HA pair with sync-failover device group configured</li><li>Auto-sync or manual sync mode</li></ul>
+<h2></h2>
+<h2>Cause</h2>
+<p>The REST framework database, which stores Guided Configuration deployment metadata, does not automatically synchronize between HA devices through standard configuration sync. Upgrading Guided Configuration by skipping required intermediate versions (e.g., directly from 3.0 to 10.0) can result in loss of deployment visibility in the GUI, even though the underlying TMOS configuration objects remain intact and synchronized.</p>
+<h2></h2>
+<h2>Recommended Actions</h2>
+<h3>Follow Incremental Upgrade Path for Guided Configuration</h3>
+<p>Always upgrade Guided Configuration sequentially through supported intermediate versions to prevent deployment metadata loss:</p>
+<ol><li>Identify your current GC version by navigating to <strong>Access</strong> &gt; <strong>Guided Configuration</strong></li><li>Download required intermediate GC packages from F5 Downloads (<a href="https://my.f5.com/manage/s/downloads" target="_blank">https://my.f5.com/manage/s/downloads</a>)</li><li>Upgrade incrementally following the supported path: 3.0 → 5.0 → 7.0 → 9.0 → 10.0</li><li>Do not skip major versions during upgrade</li></ol>
+<p><strong>Important:</strong> You can only upgrade up to one or two major versions later than your current version.</p>
+<h3></h3>
+<h3>Repair Missing Guided Configuration Deployments Using Package Reinstallation</h3>
+<p>If GC deployments are already missing after an improper upgrade, attempt package reinstallation:</p>
+<p><strong>On the affected device:</strong></p>
+<ol><li>Navigate to <strong>iApps</strong> &gt; <strong>Package Management LX</strong></li><li>Uninstall all iAppLX packages (including f5-iappslx-access-framework)</li><li>Do NOT manually reinstall packages</li><li>Navigate to <strong>Access</strong> &gt; <strong>Guided Configuration</strong></li><li>Allow the system to auto-install default packages for your BIG-IP version</li><li>Verify if missing deployments become visible</li></ol>
+<p><strong>If deployments remain missing, restart services:</strong></p>
+<p><span style="font-size: 10.3359px;font-family: monospace;">tmsh restart sys service httpd tomcat restjavad restnoded</span></p>
+<h3></h3>
+<h3>Synchronize REST Database Between HA Peers Using sslofix Tool</h3>
+<p>If GC deployments are visible on one device but not the peer after attempting package reinstallation, use the sslofix tool to manually synchronize the REST database:</p>
+<p><strong>Prerequisites:</strong></p>
+<ul><li>Configure passwordless SSH access from local device to remote HA peer (refer to K13454)</li><li>Ensure the device with correct GC configuration is active</li><li>Verify devices are in sync at TMOS level before proceeding</li><li>Ensure you have the most recent configuration on the local device</li></ul>
+<p><strong>Steps:</strong></p>
+<ol><li>Download the sslofix script from <a href="https://clouddocs.f5.com/sslo-troubleshooting-guide/sslofix.html" target="_blank">https://clouddocs.f5.com/sslo-troubleshooting-guide/sslofix.html</a></li><li>Run diagnostic check using the <strong>management IP address</strong> of the peer:</li><li><span style="font-size: 10.3359px;font-family: monospace;">sslofix -D &lt;device-group-name&gt; -H &lt;peer-management-ip&gt; --diagnostic</span></li><li>Review diagnostic output for any warnings or errors</li><li>If diagnostics pass or show acceptable warnings, run the sync:</li><li><span style="font-size: 10.3359px;font-family: monospace;">sslofix -D &lt;device-group-name&gt; -H &lt;peer-management-ip&gt; --force</span></li><li>The script will:</li></ol>
+<ul><ul><li>Stop restjavad on both devices</li><li>Remove REST Framework device certificates and conflicts</li><li>Generate new REST Framework device key-pairs</li><li>Restart restjavad and restnoded services</li><li>Initiate CMI sync operation</li></ul></ul>
+<p>Verify GC deployments are now visible on peer device by navigating to <strong>Access</strong> &gt; <strong>Guided Configuration</strong></p>
+<p> </p>
+<p><strong>Important notes:</strong></p>
+<ul><li>Use the <strong>management IP address</strong> (not self IP or floating IP) for the -H parameter</li><li>The script only affects the control plane; no production traffic impact expected</li><li>Some warnings during diagnostic checks may be acceptable; the script can still succeed</li></ul>
+<h3></h3>
+<h2>Additional Information<strong></strong></h2>
+<p><strong>Troubleshooting sslofix Errors:</strong></p>
+<ul><li>If you receive &quot;Peer device must be a member of [device-group] device group!&quot; error, verify you are using the management IP address (not self IP) for the -H parameter</li><li>If passwordless SSH is not configured, the script will fail; refer to K13454 for SSH configuration steps</li></ul>
+<p> </p>
+</article>
+</body>
+</html>

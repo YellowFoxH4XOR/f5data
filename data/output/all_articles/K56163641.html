@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K56163641: BIG-IP DNS HTTP health monitor behavior when processing a server response (15.1.x - 16.x)</title>
+<meta name="description" content="Knowledge: BIG-IP DNS HTTP health monitor behavior when processing a server response (15.1.x - 16.x) — You can use the BIG-IP DNS (formerly BIG-IP GTM) HTTP and HTTPS health monitors to verify the health of the server by checking whether the expected response is returned after a specific request. The…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K56163641">
+</head>
+<body>
+<header>
+<h1>K56163641: BIG-IP DNS HTTP health monitor behavior when processing a server response (15.1.x - 16.x)</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2020-11-05</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 15.1.X, 15.1.2, 15.1.1, 15.1.3, 15.1.0, 16.0.1, 16.0.0, 15.1.8, 16.X.X, 15.1.6, 15.1.5, 15.1.4, 15.1.7, 16.1.X, 16.0.X, 16.1.3, 16.1.2, 16.1.1, 16.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K56163641">https://my.f5.com/manage/s/article/K56163641</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>This article applies to BIG-IP 15.1.x through 16.x. For information about other versions, refer to the following article:</p>
+
+<ul><li><a href="https://my.f5.com/manage/s/article/K13622" target="_self">K13622: BIG-IP DNS HTTP health monitor behavior when processing a server response (9.x - 15.0.x)</a></li></ul>
+You can use the BIG-IP DNS (formerly BIG-IP GTM) HTTP and HTTPS health monitors to verify the health of the server by checking whether the expected response is returned after a specific request. The following information provides insight into how the BIG-IP DNS HTTP and HTTPS health monitors behave upon receiving different responses from a server.<h3>Description</h3><p>By default, the BIG-IP DNS system uses HTTP version 0.9 when sending monitor requests, unless the HTTP version-specific information is configured in the Send String. When the BIG-IP DNS system is configured to send HTTP version 0.9 monitor requests, the BIG-IP DNS system marks the server up as long as the server returns a response.<br><br>When the BIG-IP DNS HTTP health monitor is configured to send either HTTP version 1.0 or 1.1 in its Send String, the BIG-IP DNS system will first review the HTTP response status code from the server. By default the monitor expects a HTTP <strong>200 OK</strong> response however different and multiple response codes can be configured. If the Response code is a match to the allowed list, it then proceeds to search for the Receive String in the server response payload (if configured). When the Receive String is successfully found in the server response payload (or if no Receive string was configured), the BIG-IP DNS system marks the server as up.<br><br>If the Response status code does not match the allowed list of status codes or the Receive string is not found, the BIG-IP DNS system then marks the server as down.</p>
+
+<p>For example, assume that the BIG-IP DNS system is configured to send the following monitor request with a Receive String of <strong>iamalive</strong>:</p>
+
+<p><span class="example2">GET /index.html HTTP/1.1\r\nHost: host.domain.com\r\nConnection: Close\r\n</span></p>
+
+<ul><li>The BIG-IP DNS system marks the server as up if the server returns the following response:
+	<p><span class="example2">HTTP/1.1 200 OK<br>	Content-Type: text/html</span></p>
+
+	<p><span class="example2">&lt;HTML&gt;<br>	&lt;BODY&gt;iamalive&lt;/BODY&gt;<br>	&lt;/HTML&gt;</span></p>
+	</li><li>The BIG-IP DNS system logs a message that appears similar to the following example to the <strong>/var/log/gtm</strong> file:
+	<p><span class="example2">011ae0f2:1: Monitor instance /Common/gtm-test-monitor 10.100.1.101:80 DOWN --&gt; UP from 10.100.1.100 (connect: success search result true)</span></p>
+	 </li><li>The BIG-IP DNS system marks the server as down if the server returns the following response status:
+	<p><span class="example2">HTTP/1.1 302 Moved Temporarily<br>	Location: http://www.iamalive.com/new/location.html</span><br>	<br>	<span class="note"><strong>Note</strong>: Even though the receive string of &quot;iamalive&quot; is present in the response, because the HTTP status code is not 200 (it is 302) the response is marked down</span>.<br>	 </p>
+	</li><li>The BIG-IP DNS system logs a message that appears similar to the following example into the <strong>/var/log/gtm</strong> file:
+	<p><span class="example2">011a4003:1: SNMP_TRAP: Pool /Common/default.http member /Common/gtm_vip (ip:port=10.100.1.101:80) state change green --&gt; red ( Monitor /Common/gtm.test.monitor from 10.100.1.100 : state: redirected)</span></p>
+
+	<p><span class="note"><strong>Note</strong>: If the server response includes a meta refresh tag in the HTML content, it has the same effect as an HTTP <strong>302 Found</strong> response status code. The following example shows a meta refresh tag:</span></p>
+
+	<p><span class="note"><span class="example2">&lt;meta http-equiv=&quot;refresh&quot; content=&quot;1;url=http://www.yoursite.com/new/location.html&quot;&gt;</span></span></p>
+	</li><li>The BIG-IP DNS system marks the server as down if the server returns the following response status:
+	<p><span class="example2">HTTP/1.1 404 Not Found</span></p>
+	</li><li>The BIG-IP DNS system logs a message that appears similar to the following example into the <strong>/var/log/gtm</strong> file:
+	<p><span class="example2">011a4003:1: SNMP_TRAP: Pool /Common/default.http member /Common/gtm_vip (ip:port=10.100.1.101:80) state change green --&gt; red ( Monitor /Common/gtm.test.monitor from 10.100.1.100 : state: server error)</span></p>
+	</li></ul>
+
+<p>The <strong>big3d</strong> process is responsible for issuing probe requests and broadcasts the response to all listening <strong>gtmd </strong>processes. Typically, the default interval for BIG-IP DNS monitors is longer than the BIG-IP LTM monitors, and by default the BIG-IP DNS system marks objects as unavailable more aggressively than the BIG-IP LTM system does.</p>
+
+<p><span class="note"><strong>Note</strong>: The terminology <strong>search result</strong> will be in the log message only if the monitor is configured with a list of one or more HTTP Status Codes and/or a Receive string.</span></p>
+
+<p>For example:</p>
+
+<ul><li>When a probe receives a response within the Probe Timeout period (5 seconds, by default), and does not have a Receive string configured, the BIG-IP DNS system logs a message that appears similar to the following example to the<strong> /var/log/gtm</strong> file:
+
+	<p><span class="example2">011ae0f2:1: Monitor instance /Common/https 10.10.7.0:443 CHECKING --&gt; UP from 10.10.0.1 (state: success)</span></p>
+	</li><li>When a probe does not receive a response within the Probe Timeout period (5 seconds, by default), and is configured with a Receive string, the BIG-IP DNS system logs a message that appears similar to the following example to the <strong>/var/log/gtm </strong>file:
+	<p><span class="example2">011ae0f2:1: Monitor instance /Common/http_short 10.10.7.70:80 CHECKING --&gt; DOWN from 10.10.0.1 (connect: timeout search result false)</span></p>
+	</li><li>When a proper response is received from the server but does not match either an allowed HTTP status code or the configured Receive string (if present), the BIG-IP DNS system logs a message that appears similar to the following example to the <strong>/var/log/gtm</strong> file:
+	<p><span class="example2">011ae0f2:1: Monitor instance /Common/http 10.10.7.70:80 UP --&gt; DOWN from 10.10.0.1 (connect: success search result false)</span></p>
+	</li><li>When the response from the server is not <strong>HTTP 200 OK</strong>, the monitor is configured with a Receive string, and the string is matched, the BIG-IP DNS system logs a message that appears similar to the following example to the <strong>/var/log/gtm</strong> file:
+	<p><span class="example2">011ae0f2:1: Monitor instance /Common/http_short 10.10.7.70:80 CHECKING --&gt; DOWN from 10.10.0.1 (connect: server error search result true)</span></p>
+	</li><li>When the server responds with a protocol that does not match the applied monitor, the BIG-IP DNS system logs a message that appears similar to the following example to the <strong>/var/log/gtm</strong> file:
+	<p><span class="example2">011ae0f2:1: Monitor instance /Common/udp 10.10.7.70:53 UP --&gt; DOWN from 10.10.0.1 (state: protocol mismatch)</span></p>
+	</li></ul>
+
+<p>For more information on BIG-IP DNS health monitors, refer to <a href="https://my.f5.com/manage/s/article/K8170" target="_blank">K8170: Understanding differences between BIG-IP LTM and BIG-IP DNS monitors</a>.</p>
+
+<p><span class="sectiontitle">Recommendations</span></p>
+
+<p>Before deploying a BIG-IP DNS HTTP and HTTPS health monitor, use the command line to send a test request to the server and determine the HTTP status codes received along with any Receive strings. Configure the HTTP/HTTPS monitor with the appropriate list of allowed HTTP status code(s) and Receive string to ensure monitor status reflects server health.</p>
+</article>
+</body>
+</html>

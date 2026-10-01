@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K24065228: Troubleshooting issues with BIG-IP APM Kerberos end-user logon authentication</title>
+<meta name="description" content="Support Solution: Troubleshooting issues with BIG-IP APM Kerberos end-user logon authentication — You have configured Kerberos end-user logon authentication in your BIG-IP APM access policy.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K24065228">
+</head>
+<body>
+<header>
+<h1>K24065228: Troubleshooting issues with BIG-IP APM Kerberos end-user logon authentication</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2019-01-29</dd>
+<dt>Updated</dt><dd>2025-04-01</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 14.1.X, 14.0.X, 13.0.X, 12.1.X, 12.0.X, 11.6.X, 11.5.X, 11.4.X, 11.3.X, 11.2.X, 11.1.X, 11.0.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 11.6.5, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 11.5.1, 11.5.0, 11.4.1, 11.X.X, 11.3.0, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 11.4.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K24065228">https://my.f5.com/manage/s/article/K24065228</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Issue</h3>
+<p>You should consider using this procedure under the following conditions:</p>
+<ul><li>You have configured Kerberos end-user logon authentication in your BIG-IP APM access policy.</li><li>You are using Windows Active Directory (AD) as your key distribution center (KDC).</li><li>You are accessing a service using a browser.</li><li>You want to troubleshoot Kerberos end-user logon issues.</li></ul>
+<p><span class="sectiontitle">Symptoms</span></p>
+<p>As a result of Kerberos authentication issues, you may encounter the following symptom:</p>
+<ul><li>Users are unable to access configured internal resources after failing Kerberos authentication.</li></ul>
+<h3>Recommended Actions</h3>
+<p>When troubleshooting, you need to have an understanding of the following sequence of events in the Kerberos end-user logon authentication process.</p>
+<ol><li>The client connects to the BIG-IP virtual server and receives an HTTP 401 or HTTP 407 authentication response from the BIG-IP APM system.</li><li>In an <strong>AS_REQ/AS_REP</strong> request, the client obtains the Kerberos ticket-granting ticket (TGT) from the KDC.</li><li>In a <strong>TGS_REQ/TGS_REP</strong> request, the client presents the TGT to the KDC and obtains the Kerberos service ticket to the appropriate service in response.</li><li>The client responds to the earlier response from the BIG-IP APM in step 1 by presenting the Kerberos service ticket in an <strong>AP_REQ</strong> request to the BIG-IP APM system.</li><li>The BIG-IP APM system authenticates the client service ticket using the keytab file.</li><li>When Kerberos authentication is successful, the BIG-IP APM system sends an <strong>AP_REP</strong> reply and the client is able to access the service.</li></ol>
+<p><span class="note"><strong>Note</strong>: Connectivity between the BIG-IP APM system and the KDC is not required in Kerberos end-user logon authentication.</span></p>
+<p>You should first identify the step at which authentication is failing before performing further troubleshooting. For example, at step 4, if the client is not sending the Kerberos service ticket in its <strong>AP-REQ</strong> request to the BIG-IP APM system, you should verify the configuration and exchanges between the client and the KDC.</p>
+<p><span class="warning"><strong>Important</strong>: F5 supports BIG-IP APM system software. F5 does not support third-party software, such as the client operating system or KDC.</span></p>
+<p><span class="sectiontitle">Procedures</span></p>
+<p>When you experience Kerberos authentication failure issues, you can use the following troubleshooting steps to determine the root cause:</p>
+<p><span class="note"><strong>Note</strong>: When troubleshooting, as you make changes to the configuration and test each time, always first clear the cache on the client system with the <strong>klist purge</strong> command.</span></p>
+<ul><li><a href="#EnableDebugLogging">Enabling BIG-IP APM and Kerberos debug logging</a></li><li><a href="#VerifyClientTicket">Verifying that the client system is sending the Kerberos service ticket to the BIG-IP APM system </a></li><li><a href="#VerifyClockSkew">Verifying clock skew issues</a></li><li><a href="#VerifyDNS">Verifying DNS configurations</a></li><li><a href="#VerifyClientBrowser">Verifying the client browser is configured for Kerberos authentication</a></li><li><a href="#VerifywithKlist">Verifying the Kerberos tickets on the client device with klist</a></li><li><a href="#VerifyAccountConfig">Verifying the service account name configuration on the KDC and the BIG-IP APM system </a></li><li><a href="#VerifyEncryption">Verifying the Kerberos encryption configuration</a></li><li><a href="#VerifyKVNO">Verifying the KVNO of the keytab file on BIG-IP APM system matches the KVNO of the service account on AD</a></li><li><a href="#DeleteCreateAccount">Deleting and re-creating the service account at AD</a></li><li><a href="#TakingPacketCapture">Taking a packet capture on the client and the Kerberos request-reply protocol</a></li></ul>
+<p><span class="subsectiontitle"><a id="EnableDebugLogging" name="EnableDebugLogging"></a> Enabling BIG-IP APM and Kerberos debug logging </span></p>
+<p>To enable BIG-IP APM debug logging, refer to <a href="https://my.f5.com/manage/s/article/K11124" target="_blank">K11124:Configuring the BIG-IP APM system logging level</a>.</p>
+<p>To enable Kerberos debug logging, perform the following procedure:</p>
+<p><span class="impact"><strong>Impact of procedure</strong>: Enabling Kerberos debug logging may cause excessive logging in a system with a large number of user logins. You should only enable debug logging when troubleshooting. You should disable debug logging after you&#39;ve finished troubleshooting.</span></p>
+<ol><li>Log in to the TMOS Shell (<strong>tmsh</strong>) by typing the following command:
+<p><span class="code">tmsh</span></p>
+</li><li>To enable Kerberos debug logging, type the following command:
+<p><span class="code">tmsh modify sys db log.rba.level value debug</span></p>
+</li></ol>
+<p>After you enable debug logging, examine the <strong>/var/log/apm logs</strong>.</p>
+<p><span class="impact"><strong>Procedure back out</strong>: After you finish troubleshooting, disable Kerberos debug logging by typing the following command: <strong>tmsh modify sys db log.rba.level value Notice</strong></span></p>
+<p><span class="subsectiontitle"><a id="VerifyClientTicket" name="VerifyClientTicket"></a>Verifying that the client system is sending the Kerberos service ticket to the BIG-IP APM system</span></p>
+<p>To isolate the root cause, you should first verify whether the client system is sending the Kerberos service ticket to the BIG-IP APM system. You can verify this on by setting BIG-IP APM logging to <strong>Informational</strong> or <strong>Debug</strong> and examining the <strong>session.logon.last.authparam</strong> value.</p>
+<p><span class="note"><strong>Note</strong>: Enabling debug logging on a busy system may increase CPU and other resource usage. You should only enable debug logging while actively troubleshooting and disable it after you have collected the information you need.</span></p>
+<p>The value of <strong>session.logon.last.authparam</strong> should be set to a value beginning with <strong>YII</strong>. You should observe an output similar to the following in the <strong>/var/log/apm</strong> file:</p>
+<p><span class="example2">info apmd[18913]: 01490007:6: /Common/example:Common:af26e8b5: Session variable &#39;session.logon.last.authparam&#39; set to &#39;<strong>YII</strong>[...]</span></p>
+<p>If the value of the<strong> session.log.last.authparam </strong>variable on BIG-IP APM system is set to a value similar to <strong>&#39;TlRM[...]&#39;</strong>, Kerberos authentication has failed and fallen back to using NT LAN Manager (NTLM).</p>
+<p>Additionally, if the <strong>session.logon.last.authparam</strong> is not set, you also need to review the configuration and exchange between the client system and KDC. Alternatively, you can use a browser debugging tool to observe the client system&#39;s response to the BIG-IP APM HTTP 401/407 response. In the response from the client system to the BIG-IP APM system, the same value should be included in the Authorization header. For example, you may observe that the Authorization header has a value similar to the following example:</p>
+<p><span class="example2">Authorization Negotiate YII[...]</span></p>
+<p><span class="subsectiontitle"><a id="VerifyClockSkew" name="VerifyClockSkew"></a>Verifying clock skew issues</span></p>
+<p>The time among the client system, KDC, and the BIG-IP APM system must be synced. Refer to your client documentation to sync your client system to the KDC. To verify that the BIG-IP system&#39;s time is synced, you can use the <strong>ntpstat </strong>command. To do so, perform the following procedure:</p>
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+<ul><li>Type the following command:
+<p><span class="code">ntpstat</span></p>
+<p>You should observe an output similar to the following:</p>
+<p><span class="example2"># ntpstat<br>synchronised to NTP server (ntpserver.example.com) at stratum 2<br>   time correct to within 126 ms<br>   polling server every 1024 s</span></p>
+<p><span class="note"><strong>Note</strong>: Manually verifying that the times among the systems are within 5 minutes of one another is not sufficient. The systems&#39; times must be synchronized to an NTP server as shown in the previous output.</span></p>
+</li></ul>
+<p><span class="impact"><strong>Procedure back out: </strong>None</span></p>
+<p><span class="subsectiontitle"><a id="VerifyDNS" name="VerifyDNS"></a>Verifying DNS configurations</span></p>
+<p>Verify that the DNS configuration for the URL entered at the browser is configured so that the client browser is able to connect to the BIG-IP virtual server To do so, perform the following procedures:</p>
+<p><span class="subsectiontitle"><a id="VerifyClientBrowser" name="VerifyClientBrowser"></a>Verifying the client browser is configured for Kerberos authentication</span></p>
+<p>When the user enters the URL on a browser to access the service, the browser contacts the KDC to obtain the Kerberos tickets. For this to happen, the browsers must be configured to detect the specific URL to begin the authentication process with the KDC. To do that, refer to the <strong>Configuring the client browser for Kerberos</strong> procedure in <a href="https://my.f5.com/manage/s/article/K01716018" target="_blank"> Configuring Kerberos end-user logon authentication for multiple applications by merging keytab files</a>.</p>
+<p><span class="subsectiontitle"><a id="VerifywithKlist" name="VerifywithKlist"></a>Verifying the kerberos tickets on the client device using the klist command</span></p>
+<p>To display the Kerberos tickets on the client device, perform the following procedure:</p>
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+<p>This example displays a TGT ticket and a service ticket to <strong>app1.example.com </strong>for <strong>user1 </strong>at the realm<strong> EXAMPLE.COM</strong>. The highest-strength encryption type configured for the <strong>HTTP/app1.example.com </strong>AD service account is Kerberos AES 128 bit encryption.</p>
+<p><span class="note"><strong>Note</strong>: For security purposes, F5 recommends enabling AES 256 bit encryption by selecting the <strong>This account supports Kerberos AES 256 bit encryption </strong>check box on the <strong>Account</strong> tab in the user <strong>Properties</strong> after the account is created.</span></p>
+<ol><li>Log in to the client device.</li><li>Type the following command to delete existing tickets:
+<p><span class="code">klist purge</span></p>
+</li><li>Reproduce the issue.</li><li>Type the following command to display the Kerberos tickets:
+<p><span class="code">klist</span></p>
+</li><li>You should observe at least two tickets, a TGT ticket and a service ticket to access the specific URL requested. For example:
+<p><span class="example2">Cached Tickets: (2)<br><br>#0&gt;     Client: user1 @ EXAMPLE.COM<br>        Server: krbtgt/EXAMPLE.COM @ EXAMPLE.COM<br>        KerbTicket Encryption Type: AES-256-CTS-HMAC-SHA1-96<br>        Ticket Flags 0x40e00000 -&gt; forwardable renewable initial pre_authent<br>        Start Time: 1/8/2019 14:41:59 (local)<br>        End Time:   1/9/2019 0:41:59 (local)<br>        Renew Time: 1/15/2019 14:41:59 (local)<br>        Session Key Type: AES-256-CTS-HMAC-SHA1-96<br><br>#1&gt;     Client: user1 @ EXAMPLE.COM<br>        Server: HTTP/app1.example.com @ EXAMPLE.COM<br>        KerbTicket Encryption Type: AES-128-CTS-HMAC-SHA1-96<br>        Ticket Flags 0x40a00000 -&gt; forwardable renewable pre_authent<br>        Start Time: 1/8/2019 14:41:59 (local)<br>        End Time:   1/9/2019 0:41:59 (local)<br>        Renew Time: 1/15/2019 14:41:59 (local)<br>        Session Key Type: AES-128-CTS-HMAC-SHA1-96</span></p>
+</li></ol>
+<p><strong>Procedure back out</strong>: None</p>
+<p><span class="subsectiontitle"><a id="VerifyAccountConfig" name="VerifyAccountConfig"></a>Verifying the service account name configuration on the KDC and the BIG-IP APM system</span></p>
+<p>The AD service account configuration is essential and misconfiguration can lead to issues. Perform the following checks:</p>
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+<ol><li>Verify the configuration of the Kerberos authentication object on the BIG-IP APM from the Configuration utility by navigating to <strong>Access</strong> &gt; <strong>Authentication</strong> &gt; <strong>Kerberos</strong>.
+<p><span class="note"><strong>Note</strong>: For BIG-IP 12.x and earlier, navigate to <strong>Access Policy</strong> &gt; <strong>AAA Servers</strong> &gt; <strong>Kerberos</strong></span></p>
+<p>Verify that the <strong>Auth Realm </strong>and the <strong>Service Name </strong> are the Kerberos service. For example, <strong>HTTP</strong>. The principal in the keytab file should display the <strong>userPrincipalName </strong>of the AD service account. For example:</p>
+<p><span class="example2">HTTP/app1.example.com@EXAMPLE.COM</span></p>
+<p><span class="note"><strong>Note</strong>: <strong>&gt;app1.example.com </strong>is the HTTP URL that the user is attempting to access from the browser.</span></p>
+</li><li>Verify the service account name on Active directory. To display the configuration of the service account, you can perform the steps described in the <strong>Verifying the service account name configuration on the AD/KDC</strong> procedure in <a href="https://my.f5.com/manage/s/article/K01716018" target="_blank"> K01716018: Configuring Kerberos end-user logon authentication for multiple applications by merging keytab files </a>.
+<p><span class="note"><strong>Note</strong>: If your BIG-IP APM system does not have connectivity to AD, you can also view the same configuration directly from the domain controller.</span></p>
+</li><li>On the domain controller, you can also use the <strong>setspn </strong>command to verify the service principal name (SPN) value of your HTTP service account.
+<p>To check for duplicate SPNs, type the following command:</p>
+<p><span class="code">setspn -X</span></p>
+<p>To list the SPNs associated to your HTTP service account, use the following command syntax:</p>
+<p><span class="code">setspn -L &lt;sAMAccountName&gt;</span></p>
+<p>For example:</p>
+<p><span class="example2">setspn -L samaccountname1</span></p>
+</li><li>If your SPN is not listed in the output, you can add it by using the following command syntax:
+<p><span class="code">setspn -A &lt;SPN&gt; &lt;sAMAccountName&gt;</span></p>
+<p>For example:</p>
+<p><span class="example2">setspn -A HTTP/app1.example.com samaccountname1</span></p>
+</li></ol>
+<p><span class="impact"><strong>Procedure back out</strong>:</span></p>
+<ul><li>To delete an SPN from your HTTP service account, use the following command syntax:
+<p><span class="code">setspn -D &lt;SPN&gt; &lt;sAMAccountName&gt;</span></p>
+<p>For example:</p>
+<p><span class="example2">setspn -D HTTP/app1.example.com samaccountname1</span></p>
+</li></ul>
+<p><span class="subsectiontitle"><a id="VerifyEncryption" name="VerifyEncryption"></a>Verifying the Kerberos encryption configuration</span></p>
+<p>The encrypted type in the keytab file must support the encryption used to encrypt the Kerberos service ticket on the client system.</p>
+<ul><li>To view the supported encryption types in the keytab file using the BIG-IP Configuration utility, refer to <a href="#VerifyAccountConfig">Verifying the service account name configuration on the KDC and the BIG-IP APM system</a> procedure in this article.</li><li>To display the encryption used to encrypt the Kerberos service ticket, use the <strong>klist </strong>command described in the <a href="#VerifywithKlist">Verifying the Kerberos tickets on the client device with klist</a> procedure in this article.</li></ul>
+<p>For more information on configuring Kerberos encryption on Windows, refer to <a href="http://blogs.msdn.microsoft.com/openspecification/2011/05/30/windows-configurations-for-kerberos-supported-encryption-type/" target="_blank">Windows Configurations for Kerberos Supported Encryption Type.</a></p>
+<p><span class="note"><strong>Note</strong>: This link take you to resources outside of AskF5, and it is possible that the information may be removed without our knowledge.</span></p>
+<p>F5 recommends using the AES 256 bit encryption type. To configure this, you need to enable the <strong>This account supports the Kerberos AES 256 bit encryption </strong>option on the <strong>Account</strong> tab in the AD <strong>Properties</strong> and also when generating the keytab file with the <strong>ktpass </strong>command.</p>
+<p><span class="subsectiontitle"><a id="VerifyKVNO" name="VerifyKVNO"></a>Verifying the KVNO of the keytab file on the BIG-IP APM system matches the KVNO of the service account on AD</span></p>
+<p>Password changes or other account activities can update the KVNO of the AD service account and cause it to become out-of-sync with the keytab file on the BIG-IP APM system. In such cases, a new keytab file has to be generated and updated on the BIG-IP APM system. You can verify the KVNO of the keytab file in the <strong>Kerberos Authentication</strong> configuration on the BIG-IP Configuration utility. To verify the KVNO of the service account on AD, perform the following procedure:</p>
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+<ol><li>Log in to Advanced shell (<strong>bash</strong>).</li><li>To query AD for the KVNO of the AD service account, use the following command syntax:
+<p><span class="code">ldapsearch -xLLL -H ldap://&lt;AD server IP address&gt;:&lt;ldap port number&gt; -b &#39;&lt;searchbase&gt;&#39; -D &#39;&lt;username&gt;&#39; -w &#39;&lt;password&gt;&#39; &#39;(sAMAccountName=&lt;sAMAccountName&gt;)&#39; msDS-KeyVersionNumber</span></p>
+<p>For example:</p>
+<p><span class="example2">ldapsearch -xLLL -H ldap://192.0.2.2:389 -b &#39;dc=example,dc=com&#39; -D &#39;user1&#39; -w &#39;pass&#39; &#39;(sAMAccountName=samaccountname1)&#39; msDS-KeyVersionNumber</span></p>
+<p><span class="note"><strong>Note</strong>: You must include the single quotation marks around the password parameter.</span></p>
+In this example, the service account name is <strong>app1 </strong>with sAMAccountName <strong>samaccountname1 </strong>and is using the read privileges of <strong>user1 </strong>to perform an LDAP search (<strong>ldapsearch</strong>). You should observe output similar to the following:
+<p><span class="example2">dn: CN=app1,CN=Users,DC=example,DC=com<br>msDS-KeyVersionNumber: 3</span></p>
+<p>In the previous output example, the KVNO of the service account named <strong>app1</strong> is 3. Verify the keytab file has the same KVNO.</p>
+<p>If your BIG-IP APM does not have connectivity to AD, you can also verify the KVNO by using the following command syntax on AD:</p>
+<p><span class="code">ldifde -d &lt;RootDN&gt;  -f &lt;output filename&gt; -p subtree -l *,msDS-KeyVersionNumber</span></p>
+<p>For example:</p>
+<p><span class="example2">ldifde -d CN=app1,CN=Users,DC=example,DC=com  -f c:\output.txt -p subtree -l *,msDS-KeyVersionNumber</span></p>
+<p>View the KVNO of the service account from the example output file <strong>c:\output.txt</strong>. Verify the keytab file has the same KVNO.</p>
+</li></ol>
+<p><span class="impact"><strong>Procedure back out: </strong>None</span></p>
+<p><span class="subsectiontitle"><a id="DeleteCreateAccount" name="DeleteCreateAccount"></a>Deleting and re-creating the service account at AD</span></p>
+<p>If the issue persists after troubleshooting, it may be useful to delete and re-create the AD service account. After creating the AD service account, you must create a new keytab file and update it on the BIG-IP APM system. To do so, refer to the  <strong>Creating a new keytab file with the ktpass command</strong> procedure in <a href="https://my.f5.com/manage/s/article/K01716018" target="_blank">K01716018: Configuring Kerberos end-user logon authentication for multiple applications by merging keytab files</a>.</p>
+<p><span class="subsectiontitle"><a id="TakingPacketCapture" name="TakingPacketCapture"></a>Taking a packet capture on the client and the Kerberos request-reply protocol</span></p>
+<p>Finally, you can perform a packet capture on the client. You may filter your TCP capture for ports 443 for HTTPS, 88 for Kerberos and 53 for DNS. To determine the cause of the issue from your packet capture, perform the following checks:</p>
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+<ul><li>The Kerberos protocol defines a series of requests and responses as described at the beginning of this article. Determine at which point of the Kerberos protocol that the request failed.</li><li>Examine the capture for useful error messages.</li><li>Verify the Kerberos configuration names from the capture.</li></ul>
+</article>
+</body>
+</html>

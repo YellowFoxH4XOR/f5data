@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K06434041: Error message: The domain password change operation failed. Your new password must be more complex to meet domain password complexity requirements.</title>
+<meta name="description" content="Support Solution: Error message: The domain password change operation failed. Your new password must be more complex to meet domain password complexity requirements. — Users get an error when trying to change their password via the APM.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K06434041">
+</head>
+<body>
+<header>
+<h1>K06434041: Error message: The domain password change operation failed. Your new password must be more complex to meet domain password complexity requirements.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2019-11-13</dd>
+<dt>Updated</dt><dd>2023-12-11</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.X.X, 16.X.X, 15.X.X, 14.X.X, 13.X.X, 12.X.X, 11.X.X, 17.0.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 11.6.X, 11.5.X, 11.4.X, 11.3.X, 11.2.X, 11.1.X, 11.0.X, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 17.0.0, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 13.1.0, 16.1.0, 13.0.1, 16.0.1, 13.0.0, 16.0.0, 12.1.6, 15.1.8, 12.1.5, 15.1.7, 12.1.4, 15.1.6, 12.1.3, 15.1.5, 12.1.2, 15.1.4, 12.1.1, 15.1.3, 12.1.0, 15.1.2, 12.0.0, 15.1.1, 11.6.5, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 11.5.1, 11.5.0, 11.4.1, 11.4.0, 11.3.0, 11.2.1, 11.2.0, 11.1.0, 11.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K06434041">https://my.f5.com/manage/s/article/K06434041</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>Users get an error when trying to change their password via the APM.<br><span class="example2">Error Message:<br>The domain password change operation failed. Your new password must be more complex to meet domain password complexity requirements.</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP APM</li><li>Active Directory <strong>AD</strong> passwords</li><li>Password change not working</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br>AD Auth/Query uses KPASSWD protocol to change the user password(s). Kerberos library may try to repeat UDP request or send a TCP request if it doesn&#39;t get a timely response. If the first packet is just delayed for some reason and finally reaches the backend server, then server gets two password change requests and replies with KRB5KRB_AP_ERR_REPEAT error back to the BIG-IP. The error code is returned to AD module by Kerberos library and Access policy fails.<br><span class="note">Note: In some cases the password has been changed but the users still sees the error and therefore believes it has not been changed.</span></p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ol><li>First please confirm that the password meets domain password complexity requirements.</li><li>Next you will want to confirm with tcpdump that the back-end server is sending <strong>KRB5KRB_AP_ERR_REPEAT</strong></li></ol>
+<span class="subsubsectiontitle">Solution 1: Block UDP traffic from BIG-IP to backend server on port 464 (KPASSWD) with a downsteam Firewall.</span><br>The problem can be worked around by blocking UDP traffic from BIG-IP to backend server on port 464 (KPASSWD) with a downsteam Firewall or on the AD servers themselves.<br>In this case Kerberos library switch to TCP right away and the password change succeeds.<br><br><em><span class="subsubsectiontitle">Solution 2: </span><strong>For versions 14 or later iptables is no longer an option, Therefore as an alternative you can create a Virtual server and iRule to block the UDP 464 traffic from the Self IP address of the APM to your AD servers.</strong></em><br><strong>Steps to create the Virtual server:</strong>
+
+<ol><li>Login to the Webui</li><li><strong>Local Traffic</strong>  ››  <strong>Virtual Servers</strong> : <strong>Virtual Server List</strong>  ›› Click <strong>Create</strong></li><li>Name the Virtual Server: <strong>Block_udp_464</strong></li><li>Configure the <strong>Type</strong> to<strong> fastl4</strong></li><li>Configure the <strong>Source IP address</strong> to be your <strong>Self IP address</strong></li><li>Configure the <strong>Destination IP address</strong> to be your <strong>AD server</strong><br>	<span class="note">Note: If you have multiple AD servers you can configure an Address List.</span></li><li>Configure the <strong>Service Port: </strong>464</li><li>Configure the <strong>Protocol:</strong><strong> </strong>UDP</li><li>Click <strong>Update</strong> to save the Virtual Server</li></ol>
+<strong>Steps to create Reject udp 464 irule:</strong>
+
+<ol><li>Login to the Webui</li><li><strong>Local Traffic</strong> &gt; <strong>iRules</strong></li><li>Click <strong>Create</strong></li><li>Name the iRule: <strong>Reject_udp_464</strong></li><li>For <strong>Definition</strong>, enter the following:<br>	<span class="code">when CLIENT_ACCEPTED {</span><br>	<span class="code">    reject </span><br>	<span class="code">}</span></li><li>Click <strong>Update</strong></li></ol>
+<strong>Steps to add iRule to Virtual server:</strong>
+
+<ol><li>Go to the virtual server created above, select the<strong> Resources tab</strong>.</li><li>Select <strong>Manage iRules</strong>, and <strong>add the new iRule</strong>.</li></ol>
+<span class="subsubsectiontitle">Solution 3: For versions Prior to v14 you can work around this issue by modifying the iptables on the BIG-IP.</span>
+
+<div style="margin-left: 40px;"><span class="note">Note: For versions 14 or later iptables is no longer an option</span></div>
+The recommended workaround is to modify <strong>iptables </strong>on the BIG-IP using the following command:<br>   <span class="code"> iptables -I OUTPUT 1 -p udp --dport 464 -j DROP</span><br><br>If you encounter issues after applying this command. The following will reverse this change and allow the traffic on 464 UDP again:<br>   <span class="code"> iptables -I OUTPUT 1 -p udp --dport 464 -j ACCEPT</span><br><strong><span class="warning">Important: The above iptables rules will need to be reapplied after a reboot or an upgrade.</span></strong>
+
+<p><span class="sectiontitle">Additional Information</span><br>None<br> </p>
+</article>
+</body>
+</html>

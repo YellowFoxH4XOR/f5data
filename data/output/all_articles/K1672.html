@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K1672: Reasons why Internet Explorer may display a &#x27;&#x27;Page cannot be displayed&#x27;&#x27; error when connecting through an SSL proxy</title>
+<meta name="description" content="Knowledge: Reasons why Internet Explorer may display a &#x27;&#x27;Page cannot be displayed&#x27;&#x27; error when connecting through an SSL proxy — This is not a problem with BIG-IP or the load balancing configuration. This issue is caused by the way that the Internet Explorer browser interacts with the web server configuration.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K1672">
+</head>
+<body>
+<header>
+<h1>K1672: Reasons why Internet Explorer may display a &#x27;&#x27;Page cannot be displayed&#x27;&#x27; error when connecting through an SSL proxy</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2006-02-17</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>BIG-IP 4.X: 4.6.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K1672">https://my.f5.com/manage/s/article/K1672</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>This is not a problem with BIG-IP or the load balancing configuration. This issue is caused by the way that the Internet Explorer browser interacts with the web server configuration.</p>
+<h4>SSL proxy and HTTP keep-alives process description</h4>
+<p>The client requests data from the SSL secured portion of a web site, which is an SSL proxy on BIG-IP. In this request, the client also requests that keep-alives are enabled. The SSL proxy on BIG-IP receives the request, decrypts the data, and forwards the traffic to the virtual server, which is also on BIG-IP. The virtual server forwards this traffic to the server that to which the connection is load balanced.</p>
+<p>The server supplies the requested data to the virtual server with the following header settings:</p>
+<pre class="example2">
+Keep-Alive: timeout=15, max=8</pre>
+<p>The virtual server passes the data to the SSL proxy on BIG-IP and the SSL proxy re-encrypts the data and sends it back to the client.</p>
+<p>The <b>timeout</b> value in the header defines the amount of idle time that the server will wait to accept HTTP sessions from the client over the same TCP connection. The <b>max</b> value defines the maximum number of HTTP sessions that the server will accept over the same TCP connection.</p>
+<p>The purpose of the <b>timeout</b> value for keep-alives is to prevent TCP connections from being open for unlimited periods of time and consuming server resources. The purpose of the <b>max</b> value is to prevent a client from monopolizing server resources.</p>
+<p class="note"><b>Note:</b> Additional information about keep-alive values, as well as information about Microsoft Internet Explorer compatibility issues with keep-alives, is provided on the apache.org web site at <a href="http://httpd.apache.org/docs/keepalive.html" target="_blank">http://httpd.apache.org/docs/keepalive.html</a></p>
+<p>Following is a sample of the conversation between a client and a server when HTTP keep-alives are enabled:</p>
+<pre class="example2">
+GET / HTTP/1.1
+Accept: image/gif, image/x-xbitmap, image/jpeg, image/pjpeg,
+application/vnd.ms-powerpoint, application/vnd.ms-excel,
+application/msword, */*
+Accept-Language: en-us
+Accept-Encoding: gzip, deflate
+User-Agent: Mozilla/4.0 (compatible; MSIE 5.01; Windows NT 5.0)
+Host: 65.88.87.91
+Connection: Keep-Alive 
+
+HTTP/1.1 200 OK
+Date: Wed, 28 Nov 2001 05:16:32 GMT
+Server: Stronghold/3.0 Apache/1.3.12 C2NetEU/3012c (Unix)
+mod_ssl/2.6.4 OpenSSL/0.9.5a
+cache-Control: no-cache
+Expires: Thu, 01 Jan 1970 00:00:00 GMT
+Set-Cookie: JSESSIONID=YCOAKEAJO1FUOCUADMHSFEQ;path=/
+Content-Length: 30283
+Keep-Alive: timeout=15, max=83
+Connection: Keep-Alive 
+Content-Type: text/html</pre>
+<p>In this example, a user is buying something on a site and they are prompted to fill out a form so they can check out. When the user takes more than 15 seconds to fill out the form, the server closes the connection.</p>
+<p>As per RFC standards, the following occurs:</p>
+<p>When the server closes the TCP connection, it sends a FIN message to the client. This FIN message is passed to the virtual server, the virtual server passes the FIN message to the SSL Proxy, and the SSL Proxy sends an ACK message to acknowledge the server&#39;s FIN message. The SSL proxy then sends a FIN message to the server and the server acknowledges it with an ACK message. At this point, the connection between the server and the BIG-IP SSL proxy is considered closed.</p>
+<p>At the same time as the SSL proxy and server are properly closing their session, the SSL proxy sends a standard SSL Encryption Alert to the client that informs the client to tear down the SSL session. The SSL proxy also sends a FIN message to the client and the client responds with an ACK message; however, Internet Explorer never sends a FIN message to the SSL proxy so that it finishes tearing down the session so the client browser does not recognize that the connection has closed.</p>
+<p>After the user completes the form and submits it, the server sends an HTTP POST to the SSL Proxy over the TCP connection that has closed. In response, the BIG-IP&#39;s SSL proxy provides the standard Reset packet to the client. The client browser then recognizes the connection has closed and displays an ambiguous HTTP error, such as <b>Page cannot be displayed</b>, to the user. Internet Explorer does not attempt to resend the request to the server/SSL proxy.</p>
+<h4>Solution</h4>
+<p>You can eliminate this issue by removing or increasing the HTTP keep-alive timeout on the server configuration. For specific configuration options, refer to <a href="http://httpd.apache.org/docs/keepalive.html" target="_blank">http://httpd.apache.org/docs/keepalive.html</a></p>
+<h4>Common questions</h4>
+<ul><li><p>Why doesn&#39;t this issue occur when I wait a minimum of 16 seconds before loading each page?</p>
+<p>Eventually, the client will close out the HTTP session. When it does, Internet Explorer uses a new HTTP session and, therefore, a new TCP connection to send the HTTP POST for the form. The amount of time that Internet Explorer waits to do this varies.</p>
+</li><li><p>Why doesn&#39;t this issue occur when I complete the form within 15 seconds?</p>
+<p>15 seconds is the timeout value, so the TCP and HTTP sessions to the server are still considered open and ready to accept HTTP requests (such as GET or POST) if the form is submitted within this timeout limit.</p>
+</li><li><p>Why doesn&#39;t this issue occur when I resubmit the form (after the error page) or use the Back button, then use the Forward button?</p>
+<p>It works under these circumstances, because Internet Explorer considered the old TCP/HTTP session closed after it received the Reset packet from the BIG-IP&#39;s SSL proxy and submitted the POST on a new TCP/HTTP session.</p>
+</li><li><p>Why doesn&#39;t this issue occur when I terminate SSL on the server?</p>
+<p>Since Internet Explorer never finishes closing the connection with the server when the server requests that it is closed, the server still allows the client to continue to send data to it through the same TCP connection. When the server sends the FIN message, to which Internet Explorer responds with an ACK message, the server enters a <b>TCP half closed</b> state and advises the client that it is finished transmitting; however, the client has not advised the server that the client is finished. If the client had sent both an ACK and a FIN/ACK packet, the connection would have been closed properly.</p>
+</li></ul>
+</article>
+</body>
+</html>

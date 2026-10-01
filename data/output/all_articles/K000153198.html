@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000153198: Custom Bot Signature for &quot;Unknown&quot; Bot Categories</title>
+<meta name="description" content="Support Solution: Custom Bot Signature for &quot;Unknown&quot; Bot Categories — In certain scenarios, you may want to permit legitimate traffic for any &quot;unknown&quot; bot signature User-Agent. However, the Bot Defense profile does not provide a direct option to create custom bot…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000153198">
+</head>
+<body>
+<header>
+<h1>K000153198: Custom Bot Signature for &quot;Unknown&quot; Bot Categories</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-08-28</dd>
+<dt>Updated</dt><dd>2025-08-28</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.X.X, 16.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0</li><li>BIG-IP ASM: 17.X.X, 16.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000153198">https://my.f5.com/manage/s/article/K000153198</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>In certain scenarios, you may want to permit legitimate traffic for any &quot;unknown&quot; bot signature User-Agent. However, the Bot Defense profile does not provide a direct option to create custom bot signatures specifically for the &quot;Unknown&quot; category.</p>
+<h2>Environment:</h2>
+<p>BIG-IP Advanced WAF<br>Bot Defense Profiles</p>
+<h2>Cause</h2>
+<p>None</p>
+<h2>Recommended Actions</h2>
+<p>Creating a custom bot signature to manage traffic from &quot;Unknown&quot; bot categories can only be achieved through either an iRule or an LTM Policy. Below are two options:</p>
+<p><br><strong>Option 1</strong>: iRule for the Unknown Bot Signature</p>
+<p>For example, to allow traffic matching the &quot;ksoap2&quot; User-Agent string, the following iRule can be used:</p>
+<p> </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when BOTDEFENSE_ACTION {  
+    if { [HTTP::header exists &quot;User-Agent&quot;] } {  
+        if { [HTTP::header &quot;User-Agent&quot;] contains &quot;ksoap2-android/2.6.0+&quot; } {  
+            BOTDEFENSE::action allow  
+        }  
+    }  
+}  </code></pre>
+<p><br><strong>Option 2</strong>: LTM Policy for Unknown Bot Signatures</p>
+<ol><li>Original Bot Defense Profile: /Common/test1.</li><li>New Bot Defense Profile: Create a new profile named /Common/test2-disable-alarm-unknown-bots, mirroring the configuration of the original profile. Modify the Unknown bot mitigation setting in this new profile from rate-limit to none.</li><li>LTM Policy Creation: Create an LTM policy as follows and attach it to the VIP:<br><br></li></ol>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ltm policy /Common/test-policy {  
+    controls { bot-defense }  
+    draft-copy /Common/Drafts/test-policy  
+    requires { http }  
+    rules {  
+        rule-default {  # Default rule sends traffic to the original bot defense profile (test1)
+            actions {  
+                0 {  
+                    bot-defense  
+                    enable  
+                    from-profile /Common/test1  
+                }  
+            }  
+            ordinal 1  
+        }  
+        rule-ksoap2 {  # Custom rule checks User-Agent and directs matching traffic to test2 profile
+            actions {  
+                0 {  
+                    bot-defense  
+                    enable  
+                    from-profile /Common/test2-disable-alarm-unknown-bots  
+                }  
+            }  
+            conditions {  
+                0 {  
+                    http-header  
+                    name User-Agent  
+                    contains  
+                    values { ksoap2-android }  
+                }  
+            }  
+        }  
+    }  
+    strategy /Common/first-match  
+}  </code></pre>
+<p> </p>
+<ul><li>The default rule sends all traffic to the original Bot Defense profile /Common/test1.</li><li>The specific rule checks if the User-Agent header contains &quot;ksoap2-android&quot;. If a match is found, traffic is directed to the newly created Bot Defense profile /Common/test2-disable-alarm-unknown-bots, where mitigation actions such as rate-limit and alarms for unknown bots are disabled (set to &quot;none&quot;).</li><li>For all other unknown bots not matching the &quot;ksoap2-android&quot; rule, traffic is sent back to the original Bot Defense profile (/Common/test1).</li><li>This approach gives granular control over unknown bot categories, allowing specified legitimate traffic to bypass mitigation actions while maintaining protection against other bots.</li></ul>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

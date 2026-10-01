@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160280: ATSE Datapath Lockup Due to HBM2 DRAM Calibration Failure on F5 rSeries Platforms (Bug ID 1783685)</title>
+<meta name="description" content="Support Solution: ATSE Datapath Lockup Due to HBM2 DRAM Calibration Failure on F5 rSeries Platforms (Bug ID 1783685) — dma-agent[13]: priority=&quot;Alert&quot; ... msg=&quot;Health monitor detected DM Tx Action Completion ring hung.&quot;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160280">
+</head>
+<body>
+<header>
+<h1>K000160280: ATSE Datapath Lockup Due to HBM2 DRAM Calibration Failure on F5 rSeries Platforms (Bug ID 1783685)</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-03-09</dd>
+<dt>Updated</dt><dd>2026-06-29</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160280">https://my.f5.com/manage/s/article/K000160280</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>F5 rSeries appliances running F5OS-A 1.8.3 may become unresponsive and stop processing all network traffic. The issue is characterized by LACP interfaces remaining down and repeated log messages such as:</p>
+<ul><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">dma-agent[13]: priority=&quot;Alert&quot; ... msg=&quot;Health monitor detected DM Tx Action Completion ring hung.&quot;</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">dma-agent[13]: priority=&quot;Info&quot; ... msg=&quot;Health monitor DM register dump complete.&quot; FILE=&quot;agent-dump-&lt;...&gt;.txt&quot;</span></li></ul>
+<p>During the incident, Data Mover CPUs may show 100% utilization, and core dump files are generated. A device reboot temporarily restores service.</p>
+<h2>Environment</h2>
+<ul><li>Software: F5OS-A 1.8.3</li><li>Hardware: ATSE FPGA with HBM2 DRAM</li><li>Features: LACP trunk interfaces, hardware datapath acceleration</li><li>Multiple tenants may be running on the affected appliance</li></ul>
+<h2>Cause</h2>
+<p><a href="https://cdn.f5.com/product/bugtracker/ID1783685.html" target="_blank">Bug ID 1783685</a>: ATSE Datapath lockup on HBM calibration issue</p>
+<p>The root cause is a hardware datapath lockup caused by an HBM2 DRAM calibration failure within the ATSE FPGA. The internal FPGA HBM DRAM reset sequence did not meet the Altera specification, resulting in instability of the HBM DRAM interface at startup and during runtime.</p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li><strong>Apply Engineering Hotfix (EHF):</strong>
+<ul><li>An EHF is available that resolves Bug ID 1783685.</li><li>This EHF is applicable to all r5000, r10000, and r12000 series platforms running F5OS-A 1.8.3.</li></ul>
+</li><li><strong>Immediate Workaround:</strong>
+<ul><li>Reboot the appliance to clear the datapath lockup and restore service (temporary workaround).</li></ul>
+</li><li><strong>Monitor and Update:</strong>
+<ul><li>Monitor for further ATSE datapath lockup events.</li><li>Plan to update to future F5OS releases (e.g., F5OS-A 1.8.4) that contain the permanent fix.</li></ul>
+</li><li><strong>Technical Validation:</strong>
+<ul><li>Confirm the issue by reviewing logs for &quot;DM Tx Action Completion ring hung&quot; messages.</li><li>Analyze agent-dump files and FPGA debug logs (e.g., fpgatoolFpgaAtseSnapshot.sh, fpgatoolFpgaDataMoverSnapshot.sh) for evidence of RQM (FPGA receive queue) blocking and HBM DRAM interface errors.</li><li>Compare FPGA register values (e.g., 0x20880, 0x208A0, 0x208C8) against expected calibration values to confirm HBM calibration failure.</li></ul>
+</li></ol>
+<h2>Additional Information</h2>
+<p><strong>Technical Details:</strong></p>
+<p>The logs that confirm the datapath lockup are found in the FPGA debug logs within the qkview:</p>
+<ul><li>system_fpga - /etc/qkview-collect/fpgatoolFpgaAtseSnapshot.sh</li><li>system_fpga - /etc/qkview-collect/fpgatoolFpgaDataMoverSnapshot.sh</li></ul>
+<p>These logs show that RQM (the FPGA receive queue) is blocking traffic from the network, with DMA rings downstream of the RQM queues all empty.</p>
+<p><strong>HBM/DRAM Impact Evidence:</strong></p>
+<p>The FPGA receive queue is built from the HBM DRAM. The internal FPGA datapath debug shows a DRAM interface issue where the DRAM is not accepting writes on the input side and showing empty on the output side. This is a typical signature of HBM calibration failure.</p>
+<p><strong>DRAM Calibration Parameters:</strong></p>
+<p>The DRAM interface specification was provided by Intel. The issue was in the wmcrst_n_in logic, which was not controlled in a way that prevented it from asserting until after completion of calibration. There was a race condition between wmcrst_n_in and ninit_done signals.</p>
+<p>Expected FPGA register values (healthy system):</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">0x00020880: 0x001111FF</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">0x000208A0: 0x000111FF</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">0x000208C8: 0x00000000</span></p>
+<p>Failed calibration register values:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">0x00020880: 0x00100000</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">0x000208A0: 0x00000000</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">0x000208C8: 0x00000001</span></p>
+<p>The issue is resolved in ATSE bitfile v72.5.11.0 and will be included in F5OS-A 1.8.4 and later releases.</p>
+</article>
+</body>
+</html>

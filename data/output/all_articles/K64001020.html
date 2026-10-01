@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K64001020: Certificates on VELOS blades expire after one year and cause blades and tenants to go offline</title>
+<meta name="description" content="Knowledge: Certificates on VELOS blades expire after one year and cause blades and tenants to go offline — F5OS-C software uses OpenShift certificates on VELOS chassis blades that expire one year after the cluster is initially deployed. When this occurs, the VELOS chassis blades and all tenants go…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K64001020">
+</head>
+<body>
+<header>
+<h1>K64001020: Certificates on VELOS blades expire after one year and cause blades and tenants to go offline</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2022-09-01</dd>
+<dt>Updated</dt><dd>2026-03-03</dd>
+<dt>Applies to</dt><dd><ul><li>VELOS Platforms</li><li>F5OS</li><li>F5OS-C: 1.5.1, 1.5.0, 1.3.2, 1.3.1, 1.2.2, 1.1.4, 1.2.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K64001020">https://my.f5.com/manage/s/article/K64001020</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3>
+<p>F5OS-C software uses OpenShift certificates on VELOS chassis blades that expire one year after the cluster is initially deployed. When this occurs, the VELOS chassis blades and all tenants go offline, causing a traffic outage.</p>
+<h3>Description</h3>
+<p>The VELOS chassis system utilizes an OpenShift cluster which generates OpenShift certificates on the VELOS chassis blades (compute nodes) and system controllers (primary nodes). One year after deploying the VELOS system, the certificates on the VELOS chassis blades expire, which causes the blades to go offline. When this behavior occurs, all the tenants running on the chassis blades also go offline and stop processing data plane traffic.</p>
+<p>The clock for the OpenShift certificate expiry on the chassis blades begins when you first deploy the VELOS chassis system, not when the system was originally manufactured.</p>
+<p><span class="note"><strong>Note</strong>: The certificates on the VELOS system controllers are generated during the manufacturing process and expire one year later; however, this issue has not been observed when they expire.</span></p>
+<p>This issue impacts all VELOS chassis systems running F5OS-C 1.0.0 - 1.5.0. rSeries systems running F5OS-A are not impacted by this issue because F5OS-A uses K3s instead of OpenShift and the certificate expiry is set to 10 years.<br><br>Beginning in F5OS-C 1.5.1, OpenShift containers are updated to use a certificate expiration time of 10 years. To make use of these updated containers with longer certificate expiration times after upgrading to a fixed release, it is necessary to rebuild the OpenShift cluster. The rebuild takes 90 minutes or more and causes tenant(s) outage. To rebuild the OpenShift cluster, you can perform the <a href="#workaround" target="_self">Work around by reinstalling the OpenShift cluster</a> procedure in this article.<br><br>After you rebuild OpenShift cluster using this fix, it is not possible to downgrade the F5OS-C version without rebuilding the OpenShift cluster after the downgrade. This is because the updated OpenShift containers is not available after the downgrade. If a downgrade is done before the OpenShift cluster is rebuilt, there will not be any issues.<br><br>In addition, in fixed F5OS-C versions, warning messages are added to the <strong>show cluster cluster-status</strong> command output on the system controller CLI that warn when certificates are within 90 days of expiring and when the OpenShift cluster needs to be rebuilt to take advantage of the new containers with the longer certificate expiration times. For example:</p>
+<p><span class="example2">syscon-1-active# show cluster cluster-status <br>cluster cluster-status summary-status &quot;Openshift cluster is healthy, and all controllers and blades are ready. WARNING: 1 or more Openshift certificates expiring within 90 days. WARNING: Manual Openshift cluster rebuild necessary to update containers.&quot;<br><br>INDEX  STATUS                                                                                                       <br>--------------------------------------------------------------------------------------------------------------------<br>15     2023-08-20 12:03:09.773660 -  WARNING: Openshift cluster needs manual rebuild to upgrade to latest version.  <br>16     2023-08-20 12:05:05.373785 -  WARNING: Openshift certificates expiring within 90 days.</span><br> </p>
+<p><span class="sectiontitle">Symptoms</span></p>
+<ul><li>BIG-IP tenants deployed on the VELOS system go offline and are inaccessible.</li><li>On the active system controller, messages appear similar to the following example, indicating the certificates are expired:
+<p><span class="example2">controller-2.chassis.local dockerd-current[4212]: E0809 19:48:01.601509       1 authentication.go:62] Unable to authenticate the request due to an error: [x509: certificate has expired or is not yet valid, x509: certificate has expired or is not yet valid]</span></p>
+</li><li>The <strong>systemd</strong> journal on the system controller logs messages similar to the following example:
+<p><span class="example2">controller-2.chassis.local origin-node[19920]: E0808 08:35:03.754013   19930 certificate_manager.go:326] Certificate request was not signed: timed out waiting for the condition</span></p>
+</li><li><span class="example2">A tenant is stuck at <strong>stopping</strong> status when we try to change it to provisioned state. From ConfD&#39;s perspective the tenant is in <strong>provisioned</strong> state, which is what matters, so you can proceed with the OpenShift rebuild workaround below.</span></li></ul>
+<p><span class="sectiontitle">Workaround </span></p>
+<p>To watch a video demo of this procedure, go to <img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000f9gr&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000VyXLr" alt=""></img>   <a href="https://my.f5.com/manage/s/article/K000150270" target="_blank">Work around the expiration of F5 VELOS chassis blades certificates</a>.</p>
+<p>You can check the expiration dates of the OpenShift certificates using the <strong>show_certs.sh</strong> script provided in the following procedure. If the chassis blade certificates on your system are not yet expired, you can mitigate this issue by renewing the certificates for another 365 days using the provided <strong>renew_nodes.sh</strong> script. After the chassis blade certificates expire you can no longer mitigate this issue by renewing the certificates. If the chassis blade certificates on your system are expired, the mitigation procedure does not work<strong> </strong>and you must perform the <a href="#workaround" target="_self">Work around by reinstalling the OpenShift cluster</a> procedure instead.</p>
+<p>When performing the following procedures, consider the following:</p>
+<ul><li>When renewing the certificates using the <strong>renew_nodes.sh</strong> script, the length of the outage varies but is expected to be between 5 - 10 minutes for a single VELOS chassis system. When running the <strong>renew_nodes.sh</strong> script, you should ensure all tenants are failed over to another VELOS chassis system because they may restart in the process,  then run the <strong>renew_nodes.sh</strong> script on the VELOS chassis where the tenants are in the standby state. After the tenants have fully recovered, fail over all tenants to the VELOS chassis where the certificates were just upgraded, and then run the <strong>renew_nodes.sh</strong> script on the remaining VELOS chassis.</li><li>If the certificates on your system controllers are expired but the certificates on your chassis blades are not expired, you can still run the <strong>renew_nodes.sh</strong> script to bring them all back online. </li><li>The <strong>renew_nodes.sh</strong> script will renew all certificates, however, some may expire in one year from the current date and others expire two years from the current date. This is a temporary mitigation to avoid an outage until a more permanent fix becomes available. The permanent fix, currently being worked on, will extend certificate lifetimes to 10 years, and will require a software upgrade to a new F5OS-C release and a cluster rebuild for certificate expiry options to take effect. After a fixed version is released, this article will be updated to reflect the fixed F5OS-C version.</li><li>The <strong>renew_nodes.sh</strong> script renews certificates for 365 days. The script includes a reference to 3650 days which only applies if the <strong>-controllers</strong> option is specified, and only applies to the certificates the appear in the upper sections of <strong>show_certs.sh</strong> output, which includes certificates for the cluster services.</li><li>The kubelet-client and kubelet-server certificates can only be renewed for 365 days without changes to OpenShift software.</li></ul>
+<p>Depending on the current state of your VELOS system, perform the following procedures as needed:</p>
+<ul><li><a href="#check expiry" target="_self">Check certificate expiry dates using the <strong>show_certs.sh</strong> script</a></li><li><a href="#renew_nodes" target="_self">Mitigate by renewing the node certificates using the <strong>renew_nodes.sh</strong> script</a></li><li><a href="#workaround" target="_self">Workaround for reinstalling the OpenShift cluster</a></li><li><a href="#workaround-api" target="_self">Workaround for expired apiserver certificates</a></li></ul>
+<p><span class="subsectiontitle"><a id="check expiry" name="check expiry"></a>Check certificate expiry dates using the show_certs.sh script</span></p>
+<p>You can check the expiration date of the certificates using the provided script. To run it, perform the following procedure:</p>
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+<ol><li>Log in to the system controllers floating IP address as root.</li><li>Using a text editor, create a file named <strong>show_certs.sh</strong> with the following content:
+<p><span class="note"><strong>Note</strong>: You can download the script file from Github by entering the following command: <strong>curl -s https://raw.githubusercontent.com/askf5/K64001020/main/show_certs.sh -O</strong>.</span></p>
+<pre style="background: #efefef;padding: 8px;display: block;overflow-x: auto;">#!/bin/bash
+
+#####################################
+# Date: Thu Sep 22 11:16:24 EDT 2022
+# Version: 1.5
+
+goodCerts=0;
+warnCerts=0;
+expiredCerts=0;
+
+warnDays=90
+warnAge=$((60 * 60 * 24 * warnDays))
+now=$(date +%s)
+
+###############################################################
+# Get validity data from the cert
+###############################################################
+
+function showCert() {
+    openssl crl2pkcs7 -nocrl -certfile /dev/stdin | openssl pkcs7 -print_certs -text | grep Validity -A2
+}
+
+###############################################################
+# Parse the cert date and determine the validity
+###############################################################
+
+function subDate {
+    dateSeconds=$(date -d &quot;$tmp&quot; +%s)
+    diff=$((dateSeconds - now))
+    valid=$((diff/60/60/24))
+    if ((diff&lt;warnAge)); then
+        if ((diff&lt;=0)); then
+            echo &quot;$1EXPIRED: $f cert has already expired $valid days ago&quot;
+            expiredCerts=$(( expiredCerts + 1 ))
+        else
+            echo &quot;$1WARNING: $f cert expires in $valid days&quot;
+            warnCerts=$(( warnCerts + 1 ))
+        fi
+    else
+        echo &quot;$1$f cert is valid for $valid more days&quot;
+        goodCerts=$(( goodCerts + 1 ))
+    fi
+}
+
+###############################################################
+# Process the cert date information
+###############################################################
+
+function processDate {
+    tmp=$(echo &quot;$dateInfo&quot; | sed s/[\ A-Za-z]*After\ :[\ ]*// | cut -c -25)
+    subDate &quot;$1&quot;
+}
+
+###############################################################
+# Display controller cert validity
+##############################################################
+
+echo &quot;&quot;
+echo &quot;###############################################################&quot;
+echo &quot;# Process all cert files under /etc/origin/master directory&quot;
+echo &quot;###############################################################&quot;
+echo &quot;&quot;
+
+for node in $(oc get nodes | grep -E controller | awk &#39;{print $1}&#39;); do
+    echo &quot;$node:&quot;
+    for f in $(ssh &quot;$node&quot; &quot;find /etc/origin/master -type f \(  -name &#39;*.crt&#39; -o -name &#39;*pem&#39; \)&quot;); do
+        if [[ &quot;$f&quot; != /etc/origin/master/openshift-aggregator.crt ]]; then
+            dateInfo=$(ssh &quot;$node&quot; cat &quot;$f&quot; | showCert | grep -E After | tail -1)
+            processDate &quot;    &quot;
+        fi
+    done
+    #for f in $(ssh &quot;$node&quot; &quot;find /etc/origin/service-catalog -type f \(  -name &#39;*.crt&#39; -o -name &#39;*pem&#39; \)&quot;); do
+    #    dateInfo=$(ssh &quot;$node&quot; cat &quot;$f&quot; | showCert | grep -E After | tail -1)
+    #    processDate &quot;    &quot;
+    #done
+done
+
+###############################################################
+# Display kubelet cert validity
+###############################################################
+
+echo &quot;&quot;
+echo &quot;###############################################################&quot;
+echo &quot;# Process all node cert files /etc/origin/node&quot;
+echo &quot;###############################################################&quot;
+echo &quot;&quot;
+
+for node in $(oc get nodes |awk &#39;NR&gt;1&#39;|awk &#39;{print $1}&#39;); do
+    echo &quot;$node:&quot;
+    for f in $(ssh &quot;$node&quot; &quot;find /etc/origin/node -type f \( -name &#39;*.crt&#39; \)&quot;); do
+        dateInfo=$(ssh &quot;$node&quot; cat &quot;$f&quot; | showCert | grep -E After | tail -1)
+        processDate &quot;    &quot;
+    done
+
+    for f in $(ssh &quot;$node&quot; &quot;find /etc/origin/node -name kubelet-*-current.pem&quot;); do
+        dateInfo=$(ssh &quot;$node&quot; cat &quot;$f&quot; | showCert | grep -E After | tail -1)
+        processDate &quot;    &quot;
+    done
+
+    for f in $(ssh &quot;$node&quot; &quot;find /etc/origin/node -name kubelet-*-.pem&quot;); do
+        dateInfo=$(ssh &quot;$node&quot; cat &quot;$f&quot; | showCert | grep -E After | tail -1)
+        processDate &quot;    &quot;
+    done
+done
+
+###############################################################
+# Display apiserver-ssl cert validity
+###############################################################
+
+echo &quot;&quot;
+echo &quot;###############################################################&quot;
+echo &quot;# Process apiserver-ssl cert&quot;
+echo &quot;###############################################################&quot;
+echo &quot;&quot;
+
+now=$(date +%s)
+apiExpire=$(date -d &quot;`oc get secret apiserver-ssl -n kube-service-catalog -o jsonpath=&#39;{.data.tls\.crt}&#39; | \
+                base64 --decode | openssl x509 -noout -enddate -startdate | egrep notAfter | awk -F= &#39;{print $2}&#39;`&quot; +%s)
+diff=$((apiExpire - now))
+
+valid=$((diff/60/60/24))
+if ((diff&lt;warnAge)); then
+    if ((diff&lt;=0)); then
+        echo &quot;EXPIRED: apiserver-ssl cert has already expired $valid days ago&quot;
+        expiredCerts=$(( expiredCerts + 1 ))
+    else
+        echo &quot;WARNING: apiserver-ssl cert expires in $valid days&quot;
+        warnCerts=$(( warnCerts + 1 ))
+    fi
+else
+    echo &quot;apiserver-ssl cert is valid for $valid more days&quot;
+    goodCerts=$(( goodCerts + 1 ))
+fi
+
+###############################################################
+# Summary
+###############################################################
+
+echo &quot;&quot;
+echo &quot;###############################################################&quot;
+echo &quot;Summary:&quot;
+echo &quot;       Good Certs: $goodCerts&quot;
+echo &quot;       Warn Certs: $warnCerts&quot;
+echo &quot;    Expired Certs: $expiredCerts&quot;
+echo &quot;###############################################################&quot;
+echo &quot;&quot;
+
+if [[ $expiredCerts -gt 0 ]]; then
+    exit 2
+fi
+
+if [[ $warnCerts -gt 0 ]]; then
+    exit 1
+fi
+
+exit 0</pre>
+</li><li>Make the file executable by entering the following command:
+<p><span class="code">chmod 744 ./show_certs.sh</span></p>
+</li><li>To run the script, enter the following command:
+<p><span class="code">./show_certs.sh</span></p>
+<p>Output appears similar to the following example:</p>
+<p><span class="example2">###############################################################<br># Process all cert files under /etc/origin/master directory<br>###############################################################<br><br>controller-1.chassis.local:<br>    /etc/origin/master/openshift-master.crt cert is valid for 666 more days<br>    /etc/origin/master/master.server.crt cert is valid for 1761 more days<br>    /etc/origin/master/service-signer.crt cert is valid for 1761 more days<br>    /etc/origin/master/master.kubelet-client.crt cert is valid for 666 more days<br>    /etc/origin/master/front-proxy-ca.crt cert is valid for 1761 more days<br>    /etc/origin/master/frontproxy-ca.crt cert is valid for 1761 more days<br>    /etc/origin/master/aggregator-front-proxy.crt cert is valid for 666 more days<br>    /etc/origin/master/client-ca-bundle.crt cert is valid for 1761 more days<br>    /etc/origin/master/master.etcd-ca.crt cert is valid for 1761 more days<br>    /etc/origin/master/named_certificates/docker-registry.pem cert is valid for 1761 more days<br>    /etc/origin/master/master.proxy-client.crt cert is valid for 666 more days<br>    /etc/origin/master/ca-bundle.crt cert is valid for 1761 more days<br>    /etc/origin/master/ca.crt cert is valid for 1761 more days<br>    /etc/origin/master/registry.crt cert is valid for 1761 more days<br>    /etc/origin/master/etcd.server.crt cert is valid for 1761 more days<br>    /etc/origin/master/openshift-router.crt cert is valid for 1761 more days<br>    /etc/origin/master/master.etcd-client.crt cert is valid for 1761 more days<br>    /etc/origin/master/admin.crt cert is valid for 666 more days<br>controller-2.chassis.local:<br>    /etc/origin/master/master.etcd-client.crt cert is valid for 1761 more days<br>    /etc/origin/master/ca-bundle.crt cert is valid for 1761 more days<br>    /etc/origin/master/front-proxy-ca.crt cert is valid for 1761 more days<br>    /etc/origin/master/admin.crt cert is valid for 666 more days<br>    /etc/origin/master/client-ca-bundle.crt cert is valid for 1761 more days<br>    /etc/origin/master/ca.crt cert is valid for 1761 more days<br>    /etc/origin/master/service-signer.crt cert is valid for 1761 more days<br>    /etc/origin/master/aggregator-front-proxy.crt cert is valid for 666 more days<br>    /etc/origin/master/master.kubelet-client.crt cert is valid for 666 more days<br>    /etc/origin/master/master.server.crt cert is valid for 1761 more days<br>    /etc/origin/master/openshift-master.crt cert is valid for 666 more days<br>    /etc/origin/master/master.proxy-client.crt cert is valid for 666 more days<br>    /etc/origin/master/master.etcd-ca.crt cert is valid for 1761 more days<br><br>###############################################################<br># Process all node cert files /etc/origin/node<br>###############################################################<br><br>blade-1.chassis.local:<br>    /etc/origin/node/client-ca.crt cert is valid for 1761 more days<br>    /etc/origin/node/certificates/kubelet-server-current.pem cert is valid for 301 more days<br>    /etc/origin/node/certificates/kubelet-client-current.pem cert is valid for 301 more days<br>blade-2.chassis.local:<br>    /etc/origin/node/client-ca.crt cert is valid for 1761 more days<br>    /etc/origin/node/certificates/kubelet-client-current.pem cert is valid for 301 more days<br>    /etc/origin/node/certificates/kubelet-server-current.pem cert is valid for 301 more days<br>controller-1.chassis.local:<br>    /etc/origin/node/client-ca.crt cert is valid for 1761 more days<br>    /etc/origin/node/certificates/kubelet-server-current.pem cert is valid for 301 more days<br>    /etc/origin/node/certificates/kubelet-client-current.pem cert is valid for 301 more days<br>controller-2.chassis.local:<br>    /etc/origin/node/client-ca.crt cert is valid for 1761 more days<br>    /etc/origin/node/certificates/kubelet-server-current.pem cert is valid for 301 more days<br>    /etc/origin/node/certificates/kubelet-client-current.pem cert is valid for 301 more days<br><br>###############################################################<br># Process apiserver-ssl cert <br>###############################################################<br><br>apiserver-ssl cert is valid for 3649 more days<br><br>###############################################################<br>Summary:<br>       Good Certs: 44<br>       Warn Certs: 0<br>    Expired Certs: 0<br>###############################################################</span></p>
+</li></ol>
+<p><span class="subsectiontitle"><a id="renew_nodes" name="renew_nodes"></a>Mitigate by renewing the node certificates using the <strong>renew_nodes.sh</strong> script</span></p>
+<p>If the chassis blade certificates on your system are not yet expired, you can mitigate this issue by renewing the certificates for another 365 days using the <strong>renew_nodes.sh</strong> script. The script updates certificate expiry for the chassis blades and system controllers, even if the certificates on the system controllers are already expired. To do so, perform the following procedure:</p>
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure renews OpenShift certificates causing a traffic disruption to tenants running in the cluster.</span></p>
+<ol><li>Log in to the system controllers floating IP address as root.</li><li>Using a text editor, create a file named <strong>renew_nodes.sh</strong> with the following content:
+<p><span class="note"><strong>Note</strong>: You can download the script file from Github by entering the following command: <strong>curl -s https://raw.githubusercontent.com/askf5/K64001020/main/renew_nodes.sh -O</strong>.<br></span></p>
+<pre style="background: #efefef;padding: 8px;display: block;overflow-x: auto;">#!/bin/bash
+
+#####################################
+# Date: Fri Sep 16 11:45:19 EDT 2022
+# Version: 1.5
+
+days=&quot;3650&quot;
+
+update_controllers=0
+if [[ &quot;$1&quot; != &quot;&quot; ]]; then
+    if [[ &quot;$1&quot; == &quot;-controllers&quot; ]]; then
+        update_controllers=1
+    else 
+        echo &quot;&quot;
+        echo &quot;ERROR: invalid option \&quot;$1\&quot;&quot;
+        echo &quot;    USAGE $0 [-controllers]&quot;
+        echo &quot;&quot;    
+        exit -1
+    fi    
+fi
+
+###############################################################
+# Get validity data from the cert
+###############################################################
+
+function showCert() {
+    openssl crl2pkcs7 -nocrl -certfile /dev/stdin | openssl pkcs7 -print_certs -text | grep Validity -A2
+}
+
+###############################################################
+# Parse the cert date and determine the validity
+###############################################################
+
+function subDate {
+    dateSeconds=$(date -d &quot;$tmp&quot; +%s)
+    diff=$((dateSeconds - now))
+    valid=$((diff/60/60/24))
+    if ((diff&lt;warnAge)); then
+        if ((diff&lt;=0)); then
+            echo &quot;$1EXPIRED: $f cert has already expired $valid days ago&quot;
+            expiredCerts=$(( expiredCerts + 1 ))
+        else
+            echo &quot;$1WARNING: $f cert expires in $valid days&quot;
+            warnCerts=$(( warnCerts + 1 ))
+        fi
+    else
+        echo &quot;$1$f cert is valid for $valid more days&quot;
+        goodCerts=$(( goodCerts + 1 ))
+    fi
+}
+
+###############################################################
+# Process the cert date information
+###############################################################
+
+function processDate {
+    tmp=$(echo &quot;$dateInfo&quot; | sed s/[\ A-Za-z]*After\ :[\ ]*// | cut -c -25)
+    subDate &quot;$1&quot;
+}
+
+###############################################################
+# Pause orchestration-manager processing while script is running
+###############################################################
+
+ssh controller-1.chassis.local touch /tmp/omd/pause
+ssh controller-2.chassis.local touch /tmp/omd/pause
+
+###############################################################
+# Approve any outstanding CSR&#39;s before updating anything
+###############################################################
+
+outstandingCerts=$(oc get csr | grep Pending)
+
+if [[ &quot;$outstandingCerts&quot; != &quot;&quot; ]]; then 
+    echo &quot;==================================================================&quot;
+    echo &quot;Approving any outstand CSR Requests&quot;
+    oc get csr | grep -E Pending | awk &#39;{print $1}&#39; | xargs oc adm certificate approve
+fi
+
+if [[ $update_controllers == 1 ]]; then
+    ###############################################################
+    # Make sure etc_ansible_hosts file exists on this CC
+    ###############################################################
+
+    blades=$(oc get nodes | grep blade |awk &#39;{print $1}&#39;)
+
+    if [[ ! -f /tmp/omd/etc_ansible_hosts ]]; then
+        if [[ $(hostname) == &quot;controller-1.chassis.local&quot; ]]; then
+            echo &quot;/tmp/omd/etc_ansible_hosts does not exist, copy from controller-2.chassis.local&quot;    
+            scp controller-2.chassis.local://tmp/omd/etc_ansible_hosts /tmp/omd/etc_ansible_hosts
+        else 
+            echo &quot;/tmp/omd/etc_ansible_hosts does not exist, copy from controller-1.chassis.local&quot;    
+            scp controller-1.chassis.local://tmp/omd/etc_ansible_hosts /tmp/omd/etc_ansible_hosts
+        fi    
+    else 
+        echo &quot;/tmp/omd/etc_ansible_hosts exists&quot;    
+    fi
+
+    ###############################################################
+    # If specified, redeploy the controller certs and create a new CA
+    ###############################################################
+
+    time docker exec -it orchestration_manager ansible-playbook -i /tmp/omd/etc_ansible_hosts /usr/share/ansible/openshift-ansible/playbooks/openshift-master/redeploy-certificates.yml -e openshift_hosted_registry_cert_expire_days=${days} -e openshift_ca_cert_expire_days=${days} -e openshift_master_cert_expire_days=${days} -e etcd_ca_default_days=${days} -e expire_days=${days} -e expire_days=${days} -e openshift_certificate_expiry_fail_on_warn=false -e openshift_redeploy_openshift_ca=true
+
+    time docker exec -it orchestration_manager ansible-playbook -i /tmp/omd/etc_ansible_hosts /usr/share/ansible/openshift-ansible/playbooks/redeploy-certificates.yml -e openshift_hosted_registry_cert_expire_days=${days} -e openshift_ca_cert_expire_days=${days} -e openshift_master_cert_expire_days=${days} -e etcd_ca_default_days=${days} -e expire_days=${days} -e expire_days=${days} -e openshift_certificate_expiry_fail_on_warn=false -e openshift_redeploy_openshift_ca=true
+
+    ###############################################################
+    # Update the ca certs in the kubeconfig files
+    ###############################################################
+
+    oc serviceaccounts create-kubeconfig node-bootstrapper -n openshift-infra --config /etc/origin/master/admin.kubeconfig &gt; /tmp/omd/bootstrap.kubeconfig
+
+    ssh controller-1.chassis.local cp /etc/origin/master/admin.kubeconfig /etc/origin/node/bootstrap.kubeconfig
+    ssh controller-2.chassis.local cp /etc/origin/master/admin.kubeconfig /etc/origin/node/bootstrap.kubeconfig
+
+    for node in $blades; do
+        scp /tmp/omd/bootstrap.kubeconfig /etc/origin/node/bootstrap.kubeconfig
+    done
+
+    scp  /tmp/omd/bootstrap.kubeconfig controller-1.chassis.local:/etc/origin/master/bootstrap.kubeconfig   
+    scp  /tmp/omd/bootstrap.kubeconfig controller-2.chassis.local:/etc/origin/master/bootstrap.kubeconfig   
+fi
+
+###############################################################
+# Update the node kubelet certs
+###############################################################
+
+
+for node in $(oc get nodes |awk &#39;NR&gt;1&#39;|awk &#39;{print $1}&#39;); do
+    echo &quot;==================================================================&quot;
+    echo &quot;Renew Cert on node: $node&quot;
+    echo &quot;==================================================================&quot;
+
+    echo &quot;   Remove /etc/origin/node/certificates/kubelet-server-current.pem&quot;
+    ssh &quot;${node}&quot; rm -f /etc/origin/node/certificates/kubelet-server-current.pem
+    echo &quot;   Remove /etc/origin/node/certificates/kubelet-client-current.pem&quot;
+    ssh &quot;${node}&quot; rm -f /etc/origin/node/certificates/kubelet-client-current.pem
+
+    if [[ $update_controllers == 1 ]]; then
+        echo &quot;   Move client-ca&quot;
+        ssh &quot;${node}&quot; mv /etc/origin/node/client-ca.crt{,.old}
+        echo &quot;   Move node.kubeconfig&quot;
+        ssh &quot;${node}&quot; mv /etc/origin/node/node.kubeconfig{,.old}
+    fi
+        
+    echo &quot;   Restart origin-node container&quot;
+    ssh &quot;${node}&quot; systemctl restart origin-node &amp;
+    
+    ((exists=0))
+    echo &quot;   Approve outstanding CSR&#39;s for node $node ...&quot;
+    while [[ $exists != 2 ]]; do
+       outstandingCerts=$(oc get csr | grep Pending)
+       if [[ &quot;$outstandingCerts&quot; != &quot;&quot; ]]; then 
+           oc get csr | grep -E Pending | awk &#39;{print $1}&#39; | xargs oc adm certificate approve
+       fi
+
+       ((exists=0))
+       ssh &quot;${node}&quot; &quot;ls -lq /etc/origin/node/certificates/kubelet-server-current.pem 2&gt;&amp;1&quot; &gt; /dev/null
+       if [[ $? == 0 ]]; then ((exists=exists+1)); fi
+       ssh &quot;${node}&quot; &quot;ls -lq /etc/origin/node/certificates/kubelet-client-current.pem 2&gt;&amp;1&quot; &gt; /dev/null
+       if [[ $? == 0 ]]; then ((exists=exists+1)); fi
+
+       if [[ $exists != 2 ]]; then sleep 1; fi
+    done
+
+    # wait for the restart origin-node call to finish    
+    wait
+    
+    sleep 10
+
+    echo &quot;   Wait for node $node to return to Ready ...&quot;
+    nodeReady=$(oc get nodes | grep -E &quot;${node}&quot; | awk &#39;{print $2}&#39;)
+    while [[ &quot;$nodeReady&quot; != &quot;Ready&quot; ]]; do
+        sleep 1
+        nodeReady=$(oc get nodes | grep -E &quot;${node}&quot; | awk &#39;{print $2}&#39;)
+    done
+done    
+
+echo &quot;=================================================================&quot;
+
+sleep 10
+
+oc get nodes
+while [[ $? != 0 ]]; do
+  sleep 5
+  oc get nodes
+done  
+
+###############################################################
+# Make sure all k8s services have restarted correctly
+###############################################################
+
+echo &quot;=================================================================&quot;
+
+oc delete pods -n kube-service-catalog -l app=apiserver
+oc delete pods -n kube-service-catalog -l app=controller-manager
+
+(( x=1 ))
+(( count=1 ))
+while (( count != 0 )); do
+    echo &quot;=================================================================&quot;
+    count=$(oc get pods --all-namespaces | grep -E &quot;Pending|Crash|0/1&quot; | grep -E -v &quot;ExitCode|helper|partition-&quot; | wc -l)
+
+    x=$(( x + 1 ))
+
+    if (( x % 40 == 0 )); then
+        oc delete pods -n kube-service-catalog -l app=apiserver
+        oc delete pods -n kube-service-catalog -l app=controller-manager
+    fi
+
+    oc get nodes
+    if [[ $? != 0 ]]; then
+        (( count=1 ))
+    fi
+
+    echo &quot;=================================================================&quot;
+    echo &quot;Waiting for services to restart and stabilize&quot;
+    
+    if (( count != 0 )); then
+        oc get pods --all-namespaces | grep -E &quot;Pending|Crash|0/1&quot; | grep -E -v &quot;ExitCode|helper|partition-&quot;
+        sleep 1 
+    fi
+
+    tmp=$(oc get pods | grep Error | grep deploy | awk &#39;{print $1}&#39;)
+    if [[ &quot;$tmp&quot; != &quot;&quot; ]]; then
+        for podName in $tmp; do 
+            oc delete pod &quot;$podName&quot;
+        done  
+    fi
+
+    if [[ $x -gt 240 ]]; then
+        break
+    fi    
+done   
+
+###############################################################
+# Un-Pause orchestration-manager processing
+###############################################################
+
+ssh controller-1.chassis.local rm /tmp/omd/pause
+ssh controller-2.chassis.local rm /tmp/omd/pause
+
+###############################################################
+# Check cert expiration times after the update
+###############################################################
+
+goodCerts=0;
+warnCerts=0;
+expiredCerts=0;
+
+warnDays=60
+warnAge=$((60 * 60 * 24 * warnDays))
+now=$(date +%s)
+
+###############################################################
+# Display controller cert validity
+##############################################################
+
+echo &quot;&quot;
+echo &quot;###############################################################&quot;
+echo &quot;# Process all cert files under /etc/origin/master directory&quot;
+echo &quot;###############################################################&quot;
+echo &quot;&quot;
+
+for node in $(oc get nodes | grep -E controller | awk &#39;{print $1}&#39;); do
+    echo &quot;$node:&quot;
+    for f in $(ssh &quot;$node&quot; &quot;find /etc/origin/master -type f \(  -name &#39;*.crt&#39; -o -name &#39;*pem&#39; \)&quot;); do
+        if [[ &quot;$f&quot; != /etc/origin/master/openshift-aggregator.crt ]]; then
+            dateInfo=$(ssh &quot;$node&quot; cat &quot;$f&quot; | showCert | grep -E After | tail -1)
+            processDate &quot;    &quot;
+        fi
+    done
+done
+
+###############################################################
+# Display kubelet cert validity
+###############################################################
+
+echo &quot;&quot;
+echo &quot;###############################################################&quot;
+echo &quot;# Process all node cert files /etc/origin/node&quot;
+echo &quot;###############################################################&quot;
+echo &quot;&quot;
+
+for node in $(oc get nodes |awk &#39;NR&gt;1&#39;|awk &#39;{print $1}&#39;); do
+    echo &quot;$node:&quot;
+    for f in $(ssh &quot;$node&quot; &quot;find /etc/origin/node -type f \( -name &#39;*.crt&#39; \)&quot;); do
+        dateInfo=$(ssh &quot;$node&quot; cat &quot;$f&quot; | showCert | grep -E After | tail -1)
+        processDate &quot;    &quot;
+    done
+
+    for f in $(ssh &quot;$node&quot; &quot;find /etc/origin/node -name kubelet-*-current.pem&quot;); do
+        dateInfo=$(ssh &quot;$node&quot; cat &quot;$f&quot; | showCert | grep -E After | tail -1)
+        processDate &quot;    &quot;
+    done
+done
+
+###############################################################
+###############################################################
+
+echo &quot;&quot;
+echo &quot;###############################################################&quot;
+echo &quot;Summary:&quot;
+echo &quot;       Good Certs: $goodCerts&quot;
+echo &quot;       Warn Certs: $warnCerts&quot;
+echo &quot;    Expired Certs: $expiredCerts&quot;
+echo &quot;###############################################################&quot;
+echo &quot;&quot;
+
+if [[ $expiredCerts -gt 0 ]]; then
+    exit -2
+fi
+
+if [[ $warnCerts -gt 0 ]]; then
+    exit -1
+fi
+
+exit 0</pre>
+</li><li>Make the file executable by entering the following command:
+<p><span class="code">chmod 744 ./renew_nodes.sh</span></p>
+</li><li>To run the script, enter the following command:
+<p><span class="code">./renew_nodes.sh</span></p>
+<p><span class="note"><strong>Note</strong>: In addition to the node certificates, you can use the <strong>-controllers</strong> option with the <strong>renew_nodes.sh</strong> script to update the certificates in the <strong>/etc/origin/master</strong> directory using a 10-year expiration. This option is not recommended unless the certificates in the <strong>/etc/origin/master</strong> directory are close to expiry.</span></p>
+<p>Output shows the progress and reports a summary similar to the <strong>show_certs.sh</strong> script.</p>
+</li></ol>
+<p><span class="subsectiontitle"><a id="workaround" name="workaround"></a>Workaround for reinstalling the OpenShift cluster</span></p>
+<p>If your VELOS system is affected by this issue, you can work around this issue by reinstalling the OpenShift cluster on the VELOS system. You must first shutdown all tenants on the system by setting their running-state to <strong>provisioned</strong>, then use the <strong>touch /var/omd/CLUSTER_REINSTALL</strong> command as root on the active system controller to reinstall the Openshift cluster. After the cluster reinstall is complete, you should disable and re-enable all chassis partitions before setting the running-state of all tenants back to <strong>deployed</strong> to ensure they have restarted correctly after the cluster rebuild. To do so, perform the following procedure:</p>
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure rebuilds the OpenShift cluster causing tenants running in the cluster to restart.</span></p>
+<ol><li>Before reinstalling the OpenShift cluster, set the running-state of deployed tenants to <strong>provisioned </strong>in all chassis partitions. To change the running-state of a tenant, log in to the chassis partition CLI where the tenant resides.</li><li>Enter the following command:
+<p><span class="code">config</span></p>
+</li><li>To set the tenant running-state to <strong>provisioned</strong>, use the following command syntax, where <strong>&lt;tenant_name&gt;</strong> is the name of the tenant:
+<p><span class="code">tenants tenant &lt;tenant_name&gt; config running-state provisioned</span></p>
+<p>Repeat this step for all other tenants in this chassis partition.</p>
+</li><li>To commit the change and exit, enter the following command:
+<p><span class="code">commit and-quit</span></p>
+<p>Repeat steps 1 through 4 for the tenants in the other chassis partitions.</p>
+</li><li>Log in to the active system controller as root.</li><li>Force the VELOS system to reinstall the OpenShift cluster by entering the following command:
+<p><span class="code">touch /var/omd/CLUSTER_REINSTALL</span></p>
+<p>The VELOS system begins the OpenShift cluster reinstallation process. This operation can take 90 minutes or more to complete.<br><br>In order to check the progress of the rebuild, you can run the following command:<br>tail -f /var/log/openshift.log<br>The rebuild is complete after approximately 90 minutes and the output will be similar to:<br>&quot;Blade 1 is ready in openshift cluster.&quot;</p>
+</li><li>After the OpenShift cluster installation is complete and all pods are running, you need to disable the chassis partitions and re-enable them. Log in to the system controller as root.</li><li>To enter the system controller CLI, enter the following command:
+<p><span class="code">su admin</span></p>
+</li><li>Enter the following command:
+<p><span class="code">config</span></p>
+</li><li>To disable a chassis partition, use the following command syntax, where <strong>&lt;partition_name&gt;</strong> is the name of the chassis partition:
+<p><span class="code">partitions partition &lt;partition_name&gt; config disabled</span></p>
+<p>Repeat this step for all chassis partitions.</p>
+</li><li>To commit the change, enter the following command:
+<p><span class="code">commit</span></p>
+</li><li>Enter the following command:
+<p><span class="code">exit</span></p>
+</li><li>Once all the chassis partitions have been disabled, re-enable them using the following command syntax for each chassis partition, where <strong>&lt;partition_name&gt;</strong> is the name of the chassis partition:
+<p><span class="code">partitions partition &lt;partition_name&gt; config enabled</span></p>
+</li><li>To commit the change and exit, enter the following command:
+<p><span class="code">commit and-quit</span></p>
+</li><li>To exit the system controller CLI, enter the following command:
+<p><span class="code">exit</span></p>
+</li><li>Check to see that all pods have started successfully and are running, by entering the following command:
+<p><span class="code">kubectl get pods --all-namespaces</span></p>
+</li><li>Once all pods are up and running, change the running state of all tenants back to <strong>deployed</strong>; to change the running state of a tenant, log in to the chassis partition CLI where the tenant resides.</li><li>Enter the following command:
+<p><span class="code">config</span></p>
+</li><li>To set the tenant running state to <strong>deployed</strong>, use the following command syntax, where <strong>&lt;tenant_name&gt;</strong> is the name of the tenant:
+<p><span class="code">tenants tenant &lt;tenant_name&gt; config running-state deployed</span></p>
+<p>Repeat this step for all other tenants in this chassis partition.</p>
+</li><li>To commit the change and exit, enter the following command:
+<p><span class="code">commit and-quit</span></p>
+<p>Repeat steps 17 through 20 for the tenants in the other chassis partitions.</p>
+</li></ol>
+<p><span class="subsectiontitle"><a id="workaround-api" name="workaround-api"></a>Workaround for expired apiserver certificates</span></p>
+<p>If the <strong>show_certs.sh</strong> script reports that the apiserver certificates are expired, they can be renewed without reinstalling the entire OpenShift cluster. To renew expired apiserver certificates, perform the following procedure:</p>
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+<ol><li>Log in to the active system controller as root.</li><li>Enter the following command:<br><p><span class="code">docker exec -it orchestration_manager ansible-playbook -v -i /tmp/omd/etc_ansible_hosts playbooks/openshift-service-catalog/config.yml</span></p>
+</li><li>This command takes about five minutes to run to completion.</li></ol>
+<h3>Additional Information</h3>
+<ul><li>It shouldn&#39;t be a problem if the tenant is stuck in a <strong>stopping</strong> state. That&#39;s happening because Kubernetes cannot talk to the kubelet on the blades due to the expired certificates.</li><li>From ConfD&#39;s perspective, the tenant is in provisioned state.</li><li>When you perform the OpenShift reinstall procedure, the tenant&#39;s pod and <strong>qemu-kvm</strong> process should go away.</li><li>When you set the tenant back to <strong>deployed</strong> after the OpenShift rebuild, it should start up as normal.</li><li>Problems can arise if the tenant is in a <strong>deployed</strong> state from ConfD and you then perform the OpenShift reinstall. In this scenario, you need to revert the tenant back to <strong>provisioned,</strong> then deploy it again.</li></ul>
+</article>
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000132919: istio-proxy sidecar (envoy) injection into grpc pod fails</title>
+<meta name="description" content="Support Solution: istio-proxy sidecar (envoy) injection into grpc pod fails — istio-proxy sidecar (envoy) injection into grpc pod fails when there are multiple network interfaces attached to a pod with IPs assigned and there&#x27;s a Service with multiple ports associated to the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000132919">
+</head>
+<body>
+<header>
+<h1>K000132919: istio-proxy sidecar (envoy) injection into grpc pod fails</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-03-20</dd>
+<dt>Updated</dt><dd>2023-07-18</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.11</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000132919">https://my.f5.com/manage/s/article/K000132919</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>istio-proxy sidecar (envoy) injection into grpc pod fails when there are multiple network interfaces attached to a pod with IPs assigned and there&#39;s a Service with multiple ports associated to the deployment.</p>
+
+<p>The Deployment below will trigger the problem</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: httpbin
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: httpbin
+  labels:
+    app: httpbin
+    service: httpbin
+  annotations:
+    k8s.v1.cni.cncf.io/networks: active
+    prometheus.io/port: &quot;8088&quot;
+    prometheus.io/scheme: http
+    prometheus.io/scrape: &quot;true&quot;
+    sidecar.istio.io/inject: &quot;true&quot;
+    traffic.sidecar.istio.io/excludeOutboundIPRanges: 10.42.0.0/16
+spec:
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 80
+  - name: grpc
+    port: 50056
+    protocol: TCP
+    targetPort: 50056
+  - name: http-metric
+    port: 80
+    protocol: TCP
+    targetPort: 8088
+  selector:
+    app: httpbin
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: httpbin
+  annotations:
+    deployment.kubernetes.io/revision: &quot;1&quot;
+    k8s.v1.cni.cncf.io/networks: active
+    prometheus.io/port: &quot;8088&quot;
+    prometheus.io/scheme: http
+    prometheus.io/scrape: &quot;true&quot;
+    sidecar.istio.io/inject: &quot;true&quot;
+    traffic.sidecar.istio.io/excludeOutboundIPRanges: 10.42.0.0/16
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: httpbin
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: httpbin
+        version: v1
+      annotations:
+        k8s.v1.cni.cncf.io/networks: active
+        prometheus.io/port: &quot;8088&quot;
+        prometheus.io/scheme: http
+        prometheus.io/scrape: &quot;true&quot;
+        sidecar.istio.io/inject: &quot;true&quot;
+        traffic.sidecar.istio.io/excludeOutboundIPRanges: 10.42.0.0/16
+    spec:
+      serviceAccountName: httpbin
+      containers:
+      - image: docker.io/kennethreitz/httpbin
+        imagePullPolicy: IfNotPresent
+        name: httpbin
+        ports:
+        - containerPort: 80
+        - containerPort: 50056
+          protocol: TCP
+        - containerPort: 8088
+          protocol: TCP
+      - image: docker.io/kennethreitz/httpbin
+        imagePullPolicy: IfNotPresent
+        name: httpbin1
+      - image: docker.io/kennethreitz/httpbin
+        imagePullPolicy: IfNotPresent
+        name: httpbin2
+</pre>
+
+<p><br>istio-proxy container logs show the following</p>
+
+<pre class="ckeditor_codeblock">
+2023-02-03T12:47:11.740001Z warning envoy config    gRPC config for type.googleapis.com/envoy.config.listener.v3.Listener rejected: Error adding/updating listener(s) virtualInbound: error adding listener &#39;0.0.0.0:15006&#39;: filter chain &#39;0.0.0.0_2123&#39; has the same matching rules defined as &#39;0.0.0.0_2123&#39;
+</pre>
+
+<h2><br><strong>Environment</strong></h2>
+
+<p>Aspen Mesh 1.11.8-am2, 1.11.8-am4<br><br> </p>
+
+<h2><strong>Cause</strong></h2>
+
+<p>Bug identified by Aspen Mesh PD team<br><br> </p>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>Use Aspen Mesh 1.14.x or 1.11.8-am1 non-dual stack<br><br> </p>
+
+<h2><strong>Additional Information</strong></h2>
+
+<p>In version 1.14.x there was significant refactoring around creation of the inbound listeners fixing the bug present in Aspen Mesh 1.11.8-am2 &amp; 1.11.8-am4</p>
+</article>
+</body>
+</html>

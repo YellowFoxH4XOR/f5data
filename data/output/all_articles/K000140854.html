@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000140854: After upgrading AFM to 17.1.0 or later, sometimes client RST packet is not forwarded to server through fastL4 virtual server.</title>
+<meta name="description" content="Support Solution: After upgrading AFM to 17.1.0 or later, sometimes client RST packet is not forwarded to server through fastL4 virtual server. — Under specific condition, when client sends RST packet to server through fastL4 virtual server, the RST packet does not reach to backend (pool member) server.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000140854">
+</head>
+<body>
+<header>
+<h1>K000140854: After upgrading AFM to 17.1.0 or later, sometimes client RST packet is not forwarded to server through fastL4 virtual server.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-08-27</dd>
+<dt>Updated</dt><dd>2025-04-10</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP AFM: 17.1.2, 17.1.X, 17.1.1, 17.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000140854">https://my.f5.com/manage/s/article/K000140854</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Under specific condition, when client sends RST packet to server through fastL4 virtual server, the RST packet does not reach to backend (pool member) server.</p>
+<p>While running tcpdump on BIG-IP 0.0 interface (TMM), outgoing RST packet is certainly captured. However, while running tcpdump on (egress) physical interface, no outgoing RST packet is captured. This indicates outgoing RST packet is internally dropped somewhere between TMM/CPU and physical interface.</p>
+<p>Here are example of packet captures which were simultaneously taken on 0.0 interface and physical interface (1.1). Packet capture taken on physical interface 1.1 lacks of outgoing RST packet to pool member 192.168.10.71.</p>
+<p> </p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000MDMn&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo000007gFRe" alt="0.0.png" style="display: block;margin-left: auto;margin-right: auto;"></img></p>
+<p style="text-align: center;"><span style="color: #666666;">Figure: packet capture taken on 0.0 interface</span></p>
+<p> </p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000MDMn&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo000007gIfd" alt="IF1.1.png" style="display: block;margin-left: auto;margin-right: auto;"></img></p>
+<p style="text-align: center;"><span style="color: #666666;">Figure: packet capture taken on physical interface 1.1</span></p>
+<p> </p>
+<p>Here is test configuration used to demonstrate the issue.</p>
+<pre class="language-markup"><code>ltm virtual fastl4_vs {
+    destination 10.1.1.141:http
+    ip-protocol tcp
+    mask 255.255.255.255
+    pool http_pool
+    profiles {
+        fastL4 { }
+    }
+    serverssl-use-sni disabled
+    source 0.0.0.0/0
+    translate-address enabled
+    translate-port enabled
+}
+ltm pool http_pool {
+    members {
+        192.168.10.71:http {
+            address 192.168.10.71
+            session monitor-enabled
+            state up
+        }
+    }
+    monitor gateway_icmp
+}</code></pre>
+<p> </p>
+<p>When client&#39;s RST does not reach to backend server, backend server may hold the TCP connection open and stale connections may accumulate on backend server. As a result, backend server performance may be affected (due to too many open connections).</p>
+<p> </p>
+<h2>Environment</h2>
+<p>All of the following conditions are required for this problem to occur.</p>
+<ul><li>AFM is provisioned.</li><li>Version 17.1.0 or later (&quot;TCP ACK Flood&quot; attack vector was newly added in 17.1.0. Refer to <span style="text-decoration: underline;"><a href="https://my.f5.com/manage/s/article/K41305885" target="_blank">K41305885</a></span>).</li><li>FastL4 ePVA accelerated connection. Either &quot;Forwarding (IP)&quot; type virtual server or &quot;Performance (Layer 4)&quot; type virtual server.</li><li>Client sends TCP RST packet to backend server (pool member) through BIG-IP virtual server.</li><li>TCP timestamp option is disabled on client. That means, client&#39;s initial SYN does not have TCP timestamp option.</li><li>Under &quot;Security&quot;=&gt;&quot;DoS Protection&quot;=&gt;&quot;Device DoS Protection&quot;, &quot;TCP ACK Flood&quot; attack vector state is <span style="font-size: 13px;"><strong>NOT</strong></span> set to &quot;Disabled&quot; state. That means, state is either &quot;Learn Only&quot; or &quot;Detect Only&quot; or &quot;Mitigate&quot; (default).</li></ul>
+<p> </p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000MDMn&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo000007gJ2D" alt="TCP-ACK-Flood-config.png" width="1103" height="528" style="display: block;margin-left: auto;margin-right: auto;"></img></p>
+<p style="text-align: center;"><span style="color: #666666;">Figure: AFM &quot;TCP ACK Flood&quot; attack vector configuration screen under Device DoS Protection</span></p>
+<p> </p>
+<h2>Cause</h2>
+<p><span style="text-decoration: underline;"><a href="https://cdn.f5.com/product/bugtracker/ID1623277.html" target="_blank">Bug ID1623277</a></span>.</p>
+<p> </p>
+<h2>Recommended Actions</h2>
+<p>It is possible to mitigate the issue by any one of these two workarounds.</p>
+<ul><li>Disable ePVA acceleration on fastL4 profile.</li><li>Set &quot;TCP ACK Flood&quot; state to &quot;Disabled&quot; on &quot;Device DoS Protection&quot;.</li></ul>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

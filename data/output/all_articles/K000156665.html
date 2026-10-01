@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000156665: Connections dropped and missing SYN/ACK responses when using iRule and IP data group filtering</title>
+<meta name="description" content="Support Solution: Connections dropped and missing SYN/ACK responses when using iRule and IP data group filtering — When an iRule is used to allow traffic only from specific client IP ranges (using a data group), connections passing through a BIG-IP LTM virtual server may fail.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000156665">
+</head>
+<body>
+<header>
+<h1>K000156665: Connections dropped and missing SYN/ACK responses when using iRule and IP data group filtering</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-09-29</dd>
+<dt>Updated</dt><dd>2026-03-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000156665">https://my.f5.com/manage/s/article/K000156665</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When an iRule is used to allow traffic only from specific client IP ranges (using a data group), connections passing through a BIG-IP LTM virtual server may fail. </p>
+<p>Clients attempt to establish a TCP connection, but the virtual server does not respond with a SYN/ACK. After several retransmissions, the client resets the connection.</p>
+<p>Applications may report intermittent connectivity issues, timeouts, or socket errors. No explicit error message is logged by default.</p>
+<p>Traffic sample:</p>
+<p><span style="font-size: 13px;font-family: &#39;courier new&#39;, courier, monospace;">No.     Time       TCP.stream.Delta  Src         port     Dst         port   protocol     info</span><br><span style="font-size: 13px;font-family: &#39;courier new&#39;, courier, monospace;">--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------</span><br><span style="font-size: 13px;font-family: &#39;courier new&#39;, courier, monospace;">7      14:30:49    0.000000000    172.16.0.28    19979    10.1.1.10    25    TCP    IN  s1/tmm1 : 19979 → 25 [SYN] Seq=0 Win=65535 Len=0 MSS=1398 WS=256 SACK_PERM</span><br><span style="font-size: 13px;font-family: &#39;courier new&#39;, courier, monospace;">22     14:30:52    1.006167000    172.16.0.28    19979    10.1.1.10    25    TCP    IN  s1/tmm1 : [TCP Retransmission] 19979 → 25 [SYN] Seq=0 Win=65535 Len=0 MSS=1398 WS=256 SACK_PERM</span><br><span style="font-size: 13px;font-family: &#39;courier new&#39;, courier, monospace;">52     14:30:54    2.012535000    172.16.0.28    19979    10.1.1.10    25    TCP    IN  s1/tmm1 : [TCP Retransmission] 19979 → 25 [SYN] Seq=0 Win=65535 Len=0 MSS=1398 WS=256 SACK_PERM</span><br><span style="font-size: 13px;font-family: &#39;courier new&#39;, courier, monospace;">125    14:30:58    4.008228000    172.16.0.28    19979    10.1.1.10    25    TCP    IN  s1/tmm1 : [TCP Retransmission] 19979 → 25 [SYN] Seq=0 Win=65535 Len=0 MSS=1398 WS=256 SACK_PERM</span><br><span style="font-size: 13px;font-family: &#39;courier new&#39;, courier, monospace;">226    14:31:02    4.974321000    172.16.0.28    19979    10.1.1.10    25    TCP    IN  s1/tmm1 : 19979 → 25 [RST, ACK] Seq=1 Ack=1 Win=0 Len=0</span></p>
+<p>Example iRule attached to the VS:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ltm rule /Common/SMTP-List {
+    when CLIENT_ACCEPTED {
+        if { ![class match [IP::client_addr] equals SMTP_clients] } {
+            #log local0. &quot;Dropped client connection from: [IP::client_addr]&quot;
+            drop
+        }
+    }
+}</code></pre>
+<p>Example of the data group with the list of remote SMTP IP addresses:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ltm data-group internal /Common/SMTP_CLIENTS {
+    records {
+        172.16.0.0/12 { }
+        192.168.0.0/16 { }
+    }
+    type ip
+}
+</code></pre>
+<h2>Environment</h2>
+<ul><li>LTM</li><li>iRule</li></ul>
+<h2>Cause</h2>
+<p>An iRule attached to the virtual server validates client IP addresses against a data group.<br>Missing entries in the data group cause legitimate traffic to be dropped, resulting in socket errors and failed connections.</p>
+<h2>Recommended Actions</h2>
+<p>1. For troubleshooting, you can enable iRule logging by uncommenting the log statement in your iRule: ( the logs will be seen in /var/log/ltm)</p>
+<p><span style="background-color: #f1f1f1;">log local0. &quot;Dropped client connection from: [IP::client_addr]&quot;</span></p>
+<p>2. Review and update the data group to ensure all required client IP ranges are included.<br>3. Make sure you comment out the iRule logging after troubleshooting.</p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

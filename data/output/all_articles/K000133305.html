@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000133305: Configuration pushes to NGINX+ agents fail unexpectedly</title>
+<meta name="description" content="Support Solution: Configuration pushes to NGINX+ agents fail unexpectedly — Submitting configuration updates via components or gateways fails unexpectedly. NGINX+ agent could be reporting unexpected nginx configuration check errors such as ‘duplicate locations’, ‘host not…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000133305">
+</head>
+<body>
+<header>
+<h1>K000133305: Configuration pushes to NGINX+ agents fail unexpectedly</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-03-31</dd>
+<dt>Updated</dt><dd>2026-08-12</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Controller: 3.22.8</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000133305">https://my.f5.com/manage/s/article/K000133305</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>Submitting configuration updates via components or gateways fails unexpectedly. NGINX+ agent could be reporting unexpected nginx configuration check errors such as ‘duplicate locations’, ‘host not found’, ‘upstream not found’, etc. This can occur if dpm cache is corrupt. DPM cache is built based on the configuration within config db. DPM cache is updated upon configuration changes and rebuilt when dpm cache is reset/deleted.</p>
+
+<h2><strong>Environment</strong></h2>
+
+<p>NGINX Controller</p>
+
+<h2><strong>Cause</strong></h2>
+
+<p>DPM cache is corrupt</p>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p><strong>Reset dpm cache</strong></p>
+
+<p>/opt/nginx-controller/helper.sh reset --reload-configs=false</p>
+
+<ul><li>When the reset command completes the following message appears in stdout:</li></ul>
+
+<pre class="ckeditor_codeblock">
+Successfully reset DPM.</pre>
+
+<ul><li>If this message doesn&#39;t appear then check the declarative and dpm logs as something went wrong</li></ul>
+
+<p>Delete the dpm pod</p>
+
+<pre class="ckeditor_codeblock">
+kubectl delete pod -l app=dataplane-manager</pre>
+
+<p>Confirm the dpm pods come up</p>
+
+<pre class="ckeditor_codeblock">
+watch -n1 &#39;kubectl get po| egrep &quot;declarative|dataplane&quot;&#39;</pre>
+
+<p><strong>(Optional) Output dpm cache to file</strong></p>
+
+<p>Run this script on NGINX Controller</p>
+
+<pre class="ckeditor_codeblock">
+#!/bin/bash
+# Get the dpm certs from secrets
+name=dataplane-manager-certs
+filter=&quot;.items | map(select(.metadata.name | startswith(\&quot;$name-\&quot;))) | sort_by(.metadata.creationTimestamp) | last.metadata.name&quot;
+s=$(kubectl get secret &quot;$(kubectl get secret -o json | jq -r &quot;$filter&quot;)&quot; -o json)
+for n in ca.crt client.crt client.key; do jq -r &quot;.data | .[\&quot;$n\&quot;]&quot; &lt;&lt;&lt;&quot;$s&quot; | base64 -d &gt;&quot;$n&quot;; done
+dpmfile=&quot;dataplane-mgr-$(date -Isec).json&quot;
+touch $dpmfile
+# Dump dpm node cache
+name=dataplane-manager
+port=8443
+podip=$(kubectl get pod -l app=$name -o jsonpath=&#39;{.items[0].status.podIP}&#39;)
+echo &quot;Dumping DPM cache to: $dpmfile&quot;
+curl -fsSL --cacert ./ca.crt --cert ./client.crt --key ./client.key --resolve $name.nginx-controller.svc.cluster.local:$port:$podip -X GET https://$name.nginx-controller.svc.cluster.local:$port/api/v1/internal/dataplane-manager/dumps | jq &gt;&gt; $dpmfile</pre>
+
+<p>The dpm cache output file &#39;dataplane-mgr-$(date -Isec).json&#39; is located in the same location as the script is run in</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K60071297: You Get An Undesired Selection Result from the Topology Load Balance when the eDNS Subnet Client Contains an IPv6 Address</title>
+<meta name="description" content="Support Solution: You Get An Undesired Selection Result from the Topology Load Balance when the eDNS Subnet Client Contains an IPv6 Address — You get an undesired selection result using the topology load balancing method when the eDNS subnet client contains an IPv6 address.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K60071297">
+</head>
+<body>
+<header>
+<h1>K60071297: You Get An Undesired Selection Result from the Topology Load Balance when the eDNS Subnet Client Contains an IPv6 Address</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-05-09</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 16.X.X, 14.X.X, 13.X.X, 12.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 15.X.X, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 12.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K60071297">https://my.f5.com/manage/s/article/K60071297</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+You get an undesired selection result using the topology load balancing method when the eDNS subnet client contains an IPv6 address.
+
+<p>Use the below configurations as an example:</p>
+
+<ul><li>For the eDNS configuration:</li></ul>
+
+<p style="margin-left: 40px;"><span class="example2">gtm global-settings load-balancing {<br>    topology-prefer-edns0-client-subnet enabled<br>}</span></p>
+
+<ul><li>For the Wide IP and Topology records:</li></ul>
+
+<p style="margin-left: 40px;"><span class="example2">gtm wideip a /Common/vs-example.com {<br>    pool-lb-mode topology<br>    pools {<br>        /Common/pool_external--pool_A_example.com {<br>                order 1<br>        }<br><br>        /Common/pool_internal--pool_B_example.com {<br>                    order 0<br>        }<br>    }<br>}<br><br>gtm topology ldns: region /Common/region_external server: pool /Common/pool_external----pool_A_example.com {<br>    order 1<br>    score 50<br>}<br><br>gtm topology ldns: region /Common/region_internal server: pool /Common/pool_internal--pool_B_example.com {<br>    order 2<br>    score 100<br>}<br><br>gtm region /Common/region_external {<br>        region-members {<br>            subnet 0.0.0.0/0 { }<br>    }<br>}<br><br>gtm region /Common/region_internal {<br>        region-members {<br>        subnet 10.0.0.0/8 { }<br>        subnet 172.1.0.0/12 { }<br>        subnet 192.168.0.0/16 { }<br>    }<br>}</span></p>
+
+<p>You may observe symptoms as:</p>
+
+<ol><li>
+	<p>You might get an abnormal pool selection decision, for example, you may unexpectedly get a result that should be designed as an internal address. For the above configuration, you may unexpectedly get the <strong>/pool_internal--pool_B_example.com </strong>even if your client address belongs to the external region.</p>
+	</li><li>
+	<p>You may have a default match topology record, for example, a region mapping all IPv4 addresses. Using the above configuration, it is <strong>gtm region /Common/region_external.</strong></p>
+	</li><li>
+	<p>If you turned the topology decision log as per <a href="https://my.f5.com/manage/s/article/K25751652" target="_self">K25751652</a>, you may find it fails for all of the topology records. For example:</p>
+	</li></ol>
+
+<p style="margin-left: 40px;"><span class="example2">2022-01-01 05:09:11 localhost.localdomain qid 1234 from 192.168.1.2#12356 [vs-example.com A]<br><strong>[failed to match a topology record to pool (pool_external--pool_A_example.com)]<br>[failed to match a topology record to pool (pool_internal--pool_B_example.com)] </strong><br>[topology selected pool (pool_external--pool_A_example.com) - topology score (0) is higher]<br>[topology skipped pool (pool_internal--pool_B_example.com) - topology score (0) is not higher]<br>[topology selected pool (pool_external--pool_A_example.com) with the highest topology score (0)]<br>[topology selected pool (pool_internal--pool_B_example.com)]<br>[pool member check succeeded (vs-example.com:192.168.2.1) - pool member state is available (green)]<br>[global availability selected pool member (vs-example.com:192.168.2.1)]</span></p>
+
+<ol start="4"><li>
+	<p>In your traffic capture file, you may observe there is an IPv6 address under the eDNS subnect option. For example:</p>
+	</li></ol>
+
+<p style="margin-left: 40px;"><span class="example2">Frame 1234: 211 bytes on wire (1688 bits), 211 bytes captured (1688 bits)<br>Ethernet II, Src: ICANN_00:53:00 (00:00:5E:00:53:00), Dst: ICANN_00:53:FF (00:00:5E:00:53:FF)<br>802.1Q Virtual LAN, PRI: 0, DEI: 0, ID: 4096<br>Internet Protocol Version 4, Src: 10.0.0.1, Dst: 192.168.2.1<br>User Datagram Protocol, Src Port: 60000, Dst Port: 53<br>Domain Name System (query)<br>    Transaction ID: 0x0001<br>    Flags: 0x0010 Standard query<br>    Questions: 1<br>    Answer RRs: 0<br>    Authority RRs: 0<br>    Additional RRs: 1<br>    Queries<br>    Additional records<br>        &lt;Root&gt;: type OPT<br>            Name: &lt;Root&gt;<br>            Type: OPT (41)<br>            UDP payload size: 1232<br>            Higher bits in extended RCODE: 0x00<br>            EDNS0 version: 0<br>            Z: 0x8000<br>                1... .... .... .... = DO bit: Accepts DNSSEC security RRs<br>                .000 0000 0000 0000 = Reserved: 0x0000<br>            Data length: 15<br><strong>            Option: CSUBNET - Client subnet</strong><br>                Option Code: CSUBNET - Client subnet (8)<br>                Option Length: 11<br>                Option Data: 000238002001db8<br><strong>                Family: IPv6 (2)</strong><br>                Source Netmask: 56<br>                Scope Netmask: 0<br><strong>                Client Subnet: 2001:DB8::       </strong>                  <br>    [Response In: 1235]<br>F5 Ethernet Trailer Protocol</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP DNS</li><li>Topology load balance with regions</li><li>Prefer eDNS client subnet is enabled globally, or for the wideip that has the issue</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>The designed topology records might be incomplete for the request whose eDNS subnet client is an IPv6 address.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>You can avoid this situation by adding default IPv6 topology region mapping records similar to the below configuration:<br><span class="example2">gtm region /Common/region_default {<br>    region-members {<br>        subnet 0.0.0.0/0 { }<br>        <strong>subnet ::/0 { }     </strong><br>    }<br>}</span></p>
+
+<p>For how to manage your topology records, you may refer to <a href="https://my.f5.com/manage/s/article/K13412" target="_self">K13412: Overview of BIG-IP DNS Topology records (11.x - 16.x)</a>.</p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

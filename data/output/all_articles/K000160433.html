@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160433: ASM in Restart Loop due to insufficient XML memory</title>
+<meta name="description" content="Support Solution: ASM in Restart Loop due to insufficient XML memory — The BIG-IP ASM module (v17.5.1) will fail to start if total_xml_memory is set too low. The ASM bd process enters a persistent restart loop, with the GUI displaying &quot;ASM is not ready.&quot;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160433">
+</head>
+<body>
+<header>
+<h1>K000160433: ASM in Restart Loop due to insufficient XML memory</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-03-25</dd>
+<dt>Updated</dt><dd>2026-03-25</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 16.0.0, 16.0.X, 16.0.1, 21.X.X, 17.X.X, 16.X.X, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160433">https://my.f5.com/manage/s/article/K000160433</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>The BIG-IP ASM module (v17.5.1) will fail to start if total_xml_memory is set too low. The ASM bd process enters a persistent restart loop, with the GUI displaying &quot;ASM is not ready.&quot;</p>
+<p>Logs showed repeated errors</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">BD_MISC|NOTICE|Mar 10 12:59:51.870|31701|temp_func.c:1904|min_protobuf_data_msg_size 3000</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">BD_MISC|NOTICE|Mar 10 12:59:51.871|31701|temp_func.c:2064|max_raw_request_len = 5000 g_raw_request_umu_id = 7</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;"> BD_XML|ERR  |Mar 10 12:59:51.881|31701|xml_validation.cpp:0133|Cannot allocate 221184 more bytes for XML parser. current memory size 106775 (in bytes)</span><br><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">F5xmlParserCreate: xml_parser_create() returned NULL</span><br><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">F5xmlParserCreate: no parser instances created. retuning NULL parser_hnd</span><br><br><span style="font-family: &#39;courier new&#39;, courier, monospace;"> BD_XML|ERR  |Mar 10 12:59:51.881|31701|rw_thread_data.c:0461|init_xml_parser: failed</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">BD_MISC|CRIT |Mar 10 12:59:51.881|31701|rw_thread_data.c:0354|Failed to create parser xml/wss/json</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">BD_MISC|CRIT |Mar 10 12:59:51.881|31701|temp_func.c:2070|ERROR: failed to create array of thread data.</span></p>
+<h2>Environment</h2>
+<ul><li>BIG-IP ASM module</li><li>ASM provisioned</li><li>ASM system variable <em>total_xml_memory</em> set to an extremely low value</li></ul>
+<p> </p>
+<h2>Cause</h2>
+<p>If the <em>total_xml_memory</em> system variable for the ASM XML parser is set to an abnormally low value (under 8000000), the bd process cannot allocate sufficient XML processing memory, resulting in repeated restart loops and ASM module failure.<br><br><span style="color: #15891f;"><em><strong>Note</strong>: values under the minimum value above (8000000) will generally result in an immediate ASM shutdown and restart. Low values of total_xml_memory above this value are unlikely to be sufficient for normal ASM operation. For the vast majority of customers, the default value (0) will allocate the appropriate amount of total_xml_memory for the platform. In some cases this may need to be increased due to inspecting large XML payloads. To determine the platform default value for total_xml_memory, set total_xml_memory to 0, restart ASM, and then run the following command at the BIG-IP bash prompt:</em></span></p>
+<p> <span style="font-family: &#39;courier new&#39;, courier, monospace;"># ps -ef | grep total_xml_memory</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">root     12750     1  0 15:46 ?        Sl     0:01 ./bd tmm_count 2 proc_cpuinfo_cpu_mhz 2445406 <strong>total_xml_memory 307200000</strong> total_umu_max_size 952320</span></p>
+<h2>Answer/Recommended Actions</h2>
+<p>Reset the <em>total_xml_memory</em> parameter in the internal database to its default value (0, which allows ASM to use the platform default value)</p>
+<p><span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;background-color: #f1f1f1;font-size: 13px;"># `mysql -p$(perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw) -D DCC -e &quot;UPDATE INTERNAL_CONFIG_ITEMS SET current_value = 0 WHERE field_name = &#39;total_xml_memory&#39;;&quot;`</span><br><span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;background-color: #f1f1f1;font-size: 13px;"># tmsh restart sys service asm</span></p>
+<p>Then confirm ASM module starts successfully and monitor for further errors.</p>
+<p> </p>
+<h2>Additional Information</h2>
+<p><a href="https://my.f5.com/manage/s/article/K10803" target="_self">K10803: Customize the amount of memory allocated to the BIG-IP ASM XML processing engine</a></p>
+<p><a href="https://my.f5.com/manage/s/article/K32739325" target="_self">K32739325: Watchdog detected failure for process. Process name: bd, Failure: Insufficient number of threads</a></p>
+<p> </p>
+<p> </p>
+</article>
+</body>
+</html>

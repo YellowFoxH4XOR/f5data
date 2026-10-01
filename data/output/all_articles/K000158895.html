@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000158895: Non-sequential self IP assignment in F5BigNetVlan when more than 10 selfip_v4s are configured</title>
+<meta name="description" content="Support Solution: Non-sequential self IP assignment in F5BigNetVlan when more than 10 selfip_v4s are configured — When scaling TMM pods and assigning self IPs through the F5BigNetVlan custom resource (CR), self IPs may be assigned in an unexpected (non-sequential) order if the CR contains more self IPs than the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000158895">
+</head>
+<body>
+<header>
+<h1>K000158895: Non-sequential self IP assignment in F5BigNetVlan when more than 10 selfip_v4s are configured</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-12-23</dd>
+<dt>Updated</dt><dd>2025-12-23</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP Next DNS CNF: 2.0.0</li><li>BIG-IP Next CNF</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000158895">https://my.f5.com/manage/s/article/K000158895</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When scaling TMM pods and assigning self IPs through the F5BigNetVlan custom resource (CR), self IPs may be assigned in an unexpected (non-sequential) order if the CR contains more self IPs than the number of running TMM replicas—particularly when the list exceeds 10 entries.</p>
+<p>Symptoms can include:</p>
+<ul><li>TMM pods using an unexpected self IP from the provided list (for example, a “12th” IP being used even when only 10 replicas exist).</li><li>Neighbor network devices failing to communicate with the unexpected IP(s).</li><li>The f5ingress logs showing DP indices ordered lexicographically rather than numerically, for example:
+<ul><li>DP-0, DP-1, DP-10, DP-11, DP-2, … DP-9</li></ul>
+</li></ul>
+<p> </p>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP Next DNS CNF</li><li>Version observed: 2.1.0</li><li>Configuration object: F5BigNetVlan CR
+<ul><li>Parameters involved: spec.selfip_v4s (and potentially spec.selfip_v6s)</li></ul>
+</li><li>Conditions:
+<ul><li>More self IPs configured in the CR than the number of existing TMM pods</li><li>Common trigger: configuring 11+ self IPs (DP-10/DP-11 introduces non-numeric ordering behavior)</li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p><span style="font-size: 12px;">ID2162853 </span></p>
+<h2>Recommended Actions</h2>
+<ol><li>Ensure the number of IPs in spec.selfip_v4s and/or spec.selfip_v6s matches the intended number of TMM replicas (do not provide extra IPs beyond the current pod count if deterministic positional assignment is required).
+<ol><li>For Example, this CR will list in Key order.
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>apiVersion: &quot;k8s.f5net.com/v1&quot;
+kind: F5BigNetVlan
+metadata:
+  name: &quot;tmm-client&quot;
+spec:
+  name: tmm-client
+  interfaces:
+  - &quot;1.1&quot;
+  selfip_v4s:
+  - &quot;11.11.11.150&quot;
+  - &quot;11.11.11.151&quot;
+  - &quot;11.11.11.152&quot;
+  - &quot;11.11.11.153&quot;
+  - &quot;11.11.11.154&quot;
+  - &quot;11.11.11.155&quot;
+  - &quot;11.11.11.156&quot;
+  - &quot;11.11.11.157&quot;
+  - &quot;11.11.11.158&quot;
+  - &quot;11.11.11.159&quot;
+  - &quot;11.11.11.160&quot;
+  - &quot;11.11.11.161&quot;
+  prefixlen_v4: 24
+</code></pre>
+</li><li>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>{
+  &quot;map&quot;: {
+    &quot;DP-0&quot;: &quot;11.11.11.150&quot;,
+    &quot;DP-1&quot;: &quot;11.11.11.151&quot;,
+    &quot;DP-10&quot;: &quot;11.11.11.160&quot;,
+    &quot;DP-11&quot;: &quot;11.11.11.161&quot;,
+    &quot;DP-2&quot;: &quot;11.11.11.152&quot;,
+    &quot;DP-3&quot;: &quot;11.11.11.153&quot;,
+    &quot;DP-4&quot;: &quot;11.11.11.154&quot;,
+    &quot;DP-5&quot;: &quot;11.11.11.155&quot;,
+    &quot;DP-6&quot;: &quot;11.11.11.156&quot;,
+    &quot;DP-7&quot;: &quot;11.11.11.157&quot;,
+    &quot;DP-8&quot;: &quot;11.11.11.158&quot;,
+    &quot;DP-9&quot;: &quot;11.11.11.159&quot;
+  },
+  &quot;pod&quot;: &quot;cnf-f5ingress-6ff8896f86-cqw2d&quot;,
+  &quot;ct&quot;: &quot;f5-controller&quot;,
+  &quot;cv&quot;: &quot;v0.761.1-0.0.238&quot;,
+  &quot;ns&quot;: &quot;default&quot;,
+  &quot;v&quot;: &quot;1.0&quot;
+}</code></pre>
+</li></ol>
+</li><li>If you previously configured more IPs than replicas and observed unexpected assignment:
+<ol><li>Update the F5BigNetVlan CR to remove the extra self IP entries (reduce the list to the replica count).</li><li>Scale/restart the affected components as needed so pods re-establish expected mappings (for example, scale down after removing extra IPs, then scale back up).</li></ol>
+</li><li>Validate that none of the configured self IPs are invalid for use as host addresses (for example, do not configure a subnet broadcast address as a self IP). </li></ol>
+<h2>Additional Information</h2>
+<ul><li>Intended behavior is positional assignment (first self IP to first TMM pod, second to second, and so on), but this order is not guaranteed when more self IPs are configured than the number of existing TMM pods.</li><li>When more than 10 self IPs are present, the DP key ordering can become lexicographic (string-based), which can result in mappings like DP-10 and DP-11 being placed between DP-1 and DP-2, leading to non-sequential assignment.</li><li>If an unexpectedly selected address is unusable in the network (for example, a broadcast IP), it can lead to an outage.</li></ul>
+</article>
+</body>
+</html>

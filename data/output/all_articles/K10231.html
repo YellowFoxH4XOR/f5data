@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K10231: NTLM authentication fails if the Content-Length header is missing from 401 Unauthorized responses</title>
+<meta name="description" content="Known Issue: NTLM authentication fails if the Content-Length header is missing from 401 Unauthorized responses — This is the result of a known issue. If the origin web server responds to a client request with HTTP 401 (Unauthorized) but does not include a Content-Length header in the response, the BIG-IP…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K10231">
+</head>
+<body>
+<header>
+<h1>K10231: NTLM authentication fails if the Content-Length header is missing from 401 Unauthorized responses</h1>
+<dl>
+<dt>Type</dt><dd>Known Issue</dd>
+<dt>Published</dt><dd>2009-06-25</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>BIG-IP WebAccelerator: 9.4.7, 9.4.6, 9.4.5, 9.4.4, 9.4.8, 9.4.2, 9.4.1, 9.4.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K10231">https://my.f5.com/manage/s/article/K10231</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Known Issue</h3><p>This is the result of a known issue. If the origin web server responds to a client request with <b>HTTP 401 (Unauthorized)</b> but does not include a <b>Content-Length</b> header in the response, the BIG-IP WebAccelerator does not pass the response to the client. As a result, NTLM authentication fails.</p>
+
+<p><span class="note"><b>Note</b>: The <b>HTTP 401 (Unauthorized)</b> response indicates that the request requires authentication, and is the precipitating event for NTLM authentication transactions.</span></p>
+
+<p>For example, SAP servers send <b>HTTP 401 (Unauthorized)</b> responses without including the expected <b>Content-Length</b> header. When the BIG-IP WebAccelerator is deployed in front of SAP, clients never see the <strong>HTTP 401 (Unauthorized)</strong> response and the SAP login dialog box is never displayed. As a result, no clients can log in to SAP.</p>
+
+<p>F5 Networks Product Development tracked this issue as CR115080, and it was fixed in BIG-IP version 10.0.0. For information about upgrading, refer to the BIG-IP <a id="/content/kb/en-us/products/wa" href="https://support.f5.com/content/kb/en-us/products/wa.html" target="_blank">WebAccelerator</a> Release Notes.</p>
+
+<p><b>Workaround</b></p>
+
+<p>You can work around this issue by modifying the <b>_sys_WA_serverside</b> iRule to insert an appropriate <b>Content-Length</b> header into <strong>HTTP 401 (Unauthorized)</strong> responses that do not contain them. To do so, perform the following procedure:</p>
+
+<p><span class="warning"><b>Important</b>: The following procedure will interrupt traffic flowing through the BIG-IP WebAccelerator for a few seconds.</span></p>
+
+<ol><li>Log in to the BIG-IP command line.<br>     </li><li>Open the <b>/config/profile_base.conf</b> in a text editor.<br>     </li><li>Locate the <b>_sys_WA_serverside</b> iRule, which begins around line 1490 with the following line:<br>    <br>    <span class="example2">rule _sys_WA_serverside {<br>    </span></li><li>Modify the iRule to match the following example. To do so, insert the lines in <b>bold</b>:<br>    <br>    <span class="example2">rule _sys_WA_serverside {<br>    ...<br>      when HTTP_RESPONSE {<br>        if {$tmm_wa_no_detach == 1} {<br>          # Don&#39;t detach or disable if NTLM authorization<br>          ONECONNECT::detach disable<br>          ONECONNECT::reuse disable<br>        } else {<br>          if {[HTTP::status] == 401} {<br>            # Force non-NTLM 401s to detach, due to WA connpool behavior<br>            ONECONNECT::detach enable<br>    <b>        if {not [HTTP::header exists &quot;Content-Length&quot;]} {<br>               HTTP::collect 10000000<br>            }<br>    </b>      }<br>          if {$tmm_wa_oc == 0} {<br>            # Don&#39;t return connections to the connpool<br>            ONECONNECT::reuse disable <br>          }<br>        }<br>      }<br>    <br>    <b>  when HTTP_RESPONSE_DATA {<br>        HTTP::header insert &quot;Content-Length&quot; [HTTP::payload length] <br>      }<br>    </b><br>      when SERVER_CONNECTED {<br>    ...</span></li><li>Exit and save the file.<br>     </li><li>Load the new configuration by typing the following command:<br>    <br>    <span class="code">bigpipe load</span><br>     </li><li>Clear the cache and restart the BIG-IP WebAccelerator by typing the following command:<br>    <br>    <span class="code">wa_clear_cache</span></li></ol>
+</article>
+</body>
+</html>

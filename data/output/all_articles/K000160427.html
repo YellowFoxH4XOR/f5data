@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160427: Automating Modification of BIG-IP ASM JSON Profile Length and Structure Settings via API and Declarative WAF</title>
+<meta name="description" content="Support Solution: Automating Modification of BIG-IP ASM JSON Profile Length and Structure Settings via API and Declarative WAF — BIG-IP ASM JSON content profiles have maximum length and structure settings (such as maximum length, array length, and structure depth) that default to &quot;Any&quot; and require modification. This article…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160427">
+</head>
+<body>
+<header>
+<h1>K000160427: Automating Modification of BIG-IP ASM JSON Profile Length and Structure Settings via API and Declarative WAF</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-03-23</dd>
+<dt>Updated</dt><dd>2026-03-23</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160427">https://my.f5.com/manage/s/article/K000160427</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>BIG-IP ASM JSON content profiles have maximum length and structure settings (such as maximum length, array length, and structure depth) that default to &quot;Any&quot; and require modification. This article explains how to automate these changes using REST API and Declarative WAF, and how to ensure consistent enforcement when importing OpenAPI (Swagger) specification files.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP ASM (Application Security Manager)</li><li>JSON content profiles</li><li>API Security policies</li><li>OpenAPI (Swagger) specification files</li><li>REST API access</li><li>Declarative WAF</li></ul>
+<h2>Cause</h2>
+<p>Manual changes to JSON profile settings in the GUI do not persist after re-importing or updating the OpenAPI file. These settings must be defined in the OpenAPI schema or updated programmatically after import.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>To automate the modification of JSON profile length and structure settings:</p>
+<p><strong>Option 1: Define Constraints in OpenAPI Specification</strong></p>
+<ul><li>
+<p><span dir="ltr">For API Security–type policies, when the OpenAPI specification file is parsed and imported, the JSON profile enforcement is derived directly from the imported JSON Schema definitions. Within the schema, you can enforce length constraints using validation keywords such as maxLength (and minLength) to control the allowed size of string values.</span></p>
+<p><span dir="ltr">For more information about structural validation keywords, refer to “A Vocabulary for Structural Validation” in the JSON Schema specification:</span></p>
+<p><a href="https://json-schema.org/draft/2020-12/json-schema-validation#section-6" title="" target="_blank">https://json-schema.org/draft/2020-12/json-schema-validation#section-6</a></p>
+</li></ul>
+<p><strong>Option 2: Update via REST API</strong><strong></strong></p>
+<ol><li>Find the Policy ID:<br><span style="background-color: #f1f1f1;">POLICY_ID=`curl -k -u ${BIGIP_USER}:${BIGIP_PASSWORD} https://${BIGIP}/mgmt/tm/asm/policies | jq -r --arg POLICY_NAME ${POLICY_NAME} &#39;.items[] | select(.name == $POLICY_NAME) | .id&#39;`</span></li><li>Find the JSON Profile ID:<br><span style="background-color: #f1f1f1;">PROFILE_ID=`curl -k -u ${BIGIP_USER}:${BIGIP_PASSWORD} https://${BIGIP}/mgmt/tm/asm/policies/$POLICY_ID/json-profiles | jq -r --arg PROFILE_NAME ${PROFILE_NAME} &#39;.items[] | select(.name == $PROFILE_NAME) | .id&#39;`</span></li><li>Update the profile using PATCH:<br><span style="background-color: #f1f1f1;">curl -k -u ${BIGIP_USER}:${BIGIP_PASSWORD} https://${BIGIP}/mgmt/tm/asm/policies/$POLICY_ID/json-profiles/$PROFILE_ID -X PATCH -d &#39;{<br>&quot;defenseAttributes&quot;: {<br>&quot;maximumTotalLengthOfJSONData&quot;: 30000,<br>&quot;maximumArrayLength&quot;: 3000,<br>&quot;maximumStructureDepth&quot;: 20,<br>&quot;maximumValueLength&quot;: 200,<br>&quot;tolerateJSONParsingWarnings&quot;: false<br>}<br>}&#39;</span></li></ol>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: You must change the entire defenseAttributes property of the profile. You need to include the entire object, not just changes.</em></span></p>
+<p><strong>Option 3: Use Declarative WAF</strong></p>
+<ul><li>Create a Declarative Policy JSON file that imports the OpenAPI file and applies modifications in one operation. Example:</li></ul>
+<p><code>{<br>  &quot;policy&quot;: {<br>    &quot;name&quot;: &quot;d_test_1&quot;,<br>    &quot;template&quot;: { &quot;name&quot;: &quot;POLICY_TEMPLATE_API_SECURITY&quot; },<br>    &quot;open-api-files&quot;: [<br>      { &quot;link&quot;: &quot;http://example.com/openapiwaf_1.yml&quot; }&quot;<br>    ]<br>  },<br>  &quot;modifications&quot;: [<br>    {<br>      &quot;entityChanges&quot;: {<br>        &quot;metacharOverrides&quot;: [<br>          { &quot;isAllowed&quot;: true, &quot;metachar&quot;: &quot;0x2d&quot; },<br>          { &quot;isAllowed&quot;: true, &quot;metachar&quot;: &quot;0x20&quot; }<br>        ],<br>        &quot;defenseAttributes&quot;: {<br>          &quot;maximumTotalLengthOfJSONData&quot;: 30000,<br>          &quot;maximumArrayLength&quot;: 3000,<br>          &quot;maximumStructureDepth&quot;: 20,<br>          &quot;maximumValueLength&quot;: 200,<br>          &quot;tolerateJSONParsingWarnings&quot;: false<br>        }<br>      },<br>      &quot;entity&quot;: { &quot;name&quot;: &quot;json_POST_~sample_endpoint&quot; },<br>      &quot;entityType&quot;: &quot;json-profile&quot;,<br>      &quot;action&quot;: &quot;update-append&quot;,<br>      &quot;description&quot;: &quot;Allow the matched Meta Character on the matched Content Profile&quot;<br>    }<br>  ]<br>}</code></p>
+<ul><li>Import the Declarative Policy using:</li></ul>
+<p><span style="background-color: #f1f1f1;">curl -ksu admin:admin https://${BIGIP}/mgmt/tm/asm/tasks/import-policy -H &quot;Content-Type: application/json&quot; -d &#39;{&quot;fileReference&quot;: {&quot;link&quot;: &quot;http://example.com/DeclarativePolicy.json&quot;}}&quot;&#39;</span> <br><span style="color: #15891f;"><em><strong>Note</strong>: Manual changes must be reapplied after each OpenAPI re-import unless handled via automation.</em></span></p>
+<h2>Additional Information</h2>
+<ul><li>When using OpenAPI import, always define constraints in the schema for consistent enforcement.</li><li>Any manual changes to JSON profile settings will be overwritten by subsequent OpenAPI imports unless automated.</li><li>Refer to the JSON Schema specification for structural validation keywords.</li></ul>
+</article>
+</body>
+</html>

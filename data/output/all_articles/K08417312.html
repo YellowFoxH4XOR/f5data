@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K08417312: BIG-IQ automatically triggers configuration changes in LTMs</title>
+<meta name="description" content="Support Solution: BIG-IQ automatically triggers configuration changes in LTMs — HA pair goes of out of sync (Changes pending) intermittently or when the CM is restarted or rebooted.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K08417312">
+</head>
+<body>
+<header>
+<h1>K08417312: BIG-IQ automatically triggers configuration changes in LTMs</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-02-03</dd>
+<dt>Updated</dt><dd>2026-01-14</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IQ</li><li>BIG-IQ Centralized Management: 8.4.0, 8.4.X, 8.0.0, 8.0.X, 8.1.0, 8.1.X, 8.2.0, 8.2.X, 8.3.0, 8.3.X, 8.X.X</li><li>BIG-IP Analytics: 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 17.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K08417312">https://my.f5.com/manage/s/article/K08417312</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+<ul><li>HA pair goes of out of sync (Changes pending) intermittently or when the CM is restarted or rebooted.</li><li>The following log messages can be seen in the <em>/var/log/audit</em> file:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>var/log/audit:Feb 13 19:56:43 bigip1.local notice icrd_child[15965]: 01420002:5: AUDIT - pid=15965 user=admin folder=/Common module=(tmos)# status=[Command OK] cmd_data=run util bash -c &quot;tmsh delete sys application service /Common/bigiq-analytics.app/bigiq-analytics&quot;
+/var/log/audit:Feb 13 19:56:44 bigip1.local notice icrd_child[15965]: 01420002:5: AUDIT - pid=15965 user=admin folder=/Common module=(tmos)# status=[Command OK] cmd_data=run util bash -c &quot;tmsh delete sys application template f5.bigiq-analytics&quot;
+/var/log/audit:Feb 13 19:56:46 bigip1.local notice icrd_child[15965]: 01420002:5: AUDIT - pid=15965 user=admin folder=/Common module=(tmos)# status=[Command OK] cmd_data=run util bash -c &quot;tmsh load sys application template /var/config/rest/iapps/staging/f5.bigiq-analytics.tmpl&quot;
+/var/log/audit:Feb 13 19:56:46 bigip1.local notice icrd_child[15965]: 01420002:5: AUDIT - pid=15965 user=admin folder=/Common module=(tmos)# status=[Command OK] cmd_data=modify sys db avr.addrandomdelaybeforesnapshot { value enable }
+/var/log/audit:Feb 13 19:56:48 bigip1.local notice icrd_child[15965]: 01420002:5: AUDIT - pid=15965 user=admin folder=/Common module=(tmos)# status=[Command OK] cmd_data=create sys application service /Common/bigiq-analytics { template /Common/f5.bigiq-analytics variables add { statistics__pushinterval { value 60 } statistics__support { value No } statistics__customcollection { value Yes } } lists add { statistics__customcollectionconfig { value { tmm_stat interface_stat cpu_info_stat disk_info_stat host_info_stat rule_stat virtual_server_stat pool_member_stat profile_dns_stat gtm_wideip_stat dns_cache_resolver_stat tmmdns_zone_stat } } } }</code></pre>
+</li></ul>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>BIG-IQ CM</li><li>BIG-IQ DCD</li><li>Managed BIG-IP HA cluster</li><li>Stats collection enabled for the BIG-IPs</li><li>BIG-IP auto sync not configured </li></ul>
+<p><span class="sectiontitle">Cause</span></p>
+<p>The BIG-IQ CM periodically re-enables statistics collection, by deleting and reinstalling the analytics iApp. This causes the Commit ID to change and end up being different between the peers.</p>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<p>You can consider</p>
+<ul><li>Either Changing the settings in the BIG-IP to enable auto-sync. This will push any change made by the BIG-IQ to the peer device automatically or</li><li>Set autoReenableStats to false on BIG-IQ CM</li></ul>
+<p><strong>Set autoReenableStats to false on BIG-IQ CM</strong></p>
+<ol><li>On the Centralized Manager CLI: Go to the REST configuration directory:<br><span style="background-color: #f1f1f1;"># cd /var/config/rest/config</span></li><li>Backup the <em><strong>restjavad.properties.json</strong></em> file<br><span style="background-color: #f1f1f1;"># cp restjavad.properties.json restjavad.properties.json.backup</span></li><li>Using a text editor like vi or nano edit the <strong><em>restjavad.properties.json</em></strong></li><li>Insert the following lines under the &quot;stats&quot; section:<br><pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>&quot;deviceMonitor&quot;:
+        {
+               &quot;scheduleDelaySec&quot;: 60,
+               &quot;scheduleCheckDelaySec&quot;: 60,
+               &quot;minimumConfigAgeSec&quot;: 600,
+               &quot;correctDCDCheckFirstDelayMin&quot;: 10,
+               &quot;correctDCDCheckSecondDelayMin&quot;: 720,
+               &quot;minimumReenableIntervalSec&quot;: 600,
+               &quot;lastPostAgeCheckSec&quot;: 300,
+               &quot;autoReenableStats&quot;: false
+         }</code></pre>
+<span style="color: #15891f;"><em><strong>Note</strong>: if <strong>&quot;deviceMonitor&quot;</strong> subsection already exists with some of the parameters using non-default values under the &quot;stats&quot; section, then only insert/ add the <strong>&quot;autoReenableStats&quot;: false </strong>line.</em></span></li><li>Save the file and exit the text editor.</li><li>Restart restjavad to load the new settings <em><strong>(no service impact, WebUI will restart)</strong></em><br><span style="background-color: #f1f1f1;"># bigstart restart restjavad </span></li></ol>
+<p><span class="sectiontitle">Additional Information</span></p>
+<p>None</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000092449: Unable to get the WEB page of the controller - certs expired</title>
+<meta name="description" content="Support Solution: Unable to get the WEB page of the controller - certs expired — The connection to the server localhost:8080 was refused - did you specify the right host or port?">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000092449">
+</head>
+<body>
+<header>
+<h1>K000092449: Unable to get the WEB page of the controller - certs expired</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-11-02</dd>
+<dt>Updated</dt><dd>2023-12-20</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Controller: 3.19.X, 3.18.X, 3.17.X, 3.16.X, 3.15.X, 3.14.X, 3.13.X, 3.12.X, 3.10.X, 3.9.X, 3.8.X, 3.7.X, 3.6.X, 3.5.X, 3.4.X, 3.3.X, 3.2.X, 3.1.X, 3.0.X, 3.20.X, 3.21.X, 3.22.X, 3.22.8, 3.22.7, 3.22.6, 3.22.5, 3.22.4, 3.22.3, 3.22.2, 3.22.1, 3.22.0, 3.21.0, 3.20.1, 3.20.0, 3.19.5-APIM, 3.19.4-APIM, 3.19.3-APIM, 3.19.2-APIM, 3.19.1-APIM, 3.19.0-APIM, 3.18.3, 3.18.2, 3.18.1-APIM, 3.18.1, 3.18.0-APIM, 3.18.0, 3.17.0, 3.16.1, 3.15.0, 3.14.0, 3.13.0, 3.12.1, 3.12.0, 3.10.0, 3.9.0, 3.8.0, 3.7.0, 3.6.0, 3.5.0, 3.4.0, 3.3.0, 3.2.0, 3.1.0, 3.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000092449">https://my.f5.com/manage/s/article/K000092449</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Description</strong></h2>
+
+<p>Unable to get the Nginx Controller WEB page shows the following error:</p>
+
+<h1>This site can’t be reached</h1>
+
+<p><strong>&lt;Controller IP&gt;</strong> refused to connect.</p>
+
+<p><br>From console return the following:<br><br>Check running version:</p>
+
+<pre class="ckeditor_codeblock">
+$ /opt/nginx-controller/helper<strong>.</strong>sh version
+Installed version: 3.18.0
+The connection to the server localhost:8080 was refused - did you specify the right host or port?</pre>
+
+<p>Check Controller status:</p>
+
+<pre class="ckeditor_codeblock">
+$ /opt/nginx-controller/helper<strong>.</strong>sh controller status
+ERROR: No services are deployed. NGINX Controller is not installed.
+</pre>
+
+<ul></ul>
+
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Environment</strong></h2>
+
+<ul><li><span style="font-size: 14px;font-family: Arial, sans-serif;">Nginx-controller</span></li></ul>
+
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Cause</strong></h2>
+
+<p><span style="font-size: 10.5pt;font-family: Arial, sans-serif;">Certificate validation date expired.</span></p>
+
+<h2><span style="font-size: 10.5pt;font-family: Arial, sans-serif;"> </span><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Recommended Actions</strong></h2>
+
+<ol><li>Check the kubernetes certificates validation date from CLI:</li></ol>
+
+<pre class="ckeditor_codeblock">
+# sudo kubeadm alpha certs check-expiration</pre>
+
+<ol start="2"><li>If certificate expired, follow the steps:</li></ol>
+
+<pre class="ckeditor_codeblock">
+# sudo systemctl stop kubelet
+# sudo kubeadm alpha certs renew all
+cd to the home directory of the user who installed NGINX Controller.
+# mv .kube/config .kube/config.old
+# sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+# sudo chown $(id -u):$(id -g) $HOME/.kube/config
+# sudo chmod 777 $HOME/.kube/config
+# export KUBECONFIG=.kube/config
+# sudo shutdown now -r</pre>
+
+<ol start="3"><li>Check to see if the kubelet server certificate is expired by entering the following command and observing the validity date:  </li></ol>
+
+<pre class="ckeditor_codeblock">
+sudo openssl x509 -in /var/lib/kubelet/pki/server.pem -text -noout </pre>
+
+<p>If it is expired, here are the steps to renew.</p>
+
+<ol start="1" style="list-style-type: lower-alpha;"><li>Back up and remove the existing kubelet server certs:</li></ol>
+
+<ul><li>From <strong><span style="font-family: Courier New,Courier,monospace;"><code>/var/lib/kubelet/pki/</code></span></strong> backup the files: <span style="font-family: Courier New,Courier,monospace;">server.csr, server.key,</span> and <span style="font-family: Courier New,Courier,monospace;">server.pem</span></li></ul>
+
+<ol start="2" style="list-style-type: lower-alpha;"><li>Create the following script to the NGINX Controller host and run it.</li></ol>
+
+<pre class="ckeditor_codeblock">
+# vi k8s-cert<strong>.</strong>sh            &lt;&lt;&lt;&lt; copy/paste below input
+======== Copy start from the line below =========
+#!/bin/bash
+function join_by { local IFS=&quot;$1&quot;; shift; echo &quot;$*&quot;; }
+usrmask=$(umask)
+mapfile -t altnames &lt; &lt;(awk &#39;/32 host/ { print &quot;IP:&quot;f } {f=$2}&#39; /proc/net/fib_trie | sort -u)
+umask u=rwx,go=
+sudo openssl genrsa -out /var/lib/kubelet/pki/server.key 2048
+sudo openssl req -new -key /var/lib/kubelet/pki/server.key \
+  -subj &quot;/C=US/ST=Washington/L=Seattle/O=F5, Inc./OU=Controller/CN=kubelet&quot; \
+  -out /var/lib/kubelet/pki/server.csr
+sudo bash -c &quot;openssl x509 -req -in /var/lib/kubelet/pki/server.csr \
+  -extfile &lt;(printf \&quot;subjectAltName=$(join_by , &quot;${altnames[@]}&quot;)\&quot;) \
+  -CA /etc/kubernetes/pki/ca.crt \
+  -CAkey /etc/kubernetes/pki/ca.key -CAcreateserial \
+  -out /var/lib/kubelet/pki/server.pem -days 365 -sha256&quot;
+umask &quot;$usrmask&quot;
+========== Copy Ends at the line above ===============
+Get the script with the right privilege
+# chmod +x k8s-cert<strong>.</strong>sh
+
+Run the created script:
+# ./k8s-cert<strong>.</strong>sh</pre>
+
+<ol start="3" style="list-style-type: lower-alpha;"><li>Check that new server.csr/ key /pem files are created in <code>/var/lib/kubelet/pki/</code>.</li><li>Restart kubelet </li></ol>
+
+<pre class="ckeditor_codeblock">
+# sudo systemctl restart kubelet
+# sudo systemctl status kubelet
+</pre>
+
+<ol start="6" style="list-style-type: lower-alpha;"><li>Run <code>sudo helper<strong>.</strong>sh controller stop</code>, and wait for all pods to terminate, Once done, run <code>sudo helper<strong>.</strong>sh controller start, as it shows below</code>.</li></ol>
+
+<pre class="ckeditor_codeblock">
+# /opt/nginx-controller/helper<strong>.</strong>sh controller stop
+# kubectl get pods         &lt;&lt;&lt; wait for all pods to terminate
+# /opt/nginx-controller/helper<strong>.</strong>sh controller start</pre>
+
+<ol start="4"><li>If some of the pods are still not <strong><span style="font-family: Courier New,Courier,monospace;">Running </span></strong>and have status <strong><span style="font-family: Courier New,Courier,monospace;">CrashLoopBackOff</span></strong>,</li></ol>
+
+<pre class="ckeditor_codeblock">
+root@nginx-ctrl-adc:~# kubectl get pods
+NAME                                          READY   STATUS             RESTARTS   AGE
+analytics-mgr-68bc8d5789-qc6gp                0/1     <strong>CrashLoopBackOff</strong>   9          16m
+apigw-njhxd                                   0/1     <strong>CrashLoopBackOff</strong>   7          16m
+catalogs-688c66d558-k9r8c                     1/1     Running            0          16m
+clickhouse-0                                  1/1     Running            0          16m
+cloud-mgr-79df88d977-wcmzp                    0/1     <strong>CrashLoopBackOff</strong>   9          16m
+controller-postgres-0                         1/1     Running            0          16m
+controller-postgres-backup-1666609200-cfstf   0/1     Completed          0          155m
+controller-postgres-backup-1666612800-rkphg   0/1     Completed          0          95m
+controller-postgres-backup-1666616400-hbrg7   0/1     Completed          0          35m
+coreapi-59f6c4fff4-k5r67                      1/1     Running            0          16m
+cron-869db5f8d6-qs6zk                         1/1     Running            0          16m
+dataplane-manager-568cc85f74-xgxrl            0/1     <strong>CrashLoopBackOff</strong>   9          16m
+db-consumer-6d89568cf7-mlrv5                  1/1     Running            0          16m
+db-rollup-job-1666617900-gbksg                0/1     Completed          0          10m
+db-rollup-job-1666618200-vnzbq                0/1     Completed          0          5m33s
+db-rollup-job-1666618500-rgh9j                0/1     Completed          0          32s
+declarative-ext-api-5585564857-vwqm5          0/1     <strong>CrashLoopBackOff   </strong>9          16m
+events-759f5486b7-5ttqv                       1/1     Running            0          16m
+forwarder-manager-647bc7bf85-f4q9f            1/1     Running            0          16m
+metrics-767c997cd7-z2dv9                      1/1     Running            0          16m
+nats-749985958c-xjmnl                         3/3     Running            0          16m
+nats-streaming-5858564fd6-7fvqx               0/1     <strong>CrashLoopBackOff   </strong>7          16m
+nats-streaming-worker-75844dfcc4-hcmmr        0/1     <strong>CrashLoopBackOff   </strong>7          16m
+platform-mgr-694d674744-cqj7v                 0/1     <strong>CrashLoopBackOff   </strong>7          16m
+secrets-svc-5db864dcfd-94zfd                  0/2     <strong>CrashLoopBackOff</strong>   14         16m
+stan-proxy-648785cb9f-rv678                   0/1     <strong>CrashLoopBackOff   </strong>7          16m
+</pre>
+
+<div style="margin-left: 40px;"> </div>
+
+<div>You can run the following script to check the secrets <span style="font-family: Courier New,Courier,monospace;">./checkcerts<strong>.</strong>sh</span></div>
+
+<p><span style="color: #27ae60;"><strong>Note: You will need to create the script as it shown below</strong></span></p>
+
+<pre class="ckeditor_codeblock">
+# vi ./checkcerts<strong>.</strong>sh
+
+======== Copy start from the line below =============
+#! /bin/bash
+#
+# Check NGINX Controller pod certificates
+NAMESPACE=nginx-controller
+
+for node in $(kubectl get secrets | grep certs | awk &#39;{print $1}&#39;); do
+    client=$(kubectl get secret $node -o &quot;jsonpath={.data[&#39;client\.crt&#39;]}&quot; | base64 -d | openssl x509 -enddate -noout 2&gt;/dev/null)
+    server=$(kubectl get secret $node -o &quot;jsonpath={.data[&#39;server\.crt&#39;]}&quot; | base64 -d | openssl x509 -enddate -noout 2&gt;/dev/null)
+
+    if [ -z &quot;$client&quot; ]
+    then
+       client=&quot;Not Found&quot;
+    fi
+
+    if [ -z &quot;$server&quot; ]
+    then
+       server=&quot;Not Found&quot;
+    fi
+
+    printf &quot;$node\n&quot;
+    printf &quot;\tclient cert: $client\n&quot;
+    printf &quot;\tserver cert: $server\n&quot;
+
+done
+========= Copy ends in the line above =========
+Get the script with the right privilege
+# chmod +x ./checkcerts<strong>.</strong>sh
+
+Run the created script:
+# ./checkcerts<strong>.</strong>sh</pre>
+
+<ol start="5"><li>In order to regenerate the certs and resolve issue with still problematic certs, you can run an .<code>/update<strong>.</strong>sh</code></li></ol>
+
+<pre class="ckeditor_codeblock">
+admin@nginx-ctrl-adc:~/controller-installer$ ./update<strong>.</strong>sh
+
+ --- This script will upgrade the NGINX Controller system ---
+[sudo] password for admin:
+Update logs will be stored in /var/log/nginx-controller/nginx-controller-update.log
+  1. Checking for required tools: rev head numfmt basename tee grep id less comm dirname getent cat awk tar mkdir base64 sort ps openssl sed envsubst jq gunzip. All found.
+  2. Checking for current running NGINX Controller stack... The current stack is k8s
+  3. Detecting the current NGINX Controller version... 3.22.2
+  4. Detecting new NGINX Controller version... 3.22.2
+  5. Checking Docker version...
+ Docker version 19.03.15, build 99e3ed8919
+  6. Checking Kubernetes...
+  7. Loading Docker images...
+Loaded image: controller-analytics/events:0.237.1-485793094.release-3-22
+Loaded image: controller-backend/controller-cron:3.22.0-423751891
+Loaded image: controller-backend/controller-prod:3.22.0-423751891
+Loaded image: metallb/controller:v0.9.5
+Loaded image: metallb/speaker:v0.9.5
+Loaded image: agent-ingest/agent-ingest:0.1.0-bld.272923322
+Loaded image: certificate-container/certificate-container:0.5.8-485759373.release-3-22
+Loaded image: controller-analytics/db-consumer:0.237.1-485793094.release-3-22
+Loaded image: vault-startup/vault-startup:0.3.0
+Loaded image: controller-analytics/catalogs:0.237.1-485793094.release-3-22
+Loaded image: controller-infra/cloud-mgr:0.44.9
+Loaded image: controller-backend/controller-init:3.22.0-423751891
+Loaded image: controller-analytics/forwarder-manager:0.237.1-485793094.release-3-22
+Loaded image: controller-installer/apigw:3.22.2-487441343
+Loaded image: controller-analytics/db-rollup-job:0.237.1-485793094.release-3-22
+Loaded image: controller-installer/nginx-init:3.22.2-487441343
+Loaded image: nats/nats:0.0.7
+Loaded image: nats/tls-proxy:0.0.5
+Loaded image: controller-analytics/clickhouse-secured-migrations:0.237.1-485793094.release-3-22
+Loaded image: controller-data-plane/declarative-ext-api:0.1.0-485875793.release-3-22
+Loaded image: controller-infra/secrets:0.2.17
+Loaded image: controller-analytics/analytics-mgr:0.237.1-485793094.release-3-22
+Loaded image: controller-data-plane/apim-dataplane-manager:0.5.9-485820000.release-3-22
+Loaded image: nats/nats-streaming:0.1.1
+Loaded image: vault:1.2.7
+Loaded image: controller-analytics/metrics:0.237.1-485793094.release-3-22
+Loaded image: controller-installer/postgres:3.22.2-487441343
+Loaded image: nats/stan-proxy:0.0.42
+  8. Extracting information from the current NGINX Controller...
+NGINX Controller is using a local for the configuration and/or analytics database
+and cannot be configured as a resilient cluster. To configure NGINX Controller
+as a resilient cluster, use external volumes for the analytics and config databases.
+For more information, refer to
+https://docs.nginx.com/nginx-controller/admin-guides/install/resilient-cluster-private-cloud/.
+Generating a RSA private key
+...........................++++
+.......................................................................++++
+writing new private key to &#39;/home/admin/controller-installer/files/k8s/base/certs/controller/server.key&#39;
+-----
+  9. Running the database migration from 3.22.2 to 3.22.2
+
+</pre>
+
+<p><span style="color: #27ae60;"><strong>Note: The above shows a normal functioning update.</strong></span></p>
+
+<p><strong><span style="color: #c0392b;">Important: In some cases, in step 5, some errors might appear - running <span style="font-family: Courier New,Courier,monospace;">./update.sh</span> get the following error:</span></strong></p>
+
+<pre class="ckeditor_codeblock">
+8. Extracting information from current controller...
+ <span style="color: #e74c3c;">Failed to backup config database. Please see the logs available at /opt/nginx-controller/postgres_data/backup</span></pre>
+To overcome it, we need to edit ./update.sh and comment out the following lines by adding &quot;<em>#</em>&quot;:
+
+<pre class="ckeditor_codeblock">
+# if ! dump_postgres &quot;${install_path}${postgres_backup_location}&quot; false; then
+#        printr &quot;\n Failed to backup config database. Please see the logs available at ${install_path}${postgres_backup_location}\n&quot;
+#        exit 1
+#    fi</pre>
+
+<p>  Once done - run update script to take affect:</p>
+
+<pre class="ckeditor_codeblock">
+# ./update<strong>.</strong>sh</pre>
+
+<p> </p>
+
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Additional Information</strong></h2>
+
+<p> </p>
+</article>
+</body>
+</html>

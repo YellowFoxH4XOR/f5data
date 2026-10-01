@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000138214: After upgrade GSLB configuration is missing on BIG-IP DNS</title>
+<meta name="description" content="Support Solution: After upgrade GSLB configuration is missing on BIG-IP DNS — After reboot to volume with a new software version, BIG-IP cannot load gtm configuration.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000138214">
+</head>
+<body>
+<header>
+<h1>K000138214: After upgrade GSLB configuration is missing on BIG-IP DNS</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-02-07</dd>
+<dt>Updated</dt><dd>2024-02-07</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 16.1.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000138214">https://my.f5.com/manage/s/article/K000138214</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+
+<p>After reboot to volume with a new software version, BIG-IP cannot load gtm configuration.<br> </p>
+
+<p>In /var/log/gtm there are errors:</p>
+
+<pre>
+<span style="font-family: Courier New,Courier,monospace;">Jan 12 15:22:33 dns-bigip1.test Unexpected Error: Configuration cannot be saved unless mcpd is in the running phase. Save was canceled. See &quot;show sys mcp&quot; and &quot;show sys service&quot;. If &quot;show sys service&quot; indicates that mcpd is in the run state, but &quot;show sys mcp&quot; is not in phase running, issue the command &quot;load sys config&quot; to further diagnose the problem.
+Jan 12 15:22:33 dns-bigip1.test err gtmd[15109]: 011a0058:3: hookOnChild: tmsh config save exited with error code 1</span>
+</pre>
+
+<p>The /var/log/ltm includes logs like below:</p>
+
+<pre>
+<span style="font-family: Courier New,Courier,monospace;">Jan 12 15:21:05 dns-bigip1.test err tmsh[13088]: 01420006:3: Loading configuration process failed.
+Jan 12 15:21:05 dns-bigip1.test emerg load_config_files[13082]: &quot;/usr/bin/tmsh -n -g -a load sys config partitions all gtm-only&quot; - failed. -- Loading schema version: 14.1.5.4
+Jan 12 15:21:06 dns-bigip1.test err mcpd[7900]: 01070678:3: Full gtm configuration load failed ( Original ).</span></pre>
+
+<p> </p>
+
+<p><span style="font-size: 14px;">When running &quot;<span style="background-color: #dddddd;">tmsh load sys config gtm-only verify</span>&quot; you got:</span></p>
+
+<pre>
+<span style="font-family: Courier New,Courier,monospace;">#tmsh load sys config gtm-only verify
+Validating GTM system configuration...
+/usr/local/gtm/include/gtm_base_region_isp.conf
+/usr/share/monitors/gtm_base_monitors.conf
+Validating configuration...
+Loading schema version: 14.1.5.4
+/config/bigip_gtm.conf
+Loading schema version: 16.1.4.2
+<strong>010712d2:3: DNSSEC Key Generation XX of key /Common/<a href="http://example.com/" style="font-size: 14px;" target="_blank">example.com</a><span style="font-size: 14px;">-zsk</span> is incomplete.
+Unexpected Error: Validating configuration process failed.
+</strong></span>
+</pre>
+
+<h2>Environment</h2>
+
+<ul><li>BIG-IP DNS</li><li>DNSSEC configured</li></ul>
+
+<p> </p>
+
+<h2>Cause</h2>
+
+<p>Configuration cannot be validated and loaded because bigip_gtm.conf contains DNSSEC key with &#39;generation&#39; section which does not include &#39;private-text&#39; and &#39;public-text&#39; (private and public DNSSEC keys).</p>
+
+<p> </p>
+
+<p>Due to previous failures, there may be generation section without DNSSEC keys.</p>
+
+<pre class="ckeditor_codeblock">
+ltm dns dnssec key /Common/example.com-zsk {
+      algorithm rsasha256
+      expiration-period 30:0:0:0
+      generation {
+             <strong> XX {
+                     handle F1F65BFCACEBE388820DB8FF20827D2F 
+              } </strong>
+              YY {
+                    creator dns-bigip1.test
+                    expiration 2024-02-04:15:26:19
+                    handle C5367BABB457B9BC26A7A1907019F2DA
+                    key-tag 53343
+                    private-text ***scrubbed***
+                    public-text ***scrubbed***
+                    rollover 2024-01-26:15:26:19
+              }
+     }
+     rollover-period 21:0:0:0
+}</pre>
+
+<p> </p>
+
+<h2>Recommended Actions</h2>
+
+<p>To solve the issue:</p>
+
+<p>1) Remove the incorrect section using text editor of your choice.</p>
+
+<p> </p>
+
+<p>In the given example, we need to remove 3 lines related to generation XX and after the change dnssec key should look like:</p>
+
+<pre class="ckeditor_codeblock">
+ltm dns dnssec key /Common/example.com-zsk {
+      algorithm rsasha256
+      expiration-period 30:0:0:0
+      generation {
+              YY {
+                    creator dns-bigip1.test
+                    expiration 2024-02-04:15:26:19
+                    handle C5367BABB457B9BC26A7A1907019F2DA
+                    key-tag 53343
+                    private-text ***scrubbed***
+                    public-text ***scrubbed***
+                    rollover 2024-01-26:15:26:19
+              }
+     }
+     rollover-period 21:0:0:0
+}</pre>
+
+<p><br>2) Run <span style="background-color: #dddddd;">tmsh load sys config gtm-only verify</span> to check if there are no other issues.</p>
+
+<p> </p>
+
+<p>3) If no errors appears, load configuration by running:</p>
+
+<p><span style="background-color: #dddddd;">tmsh load sys config gtm-only</span></p>
+
+<p> </p>
+
+<h2>Additional Information</h2>
+
+<p>None.</p>
+</article>
+</body>
+</html>

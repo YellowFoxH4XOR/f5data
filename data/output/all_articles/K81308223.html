@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K81308223: Modifying the HTTP X-Forwarded-For header to remove the route domain suffix</title>
+<meta name="description" content="Knowledge: Modifying the HTTP X-Forwarded-For header to remove the route domain suffix — HTTP requests to the BIG-IP virtual server initiate from a non-default route domain.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K81308223">
+</head>
+<body>
+<header>
+<h1>K81308223: Modifying the HTTP X-Forwarded-For header to remove the route domain suffix</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2018-11-20</dd>
+<dt>Updated</dt><dd>2025-04-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 14.X.X, 12.X.X, 11.X.X, 11.5.X, 11.4.X, 11.3.X, 11.2.X, 11.1.X, 11.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 11.6.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 11.6.5, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 11.5.1, 11.5.0, 11.4.1, 13.X.X, 11.3.0, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 11.4.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K81308223">https://my.f5.com/manage/s/article/K81308223</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>You should consider using this procedure under the following conditions:</p>
+
+<ul><li>Your BIG-IP system is configured with route domains.</li><li>HTTP requests to the BIG-IP virtual server initiate from a non-default route domain.</li><li>HTTP requests processed by the BIG-IP virtual server include the X-Forwarded-For (XFF) header.</li><li>The XFF header IP address includes the route domain suffix (%&lt;route domain number&gt;).</li><li>You want to remove the XFF header IP address value route domain suffix, or you want the XFF value to contain the IP address without the route domain suffix, followed by the IP address including the route domain suffix. For example &lt;IP address&gt;, &lt;IP address&gt;%&lt;route domain number&gt;.</li></ul>
+<h3>Description</h3><p>The following procedures demonstrate how to create a custom iRule that modifies the HTTP request containing the XFF header in which the IP address value of the header includes a route domain suffix.</p>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisites to use this procedure:</p>
+
+<ul><li>You have administrative access to the BIG-IP Configuration utility.</li><li>The virtual server is configured with an HTTP profile.</li></ul>
+
+<p><span class="sectiontitle">Procedures</span></p>
+
+<ul><li><a href="#no_suffix">Creating and applying a custom iRule to remove the route domain suffix from XFF header values</a></li><li><a href="#combo">Creating and applying a custom iRule that alters the XFF header value to contain the IP address without and with the route domain suffix</a></li></ul>
+
+<p><span class="subsectiontitle"><a id="no_suffix" name="no_suffix"></a>Creating and applying a custom iRule to remove the route domain suffix from XFF header values</span></p>
+
+<p>The following procedure describes how to create a custom iRule that replaces the XFF value with the original IP address without the route domain suffix. For example an XFF value of <strong>10.0.0.10%1</strong> is replaced with the value of <strong>10.0.0.10</strong>.</p>
+
+<p><span class="note"><strong>Note</strong>: If your servers rely on the XFF header for client tracking and you use the same IP address in multiple route domains where clients access the same servers, you cannot determine the route domain of the request from the server logs.</span></p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: F5 recommends performing the following procedure during a scheduled maintenance window.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Navigate to <strong>Local Traffic</strong> &gt; <strong>iRules</strong> &gt; <strong>iRule List</strong>.</li><li>Click <strong>Create</strong>.</li><li>Name the new iRule.</li><li>Enter the following text in the <strong>Definition</strong> box:
+	<p><span class="code">when HTTP_REQUEST {<br>	  if {[HTTP::header exists X-Forwarded-For]}{<br>	    log local0. &quot;Original X-Forwarded-For header value  [HTTP::header X-Forwarded-For] actual client address [IP::client_addr]&quot;<br>	      set no_rdsuffix_ip [getfield [HTTP::header &quot;X-Forwarded-For&quot;] &quot;,&quot; 1]<br>	      HTTP::header replace &quot;X-Forwarded-For&quot; $no_rdsuffix_ip<br>	      unset no_rdsuffix_ip<br>	      log local0. &quot;New X-Forwarded-For header value [HTTP::header X-Forwarded-For]&quot;<br>	  } else {<br>	      HTTP::header insert X-Forwarded-For [getfield [IP::client_addr] % 1]<br>	      log local0. &quot;New X-Forwarded-For header value header [HTTP::header X-Forwarded-For]&quot;<br>	  }<br>	}</span></p>
+
+	<p><span class="note"><strong>Note</strong>: To obtain diagnostic information about the iRule actions, remove the <strong>#</strong> symbols proceeding the <strong>log local0.</strong> statements.</span></p>
+	</li><li>Click <strong>Finished</strong>.</li><li>Navigate to<strong> Local Traffic Virtual Servers</strong> &gt; <strong>Virtual Server List</strong>.</li><li>Click the name of the affected virtual server.</li><li>Click the <strong>Resources</strong> tab.</li><li>For <strong>iRules</strong>, click <strong>Manage</strong>.</li><li>In the <strong>Available</strong> list, click the new iRule and move it to the <strong>Selected</strong> list.</li><li>Click <strong>Finished</strong>.</li></ol>
+
+<p><span class="subsectiontitle"><a id="combo" name="combo"></a>Creating and applying a custom iRule that alters the XFF header value to contain the IP address without and with the route domain suffix</span></p>
+
+<p>The following procedure describes how to create a custom iRule that sets the XFF value to contain the original IP address without the route domain suffix, followed by the original IP address with the route domain suffix. For example, an XFF value of <strong>10.0.0.10%1</strong> is replaced by the value of <strong>10.0.0.10, 10.0.0.10%1</strong>.</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: F5 recommends performing the following procedure during a scheduled maintenance window.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Navigate to <strong>Local Traffic</strong> &gt; <strong>iRules</strong> &gt; <strong>iRule List</strong>.</li><li>Click <strong>Create</strong>.</li><li>Name the new iRule.</li><li>Enter the following text in the <strong>Definition</strong> box:
+	<p><span class="code">when HTTP_REQUEST {<br>	if {[HTTP::header exists X-Forwarded-For]}{<br>	# log local0. &quot;Original X-Forwarded-For header value [HTTP::header X-Forwarded-For] actual client address [IP::client_addr]&quot;<br>	HTTP::header replace X-Forwarded-For &quot;[HTTP::header X-Forwarded-For], [getfield [IP::client_addr] % 1]&quot;<br>	# log local0. &quot;New X-Forwarded-For header value [HTTP::header X-Forwarded-For]&quot;<br>	 } else {<br>	HTTP::header insert X-Forwarded-For [getfield [IP::client_addr] % 1]<br>	# log local0. &quot;New X-Forwarded-For header value header [HTTP::header X-Forwarded-For]&quot;<br>	  }<br>	}</span></p>
+
+	<p><span class="note"><strong>Note</strong>: To obtain diagnostic information about the iRule actions, remove the <strong>#</strong> symbols proceeding the <strong>log local0.</strong> statements.</span></p>
+	</li><li>Click <strong>Finished</strong>.</li><li>Navigate to<strong> Local Traffic</strong> &gt; <strong>Virtual Servers</strong> &gt; <strong>Virtual Server List</strong>.</li><li>Click the name of the affected virtual server.</li><li>Click the <strong>Resources</strong> tab.</li><li>For <strong>iRules</strong>, click <strong>Manage</strong>.</li><li>In the <strong>Available</strong> list, click the new iRule and move it to the <strong>Selected</strong> list.</li><li>Click <strong>Finished</strong>.</li></ol>
+</article>
+</body>
+</html>

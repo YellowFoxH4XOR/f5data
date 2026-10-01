@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K42375400: Error Message: warning rmonsnmpd[PID]: AgentX session to master agent attempted to be re-opened</title>
+<meta name="description" content="Support Solution: Error Message: warning rmonsnmpd[PID]: AgentX session to master agent attempted to be re-opened — warning rmonsnmpd[1234]: AgentX session to master agent attempted to be re-opened.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K42375400">
+</head>
+<body>
+<header>
+<h1>K42375400: Error Message: warning rmonsnmpd[PID]: AgentX session to master agent attempted to be re-opened</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-06-30</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.X.X, 11.4.1, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 11.6.5, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 11.5.1, 11.5.0, 11.4.0, 11.3.0, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 12.X.X, 11.X.X, 11.5.X, 11.4.X, 11.3.X, 11.2.X, 11.1.X, 11.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 11.6.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.X.X, 13.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K42375400">https://my.f5.com/manage/s/article/K42375400</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>On BIG-IP systems configured with <strong>SNMP</strong>, you may see below message in <strong>/var/log/daemon.log</strong> for an abandoned <strong>SNMP </strong>connection:</p>
+
+<p><span class="example2">warning rmonsnmpd[1234]: AgentX session to master agent attempted to be re-opened.</span></p>
+
+<p>The <strong>rmonsnmpd </strong>is a subagent of <strong>snmpd </strong>that provides remote monitoring, alarm, and event functionality.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>SNMP configured</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Using below command, verify whether the <strong>PID </strong>shown in the message is still active on the system. If not, it suggest to be an <strong>abandoned </strong>SNMP connection.</p>
+
+<p><span class="code">tmsh show sys service | egrep -i &#39;snmpd&#39;</span></p>
+
+<p><span class="code">ps tree</span></p>
+
+<p>In below example, we do not see <strong>PID 1234</strong> running on the system; <strong>rmonsnmpd </strong>and <strong>snmpd </strong>have different values.</p>
+
+<p><span class="example2"># tmsh show sys service | egrep -i &#39;snmpd&#39;<br>rmonsnmpd    run (pid 7292) 8 days<br>snmpd        run (pid 7286) 8 days<br><br># ps tree<br>  &gt;&gt; runsv,7277 runsv rmonsnmpd<br>      &gt;&gt; rmonsnmpd,7292 /usr/sbin/rmonsnmpd -f -c /config/snmp/subagents.conf -s -l /dev/null</span></p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>When possible, you can restart the daemons to resolve the issue:</p>
+
+<p><span class="code">tmsh restart sys service rmonsnmpd snmpd</span></p>
+
+<p><span class="note">Note: Restarting above daemons temporarily interrupts snmp functionality.</span></p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>You can also filter out the log messages from daemon log file following below steps however it also involves restarting of another service, <strong>syslog-ng</strong>.</p>
+
+<p><span class="warning">Important: Changes to the syslog configuration should ordinarily be made using <strong>tmsh</strong>. Incorrect changes to the <strong>/etc/syslog-ng/syslog-ng.conf</strong> file can prevent <strong>syslog-ng</strong> from working correctly. Open a service request with F5 Support for assistance if necessary.</span></p>
+
+<ol><li>
+	<p>Backup current <strong>syslog-ng.conf </strong>file so it can be used to restore to default in case you make any mistake with editing the file causing <strong>syslog-ng</strong> failing to start.</p>
+
+	<p><span class="code">cp /etc/syslog-ng/syslog-ng.conf /etc/syslog-ng/syslog-ng.conf.backup</span></p>
+	</li><li>
+	<p>Using a text editor such as vi or vim, edit filter(f_daemon) section in <strong>/etc/syslog-ng/syslog-ng.conf</strong> so it looks like below:</p>
+
+	<p><span class="code"># *daemon.*<br>	filter f_daemon {<br>	   facility(daemon) and level(notice..emerg);<br>	};<br>	<br>	destination d_daemon {<br>	   file(&quot;/var/log/daemon.log&quot;);<br>	};<br>	<br>	filter f_agentx {<br>	not match(&quot;.*AgentX session to master agent attempted to be re-opened.*&quot;);<br>	};<br>	<br>	log {<br>	   source(s_syslog_pipe);<br>	   filter(f_daemon);<br>	   filter(f_agentx);<br>	   destination(d_daemon);<br>	};</span></p>
+	</li><li>Save the changes then exit</li><li>
+	<p>Restart <strong>syslog-ng </strong>to update the change</p>
+
+	<p><span class="code">tmsh restart sys service syslog-ng</span></p>
+	</li><li>
+	<p>Verify if the change is now updated by monitoring the daemon log file. For example:</p>
+
+	<p><span class="code">logger -p daemon.warning &quot;warning rmonsnmpd[1234]: AgentX session to master agent attempted to be re-opened.&quot;</span></p>
+	</li></ol>
+
+<p><span class="note">Note: Above changes applied to <strong>/etc/syslog-ng/syslog-ng.conf </strong>does not sync to the peer system therefore you have to apply the same steps on all affected systems separately. In addition, this modification of default file does not survive upgrade meaning you will need to re-apply all the steps after upgrade, if required.</span></p>
+</article>
+</body>
+</html>

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K52650034: Kern log warning message &#x27;&#x27;kernel: nf_conntrack: table full, dropping packet&#x27;&#x27;</title>
+<meta name="description" content="Support Solution: Kern log warning message &#x27;&#x27;kernel: nf_conntrack: table full, dropping packet&#x27;&#x27; — Control plane daemons communication becomes unstable or impossible">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K52650034">
+</head>
+<body>
+<header>
+<h1>K52650034: Kern log warning message &#x27;&#x27;kernel: nf_conntrack: table full, dropping packet&#x27;&#x27;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-06-04</dd>
+<dt>Updated</dt><dd>2024-09-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.5, 16.1.4, 15.1.10, 15.1.9, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 16.X.X, 14.0.1, 14.0.0, 16.1.3, 16.1.2, 16.1.1, 14.1.0, 15.X.X, 14.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 16.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K52650034">https://my.f5.com/manage/s/article/K52650034</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong><span class="sectiontitle">Description:</span></strong></h2>
+<p>The system suffers from network connectivity issues. You may observe one or many phenomenons such as:</p>
+<ul><li>Health Monitor flaps between up and down randomly</li><li>HA and Configuration Synchronization is unstable</li><li>Control plane daemons communication becomes unstable or impossible</li></ul>
+<p>The <strong>/var/log/kern.log</strong> shows the message:</p>
+<p><span class="example2">kernel: nf_conntrack: table full, dropping packet</span></p>
+<p> </p>
+<h2><strong><span class="sectiontitle">Environment:</span></strong></h2>
+<ul><li>Linux Kernel</li><li>Connectivity issues</li><li>Health Monitor check flaps</li><li>HA and Configuration Synchronization</li></ul>
+<h2><strong><span class="sectiontitle">Cause:</span></strong></h2>
+<p>When running multiple instances of a monitor with short interval time on a very busy BIG-IP system, e.g for a TCP monitor with short interval running more than a couple of thousand instances:</p>
+<p><span class="example2">ltm monitor tcp /Common/ltm_node_health {<br>    adaptive disabled<br>    defaults-from /Common/tcp<br>    destination *:*<br>    <strong>interval 2   &lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt; Low time interval</strong><br>    ip-dscp 0<br>    recv none<br>    recv-disable none<br>    send none<br>    time-until-up 15<br>    timeout 5<br>}</span></p>
+<p>When you have hundreds of instances of a monitor like the above running this causes the monitors to stop working or become unstable as there are a lot of connections in <strong>time-wait</strong> on the <strong>conntrack table</strong> when this number reaches the max limit/threshold configured.</p>
+<p>You can check the maximum value with the following command:</p>
+<p><span class="code">cat /proc/sys/net/nf_conntrack_max</span></p>
+<p>You can check the number of connections on the conntrack table by the command:</p>
+<p><span class="code">cat /proc/sys/net/netfilter/nf_conntrack_count</span></p>
+<p> </p>
+<h2><strong><span class="sectiontitle">Recommended Actions:</span></strong></h2>
+<ol><li>
+<p>One approach to try is to reduce the length of TIME-WAIT in conntrack table. The command to do this is as follows:</p>
+<p><span class="code">sysctl -w net.netfilter.nf_conntrack_tcp_timeout_time_wait=30</span></p>
+<p>The default value is 120 seconds, you can reduce it to 60s or 30s.</p>
+<p>If you want the solution to survive reboots, upgrades, RMAs, etc., run the command below. From the tee command to the last EOL is one command. Copy all the lines below and paste into your terminal.<br><br><span class="code">tee -a /config/startup &lt;&lt; EOL<br># Recommended action in K52650034, TIME_WAIT APPROACH<br>K52650034_WA_EXISTS=\$(grep net.netfilter.nf_conntrack_tcp_timeout_time_wait /etc/sysctl.conf | wc -l)<br><br>if [ &quot;\$K52650034_WA_EXISTS&quot; -eq 0 ]; then<br>    echo &#39;net.netfilter.nf_conntrack_tcp_timeout_time_wait = 30&#39; &gt;&gt; /etc/sysctl.conf<br>fi<br>EOL</span></p>
+</li><li>
+<p><span style="background-color: var(--lwc-colorbackgroundalt, #fff);color: var(--slds-g-color-neutral-base-10, #181818);">You can try increasing the custom short interval value on the monitor to the BIG-IP default value of 5 seconds.</span></p>
+</li><li style="text-align: left;">
+<p>You can also increase the table size by the below process:</p>
+<p>a) Take a backup copy of the existing file with the following command:</p>
+<p><span class="code">cp /etc/modprobe.d/f5-platform-el7-conntrack-default.conf /var/tmp/f5-platform-el7-conntrack-default.conf</span></p>
+<p>b) Edit file with vi editor <strong>/etc/modprobe.d/f5-platform-el7-conntrack-default.conf</strong></p>
+<p>c) Increase the hashsize value:</p>
+<p><span class="code">options nf_conntrack hashsize=262144</span></p>
+<p>d) Save the file.</p>
+<p>e) Reboot the system.   </p>
+<p>f) If you want the conntrack table size to survive reboots, upgrades, RMAs, etc., run the command below.  From the tee command to the last EOL is on command Copy all the lines below and paste into your terminal.</p>
+<pre class="language-markup"><code>tee -a /config/startup &lt;&lt; EOL
+
+#Recommended action in K52650034, HASH SIZE APPROACH
+K52650034_HASH_EXISTS=\$(grep hashsize=262144 /etc/modprobe.d/f5-platform-el7-conntrack-default.conf | wc -l)
+
+if [ &quot;\$K52650034_HASH_EXISTS&quot; -eq 0 ]; then
+    sed -i &#39;s/16384/262144/g&#39; /etc/modprobe.d/f5-platform-el7-conntrack-default.conf
+    echo 262144 &gt; /sys/module/nf_conntrack/parameters/hashsize
+fi
+
+EOL</code></pre>
+</li></ol>
+<p> </p>
+<h2><strong><span class="sectiontitle">Additional Information:</span></strong></h2>
+<p>None</p>
+</article>
+</body>
+</html>

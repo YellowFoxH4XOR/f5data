@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000141014: Connections of wired clients causes retransmission of packets on server side</title>
+<meta name="description" content="Support Solution: Connections of wired clients causes retransmission of packets on server side — When client&#x27;s connection is wireless the access to the virtual server works.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000141014">
+</head>
+<body>
+<header>
+<h1>K000141014: Connections of wired clients causes retransmission of packets on server side</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-09-11</dd>
+<dt>Updated</dt><dd>2024-11-05</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.X.X, 15.X.X, 14.X.X, 13.X.X, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0, 13.1.X, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.X, 13.0.1, 13.0.0, 17.0.0, 17.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000141014">https://my.f5.com/manage/s/article/K000141014</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When client&#39;s connection is wireless the access to the virtual server works.</p>
+<p>When client&#39;s connection is wired it does not work, there are tcp retransmissions on the server side from the BIG-IP to the backend servers.</p>
+<p>There is no response from servers to the BIG-IP after the initial tcp handshake.</p>
+<p> </p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>Clients not sending TSval Timestamps during the TCP three-way-handshake</li><li>Clients setting MSS during the TCP three-way-handshake but MSS is changed on the network path depending on their physical connection</li><li>TCP Profile Max Segment Size (MSS) is 1460 and Proxy Maximum Segment is enabled</li><li>Red hat servers</li></ul>
+<p> </p>
+<h2>Cause</h2>
+<p>During the initial TCP three-way-handshake clients do not include TSval timestamp.</p>
+<p>Wireless clients are setting an MSS equal to 1460 but network devices on the wireless network path are lowering down the MSS to 1250 bytes.</p>
+<p>Wired clients are setting an MSS equal to 1460 with no change on the wired network path.</p>
+<p>The BIG-IP did not add the TSval timestamp to the wired clients connections since it matches the MSS=1460 configured on the TCP profile and Proxy Maximum Segment is enabled, those causing the backend servers to not reply on the server side to the initial TCP syn sent from the BIG-IP when there is not TSval timestamp.</p>
+<p> </p>
+<h2>Recommended Actions</h2>
+<p><a href="https://my.f5.com/manage/s/article/K15072130" target="_blank">K15072130: Timestamps: TSval and TSecr are missing from SYN message sent from BIG-IP in case that the client is not sending TSval and TSecr</a></p>
+<p>Apply one of the below actions</p>
+<ol><li>Change behaviour on backend servers to allow the connection if the TSval timestamp is mandatory to establish tcp connections</li><li>Change behaviour on clients to include the TSval timestamp when the connection is started regardless of the connection type</li><li>Disable the Proxy Maximum Segment on the tcp profile</li></ol>
+<p> </p>
+<h2>Additional Information</h2>
+<p> </p>
+<p>Packet Capture Examples:</p>
+<p>For the clients using wireless connection you will see the behaviour shown below:</p>
+<ul><li>Client 172.19.10.10</li><li>Virtual server 10.11.11.11</li><li>Self-ip 10.10.10.10</li><li>Server 10.10.10.20</li></ul>
+<p> </p>
+<p>When taking a pcap on the client, there is not TSval Timestamp and MSS is set to 1460:</p>
+<pre class="language-markup"><code>485  4.562782 0.000000 172.19.10.10 → 10.11.11.11 52 65038 80 TCP 55695 → 80 [SYN] Seq=0 Win=64240 Len=0 MSS=1460 WS=256 SACK_PERM=1</code></pre>
+<p> </p>
+<p>When taking a pcap on the big-ip (client side), there is not TSval Timestamp and MSS was changed on the wireless network path setting it to 1250:</p>
+<pre class="language-markup"><code> 91  2.710087 0.000000 2322 172.19.10.10 → 10.11.11.11 52 65038 80 TCP IN s1/tmm2 : 65038 → 80 [SYN] Seq=0 Win=64240 Len=0 MSS=1250 WS=256 SACK_PERM=1</code></pre>
+<p> </p>
+<p>When taking a pcap on the big-ip (server side), the big-ip inserts the TSval Timestamp because the MSS is 1250 and then the MSS is 1262 which is lower than the MSS configured on the tcp profile: </p>
+<p>TCP_header + 1250 and TCP_header + 12 (TCP Timestamps Option is 12 bytes long in total) = 1262</p>
+<pre class="language-markup"><code> 171  2.742652 0.000003 2322 10.10.10.10 → 10.10.10.20 60 65038 8002 TCP OUT s1/tmm2 : 65038 → 8002 [SYN] Seq=0 Win=12620 Len=0 MSS=1262 WS=1 SACK_PERM=1 TSval=3080606285 TSecr=0</code></pre>
+<h2></h2>
+<p>For the clients using wired connection you will see the behaviour shown below:</p>
+<ul><li>Client 172.19.20.10</li><li>Virtual server 10.11.11.11</li><li>Self-ip 10.10.10.10</li><li>Server 10.10.10.20</li></ul>
+<p> </p>
+<p>When taking a pcap on the client, there is not TSval Timestamp and MSS is set to 1460:</p>
+<pre class="language-markup"><code>307  3.037974 0.000000 172.19.20.19 → 10.11.11.11 52 55648 80 TCP 55648 → 80 [SYN] Seq=0 Win=64240 Len=0 MSS=1460 WS=256 SACK_PERM=1</code></pre>
+<p> </p>
+<p>When taking a pcap on the big-ip (client side), there is not TSval Timestamp and the MSS remains unchanged:</p>
+<pre class="language-markup"><code>2  6.956979 0.000000 2322 172.19.20.19 → 10.11.11.11 52 55648 80 TCP IN s1/tmm2 : 55648 → 80 [SYN] Seq=0 Win=64240 Len=0 MSS=1460 WS=256 SACK_PERM=1</code></pre>
+<p> </p>
+<p>When taking a pcap on the big-ip (client side and server side), the big-ip does not insert the TSval Timestamp because the MSS is 1460 and it would need to fragment because it is greater than the MSS configured on the tcp profile, the big-ip tries on the server side with 3 TCP retransmissions because backend server is not answering until tcp times out and then it sends a tcp rst on client side with reason [F5RST: TCP retransmit timeout]: </p>
+<p>TCP_header + 1460 and TCP_header + 12 (TCP Timestamps Option is 12 bytes long in total) = 1472 (Greater than the MSS in tcp profile is 1460)</p>
+<p> </p>
+<pre class="language-markup"><code>CLIENT SIDE:
+
+3 10.660556 0.000000 2322 172.19.20.10 → 10.11.11.11 52 55648 80 TCP IN s1/tmm0 : 55648 → 80 [SYN] Seq=0 Win=64240 Len=0 MSS=1460 WS=256 SACK_PERM=1
+
+4 10.660567 0.000011 2322 10.11.11.11 → 172.19.20.10 52 80 55648 TCP OUT s1/tmm0 : 80 → 55648 [SYN, ACK] Seq=0 Ack=1 Win=14600 Len=0 MSS=1460 WS=1 SACK_PERM=1
+
+8 10.697194 0.036627 2322 172.19.20.10 → 10.11.11.11 40 55648 80 TCP IN s1/tmm0 : 55648 → 80 [ACK] Seq=1 Ack=1 Win=262656 Len=0
+
+9 10.698475 0.001281 2322 172.19.20.10 → 10.11.11.11 499 55648 80 HTTP IN s1/tmm0 : GET /PAGE HTTP/1.1 
+
+10 10.698498 0.000023 2322 10.11.11.11 → 172.19.20.10 40 80 55648 TCP OUT s1/tmm0 : 80 → 55648 [ACK] Seq=1 Ack=460 Win=15059 Len=0
+
+
+SERVER SIDE:
+
+11 10.698501 0.000003 2322 10.10.10.10 → 10.10.10.20 52 55648 8002 TCP OUT s1/tmm0 : 55648 → 8002 [SYN] Seq=0 Win=14600 Len=0 MSS=1460 WS=1 SACK_PERM=1
+
+12 11.698023 0.999522 2322 10.10.10.10 → 10.10.10.20 52 55648 8002 TCP OUT s1/tmm0 : [TCP Retransmission] 55648 → 8002 [SYN] Seq=0 Win=14600 Len=0 MSS=1460 WS=1 SACK_PERM=1
+
+13 12.698265 1.000242 2322 10.10.10.10 → 10.10.10.20 52 55648 8002 TCP OUT s1/tmm0 : [TCP Retransmission] 55648 → 8002 [SYN] Seq=0 Win=14600 Len=0 MSS=1460 WS=1 SACK_PERM=1
+
+14 13.698343 1.000078 2322 10.10.10.10 → 10.10.10.20 48 55648 8002 TCP OUT s1/tmm0 : [TCP Retransmission] 55648 → 8002 [SYN] Seq=0 Win=14600 Len=0 MSS=1460 SACK_PERM=1
+
+15 14.698100 0.999757 2322 10.10.10.10 → 10.10.10.20 40 55648 8002 TCP OUT s1/tmm0 : 55648 → 8002 [RST, ACK] Seq=1 Ack=1 Win=0 Len=0 [F5RST: TCP retransmit timeout]
+
+
+CLIENT SIDE:
+
+16 14.698110 0.000010 2322 10.11.11.11 → 172.19.20.10 40 80 55648 TCP OUT s1/tmm0 : 80 → 55648 [RST, ACK] Seq=1 Ack=460 Win=0 Len=0 [F5RST(peer): TCP retransmit timeout]</code></pre>
+<p> </p>
+</article>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K30216916: Restoring data snapshot from previous BIG-IQ version on BIG-IQ 8.x</title>
+<meta name="description" content="Support Solution: Restoring data snapshot from previous BIG-IQ version on BIG-IQ 8.x — On v8.x when you are trying to restore data snapshot from the 7.x or 6.x version, you see an error &quot;Failed to restore &lt;snapshot-name&gt;&quot;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K30216916">
+</head>
+<body>
+<header>
+<h1>K30216916: Restoring data snapshot from previous BIG-IQ version on BIG-IQ 8.x</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-06-29</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ Platforms</li><li>BIG-IQ</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K30216916">https://my.f5.com/manage/s/article/K30216916</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+On v8.x when you are trying to restore data snapshot from the 7.x or 6.x version, you see an error &quot;Failed to restore &lt;snapshot-name&gt;&quot;
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IQ 8.x</li><li>ElasticSearch Data snapshot restore</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br>On version v8.x we implemented additional elasticsearch security features. Snapshot without them can&#39;t be restored in GUI.    </p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+1. Copy the snapshot name that you want to restore from the BIG-IQ CM data snapshot menu (System -&gt; BIG-IQ DATA COLLECTION -&gt; BIG-IQ Data Collection Cluster -&gt; External Storage &amp; Snapshots -&gt; View History) <br> <br>2. Go to the CLI Bash on BIG-IQ CM and assign snapshot name to &quot;snapname&quot; variable:<br><span class="code">snapname=&lt;snapname&gt;</span><br>Example: <br><span class="code">snapname=test7_1_statsversion5.6.2_2021-04-19t14-32-35.907z </span><br><br>3. Create current indices file: <br><br><span class="code">curl -sk https://localhost:9200/_cat/indices?h=index|sort &gt; /var/tmp/indices-cluster.txt</span><br><br>3. Run the below script. You should paste it all at once:<br><br><span class="code"> curl -sk https://localhost:9200/_snapshot/backup/_all  | jq --arg snapname &quot;$snapname&quot; &#39;.snapshots[] | select(.snapshot==$snapname)&#39;| jq .indices | tr -d [ | tr -d ] | tr -d \&quot; | tr -d , | sort -r | while read snap ; do<br>  egrep -q &quot;^$snap$&quot; /var/tmp/indices-cluster.txt ;<br>    if [ &quot;$?&quot; -ne &quot;0&quot; ] ; then<br>      echo &quot;need to load $snap&quot; ;<br>        curl -sk https://localhost:9200/_snapshot/backup/$snapname/_restore -sX POST -H &quot;Content-type: application/json&quot; -d &quot;{\&quot;indices\&quot;:\&quot;$snap\&quot;}&quot; | jq . ;<br>        concurrent=503<br>        while [ $concurrent -eq 503 ] ; do concurrent=$(curl -sk https://localhost:9200/_snapshot/backup/$snapname/_restore -sX POST -H &quot;Content-type: application/json&quot; -d &quot;{\&quot;indices\&quot;:\&quot;$snap\&quot;}&quot; | jq .status) ; echo &quot;restoring...&quot; ; sleep 5 ; done<br>    fi ;<br>done</span><br><br>4. Wait until it&#39;s done. It can take a lot of time, all depends how big is your snapshot. <br><br>5. If you restored the APM/ASM data and you don&#39;t see them, re-enable the service listeners in  <strong>System -&gt; BIG-IQ Data Collection Devices -&gt; DCD Name -&gt; Services menu</strong>
+
+<p><span class="sectiontitle">Additional Information</span><br>None</p>
+</article>
+</body>
+</html>

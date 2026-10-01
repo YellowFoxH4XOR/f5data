@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K13304470: Using a shell function to retrieve authentication tokens from BIG-IPs and BIG-IQs</title>
+<meta name="description" content="Support Solution: Using a shell function to retrieve authentication tokens from BIG-IPs and BIG-IQs — Using an F5 authentication token when accessing the REST API on BIG-IPs and BIG-IQs is often necessary. This token value is used in the HTTP header X-F5-Auth-Token to authenticate requests to the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K13304470">
+</head>
+<body>
+<header>
+<h1>K13304470: Using a shell function to retrieve authentication tokens from BIG-IPs and BIG-IQs</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-12-23</dd>
+<dt>Updated</dt><dd>2024-07-03</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IQ</li><li>BIG-IQ Centralized Management: 8.0.0, 8.X.X, 8.3.X, 8.3.0, 8.2.X, 8.2.0, 8.1.X, 8.1.0, 8.0.X, 6.0.0, 6.0.1, 6.1.0, 7.1.0, 7.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K13304470">https://my.f5.com/manage/s/article/K13304470</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>Using an F5 authentication token when accessing the REST API on BIG-IPs and BIG-IQs is often necessary. This token value is used in the HTTP header X-F5-Auth-Token to authenticate requests to the REST API. This article will demonstrate how to declare a BASH shell function to retrieve an auth token from a remote or local device. <br><br><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Linux BASH shell</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br>None</p>
+
+<p><span class="sectiontitle">Recommended Actions</span><br><a href="#Declaring the shell function" target="_self">Declaring a shell function</a><br><a href="#Usage examples" target="_self">Usage Examples</a></p>
+<span class="sectiontitle"><span class="subsectiontitle">Create a shell function that can retrieve authentication tokens</span></span><br><br><a id="Declaring the shell function" name="Declaring the shell function"><span class="subsubsectiontitle">Declaring the shell function</span></a>
+
+<ol><li>Using a text editor create a file /var/tmp/f5_auth_token_shell_function_source.txt that contains the following code:
+	<p><span class="code">######## Cut Below #######<br>	##################################################################<br>	# Fetch HTTP auth token from BIG-IP or BIG-IQ<br>	# Arguments:<br>	#   $1 IP or hostname of target device<br>	#   $2 username for login<br>	#   $3 password for login<br>	#   $4 &quot;brief&quot; if supplied only the token is returned<br>	# To load the function:<br>	#   source /var/tmp/f5_auth_token_shell_function_source.txt<br>	##################################################################<br>	function fetch_f5_auth_token () {<br>	  funcname=${FUNCNAME[0]}<br>	  function usage_message () {<br>	    echo -e &#39;Fetches an auth token and prints an example curl using the token&#39;<br>	    echo &#39;Optional: add &quot;brief&quot; to output only the token&#39;<br>	    echo &#39;Usage:&#39;<br>	    echo &quot;${funcname} &lt;IP address&gt; &lt;username&gt; &lt;password&gt; [brief]&quot;<br>	  }<br>	  function missing_required_args () {<br>	    echo -e &quot;Not enough argments, function requires 3!&quot;<br>	  }<br>	  if [[ $# -eq 0 ]] ; then<br>	    usage_message<br>	    return<br>	  elif [ -z &quot;$1&quot; ]; then<br>	    missing_required_args<br>	    usage_message<br>	    return<br>	  elif [ -z &quot;$2&quot; ]; then<br>	    missing_required_args<br>	    usage_message<br>	    return<br>	  elif [ -z &quot;$3&quot; ]; then<br>	    missing_required_args<br>	    usage_message<br>	    return<br>	  fi<br>	  ip=$1<br>	  username=$2<br>	  password=$3<br>	  brief=$4<br>	  post_result=$(curl -sk -H &quot;Content-Type: application/json&quot; &quot;https://${ip}/mgmt/shared/authn/login&quot; -X POST -d &#39;{&quot;username&quot;: &quot;&#39;$username&#39;&quot;,&quot;password&quot;:&quot;&#39;$password&#39;&quot;,&quot;loginProviderName&quot;: &quot;tmos&quot;}&#39; | jq .)<br>	  if [ -z &quot;$post_result&quot; ]; then<br>	    echo &quot;Request to &quot;${ip}&quot; failed&quot;<br>	    return<br>	  fi<br>	  token=$(echo &quot;$post_result&quot; | jq &#39;{&quot;token&quot;}.token&#39; | grep -w token | awk &#39;{print $2}&#39; | tr -d &#39;&quot;,&#39;)<br>	  print_example () {<br>	  echo &quot;Example curl:&quot;<br>	  echo &quot;curl -sk -H \&quot;Content-Type: application/json\&quot; -H \&quot;X-F5-Auth-Token: ${token}\&quot; &quot;https://&quot;${ip}&quot;/mgmt/shared/identified-devices/config/device-info&quot;&quot;<br>	  }<br>	  if [ &quot;$brief&quot; = &quot;brief&quot; ]<br>	    then<br>	      echo &quot;${token}&quot;<br>	  else<br>	    echo &quot;token is $token&quot;<br>	    echo &quot;&quot;<br>	    print_example<br>	  fi<br>	}<br>	######## Cut Above #########</span></p>
+	</li><li>
+	<p>Load the shell function from the file:<br>	<span class="code">source  /var/tmp/f5_auth_token_shell_function_source.txt</span></p>
+	</li><li>
+	<p>To view the function in memory:<br>	<span class="code">declare -f fetch_f5_auth_token</span></p>
+	</li></ol>
+<a id="Usage examples" name="Usage examples"><span class="subsubsectiontitle"><span class="subsectiontitle">Usage examples</span></span></a><br><span class="note"><strong>Note:</strong> The authentication token retrieved in the examples have a five minute expiration</span>
+
+<ul><li>
+	<p>Usage:<br>	<span class="code">fetch_f5_auth_token &lt;IP address&gt; &lt;username&gt; &lt;password&gt; [brief]</span></p>
+	</li></ul>
+
+<ul><li>
+	<p>Fetch and display token and  show example curl command populated with the token header and target host:<br>	<span class="code"># fetch_f5_auth_token 192.0.2.10 admin fAkePaSsWoRd <br>	token is C6XRGF36LYO4ENUV4RRJPLDP2Q<br>	Example curl:<br>	curl -sk -H &quot;X-F5-Auth-Token: C6XRGF36LYO4ENUV4RRJPLDP2Q&quot; https://192.0.2.10/mgmt/shared/identified-devices/config/device-info</span></p>
+	</li></ul>
+
+<ul><li>
+	<p>Fetch only the token using &quot;brief&quot;:<br>	<span class="code"># fetch_f5_auth_token 192.0.2.10 admin fAkePaSsWoRd brief<br>	4ARA3XNTDCUTHNDZEP3OUWANX</span></p>
+	</li><li>
+	<p>Save token to a variable and use the variable in a request:<br>	<span class="note"><strong>Note:</strong> Make sure and use the  brief option to put just the token value into the variable</span></p>
+
+	<ul><li>
+		<p>Save token to a variable:<br>		<span class="code">token=$(fetch_f5_auth_token 192.0.2.10 admin fAkePaSsWoRd brief)</span></p>
+		</li><li>
+		<p>Use token in an authentication header for a request:<br>		<span class="code">curl -sk -H &quot;X-F5-Auth-Token: ${token}&quot; https://192.0.2.10/mgmt/shared/identified-devices/config/device-info</span></p>
+		</li></ul>
+	</li></ul>
+ 
+
+<p><span class="sectiontitle">Additional Information</span><br> </p>
+</article>
+</body>
+</html>

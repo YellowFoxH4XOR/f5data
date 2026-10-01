@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161013: Reducing UCS File Size After APM De-Provisioning by Removing Default EPSEC Package on BIG-IP</title>
+<meta name="description" content="Support Solution: Reducing UCS File Size After APM De-Provisioning by Removing Default EPSEC Package on BIG-IP — After de-provisioning the Access Policy Manager (APM) module on a BIG-IP system, the default EPSEC package file remains in the filestore and is referenced in the configuration. This file is included…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161013">
+</head>
+<body>
+<header>
+<h1>K000161013: Reducing UCS File Size After APM De-Provisioning by Removing Default EPSEC Package on BIG-IP</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-04-28</dd>
+<dt>Updated</dt><dd>2026-04-28</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 16.0.0, 16.0.X, 16.0.1, 17.X.X, 21.X.X, 16.X.X, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161013">https://my.f5.com/manage/s/article/K000161013</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>After de-provisioning the Access Policy Manager (APM) module on a BIG-IP system, the default EPSEC package file remains in the filestore and is referenced in the configuration. This file is included in User Configuration Set (UCS) backups, resulting in significantly larger UCS file sizes. Attempts to remove the file using standard CLI or GUI methods fail, as the file is marked as a system package and cannot be deleted through supported interfaces and the delete button disabled in the GUI. </p>
+<p> </p>
+<ul><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">01071554:3: EPSEC - Cannot delete epsec system package file</span></li></ul>
+<p>This article provides a supported method to remove the EPSEC package and reduce UCS file size.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP APM</li><li>EPSEC package</li></ul>
+<h2>Cause</h2>
+<p>The default EPSEC package is marked as a system package (system-package true) and is not automatically removed. By design, this prevents deletion via standard CLI or GUI methods, ensuring system integrity if APM is re-provisioned in the future. As a result, the file remains on disk and is included in UCS backups.</p>
+<h2>Answer/Recommended Actions</h2>
+<p><span style="color: #c20025;"><span style="background-color: #f1f1f1;"><em><strong>Important</strong>: Always take a UCS backup before making any changes.</em></span></span></p>
+<ol><li><strong>Create a UCS backup:</strong><br><span style="background-color: #f1f1f1;">tmsh save sys ucs /var/local/ucs/pre_epsec_cleanup.ucs</span></li><li><strong>Backup the current configuration file:</strong><br><span style="background-color: #f1f1f1;">cp /config/bigip.conf /config/bigip.conf.pre_epsec_backup</span></li><li><strong>Edit the configuration file to remove the EPSEC reference:</strong>
+<ul><li>Open /config/bigip.conf in a text editor (e.g., vi).</li><li>Locate and delete the following block:</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">apm epsec epsec-package /Common/epsec-1.0.0-1963.0.iso {</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> cache-path /config/filestore/files_d/Common_d/epsec_package_d/:Common:epsec-1.0.0-1963.0.iso_*</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> oesis-version 4.3.5302.0</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> revision 1</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> version 1.0.0-1963.0</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></p>
+<ul><li>Save and exit the editor.</li></ul>
+</li><li><strong>Verify the configuration:</strong><br><span style="background-color: #f1f1f1;">tmsh load sys config verify</span></li><li><strong>Reload the configuration:</strong><br><span style="background-color: #f1f1f1;">tmsh load sys config</span></li><li><strong>Delete the EPSEC ISO file from the filestore:</strong><br><span style="background-color: #f1f1f1;">rm /config/filestore/files_d/Common_d/epsec_package_d/:Common:epsec-1.0.0-1963.0.iso_*</span></li><li><strong>Save the configuration:</strong><br><span style="background-color: #f1f1f1;">tmsh save sys config</span></li><li><strong>Verify removal:</strong>
+<ul><li>Check for any remaining EPSEC references:</li></ul>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">grep epsec /config/bigip.conf</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">ls -la /config/filestore/files_d/Common_d/epsec_package_d/</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh list /apm epsec epsec-package recursive</span></p>
+</li><li><strong>Create a new UCS backup and check its size:</strong>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh save sys ucs /var/local/ucs/post_epsec_cleanup.ucs</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">ls -lh /var/local/ucs/post_epsec_cleanup.ucs</span></p>
+</li><li><strong>If using an HA pair:</strong>
+<ul><li>Repeat the process on the other unit before performing ConfigSync.</li></ul>
+</li></ol>
+<h2>Additional Information</h2>
+<ul><li><a href="https://support.f5.com/csp/article/K38331507" target="_blank">K38331507: Generating a UCS backup is larger than usual when APM is or has been provisioned</a></li><li><a href="https://support.f5.com/csp/article/K21175584" target="_blank">K21175584: Removing unnecessary OPSWAT EPSEC packages from the BIG-IP APM system</a></li></ul>
+</article>
+</body>
+</html>

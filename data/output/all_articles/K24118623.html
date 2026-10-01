@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K24118623: istio-proxy logs indicate it does not reuse existing TCP connection in HTTP/2</title>
+<meta name="description" content="Support Solution: istio-proxy logs indicate it does not reuse existing TCP connection in HTTP/2 — The istio-proxy logs show that HTTP/2 request are always in different TCP connections from the outbound cluster but the same in inbound cluster why is this happening?">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K24118623">
+</head>
+<body>
+<header>
+<h1>K24118623: istio-proxy logs indicate it does not reuse existing TCP connection in HTTP/2</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-06-23</dd>
+<dt>Updated</dt><dd>2023-07-19</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.11</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K24118623">https://my.f5.com/manage/s/article/K24118623</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+The istio-proxy logs show that HTTP/2 request are always in different TCP connections from the outbound cluster but the same in inbound cluster why is this happening?
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li><strong>RedHat Openshift</strong>: 4.6x, 4.7.x</li><li><strong>Kubernetes</strong>: 1.17x,1.18.x,1.19.x,1.20.x</li><li><strong>Aspen Mesh</strong>: 1.6.x, 1.9.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+On the server-side, the server will keep the connections from various clients open until they are either closed by the client or until the server-side idle timeout fires. At that point, it&#39;s the server that initiates the close of the TCP connection.
+
+<p>When a request from the client is made to the server using HTTP/2, we need to consider that all the connections are not shared across worker threads in the istio-proxy. That means that when an application uses only one thread; we should only see 1 TCP connection. If the application uses four threads, all the requests will go on four different TCP connections. </p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+Test your application from client and server (if both are inside the mesh) in order to understand the HTTP/2 connection reuse behavior.
+
+<ol><li>Make a few requests from the client to the server.</li><li>Ensure that you are only using 1 thread.</li><li>Make a new request now using more than 1 thread.</li><li>Compare the difference in the logs.</li></ol>
+
+<p>Gather the logs from your istio-proxy client and server and compare the data sent from the outbound clusters. To get the logs from your istio-proxy, refer to <a href="https://my.f5.com/manage/s/article/K67125033" target="_self">K67125033: Aspen Mesh: How to get isto-proxy logs.</a></p>
+
+<p>The following example in the logs show that with only 1 thread, all requests go through only 1 TCP connection at port <strong>47812</strong>:</p>
+
+<div style="margin-left: 40px;"><span class="example2">[2021-04-20T17:05:11.770Z] &quot;POST /example.domain.v1.test/Check HTTP/2&quot; 200 - &quot;-&quot; &quot;-&quot; 5 7 1 1 &quot;-&quot; &quot;grpc-go/1.29.1&quot; &quot;008dc459-ba30-4309-9e22-aed51ef009f2&quot; &quot;fortio-server:8079&quot; &quot;192.0.2.59:8079&quot; outbound|8079||fortio-server.default.svc.cluster.local 192.0.2.121:37164 192.168.3.156:8079 192.0.2.121:<strong>47812 </strong>- default<br>[2021-04-20T17:05:11.771Z] &quot;POST /example.domain.v1.test/Check HTTP/2&quot; 200 - &quot;-&quot; &quot;-&quot; 5 7 1 1 &quot;-&quot; &quot;grpc-go/1.29.1&quot; &quot;3db8d5c9-84a0-48fa-ba34-e636b1e85887&quot; &quot;fortio-server:8079&quot; &quot;192.0.2.59:8079&quot; outbound|8079||fortio-server.default.svc.cluster.local 192.0.2.121:37164 192.168.3.156:8079 192.0.2.121:<strong>47812 </strong>- default<br>[2021-04-20T17:05:11.773Z] &quot;POST /example.domain.v1.test/Check HTTP/2&quot; 200 - &quot;-&quot; &quot;-&quot; 5 7 1 0 &quot;-&quot; &quot;grpc-go/1.29.1&quot; &quot;49e9a40a-90e4-4855-bbeb-caf455f009f2&quot; &quot;fortio-server:8079&quot; &quot;192.0.2.59:8079&quot; outbound|8079||fortio-server.default.svc.cluster.local 192.0.2.121:37164 192.168.3.156:8079 192.0.2.121:<strong>47812 </strong>- default<br>[2021-04-20T17:05:11.774Z] &quot;POST /example.domain.v1.test/Check HTTP/2&quot; 200 - &quot;-&quot; &quot;-&quot; 5 7 2 2 &quot;-&quot; &quot;grpc-go/1.29.1&quot; &quot;e89b4508-7188-4d1b-bc60-06e3b5f009f2&quot; &quot;fortio-server:8079&quot; &quot;192.0.2.59:8079&quot; outbound|8079||fortio-server.default.svc.cluster.local 192.0.2.121:37166 192.168.3.156:8079 192.0.2.121:<strong>47812 </strong>- default</span></div>
+
+<p><br>With 10 threads, as we increase the number of threads new TCP connections are created and reused.</p>
+
+<p>The following example has 10 concurrent connections so 10 new TCP connections (with different port numbers) are used and after that, TCP connection reuse starts.</p>
+
+<p style="margin-left: 40px;"><span class="example2">[2021-04-16T16:01:12.541Z] &quot;POST /grpc.domain.v1.test/Check HTTP/2&quot; 200 - &quot;-&quot; &quot;-&quot; 5 7 3 2 &quot;-&quot; &quot;grpc-go/1.29.1&quot; &quot;2ab7e462-e3c5-403e-9fa0-3b5a5f009f2&quot; &quot;fortio-server:8079&quot; &quot;192.0.2.59:8079&quot; outbound|8079||fortio-server.default.svc.cluster.local 192.0.2.121:37562 192.168.3.156:8079 192.0.2.121:<strong>48250 </strong>- default<br>[2021-04-16T16:01:12.541Z] &quot;POST /grpc.domain.v1.test/Check HTTP/2&quot; 200 - &quot;-&quot; &quot;-&quot; 5 7 3 2 &quot;-&quot; &quot;grpc-go/1.29.1&quot; &quot;67bc23cd-6809-4410-9ae1-bc6cf5f009f&quot; &quot;fortio-server:8079&quot; &quot;192.0.2.59:8079&quot; outbound|8079||fortio-server.default.svc.cluster.local 192.0.2.121:37548 192.168.3.156:8079 192.0.2.121:<strong>48242 </strong>- default<br>[2021-04-16T16:01:12.541Z] &quot;POST /grpc.domain.v1.test/Check HTTP/2&quot; 200 - &quot;-&quot; &quot;-&quot; 5 7 3 3 &quot;-&quot; &quot;grpc-go/1.29.1&quot; &quot;0dbd2f48-220a-465d-bc66-0525f009f74&quot; &quot;fortio-server:8079&quot; &quot;192.0.2.59:8079&quot; outbound|8079||fortio-server.default.svc.cluster.local 192.0.2.121:37548 192.168.3.156:8079 192.0.2.121:<strong>48258 </strong>- default<br>[2021-04-16T16:01:12.542Z] &quot;POST /grpc.domain.v1.test/Check HTTP/2&quot; 200 - &quot;-&quot; &quot;-&quot; 5 7 3 2 &quot;-&quot; &quot;grpc-go/1.29.1&quot; &quot;68fdd362-6089-469e-b5f1-4dc5f009fd3&quot; &quot;fortio-server:8079&quot; &quot;192.0.2.59:8079&quot; outbound|8079||fortio-server.default.svc.cluster.local 192.0.2.121:37548 192.168.3.156:8079 192.0.2.121:<strong>48236 </strong>- default<br>[2021-04-16T16:01:12.542Z] &quot;POST /grpc.domain.v1.test/Check HTTP/2&quot; 200 - &quot;-&quot; &quot;-&quot; 5 7 3 3 &quot;-&quot; &quot;grpc-go/1.29.1&quot; &quot;d4759f72-31da-4def-bd60-61335f009c2&quot; &quot;fortio-server:8079&quot; &quot;192.0.2.59:8079&quot; outbound|8079||fortio-server.default.svc.cluster.local 192.0.2.121:37548 192.168.3.156:8079 192.0.2.121:<strong>48248 </strong>- default<br>[2021-04-16T16:01:12.542Z] &quot;POST /grpc.domain.v1.test/Check HTTP/2&quot; 200 - &quot;-&quot; &quot;-&quot; 5 7 3 3 &quot;-&quot; &quot;grpc-go/1.29.1&quot; &quot;483fbe6b-f57d-44f3-b68b-cc2a5f009b4&quot; &quot;fortio-server:8079&quot; &quot;192.0.2.59:8079&quot; outbound|8079||fortio-server.default.svc.cluster.local 192.0.2.121:37548 192.168.3.156:8079 192.0.2.121:<strong>48254 </strong>- default<br>[2021-04-16T16:01:12.542Z] &quot;POST /grpc.domain.v1.test/Check HTTP/2&quot; 200 - &quot;-&quot; &quot;-&quot; 5 7 3 3 &quot;-&quot; &quot;grpc-go/1.29.1&quot; &quot;95a29aef-cfdd-4a04-ae8e-1005f009f64&quot; &quot;fortio-server:8079&quot; &quot;192.0.2.59:8079&quot; outbound|8079||fortio-server.default.svc.cluster.local 192.0.2.121:37548 192.168.3.156:8079 192.0.2.121:<strong>48244 </strong>- default<br>[2021-04-16T16:01:12.543Z] &quot;POST /grpc.domain.v1.test/Check HTTP/2&quot; 200 - &quot;-&quot; &quot;-&quot; 5 7 3 2 &quot;-&quot; &quot;grpc-go/1.29.1&quot; &quot;af438be4-c754-4931-bd2e-1c55f0090ee&quot; &quot;fortio-server:8079&quot; &quot;192.0.2.59:8079&quot; outbound|8079||fortio-server.default.svc.cluster.local 192.0.2.121:37548 192.168.3.156:8079 192.0.2.121:<strong>48240 </strong>- default<br>[2021-04-16T16:01:12.542Z] &quot;POST /grpc.domain.v1.test/Check HTTP/2&quot; 200 - &quot;-&quot; &quot;-&quot; 5 7 3 3 &quot;-&quot; &quot;grpc-go/1.29.1&quot; &quot;12a3e2b6-0d72-43e4-ab01-c445f009f50&quot; &quot;fortio-server:8079&quot; &quot;192.0.2.59:8079&quot; outbound|8079||fortio-server.default.svc.cluster.local 192.0.2.121:37548 192.168.3.156:8079 192.0.2.121:<strong>48246 </strong>- default<br>[2021-04-16T16:01:12.545Z] &quot;POST /grpc.domain.v1.test/Check HTTP/2&quot; 200 - &quot;-&quot; &quot;-&quot; 5 7 1 1 &quot;-&quot; &quot;grpc-go/1.29.1&quot; &quot;fa99581a-c3e7-4625-8b2e-abbc45f0948&quot; &quot;fortio-server:8079&quot; &quot;192.0.2.59:8079&quot; outbound|8079||fortio-server.default.svc.cluster.local 192.0.2.121:37562 192.168.3.156:8079 192.0.2.121:<strong>48256 </strong>- default<br>[2021-04-16T16:01:12.545Z] &quot;POST /grpc.domain.v1.test/Check HTTP/2&quot; 200 - &quot;-&quot; &quot;-&quot; 5 7 1 1 &quot;-&quot; &quot;grpc-go/1.29.1&quot; &quot;a26d1959-80e2-4d62-a54e-65f009h6660&quot; &quot;fortio-server:8079&quot; &quot;192.0.2.59:8079&quot; outbound|8079||fortio-server.default.svc.cluster.local 192.0.2.121:37562 192.168.3.156:8079 192.0.2.121:48250 - default</span></p>
+</article>
+</body>
+</html>

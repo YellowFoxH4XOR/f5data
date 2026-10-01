@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162880: HTTP 502 Responses Caused by Broken Prefix Set References in an F5 Distributed Cloud Service Policy</title>
+<meta name="description" content="Support Solution: HTTP 502 Responses Caused by Broken Prefix Set References in an F5 Distributed Cloud Service Policy — An F5 Distributed Cloud HTTP Load Balancer may return HTTP 502 responses for all requests to Load Balancer when an attached Service Policy contains a broken reference to an IP Prefix Set. The issue…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162880">
+</head>
+<body>
+<header>
+<h1>K000162880: HTTP 502 Responses Caused by Broken Prefix Set References in an F5 Distributed Cloud Service Policy</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-12</dd>
+<dt>Updated</dt><dd>2026-08-12</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Distributed Cloud Services</li><li>F5 Distributed Cloud WAF</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162880">https://my.f5.com/manage/s/article/K000162880</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>An F5 Distributed Cloud HTTP Load Balancer may return HTTP 502 responses for all requests to Load Balancer when an attached Service Policy contains a broken reference to an IP Prefix Set. The issue can occur when the referenced Prefix Set does not exist in the namespace specified by the Service Policy or is missing from XC Console.</p>
+<p>The customer may observe the following symptoms:</p>
+<ul><li>Application requests consistently return <strong>HTTP 502 Bad Gateway</strong>.</li><li>F5 Distributed Cloud request logs show <code>rsp_code: 502</code>.</li><li>The request diagnostic detail may show <code>rsp_code_details: ext_authz_denied</code>.</li><li>The Service Policy result may be reported as <code>unresolved</code>.</li><li>The request may include the following response flag:</li></ul>
+<pre><code>{&quot;UnauthorizedDetails&quot;:&quot;&amp;ResponseFlags_Unauthorized{Reason:EXTERNAL_SERVICE,}&quot;}</code></pre>
+<p>The Service Policy configuration may also display warnings such as:</p>
+<pre><code>Broken References Detected</code></pre>
+<pre><code>Field Rules contains configurations with broken or disabled references</code></pre>
+<pre><code>Does not exist</code></pre>
+<p>The 502 response is generated because the Service Policy cannot be resolved during request processing. It will affect all requests on given Load Balancer. This is a policy-resolution failure and should not be interpreted as an explicit application or WAF deny decision.</p>
+<h2>Environment</h2>
+<ul><li>F5 Distributed Cloud</li><li>HTTP Load Balancer</li><li>One or more Service Policies attached to the HTTP Load Balancer</li><li>Service Policy field rules that reference IP Prefix Sets</li><li>Missing IP Prefix Sets including namespace and name reference.</li></ul>
+<h2>Cause</h2>
+<p>The Service Policy contains a reference to an IP Prefix Set using an incorrect or invalid namespace/name. For example, the Service Policy may reference a Prefix Set in the <code>/shared</code> namespace even though the object is defined in another namespace. The resulting reference cannot be resolved, and the Service Policy remains in a broken state.</p>
+<p>A Service Policy can contain multiple field rules that reference the same Prefix Set. Therefore, a single invalid object reference may appear repeatedly across several rules. All references must be reviewed, not only the first warning displayed by the console.</p>
+<h2>Recommended Actions</h2>
+<ol><li>Identify the affected HTTP Load Balancer and record a sample request ID associated with the HTTP 502 response.</li><li>In the F5 Distributed Cloud Console, open the affected HTTP Load Balancer and review the Service Policies attached to it.</li><li>Record the Service Policy order before making any changes. This is important when several policies are attached to the same Load Balancer.</li><li>Open the first attached Service Policy and select <strong>Manage Configuration</strong>.</li><li>Review the Service Policy rules individually. Expand each field rule and inspect every condition that references an external object, including IP Prefix Sets.</li><li>For each referenced IP Prefix Set, verify all of the following:
+<ul><li>The Prefix Set exists.</li><li>The Prefix Set name is correct.</li><li>The Prefix Set is enabled.</li><li>The namespace in the Service Policy reference matches the namespace where the Prefix Set is defined.</li></ul>
+</li><li>Pay particular attention to warnings such as <code>Does not exist</code>, disabled references, or references that cannot be opened from the UI/object selector.</li><li>If a broken reference is found, edit the affected field rule and replace the invalid reference with the existing Prefix Set from the correct namespace or recreate object first. For example, use the namespace where the object is actually defined rather than assuming that the object is located in <code>/shared</code>.</li><li>Review all remaining rules in the Service Policy, including repeated references to the same Prefix Set. Confirm that no additional broken references remain.</li><li>Save the Service Policy and reapply it to the HTTP Load Balancer.</li><li>Confirm that the <strong>Broken References Detected</strong> warning is no longer displayed.</li><li>Retest the affected application request and verify that the HTTP 502 response no longer occurs.</li><li>Review the request logs and confirm that:
+<ul><li>The response code is no longer <code>502</code>.</li><li>The Service Policy result is no longer <code>unresolved</code>.</li><li>The <code>EXTERNAL_SERVICE</code> unauthorized response flag is no longer present for the affected request.</li></ul>
+</li></ol>
+<h2>Procedure to Identify the Culprit Service Policy</h2>
+<p>If multiple Service Policies are attached to the HTTP Load Balancer and the affected policy is not immediately apparent, use the following controlled isolation procedure. Perform these steps during an approved maintenance window or in a non-production environment whenever possible.</p>
+<ol><li>Capture a failing request ID and confirm that the request returns HTTP 502 with an unresolved Service Policy result.</li><li>List all Service Policies attached to the HTTP Load Balancer in their current evaluation order.</li><li>Start with the first policy that was recently added or modified. If no recent change is known, inspect each policy systematically from top to bottom.</li><li>Open the Service Policy and select <strong>Manage Configuration</strong>.</li><li>Review the field rules one at a time. For every rule, record:
+<ul><li>Rule name or position</li><li>Match conditions</li><li>Action</li><li>Referenced IP Prefix Sets</li><li>Namespace of each referenced Prefix Set</li><li>Any broken-reference or disabled-reference warning</li></ul>
+</li><li>If no broken reference is found, continue with the next Service Policy.</li><li>If operationally safe, temporarily remove or disable only the policy being tested, then save and reapply the HTTP Load Balancer configuration.</li><li>Retest the same application request using the same route and, where possible, the same test conditions.</li><li>Interpret the result as follows:
+<ul><li>If the HTTP 502 response stops after one Service Policy is removed, that policy is the likely source of the resolution failure.</li><li>If the HTTP 502 response continues, restore the policy and continue testing the next Service Policy.</li></ul>
+</li><li>After identifying the affected Service Policy, inspect every field rule in that policy and correct all invalid Prefix Set references.</li><li>Restore the intended Service Policy order, save the configuration, and reapply the policy to the HTTP Load Balancer.</li><li>Confirm that all broken-reference warnings have cleared and validate successful application requests from more than one test location when appropriate.</li></ol>
+<h2>Validation Checklist</h2>
+<ul><li>The referenced IP Prefix Set exists.</li><li>The Prefix Set is enabled.</li><li>The Prefix Set name is spelled correctly.</li><li>The Prefix Set is located in the expected namespace.</li><li>The Service Policy references the correct namespace.</li><li>All repeated references across all field rules have been reviewed.</li><li>No <strong>Broken References Detected</strong> warning remains.</li><li>Application requests no longer return HTTP 502.</li><li>Request logs no longer show an unresolved Service Policy result.</li></ul>
+<h2>Additional Information</h2>
+<p>An unresolved Service Policy result indicates that the policy or the policy-processing path could not be resolved successfully. When the unresolved result is associated with HTTP 502 and Service Policy authorization details, inspect the Service Policy and its referenced objects before investigating the origin server.</p>
+<p>For general F5 Distributed Cloud 4xx and 5xx troubleshooting guidance, see <a href="https://my.f5.com/manage/s/article/K000146828" target="_blank" rel="noopener noreferrer"> K000146828: Troubleshooting common 5xx and 4xx error response codes in F5 Distributed Cloud </a>.</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K29450727: Using Mutual TLS for external services with custom certificates</title>
+<meta name="description" content="Support Solution: Using Mutual TLS for external services with custom certificates — DISABLE: Do not setup a TLS connection to the upstream endpoint.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K29450727">
+</head>
+<body>
+<header>
+<h1>K29450727: Using Mutual TLS for external services with custom certificates</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-01-05</dd>
+<dt>Updated</dt><dd>2023-07-19</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.11</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K29450727">https://my.f5.com/manage/s/article/K29450727</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>Istio and Aspen Mesh support four different TLS connection modes for traffic originating from PODs being part of the mesh: </p>
+
+<ul><li>DISABLE: Do not setup a TLS connection to the upstream endpoint.</li><li>SIMPLE: Originate a TLS connection to the upstream endpoint.</li><li>MUTUAL: Secure connections to the upstream using mutual TLS by presenting client certificates for authentication.</li><li>ISTIO_MUTUAL: Secure connections to the upstream using mutual TLS by presenting client certificates for authentication. Compared to Mutual mode, this mode uses certificates generated automatically by Istio for mTLS authentication. When this mode is used, all other fields in Client TLS Settings should be empty.</li></ul>
+
+<p>We control originating connection settings using DestinationRule custom resource definitions. Aspen Mesh, and latest releases of Istio, enforces mutual TLS local communication between PODs inside service mesh using a default PeerAuthentication and DestinationRule objects:</p>
+
+<p><span class="example2">? kubectl get PeerAuthentication default -n istio-system  -o yaml<br>apiVersion: security.istio.io/v1beta1<br>kind: PeerAuthentication<br>metadata:<br>  name: default<br>  namespace: istio-system<br>spec:<br>  mtls:<br>    mode: STRICT<br><br>? kubectl get DestinationRule default -n istio-system  -o yaml<br>apiVersion: networking.istio.io/v1beta1<br>kind: DestinationRule<br>  name: default<br>  namespace: istio-system<br>spec:<br>  host: &#39;*.local&#39;<br>  trafficPolicy:<br>    tls:<br>      mode: ISTIO_MUTUAL</span></p>
+
+<p>Destination rules by default are using ISTIO_MUTUAL mode so TLS certificates used by istio proxies created and managed by Istiod CA authority and provisioned using SDS API.</p>
+
+<p>If applications need to communicate with any external service (not being part of the mesh) using mutual TLS protocol, then usually we do not want use ISTIO_MUTUAL mode. External services may have certificates signed by different CA authority or certificates may not be compatible with Istio CA certificate chain. In this scenario we can configure DestinationRule with MUTUAL mode and manually provisioned certificates or we can route traffic through egress gateway and use Gateway definitions. In this article we will document how to configure DestinationRule with local TLS certificates. For information how to configure egress gateway with mutual TLS, refer to <a href="https://istio.io/latest/docs/tasks/traffic-management/egress/egress-gateway-tls-origination/#perform-mutual-tls-origination-with-an-egress-gateway" target="_self">Egress Gateway with mTLS Origination</a>.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li><strong>Kuberntes</strong>: 1.17x,1.18.x,1.19.x,1.20.x</li><li><strong>Aspen Mesh</strong>: 1.6.x, 1.9.x </li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>None</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>TLS certificates are configured in Destination Rules using clientCertificate, privateKeyand caCertificates fields. In MUTUAL mode all these fields are required and should be empty for ISTIO_MUTUAL mode. For information about DestinationRule setting, refer to <a href="https://istio.io/latest/docs/reference/config/networking/destination-rule/#ClientTLSSettings" target="_self">Istio DestinationRule configuration reference</a>. </p>
+
+<p>Below is an example for configuring DestinationRule with MUTUAL TLS mode:</p>
+
+<p><span class="example2">apiVersion: networking.istio.io/v1beta1<br>kind: DestinationRule<br>metadata:<br>  name: dr-mtls<br>  namespace: ns1<br>spec:<br>  host: myservice.ns2.svc.cluster.local<br>  exportTo:<br>  - ‘.’<br>  trafficPolicy:<br>    tls:<br>      mode: MUTUAL<br>      clientCertificate: /etc/certs/myclientcert.pem<br>      privateKey: /etc/certs/client_private_key.pem<br>      caCertificates: /etc/certs/rootcacerts.pem</span></p>
+
+<p>By applying <strong>dr-mtls</strong> rule all connections from applications running in <strong>ns1</strong> namespace to <strong>myservice.ns2.svc.cluster.local</strong> service will be secured with mutual TLS connection. Envoy proxies in <strong>ns1</strong> namespace will be configured to use certificates stored under <strong>/etc/certs/</strong> local directory. It is important to note that the directory is a local directory for <strong>istio-proxy</strong> container and users are responsible for ensuring that the directory and certificates are available for Envoy  proxy process running inside <strong>istio-proxy</strong> container. </p>
+
+<p>Mounting certificates to istio-proxy container can be done in a few ways:</p>
+
+<ul><li>Using “istioctl kube-inject” tool to manually generate POD spec with injected sidecar proxy and modify the spec to mount certificate. For more information, refer to the example <a href="https://istio.io/latest/docs/setup/additional-setup/sidecar-injection/#manual-sidecar-injection" target="_self">Manual sidecar injection</a>.</li><li>By modifying injection template or using injectConfigFile option in istioctl command. For more information, refer to the example <a href="https://istio.io/latest/docs/setup/additional-setup/sidecar-injection/#manual-sidecar-injection" target="_self">Manual sidecar injection</a>.</li><li>Store certificates in a Kubernetes secret object and mount secret to istio-proxy container using POD annotations:
+	<p><span class="example2">  annotations:<br>	    sidecar.istio.io/userVolumeMount: &#39;[{&quot;name&quot;:&quot;your-secret-name&quot;, &quot;mountPath&quot;:&quot;path-in-istio-proxy&quot;, &quot;readonly&quot;:true}]&#39;<br>	    sidecar.istio.io/userVolume: &#39;[{&quot;name&quot;:&quot;your-secret-name&quot;, &quot;secret&quot;:{&quot;secretName&quot;:&quot;your-secret-name&quot;}}]&#39;</span></p>
+	</li></ul>
+
+<p>Here is an example for sleep a POD with certificates mounted to “/etc/certs/” directory inside istio-proxy container. Certificates are stored on “secret1” Kubernetes secret object.</p>
+
+<p><span class="example2">apiVersion: apps/v1<br>kind: Deployment<br>metadata:<br>  name: sleep<br>spec:<br>  replicas: 1<br>  selector:<br>    matchLabels:<br>      app: sleep<br>  template:<br>    metadata:<br>      labels:<br>        app: sleep<br>      annotations:<br>        sidecar.istio.io/userVolumeMount: &#39;[{&quot;name&quot;:&quot;secret1&quot;, &quot;mountPath&quot;:&quot;/etc/certs/&quot;, &quot;readonly&quot;:true}]&#39;<br>        sidecar.istio.io/userVolume: &#39;[{&quot;name&quot;:&quot;secret1&quot;, &quot;secret&quot;:{&quot;secretName&quot;:&quot;secret1&quot;}}]&#39;<br>    spec:<br>      containers:<br>      - name: sleep<br>        image: curlimages/curl<br>        command: [&quot;/bin/sleep&quot;, &quot;3650d&quot;]<br>        imagePullPolicy: IfNotPresent</span></p>
+
+<p>Users must remember to use <strong>exportTo</strong> field in DestinationRules with MUTUAL mode configured. By Default, if exportTo field is missing or no namespaces are specified then the destination rule is exported to all namespaces (regardless of the namespace where DestinationRule is deployed). The value <strong>.</strong> in exportTo field is reserved and defines an export to the same namespace that the destination rule is declared in. Similarly, the value <strong>*</strong> is reserved and defines an export to all namespaces. </p>
+
+<p>Secret objects are namespaced in Kubernetes and usually PODs cannot mount secrets residing on a different namespace than the POD. If a DestinationRule with MUTUAL mode enabled is provisioned to the POD where certificates are not provisioned to istio-proxy container then the sidecar proxy may not start or may log logs like the below messages:</p>
+
+<p><span class="example2">2021-12-08T23:23:38.741113Z          error    cache   resource:file-cert:/etc/certs/myclientcert.pem~/etc/certs/client_private_key.pem failed to generate secret for proxy from file: open /etc/certs/myclientcert.pem: no such file or directory<br>2021-12-08T23:23:38.741126Z          error    cache   resource:file-root:/etc/certs/rootcacerts.pem failed to generate secret for proxy from file: open /etc/certs/rootcacerts.pem: no such file or directory</span></p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

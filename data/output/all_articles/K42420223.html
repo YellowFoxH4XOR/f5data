@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K42420223: Using F5 Modules for Ansible to create HTTP and HTTPS virtual servers in a single task</title>
+<meta name="description" content="Knowledge: Using F5 Modules for Ansible to create HTTP and HTTPS virtual servers in a single task — You want to create HTTP and HTTPS virtual servers with different profiles within a single F5 Modules for Ansible task.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K42420223">
+</head>
+<body>
+<header>
+<h1>K42420223: Using F5 Modules for Ansible to create HTTP and HTTPS virtual servers in a single task</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2020-05-13</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>F5 Automation and Orchestration</li><li>BIG-IP LTM: 15.X.X, 13.X.X, 12.X.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 14.X.X, 12.0.0, 12.1.0</li><li>F5 Modules for Ansible</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K42420223">https://my.f5.com/manage/s/article/K42420223</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>You should consider using this procedure under the following condition:</p>
+
+<ul><li>You want to create HTTP and HTTPS virtual servers with different profiles within a single F5 Modules for Ansible task.</li></ul>
+<h3>Description</h3><p>When deploying an application, you will often create HTTP and HTTPS virtual servers in tandem. You can use a loop with the <strong>bigip_virtual_server</strong> F5 module to create both an HTTP and HTTPS virtual server on a BIG-IP system in a single task.</p>
+
+<p><span class="note"><strong>Note</strong>: To learn how to run tasks only on the active BIG-IP in a device group, refer to <a href="https://my.f5.com/manage/s/article/K10531487" target="_blank">K10531487: Running Ansible tasks on the active BIG-IP in a device group</a>.</span></p>
+
+<p><span class="subsectiontitle">Example playbook</span></p>
+
+<p>The following is an example of a playbook that creates two virtual servers: one HTTP virtual server on port 80 and one HTTPS virtual server on port 443 with a client side SSL profile.</p>
+
+<p><span class="example2">---<br>- name: Create local traffic objects on a BIG-IP<br>  hosts: bigip14-1.askf5team.local<br>  gather_facts: False<br>  connection: local<br>  vars:<br>    provider:<br>      password: &quot;{{ bigip_password }}&quot;<br>      server: &quot;{{ ansible_host }}&quot;<br>      user: &quot;{{ bigip_username }}&quot;<br>      validate_certs: False<br>    profiles: &quot;tcp-wan-optimized,http,wan-optimized-compression&quot;<br><br>  tasks:<br>    - name: Create HTTP and HTTPS virtual servers<br>      bigip_virtual_server:<br>        provider: &quot;{{ provider }}&quot;<br>        name: &quot;{{ item.name }}&quot;<br>        destination: 198.51.100.1<br>        port: &quot;{{ item.port }}&quot;<br>        snat: &quot;Automap&quot;<br>        all_profiles: &quot;{{ item.profiles }}&quot;<br>        pool: &quot;example_pool&quot;<br>      loop:<br>        - { name: &quot;server_port_80&quot;,<br>            port: 80,<br>            profiles: &quot;{{ profiles }}&quot;<br>          }<br>        - { name: &quot;server_port_443&quot;,<br>            port: 443,<br>            profiles: &quot;{{ profiles + &#39;,example_client_ssl&#39; }}&quot;<br>           }<br>      notify:<br>        - Save the running configuration to disk<br> <br>  handlers:<br>    - name: Save the running configuration to disk<br>      bigip_config:<br>        save: yes<br>        provider: &quot;{{ provider }}&quot;</span></p>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisites to use the procedures in this article:</p>
+
+<ul><li>You are familiar with using Ansible.</li><li>You have Ansible 2.7 or later installed on the control machine.</li><li>You have BIG-IP 12.x or later installed on the devices in the environment.</li><li>You read the <strong>User&#39;s Guide</strong> section of <a href="https://clouddocs.f5.com/products/orchestration/ansible/devel/" target="_blank">F5 Modules for Ansible Documentation</a>.</li><li>The Python packages required for each module or filter you want to use on the control machine are installed. For example, the F5 Modules require the <strong>f5-sdk</strong> package. For more information, refer to <a href="https://docs.ansible.com/ansible/latest/collections/index_module.html" target="_blank">Module Index</a> in the <em><strong>Ansible User Guide</strong></em>.
+	<p><span class="note"><strong>Note</strong>: This link takes you to a resource outside of AskF5. The third-party could remove the document without our knowledge.</span></p>
+	</li></ul>
+
+<p><span class="sectiontitle">Procedures</span></p>
+
+<ul><li><a href="#play">Defining initial play settings</a></li><li><a href="#task">Creating a task that deploys the HTTP and HTTPS virtual servers and creating a handler to save the configuration</a></li><li><a href="#run">Running the playbook</a></li></ul>
+
+<p><span class="subsectiontitle"><a id="play" name="play"></a>Defining initial play settings</span></p>
+
+<p>In this procedure you create your playbook, define play settings, and create a variable that lists the profiles you want both your virtual servers to have. In the subsequent procedure you add a client SSL profile to this list for only the HTTPS virtual server.</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to your control machine.</li><li>Create a playbook file called <strong>add_vip_80_443.yml</strong> in your <strong>playbooks</strong> directory.</li><li>Create a play and define the <strong>name</strong> and <strong>hosts</strong>. Include the <strong>connection: local</strong> directive if all tasks are F5 Modules for Ansible, as shown in the example playbook. You can set <strong>gather_facts</strong> to false.</li><li>In the <strong>vars</strong> parameter, create a playbook variable called <strong>provider</strong>. Add the BIG-IP connection details as the values to the <strong>provider </strong>variable. In the example, group variables from the group the host belongs to are used. You can reference the <strong>provider </strong>variable in the <strong>provider </strong>parameter of the F5 Module. You can encrypt BIG-IP passwords for the playbook by placing them in the vault. For more information, refer to <a href="https://my.f5.com/manage/s/article/K64450989" target="_blank">K64450989: Using the &#39;ansible-vault&#39; command to encrypt BIG-IP passwords used in a playbook</a>.</li><li>Also in <strong>vars</strong>, create a variable called <strong>profiles </strong>with the profiles that you want both virtual servers to have. The profiles must already exist in the configuration.
+	<p>For example:</p>
+
+	<p><span class="example2">profiles: &quot;tcp-wan-optimized,http,wan-optimized-compression&quot;</span></p>
+
+	<p>Refer to the example playbook at the beginning of the article for a complete view of the initial play settings.</p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="task" name="task"></a>Creating a task that deploys the HTTP and HTTPS virtual servers and creating a handler to save the configuration</span></p>
+
+<p>In this procedure you create a task and handler in your play. You add a loop in the task to run the <strong>bigip_virtual_server </strong>module twice using the parameters you define in the loop. You take advantage of string concatenation to add the client SSL profile to only the HTTPS virtual server.</p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Create a task with the <strong>bigip_virtual_server </strong>module. Give the task a name and use the <strong>provider</strong> variable as the value for the <strong>provider</strong> parameter</li><li>For the <strong>name</strong>, <strong>port</strong>, <strong>all_profiles</strong> parameters, and any other parameters you want to define with a list in the loop, reference each with <strong>item.* </strong>syntax.
+	<p>For example:</p>
+
+	<p><span class="example2">      loop:<br>	        - { name: &quot;server_port_80&quot;,<br>	            port: 80,<br>	            profiles: &quot;{{ profiles }}&quot;<br>	          }<br>	        - { name: &quot;server_port_443&quot;,<br>	            port: 443,<br>	            profiles: &quot;{{ profiles + &#39;,example_client_ssl&#39; }}&quot;<br>	           }</span></p>
+	</li><li>Include a <strong>notify</strong> statement in this task to signal the handler you create in the next step to run.</li><li>Create a handler that runs the <strong>bigip_config</strong> module to save the configuration changes you made to disk.
+	<p>Refer to the example playbook at the beginning of the article for a complete view of the <strong>bigip_virtual_server</strong> module task and <strong>bigip_config</strong> handler.</p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="run" name="run"></a>Running the playbook</span></p>
+
+<p>After you&#39;ve performed the previous procedures in this article, you can run the playbook from your control machine to make configuration changes to the BIG-IP devices in the play.</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to your control machine.</li><li>Change the working directory to the one with your playbooks.</li><li>To run the playbook from the command line of your control machine, enter the following command:
+	<p><span class="code">ansible-playbook add_vip_80_443.yml</span></p>
+
+	<p>The output from the command appears similar to the following:</p>
+
+	<p><span class="example2">PLAY [Create local traffic objects on a BIG-IP] ****************************************<br>	<br>	TASK [Create HTTP and HTTPS virtual servers] ****************************************<br>	changed: [bigip14-1.askf5team.local] =&gt; (item={u&#39;name&#39;: u&#39;server_port_80&#39;, u&#39;profiles&#39;: u&#39;tcp-wan-optimized,http,wan-optimized-compression&#39;, u&#39;port&#39;: 80})<br>	changed: [bigip14-1.askf5team.local] =&gt; (item={u&#39;name&#39;: u&#39;server_port_443&#39;, u&#39;profiles&#39;: u&#39;tcp-wan-optimized,http,wan-optimized-compression,example_client_ssl&#39;, u&#39;port&#39;: 443})<br>	<br>	RUNNING HANDLER [Save the running configuration to disk] ****************************************<br>	changed: [bigip14-1.askf5team.local]<br>	<br>	PLAY RECAP ****************************************<br>	bigip14-1.askf5team.local : ok=2 changed=2 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0 </span></p>
+	</li><li>If you get an error when running the handler similar to <strong>FAILED! =&gt; {&quot;changed&quot;: false, &quot;msg&quot;: &quot;No JSON object could be decoded&quot;}</strong>, this is most likely cosmetic. You can verify if the configuration changes were written to disk by using the following syntax from the control machine:
+	<p><span class="code">ssh &lt;BIG-IP Advanced shell user&gt;@&lt;IP address of BIG-IP&gt; &#39;grep &quot;ltm virtual &quot; /config/bigip.conf&#39;</span></p>
+
+	<p>For example:</p>
+
+	<p><span class="example2">ssh root@10.1.1.9 &#39;grep &quot;ltm virtual &quot; /config/bigip.conf&#39;</span></p>
+	</li></ol>
+</article>
+</body>
+</html>

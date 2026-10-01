@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K12251435: Procedure for upgrading DCD with an extended /var partition</title>
+<meta name="description" content="Support Solution: Procedure for upgrading DCD with an extended /var partition — This article explains the procedure for Upgrading DCD (Data Collection Device) with an extended /var partition.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K12251435">
+</head>
+<body>
+<header>
+<h1>K12251435: Procedure for upgrading DCD with an extended /var partition</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-10-06</dd>
+<dt>Updated</dt><dd>2026-06-25</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K12251435">https://my.f5.com/manage/s/article/K12251435</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+<p>This article explains the procedure for Upgrading DCD (Data Collection Device) with an extended /var partition.</p>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>Upgrading DCD from non-standard disk partition (Data Retention)</li><li>DCD devices are active</li></ul>
+<p><span class="sectiontitle">Cause</span></p>
+<p>Attempt to upgrade DCD device from a non-standard partition while device is active</p>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<p><strong>Prerequisites</strong></p>
+<p>You must meet the following prerequisite to use this procedure:</p>
+<ul><li>Root level access to the device</li></ul>
+<p><strong>Procedures</strong></p>
+<p style="padding-left: 40px;"><span class="impact"><strong>Impact of procedure</strong>: </span>Disk size allocation will be impacted on all BIG-IQ devices.</p>
+<p>In order to address customer&#39;s concern of potential data loss (statistics from DCDs) during upgrade we need to remind customer that DCD architecture is based on distributed Elasticsearch (ES) database - DCD device does not store complete database, and shards and indexes are distributed. If we are upgrading DCDs one at a time as done via rolling upgrade or manually, database from upgraded device will be distributed among surviving DCDs.</p>
+<p>You can follow the below procedure to upgrade DCD from non-standard partition:</p>
+<ol><li style="margin-bottom: 2lh;">
+<p>Check what image is installed<br><br>[root@bigiq-cm1:Active:Standalone] config # tmsh show sys software</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>----------------------------------------------------
+Sys::Software Status
+Volume Product Version Build Active Status
+----------------------------------------------------
+HD1.1 BIG-IQ 6.1.0 0.0.1224 yes complete
+
+---------------------------
+Sys::Software Update Check
+---------------------------
+Check Enabled true
+Phonehome Enabled true
+Frequency weekly
+Status none
+Errors 0</code></pre>
+</li><li style="margin-bottom: 2lh;">
+<p>Assess current logical sizing<br><br>[root@bigiq-cm1:Active:Standalone] config # lvs --unit=k</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>LV VG Attr LSize Pool Origin Data% Move Log Cpy%Sync Convert
+dat.log.1 vg-db-sda -wi-ao--- 7168000.00k
+dat.maint.1 vg-db-sda -wi-a---- 307200.00k
+dat.share.1 vg-db-sda -wi-ao--- 31744000.00k
+dat.swapvol.1 vg-db-sda -wi-ao--- 1048576.00k
+set.1._config vg-db-sda -wi-ao--- 3321856.00k
+set.1._usr vg-db-sda -wi-ao--- 3452928.00k
+set.1._var vg-db-sda -wi-ao--- 31002624.00k
+set.1.root vg-db-sda -wi-ao--- 450560.00k</code></pre>
+<p><span class="note">Note: From this we can see that there is just one &quot;set&quot; that will used for boot slot that <strong>log</strong>, <strong>shared</strong> and <strong>maint </strong>partition are shared between boot slots - that is the reason we can share software images and logs between different boot slots.</span></p>
+</li><li style="margin-bottom: 2lh;">
+<p>Assess current physical sizing<br><br>[root@bigiq-cm1:Active:Standalone] config # pvs</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>PV VG Fmt Attr PSize PFree
+/dev/sda3 vg-db-sda lvm2 a-- 498.50g 423.64g</code></pre>
+<p>We have plenty of free physical space</p>
+</li><li style="margin-bottom: 2lh;">
+<p>Expand the /var partition</p>
+<p>The decision was made that we need to expand /var to 50G from 30G<br><br>[root@bigiq-cm1:Active:Standalone] config # resizevol /var 50000000</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>Resizing logical volumes. OK (y/n)? y
+Rounding size to boundary between physical extents: 47.69 GiB
+Extending logical volume set.1._var to 47.69 GiB
+Logical volume set.1._var successfully resized
+resize2fs 1.41.12 (17-May-2010)
+Filesystem at /dev/vg-db-sda/set.1._var is mounted on /var; on-line resizing required
+old desc_blocks = 2, new_desc_blocks = 3
+Performing an on-line resize of /dev/vg-db-sda/set.1._var to 12500992 (4k) blocks.
+The filesystem on /dev/vg-db-sda/set.1._var is now 12500992 blocks long.</code></pre>
+</li><li style="margin-bottom: 2lh;">
+<p>Verify the new partition size:<br><br>[root@bigiq-cm1:Active:Standalone] config # lvs --unit=k</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>LV VG Attr LSize Pool Origin Data% Move Log Cpy%Sync Convert
+dat.log.1 vg-db-sda -wi-ao--- 7168000.00k
+dat.maint.1 vg-db-sda -wi-a---- 307200.00k
+dat.share.1 vg-db-sda -wi-ao--- 31744000.00k
+dat.swapvol.1 vg-db-sda -wi-ao--- 1048576.00k
+set.1._config vg-db-sda -wi-ao--- 3321856.00k
+set.1._usr vg-db-sda -wi-ao--- 3452928.00k
+set.1._var vg-db-sda -wi-ao--- 50003968.00k &lt;----------------- /var is 50G
+set.1.root vg-db-sda -wi-ao--- 450560.00k</code></pre>
+</li><li style="margin-bottom: 2lh;">
+<p>Create a new boot slot based on imageplan inside base software ISO<br><br>Just to see what is the plan :<br>[root@bigiq-cm1:Active:Standalone] config # imageplan /shared/images/BIG-IQ-6.1.0-0.0.1224.iso</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>product BIG-IQ version 6.1.0 build 0.0.1224 (BIGIQ610) selected
+Standard plan
+Mount point: /, Size: 450000k
+Mount point: /usr, Size: 3450000k
+Mount point: /config, Size: 3320000k
+Mount point: /var, Size: 31000000k &lt;---------- /var will default to 30G
+Tiny plan
+Mount point: /, Size: 450000k
+Mount point: /usr, Size: 3450000k
+Mount point: /config, Size: 500000k
+Mount point: /var, Size: 10485760k</code></pre>
+</li><li style="margin-bottom: 2lh;">
+<p>Create new set we will name it HD1.2<br><br>[root@bigiq-cm1:Active:Standalone] config # addvol HD1.2 /shared/images/BIG-IQ-6.1.0-0.0.1224.iso</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>create volume HD1.2 for image /shared/images/BIG-IQ-6.1.0-0.0.1224.iso
+product BIG-IQ version 6.1.0 build 0.0.1224 (BIGIQ610) selected
+Creating new location sda, 2...
+info: zero sblock for member device; /dev/vg-db-sda/set.2.root
+info: zero sblock for member device; /dev/vg-db-sda/set.2._usr
+info: zero sblock for member device; /dev/vg-db-sda/set.2._config
+info: zero sblock for member device; /dev/vg-db-sda/set.2._var
+</code></pre>
+</li><li style="margin-bottom: 2lh;">
+<p>Verify the creation of the volume set:<br><br>[root@bigiq-cm1:Active:Standalone] config # lvs --unit=k</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>LV VG Attr LSize Pool Origin Data% Move Log Cpy%Sync Convert
+dat.log.1 vg-db-sda -wi-ao--- 7168000.00k
+dat.maint.1 vg-db-sda -wi-a---- 307200.00k
+dat.share.1 vg-db-sda -wi-ao--- 31744000.00k
+dat.swapvol.1 vg-db-sda -wi-ao--- 1048576.00k
+set.1._config vg-db-sda -wi-ao--- 3321856.00k
+set.1._usr vg-db-sda -wi-ao--- 3452928.00k
+set.1._var vg-db-sda -wi-ao--- 50003968.00k &lt;-------- original expanded set 50G
+set.1.root vg-db-sda -wi-ao--- 450560.00k
+set.2._config vg-db-sda -wi-a---- 3321856.00k
+set.2._usr vg-db-sda -wi-a---- 3452928.00k
+set.2._var vg-db-sda -wi-a---- 31002624.00k &lt;--------- new set is still 30G since imageplan prescribed 30G
+set.2.root vg-db-sda -wi-a---- 450560.00k</code></pre>
+</li><li style="margin-bottom: 2lh;">
+<p>Resize /var in the new volume set. Please note nothing would prevent us from resizing original /var partition again<br><br>[root@bigiq-cm1:Active:Standalone] config # resizevol /var 50000000</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>Requested size 50000000k is less than current size 50003968.00k on /dev/vg-db-sda/set.1._var, skipping &lt;---------------Note
+Resizing logical volumes. OK (y/n)? y
+Requested size 50000000k is less than current size 50003968.00k, skipping &lt;---------------Note
+e2fsck 1.41.12 (17-May-2010)
+Pass 1: Checking inodes, blocks, and sizes
+Pass 2: Checking directory structure
+Pass 3: Checking directory connectivity
+Pass 4: Checking reference counts
+Pass 5: Checking group summary information
+set.2./var: 11/1937712 files (0.0% non-contiguous), 165663/7750656 blocks
+Rounding size to boundary between physical extents: 47.69 GiB
+Extending logical volume set.2._var to 47.69 GiB
+Logical volume set.2._var successfully resized
+resize2fs 1.41.12 (17-May-2010)
+Resizing the filesystem on /dev/vg-db-sda/set.2._var to 12500992 (4k) blocks.
+The filesystem on /dev/vg-db-sda/set.2._var is now 12500992 blocks long.</code></pre>
+</li><li style="margin-bottom: 2lh;">
+<p>Verify:<br><br>[root@bigiq-cm1:Active:Standalone] config #lvs --unit=k</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>LV VG Attr LSize Pool Origin Data% Move Log Cpy%Sync Convert
+dat.log.1 vg-db-sda -wi-ao--- 7168000.00k
+dat.maint.1 vg-db-sda -wi-a---- 307200.00k
+dat.share.1 vg-db-sda -wi-ao--- 31744000.00k
+dat.swapvol.1 vg-db-sda -wi-ao--- 1048576.00k
+set.1._config vg-db-sda -wi-ao--- 3321856.00k
+set.1._usr vg-db-sda -wi-ao--- 3452928.00k
+set.1._var vg-db-sda -wi-ao--- 50003968.00k &lt;----------HD1.1 /var 50G
+set.1.root vg-db-sda -wi-ao--- 450560.00k
+set.2._config vg-db-sda -wi-a---- 3321856.00k
+set.2._usr vg-db-sda -wi-a---- 3452928.00k
+set.2._var vg-db-sda -wi-a---- 50003968.00k &lt;----------HD1.2 /var 50G
+set.2.root vg-db-sda -wi-a---- 450560.00k</code></pre>
+<p>This concludes prep phase for upgrade. Please note that this needs to be done on CM and <strong>all</strong> DCDs if we want to expand /var on them.<br><br>Please keep in mind that though we created filesystem, but there is no HD1.2 volume present.<br><br>[root@bigiq-cm1:Active:Standalone] config # tmsh show sys software</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>----------------------------------------------------
+Sys::Software Status
+Volume Product Version Build Active Status
+----------------------------------------------------
+HD1.1 BIG-IQ 6.1.0 0.0.1224 yes complete</code></pre>
+</li><li style="margin-bottom: 2lh;">
+<p>Install the new image using either the GUI or &quot;create-volume volume HD1.2&quot; while installing new image or EngHF.<br><br>root@(bigiq-cm1)(cfg-sync Standalone)(Active)(/Common)(tmos)# install sys software hotfix Hotfix-BIG-IQ-6.1.0.0.33.1224-ENG.iso create-volume volume HD1.2<br>root@(bigiq-cm1)(cfg-sync Standalone)(Active)(/Common)(tmos)# show sys software</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>----------------------------------------------------------------
+Sys::Software Status
+Volume Product Version Build Active Status
+----------------------------------------------------------------
+HD1.1 BIG-IQ 6.1.0 0.0.1224 yes complete
+HD1.2 BIG-IQ 6.1.0 0.0.1224 no installing 0.000 pct</code></pre>
+</li></ol>
+<p><span class="sectiontitle">Additional Information</span></p>
+<ul><li><a href="https://techdocs.f5.com/kb/en-us/products/big-iq-centralized-mgmt/manuals/product/big-iq-centralized-management-dcd-sizing-guide-6-0-1/03.html#guid-8b0df0cd-1f8e-4a46-8110-f0e22bcf0d67" target="_blank" rel="noopener noreferrer">https://techdocs.f5.com/kb/en-us/products/big-iq-centralized-mgmt/manuals/product/big-iq-centralized-management-dcd-sizing-guide-6-0-1/03.html#guid-8b0df0cd-1f8e-4a46-8110-f0e22bcf0d67</a></li></ul>
+</article>
+</body>
+</html>

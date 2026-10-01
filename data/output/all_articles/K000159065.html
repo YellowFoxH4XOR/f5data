@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000159065: Understanding Why DNS CNAME Redirection Does Not Change Website Content</title>
+<meta name="description" content="Support Solution: Understanding Why DNS CNAME Redirection Does Not Change Website Content — When using DNS CNAME records to redirect traffic, you may observe that while DNS queries return the expected CNAME response, end-user browsers still display the original website content instead of…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000159065">
+</head>
+<body>
+<header>
+<h1>K000159065: Understanding Why DNS CNAME Redirection Does Not Change Website Content</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-01-12</dd>
+<dt>Updated</dt><dd>2026-01-12</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS</li><li>BIG-IP LTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000159065">https://my.f5.com/manage/s/article/K000159065</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<p>When using DNS CNAME records to redirect traffic, you may observe that while DNS queries return the expected CNAME response, end-user browsers still display the original website content instead of the redirected destination. This occurs because DNS-based redirection (CNAME) does not modify the HTTP Host header or TLS SNI sent by the browser.</p>
+<p>For example, if you own a domain called <strong>bob.com</strong> and normally serve your website as <strong>www.bob.com</strong>, users typing just <strong>bob.com</strong> in their browser may not see the expected content even when a CNAME record points bob.com to www.bob.com.</p>
+<h2><strong>Environment</strong></h2>
+<ul><li>BIG-IP DNS (GTM)</li><li>DNS CNAME records</li><li>Virtual hosting environments</li><li>Modern web browsers</li><li>HTTP/HTTPS virtual servers</li></ul>
+<h2><strong>Cause</strong></h2>
+<p>A CNAME record only affects DNS resolution and tells the browser which IP address to connect to. It does not change the HTTP Host header or TLS SNI (Server Name Indication) that the browser sends to the web server.</p>
+<p><strong>Example DNS resolution flow:</strong></p>
+<p>When a user types <strong>bob.com</strong> with the following DNS configuration:</p>
+<pre>bob.com      → www.bob.com (CNAME)
+www.bob.com  → 192.0.2.10 (A record)</pre>
+<p><strong>What actually happens:</strong></p>
+<ol><li>DNS asks for bob.com</li><li>DNS returns a CNAME to www.bob.com</li><li>DNS asks for www.bob.com</li><li>DNS returns 192.0.2.10</li></ol>
+<p>DNS resolution is now complete. The browser connects to <strong>192.0.2.10</strong>, but it still sends:</p>
+<pre>Host: bob.com
+SNI: bob.com<br><br></pre>
+<p>because that is what the user typed in the URL bar</p>
+<p>The web server sees at <strong>192.0.2.10</strong> a request for <strong>bob.com</strong>, not <strong>www.bob.com</strong>, and serves whatever virtual host is configured for bob.com. This is why a DNS CNAME does not behave like an HTTP redirect, it only changes how the IP address is found, not which site is requested by the browser.</p>
+<p>Web platforms such as BIG-IP route traffic using the HTTP Host header and TLS SNI, not based on how DNS was resolved.</p>
+<h2><strong>Recommended Actions</strong></h2>
+<p>Choose one canonical hostname for your site (either <strong>www.bob.com</strong> or <strong>bob.com</strong>) and configure both DNS and HTTP appropriately.</p>
+<p><strong>If you want all traffic to use www.bob.com:</strong></p>
+<ol><li>Configure <strong>bob.com</strong> as an A record pointing to your BIG-IP virtual server IP address</li><li>Configure <strong>www.bob.com</strong> as a CNAME pointing to your application hostname (or as an A record)</li><li>Configure an HTTP virtual server on BIG-IP to send an HTTP 301 or 302 redirect from bob.com to www.bob.com</li><li>Ensure your TLS certificate includes both bob.com and www.bob.com (or use a wildcard certificate)</li></ol>
+<p><strong>If you want all traffic to use bob.com:</strong></p>
+<ol><li>Configure <strong>bob.com</strong> as an A record pointing to your BIG-IP virtual server IP address</li><li>Configure <strong>www.bob.com</strong> as either:
+<ul><li>A CNAME pointing to bob.com, OR</li><li>An HTTP redirect to bob.com (requires separate virtual server configuration)</li></ul>
+</li><li>Ensure your TLS certificate includes both bob.com and www.bob.com (or use a wildcard certificate)</li></ol>
+<p><strong>Note:</strong> DNS alone cannot change the hostname a browser sends. Only an HTTP redirect can modify the requested URL.</p>
+<h2><strong>Additional Information</strong></h2>
+<p><strong>Glossary:</strong></p>
+<ul><li><strong>CNAME record</strong> – DNS record that points one name to another</li><li><strong>A record</strong> – DNS record that maps a name to an IP address</li><li><strong>DNS zone</strong> – Administrative domain, for example bob.com</li><li><strong>FQDN</strong> – Fully qualified domain name</li><li><strong>301 / 302</strong> – HTTP redirect status codes (301 = permanent, 302 = temporary)</li><li><strong>Host header</strong> – HTTP header containing the requested hostname</li><li><strong>SNI</strong> – TLS Server Name Indication field used to select the correct virtual host</li></ul>
+<p><strong>Why CNAMEs are commonly used:</strong></p>
+<p>CNAMEs allow applications to point to provider-controlled hostnames that can move between IP addresses without customers needing to change their DNS records.</p>
+<p>Example:</p>
+<pre>www.bob.com          → app-host.example.net (CNAME)
+app-host.example.net → 159.60.132.149 (A record) (A record)</pre>
+<p>The provider controls <strong>app-host.example.net</strong> and can change IP addresses as needed while <strong>www.bob.com</strong> remains stable.</p>
+<p><strong>Best practice:</strong> Allowing both bob.com and www.bob.com to serve different content usually causes confusion with links, cookies, and redirects. Choose one name as the canonical site and redirect the other to it.<strong></strong></p>
+</article>
+</body>
+</html>

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000149267: How to packet capture dns query and responses for a particular fqdn udp payload</title>
+<meta name="description" content="Support Solution: How to packet capture dns query and responses for a particular fqdn udp payload — How to packet capture dns query and responses for a particular fqdn udp payload">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000149267">
+</head>
+<body>
+<header>
+<h1>K000149267: How to packet capture dns query and responses for a particular fqdn udp payload</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-01-13</dd>
+<dt>Updated</dt><dd>2025-01-13</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 12.0.0, 12.1.0, 12.0.X, 17.X.X, 16.X.X, 15.X.X, 14.X.X, 13.X.X, 12.X.X, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0, 13.1.X, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.X, 13.0.1, 13.0.0, 12.1.X, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000149267">https://my.f5.com/manage/s/article/K000149267</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2><p>How to packet capture dns query and responses for a particular fqdn udp payload</p><p><br></p><h2>Environment</h2><p>DNS</p><p><br></p><h2>Cause</h2><p>How to Query the payload &quot;ac-vpn&quot; from ac-vpn.example.com</p><p><br></p><h2>Recommended Actions</h2><p><span style="font-family: Times;font-size: medium;"> </span></p><p>The UDP header is 8 bytes. Then on the UDP payload (actual DNS packet) we have transaction ID (2 bytes), flags (2 bytes), count (8 bytes). Only then starts the first query (QNAME, with label). Which is what we&#39;re interested to capture. (You can see this from wireshark as well.)</p><p><br></p><p>The offset for the QNAME (hostname) is at 20 bytes</p><p>Bearing in mind that tcpdump only allows to define 1, 2 or 4 bytes, so to capture any DNS queries and replies which hostname starts with &quot;ac-vpn.&quot; we need to do the following;</p><p># tcpdump -s0 -nni 0.0:nnn &#39;udp[20:4] = 0x0661632d and udp[24:4] = 0x76706e08&#39;</p><p><br></p><p> </p><p>0x0661632d -&gt; ac-</p><p><br></p><p>0x76706e08 --&gt; vpn</p><p> </p><p>Can run a rotating tcpdump, by followng the method from <a href="https://my.f5.com/manage/s/article/K65251607" target="_blank">https://my.f5.com/manage/s/article/K65251607</a>.</p><p>Please note that running tcpdump might cause a spiked cpu usage and hence please be aware of <a href="https://my.f5.com/manage/s/article/K6546" target="_blank">https://my.f5.com/manage/s/article/K6546</a> for more info.</p><p> </p><p>Another option is to use iRules to log DNS queries/responses - please refer <a href="https://my.f5.com/manage/s/article/K10554155" target="_blank">https://my.f5.com/manage/s/article/K10554155</a> for some good info. Just bear in mind that, while you could attach an iRule directly to the WideIP (and not on the virtual-server), such iRules on WideIP do not support DNS_RESPONSE events. Only DNS_REQUEST. To log both DNS_REQUEST and DNS_RESPONSE, then you would need to create an iRule to be used at LTM level (virtual-server). Something such as:</p><p> </p><p>when DNS_REQUEST {</p><p> if { [DNS::question name] starts_with &quot;ac-vpn&quot; } {</p><p>   log local0. &quot;LTM irule: DNS Request [DNS::question name] with record type of [DNS::question type] seen from [IP::client_addr]&quot;</p><p> }</p><p>}</p><p>when DNS_RESPONSE {</p><p> if { [DNS::question name] starts_with &quot;ac-vpn&quot; } {</p><p>   log local0. &quot;LTM irule: Client was provided with response [DNS::answer]&quot;</p><p> }</p><p>}</p><p> </p><p>However, if this is to be used, then HSL would be a must (see <a href="https://clouddocs.f5.com/api/irules/HSL__open.html" target="_blank">https://clouddocs.f5.com/api/irules/HSL__open.html</a> - namely, the two examples from &quot;Examples&quot; section). Basically replace the &quot;log local&quot; above with HSL method. Do *not* log locally. This option (iRule above + HSL) would also carry a small CPU increase. All options will. But this is actually quite a good option to perform such troubleshooting as we believe any CPU increase to be minimal/negligible.</p><p><br></p><h2>Additional Information</h2><p><br></p><p>To pull off any hostname starting with &quot;ac-vpn&quot; , can use the below syntax ;</p><p># tcpdump -s0 -nni 0.0:nnn &#39;udp port 53 and udp[21:1] = 0x61 and udp[22:2] = 0x632d and udp[24:2] = 0x7670 and udp[26:1] = 0x6e&#39;</p><p><br></p>
+</article>
+</body>
+</html>

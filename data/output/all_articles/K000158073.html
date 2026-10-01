@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000158073: BIG-IP LTM HTTP Health Monitor Marks Pool Members as DOWN with custom Send String configured</title>
+<meta name="description" content="Support Solution: BIG-IP LTM HTTP Health Monitor Marks Pool Members as DOWN with custom Send String configured — A custom HTTP health monitor on BIG-IP LTM marks pool members as DOWN with no responses received, even though the backend server is available and responds to direct HTTP requests. Monitor logs show…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000158073">
+</head>
+<body>
+<header>
+<h1>K000158073: BIG-IP LTM HTTP Health Monitor Marks Pool Members as DOWN with custom Send String configured</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-12-26</dd>
+<dt>Updated</dt><dd>2026-05-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000158073">https://my.f5.com/manage/s/article/K000158073</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>A custom HTTP health monitor on BIG-IP LTM marks pool members as DOWN with no responses received, even though the backend server is available and responds to direct HTTP requests. Monitor logs show <span style="font-family: &#39;courier new&#39;, courier, monospace;">rcv_cnt=0</span> (no response received) for the affected monitor profile. </p>
+<p>Below is an example of pool member monitor logs illustrating this behavior:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">[0][13789] 1970-01-01 00:00:00.000000: ID 123   :(_do_ping): time to ping, now=[1764828842.727655][1970-01-01 00:00:00], status=DOWN [ tmm?=true td=true tr=false tmm_instance=0 all_tma_created=1 tma_created_count=3 tmm_mid_count=3 tmm_mids=21 20 19 addr=::ffff:192.0.2.1:443 mon=/Common/HTTP_Monitor fd=-1 pend=0 #conn=0 up_intvl=5 dn_intvl=5 timeout=16 time_until_up=0 immed=0 next_ping=[1764828842.723029][1970-01-01 00:00:00] last_ping=[1764828837.777929][1970-01-01 19:13:57] deadline=[1764828842.678307][1970-01-01 00:00:00] on_service_list=True <strong>snd_cnt=264 rcv_cnt=0</strong> ]</span></p>
+<p><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">[0][13789] 1970-01-01 00:00:00.000000: ID 123   :(_do_ping): post ping, status=DOWN [ tmm?=true td=true tr=false tmm_instance=0 all_tma_created=1 tma_created_count=3 tmm_mid_count=3 tmm_mids=21 20 19 addr=::ffff:192.0.2.1:443 mon=/Common/HTTP_Monitor fd=-1 pend=0 #conn=0 up_intvl=5 dn_intvl=5 timeout=16 time_until_up=0 immed=0 next_ping=[1764828847.723029][1970-01-01 00:00:00] last_ping=[1764828842.727655][1970-01-01 00:00:00] deadline=[1764828842.678307][1970-01-01 00:00:00] on_service_list=True <strong>snd_cnt=265 rcv_cnt=0</strong> ]</span></p>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP LTM version 17.1.3</li><li>Custom HTTP health monitor configured for a pool member on a non-default route domain</li><li>Monitor send string: <span style="font-family: &#39;courier new&#39;, courier, monospace;">GET HTTP/1.1\r Host: &lt;hostname&gt;\r \r </span></li><li>Monitor receive string: <span style="font-family: &#39;courier new&#39;, courier, monospace;">200</span></li><li>Path field in the new HTTP monitor profile is empty</li><li>A previously working monitor profile specifies a valid path (e.g., <span style="font-family: &#39;courier new&#39;, courier, monospace;">/kiosk</span>)</li></ul>
+<h2>Cause</h2>
+<p>Leaving the Path field empty in the HTTP health monitor configuration causes the monitor to send an invalid HTTP request, resulting in no responses from the backend server and pool members being marked as DOWN. A valid HTTP/1.1 GET request requires at least a <span style="font-family: &#39;courier new&#39;, courier, monospace;">/ </span>as the request URI. Please refer to below on example of <strong>non-working Sent String.</strong></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>GET HTTP/1.1\r\nHost: host.example.com\r\nConnection: Close\r\n\r\n
+</code></pre>
+<h2>Recommended Actions</h2>
+<ol><li>Navigate to <strong>Local Traffic &gt; Monitors</strong> and open the affected HTTP health monitor profile.</li><li>Enter <span style="font-family: &#39;courier new&#39;, courier, monospace;">/</span> in the Path field if no specific resource is required, or specify the appropriate URI path, below are two example of working <em><strong>Sent String</strong></em>.
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>GET / HTTP/1.1\r\nHost: host.example.com\r\nConnection: Close\r\n\r\n
+GET /index.html HTTP/1.1\r\nHost: host.example.com\r\nConnection: Close\r\n\r\n</code></pre>
+</li><li>Save the monitor configuration.</li><li>Enable monitor logging on the pool member and verify that <span style="font-family: &#39;courier new&#39;, courier, monospace;">rcv_cnt</span> value increases and the pool member status changes to UP.</li><li>Disable monitor logging after confirming the issue is resolved to reduce log volume.</li></ol>
+<h2>Additional Information</h2>
+<ul><li>An empty Path field is not equivalent to <span style="font-family: &#39;courier new&#39;, courier, monospace;">/</span> and prevents the BIG-IP system from constructing a valid HTTP/1.1 request.</li><li>Enabling monitor logging and reviewing <span style="font-family: &#39;courier new&#39;, courier, monospace;">rcv_cnt</span> vs <span style="font-family: &#39;courier new&#39;, courier, monospace;">snd_cnt</span> values is useful for troubleshooting health monitor issues.</li><li>Monitor logging should be disabled after troubleshooting to avoid unnecessary log overhead.</li></ul>
+</article>
+</body>
+</html>

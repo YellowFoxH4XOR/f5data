@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161807: Licensing a BIG-IP Directly via iControl REST and the F5 Activation Service</title>
+<meta name="description" content="Support Solution: Licensing a BIG-IP Directly via iControl REST and the F5 Activation Service — This article walks through the complete API sequence used to license a BIG-IP using only iControl REST calls to the device itself and the F5 Activation Service — generating a hardware dossier on the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161807">
+</head>
+<body>
+<header>
+<h1>K000161807: Licensing a BIG-IP Directly via iControl REST and the F5 Activation Service</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-19</dd>
+<dt>Updated</dt><dd>2026-09-24</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161807">https://my.f5.com/manage/s/article/K000161807</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h1>Description</h1>
+<p><br>This article walks through the complete API sequence used to license a BIG-IP using only iControl REST calls to the device itself and the F5 Activation Service — generating a hardware dossier on the BIG-IP, submitting it to F5 for activation, and pushing the resulting license file back onto the device. No BIG-IQ is involved at any point in this process; the BIG-IP is licensed directly using its own registration key.</p>
+<p>This is the same underlying mechanism used by the on-box SOAPLicenseClient utility and by F5&#39;s own automation tooling (including the Ansible bigip_device_license module). Understanding the raw API calls is useful for building custom automation, troubleshooting a failed activation, or validating what a higher-level tool is doing under the hood.</p>
+<p>The example throughout this article uses a BIG-IP at 10.10.10.10. Substitute your own management IP, credentials, and registration key.</p>
+<p> </p>
+<h1>Environment</h1>
+<p><br>BIG-IP running TMOS 12.0 or later with iControl REST enabled</p>
+<p>A valid registration key issued via the My F5 portal</p>
+<p>Network access from the workstation running these commands to the BIG-IP&#39;s management interface (port 443)</p>
+<p>Internet access from the same workstation to reach activate.f5.com (the BIG-IP itself does not need internet access for this workflow — only the machine issuing these REST calls does)</p>
+<p>curl and python (used here for response parsing; any HTTP client and SOAP/XML parser will work equally well)</p>
+<p> </p>
+<h1>Cause</h1>
+<p><br>A newly deployed or re-licensed BIG-IP requires a signed license file before any module can be provisioned. Generating that license involves three distinct systems talking to one another: the BIG-IP itself (which must generate a dossier — a cryptographic statement of its own hardware identity), the F5 Activation Service (which validates the dossier against a registration key and signs a license), and the BIG-IP again (to receive and apply the signed license).</p>
+<p>When this is done through the GUI or through BIG-IQ, these three steps are hidden behind a single workflow. This article exposes each step individually as a discrete REST or SOAP call, which is necessary when building automation, troubleshooting a failure at a specific stage, or working in an environment where BIG-IQ is not present.</p>
+<p> </p>
+<h1>Recommended Actions</h1>
+<p><strong>Step 1 — Authenticate to the BIG-IP</strong></p>
+<p>iControl REST supports token-based authentication. Obtain a token before making further calls:</p>
+<p><code>curl -sk -X POST <a href="https://10.10.10.10/mgmt/shared/authn/login" target="_blank" rel="noopener noreferrer">https://10.10.10.10/mgmt/shared/authn/login</a> -H &quot;Content-Type: application/json&quot; -d &#39;{&quot;username&quot;:&quot;admin&quot;,&quot;password&quot;:&quot;yourpassword&quot;,&quot;loginProviderName&quot;:&quot;tmos&quot;}&#39;</code></p>
+<p><br>The response contains a token under token.token. Extract it and include it as an X-F5-Auth-Token header on every subsequent call in this article:</p>
+<p><code>TOKEN=$(curl -sk -X POST <a href="https://10.10.10.10/mgmt/shared/authn/login" target="_blank" rel="noopener noreferrer">https://10.10.10.10/mgmt/shared/authn/login</a> -H &quot;Content-Type: application/json&quot; -d &#39;{&quot;username&quot;:&quot;admin&quot;,&quot;password&quot;:&quot;yourpassword&quot;,&quot;loginProviderName&quot;:&quot;tmos&quot;}&#39; | python -c &quot;import json,sys; print(json.load(sys.stdin)[&#39;token&#39;][&#39;token&#39;])&quot;)</code></p>
+<p><br>If token authentication is unavailable, HTTP Basic authentication (-u admin:yourpassword) works as a fallback on every call below.</p>
+<p><strong>Step 2 — Generate the dossier on the BIG-IP</strong></p>
+<p>The dossier is generated on-device using the get_dossier utility, invoked through the iControl REST bash endpoint. This requires your registration key as input:</p>
+<p><code>curl -sk -X POST <a href="https://10.10.10.10/mgmt/tm/util/bash" target="_blank" rel="noopener noreferrer">https://10.10.10.10/mgmt/tm/util/bash</a> -H &quot;X-F5-Auth-Token: $TOKEN&quot; -H &quot;Content-Type: application/json&quot; -d &#39;{&quot;command&quot;: &quot;run&quot;, &quot;utilCmdArgs&quot;: &quot;-c \&quot;get_dossier -b XXXXX-XXXXX-XXXXX-XXXXX-XXXXXXX\&quot;&quot;}&#39;</code></p>
+<p><br>The response&#39;s commandResult field contains the dossier — a long block of encoded text representing the device&#39;s hardware identity bound to the supplied registration key. Save this output; it is required for the next step.</p>
+<p><strong>Step 3 — Submit the dossier to the F5 Activation Service</strong></p>
+<p>The Activation Service uses SOAP. To ensure the request passes the Activation Service&#39;s Web Application Firewall (WAF) client reputation and protocol compliance checks, you must spoof a standard curl User-Agent and explicitly quote the SOAPAction header. The previous method of using <code>getEULA</code> and <code>activate</code> has been replaced by a unified, stripped-down <code>getLicense</code> call.</p>
+<p>Submit the initial request using the dossier generated in Step 2:</p>
+<p><code>curl -s -X POST <a href="https://activate.f5.com/license/services/urn:com.f5.license.v5b.ActivationService" target="_blank" rel="noopener noreferrer">https://activate.f5.com/license/services/urn:com.f5.license.v5b.ActivationService</a> -H &quot;Content-Type: text/xml; charset=utf-8&quot; -H &quot;User-Agent: curl/8.10.1&quot; -H &quot;SOAPAction: &#39;&quot;urn:com.f5.license.v5b.ActivationService#getLicense&quot;&#39;&quot; -d &#39;&lt;soapenv:Envelope xmlns:xsi=&quot;http://www.w3.org/2001/XMLSchema-instance&quot; xmlns:xsd=&quot;http://www.w3.org/2001/XMLSchema&quot; xmlns:soapenv=&quot;http://schemas.xmlsoap.org/soap/envelope/&quot; xmlns:urn=&quot;urn:com.f5.license.v5b.ActivationService&quot;&gt;&lt;soapenv:Header/&gt;&lt;soapenv:Body&gt;&lt;urn:getLicense soapenv:encodingStyle=&quot;http://schemas.xmlsoap.org/soap/encoding/&quot;&gt;&lt;dossier xsi:type=&quot;xsd:string&quot;&gt;PASTE_DOSSIER_FROM_STEP_2_HERE&lt;/dossier&gt;&lt;eula xsi:type=&quot;xsd:string&quot;&gt;&lt;/eula&gt;&lt;/urn:getLicense&gt;&lt;/soapenv:Body&gt;&lt;/soapenv:Envelope&gt;&#39;</code></p>
+<p><br><strong>Handling EULA Acceptance:</strong> If the response returns a <code>EULA_REQUIRED</code> state along with the EULA text, you must accept it to proceed. To do this while bypassing WAF signature blocks, extract the EULA text, <strong>HTML-escape it</strong> (e.g., convert <code>&lt;</code> to <code>&amp;lt;</code>, ensuring you do not double-encode existing XML entities), and submit the exact same <code>curl</code> request again, but this time place the escaped EULA text inside the <code>&lt;eula xsi:type=&quot;xsd:string&quot;&gt;&lt;/eula&gt;</code> tags. This escaping process accurately mimics the web portal&#39;s behavior.</p>
+<p><br>On success, the response contains the signed license text within the <code>&lt;license&gt;</code> block. Common fault conditions returned at this stage include fault code 51089 (the supplied key is an internal/development key and cannot be activated on production) and fault code 51092 (the key is already activated on a different unit — contact licensingsupport@f5.com to release it). Save the returned license text; it is required for the final step.</p>
+<p><strong>Step 4 — Push the license file back to the BIG-IP</strong></p>
+<p>Write the signed license text to /config/bigip.license using the same bash utility endpoint used in Step 2. Because the license content contains characters that complicate shell quoting, base64-encoding it first and decoding on the BIG-IP side is the most reliable approach:</p>
+<p><code>LICENSE_B64=$(echo -n &quot;$LICENSE_TEXT&quot; | base64 -w0)</code></p>
+<p><code>curl -sk -X POST <a href="https://10.10.10.10/mgmt/tm/util/bash" target="_blank" rel="noopener noreferrer">https://10.10.10.10/mgmt/tm/util/bash</a> -H &quot;X-F5-Auth-Token: $TOKEN&quot; -H &quot;Content-Type: application/json&quot; -d &quot;{\&quot;command\&quot;: \&quot;run\&quot;, \&quot;utilCmdArgs\&quot;: \&quot;-c \\\&quot;echo $LICENSE_B64 | base64 -d &gt; /config/bigip.license\\\&quot;\&quot;}&quot;</code></p>
+<p><br><strong>Step 5 — Apply the license</strong></p>
+<p>Run reloadlic via the same endpoint to load the new license file into the running configuration:</p>
+<p><code>curl -sk -X POST <a href="https://10.10.10.10/mgmt/tm/util/bash" target="_blank" rel="noopener noreferrer">https://10.10.10.10/mgmt/tm/util/bash</a> -H &quot;X-F5-Auth-Token: $TOKEN&quot; -H &quot;Content-Type: application/json&quot; -d &#39;{&quot;command&quot;: &quot;run&quot;, &quot;utilCmdArgs&quot;: &quot;-c \&quot;/usr/bin/reloadlic\&quot;&quot;}&#39;</code></p>
+<p><br><strong>Step 6 — Confirm the license is active</strong></p>
+<p>Read back the license state to confirm the registration key now matches what was activated:</p>
+<p><code>curl -sk <a href="https://10.10.10.10/mgmt/tm/sys/license" target="_blank" rel="noopener noreferrer">https://10.10.10.10/mgmt/tm/sys/license</a> -H &quot;X-F5-Auth-Token: $TOKEN&quot;</code></p>
+<p><br>The response&#39;s registrationKey field under entries should now show the activated key, along with license start/end dates and the licensed module list.</p>
+<h1>Additional Information</h1>
+<p> </p>
+<p>None</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K54931652: SNAT translation not working when applied from iRule</title>
+<meta name="description" content="Support Solution: SNAT translation not working when applied from iRule — Virtual server has an iRule applied to enable SNAT based on pool member IP.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K54931652">
+</head>
+<body>
+<header>
+<h1>K54931652: SNAT translation not working when applied from iRule</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-07-08</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.X.X, 12.1.3, 12.0.0, 13.X.X, 12.X.X, 17.0.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 17.0.0, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.2, 12.1.1, 12.1.0, 14.X.X, 16.X.X, 15.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K54931652">https://my.f5.com/manage/s/article/K54931652</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>Virtual server has an iRule applied to enable SNAT based on pool member IP.</p>
+
+<p>SNAT is not applied when connecting through the virtual server.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>SNAT</li><li>iRule</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Missing route domain notation in the iRule.</p>
+
+<p><span class="example2">ltm rule /Common/snat_irule_1 {<br>    when LB_SELECTED {<br>        if {[IP::addr [LB::server addr] equals 10.10.10.1]} {<br>            snatpool /Common/my_snat_pool_1            ^^^______!!<br>            }<br>        elseif {[IP::addr [LB::server addr] equals 10.10.10.2]} {<br>            snatpool /Common/my_snat_pool_2                ^^^__!!<br>            }<br>    }<br>}</span></p>
+
+<p>Virtual server, pool and SNAT pool all reside in a route domain:</p>
+
+<p><span class="example2">ltm virtual /Common/my_vs_1 {<br>    destination /Common/10.10.30.80<strong>%1</strong>:80<br>    ip-protocol tcp               ^^^_______!!<br>    rules {<br>        /Common/snat_irule_1<br>    }<br>    &lt;..&gt;<br>}<br><br>ltm pool /Common/my_pool_1 {<br>    &lt;..&gt;<br>    members {<br>        /Common/10.10.10.1:any {<br>            address 10.10.10.1<strong>%1</strong><br>            &lt;..&gt;             ^^^________!!<br>        }<br>        /Common/10.10.10.2:any {<br>            address 10.10.10.2<strong>%1</strong><br>            &lt;..&gt;             ^^^________!!<br>        }<br>    }<br>    &lt;..&gt;<br>}<br><br>ltm snatpool /Common/my_snat_pool_1 {<br>    app-service none<br>    description none<br>    members {<br>        10.10.10.95<strong>%1</strong><br>    }             ^^^_______!!<br>    partition Common<br>}</span></p>
+
+<p>In this situation, the iRule will execute and look for a matching IP in <strong>route domain 0</strong>; the connection will not match the <strong>if</strong> or <strong>elseif</strong> logic, and no SNAT will be applied.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>Add correct route domain notation to the iRule.</p>
+
+<p>For example:</p>
+
+<p><span class="example2">ltm rule /Common/snat_irule_1 {<br>    when LB_SELECTED {<br>        if {[IP::addr [LB::server addr] equals 10.10.10.1%1]} {<br>            snatpool /Common/my_snat_pool_1              ^^^______ Correct<br>            }<br>        elseif {[IP::addr [LB::server addr] equals 10.10.10.2%1]} {<br>            snatpool /Common/my_snat_pool_2                  ^^^__ Correct<br>            }<br>    }<br>}</span></p>
+
+<p><span class="note"><strong>Note</strong>: These changes will only apply to new connections handled by the virtual server.</span></p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

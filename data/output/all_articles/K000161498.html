@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161498: Migrating FCP Licenses from BIG-IQ to My F5 Portal Using f5_license_tool (community edition)</title>
+<meta name="description" content="Support Solution: Migrating FCP Licenses from BIG-IQ to My F5 Portal Using f5_license_tool (community edition) — This article describes a community-built proof-of-concept tool, f5_license_tool.py, for migrating Flexible Consumption Program (FCP) BIG-IP device licenses from BIG-IQ Centralized Management (version…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161498">
+</head>
+<body>
+<header>
+<h1>K000161498: Migrating FCP Licenses from BIG-IQ to My F5 Portal Using f5_license_tool (community edition)</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-01</dd>
+<dt>Updated</dt><dd>2026-06-24</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161498">https://my.f5.com/manage/s/article/K000161498</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>This article describes a community-built proof-of-concept tool, <strong>f5_license_tool.py</strong>, for migrating Flexible Consumption Program (FCP) BIG-IP device licenses from BIG-IQ Centralized Management (version 8.2 and later) to the My F5 portal licensing model.</p>
+<p>When an organisation transitions from BIG-IQ-managed pool licensing to individual registration-key licensing via the My F5 portal, a gap exists between the two systems: BIG-IQ holds device identity records (UUID, hostname, IP address, SKU) while the My F5 portal holds the registration keys — with no automated way to correlate the two. This tool was built to bridge that gap, covering inventory, mapping, dossier collection, license activation, and device re-licensing, with support for air-gapped environments where BIG-IP devices have no direct internet access.</p>
+<p>The full source code is published on DevCentral and is intended as a community resource and starting point, not a finished or supported product:</p>
+<p><a href="https://community.f5.com/kb/technicalarticles/migrating-fcp-licenses-from-f5-big-iq-to-myf5-portal-%E2%80%94-a-python-tool-for-the-rea/346654" target="_blank" rel="noopener noreferrer"> Migrating FCP Licenses from F5 BIG-IQ to MyF5 Portal — A Python Tool for the Real World</a></p>
+<div style="border: 2px solid #c00;padding: 12px;margin: 16px 0;">
+<p><strong>IMPORTANT — read this entire article, including all caveats, before using this tool against any production device.</strong></p>
+<ul><li>
+<p>This is a community-contributed proof of concept, shared as-is. It is <strong>not</strong> an officially supported F5 product or script.</p>
+</li><li>
+<p>Test thoroughly in a non-production lab environment that mirrors your BIG-IQ and BIG-IP versions before running against any live system.</p>
+</li><li>
+<p>Engage your F5 CSM (Customer Success Manager) and CSA (Customer Success Architect) before planning or executing a production migration. They can advise on the safest approach for your specific environment and contract.</p>
+</li><li>
+<p>Read the <strong>Critical Pre-Migration Warning</strong> in the Prerequisites section below in full before proceeding. Skipping this step can result in BIG-IQ destroying the new license you just installed.</p>
+</li></ul>
+</div>
+<h2>Environment</h2>
+<ul><li>
+<p>BIG-IQ Centralized Management 8.2 or later</p>
+</li><li>
+<p>BIG-IP 13.x or later</p>
+</li><li>
+<p>Any Linux or macOS workstation with Python 2.7+ or Python 3.x and the requests library, with HTTPS access to BIG-IP management interfaces (port 443) — as an alternative to running on BIG-IQ directly</p>
+</li><li>
+<p>My F5 portal account with registration keys exported as a CSV (My Products &amp; Plans &gt; Licenses &gt; Export)</p>
+</li><li>
+<p>BIG-IQ pool license usage JSON export (one file per pool — Historic usage report)</p>
+</li><li>
+<p>Internet access from the machine running f5_license_tool.py (required for online activation via activate.f5.com); a separate internet-connected machine is acceptable for air-gapped deployments</p>
+</li></ul>
+<h2>Cause</h2>
+<p>The My F5 portal creates individual registration keys for each BIG-IP device. BIG-IQ managed licensing under FCP used pool keys, which are incompatible with the portal model. When a customer&#39;s FCP contract moves to portal-managed keys, BIG-IQ can no longer activate or manage those licenses, and the portal has no visibility of which device is consuming which key.</p>
+<p>This creates three operational problems:</p>
+<ul><li>
+<p><strong>Asset tracking gap:</strong> the portal&#39;s Chargeback / customer tag fields are unpopulated, so there is no record of which registration key belongs to which device, hostname, or IP address.</p>
+</li><li>
+<p><strong>Re-licensing complexity:</strong> each BIG-IP must have its dossier generated on-device, submitted to the activation server, and the resulting license file pushed back — a process that was previously automated by BIG-IQ but must now be performed per-device.</p>
+</li><li>
+<p><strong>Air-gap constraint:</strong> BIG-IP devices in secure or isolated networks cannot reach activate.f5.com directly, requiring a multi-stage offline workflow.</p>
+</li></ul>
+<p>A fourth problem, separate from the above and described in detail in the Prerequisites section, is that BIG-IQ continues to track a pool license assignment for a device even after that device has been re-licensed with a My F5 portal key. This stale assignment record is a latent risk to the new license and must be addressed before migration, not after.</p>
+<h2>Prerequisites — Read Before Proceeding</h2>
+<div style="border: 2px solid #c00;padding: 12px;margin: 16px 0;">
+<p><strong>Critical Pre-Migration Warning: revoke session required before relicensing</strong></p>
+<p>After a BIG-IP is migrated from a BIG-IQ pool license to a My F5 portal key, BIG-IQ&#39;s own bookkeeping still shows that device as holding a pool license assignment — regardless of whether the device&#39;s BIG-IQ inventory status is <strong>Managed</strong> or <strong>Unmanaged</strong>.</p>
+<p>As currently understood, if a Revoke is subsequently issued against that stale pool assignment — individually or as part of a bulk operation — BIG-IQ will actively contact the BIG-IP over the network and remove its license. This will destroy the newly installed My F5 portal license and require the device to be re-licensed again.</p>
+<p><strong>For now, the recommended pre-migration step is to perform a revoke session against the existing BIG-IQ pool assignment for each device — while it is still on the BIG-IQ pool license, before the My F5 portal license is installed</strong> — rather than leaving a stale assignment in place to be discovered and revoked later. Work with your CSM/CSA to confirm the safest sequencing for your environment, as this behaviour may differ across BIG-IQ versions and is an active area of investigation within the community.</p>
+<p>This is not yet a fully solved problem. Treat any pool license cleanup step as higher-risk than the relicensing step itself, and test the full sequence end-to-end in a lab before touching production devices.</p>
+</div>
+<p><strong>BIG-IQ 8.2 — Python version</strong></p>
+<p>BIG-IQ 8.2 ships with a default python binary that may not resolve as expected. On 8.2, invoke the script explicitly with python2.7 rather than relying on the python symlink:</p>
+<pre><code>python2.7 f5_license_tool.py --mode summary --json pool_export.json</code></pre>
+<p>This has been confirmed necessary on BIG-IQ 8.2 in practice. Later BIG-IQ versions (8.4+) have generally been more predictable in this regard, but confirm the correct interpreter on your own system before running:</p>
+<pre><code>which python python2.7 python3
+python2.7 --version</code></pre>
+<p><strong>Enabling shell access for the admin account</strong></p>
+<p>By default the BIG-IQ admin account may not have bash shell access, which this tool requires. Enable it once per BIG-IQ:</p>
+<pre><code>tmsh modify auth user admin shell bash
+tmsh save sys config</code></pre>
+<p><strong>If admin shell access cannot be granted — root as a fallback</strong></p>
+<p>In environments where granting shell access to the admin account is not permitted or not yet configured, running the script as root is a workable fallback. The tool authenticates to BIG-IP and BIG-IQ over iControl REST independently of the OS-level account running the script, so using root on the BIG-IQ shell does not change what the script is able to do over the API — it only affects local shell access on the BIG-IQ itself. For production use, a dedicated service account with the minimum required role is preferable to routine use of either root or shared admin credentials; agree the appropriate account model with your CSM/CSA for your environment.</p>
+<p><strong>Enabling iControl REST (if not already enabled)</strong></p>
+<p>Run once on each BIG-IP as root before the tool can connect:</p>
+<pre><code>tmsh modify sys httpd allow replace-all-with { &lt;IP address of BIG-IQ and/or the Linux host running the script&gt; }</code></pre>
+<p><span class="note"><strong>Note</strong>: You should use the above command syntax if you are adding an IP address or range of IP addresses to the current list the first time. If you have configured the allowed list prior to this, you may want to use the <strong>tmsh modify sys httpd allow add { &lt;IP address of BIG-IQ and/or the Linux host running the script&gt; }</strong> command syntax instead. For more information, refer to <a href="https://my.f5.com/manage/s/article/K13309" target="_blank" rel="noopener noreferrer">K13309: Restricting access to the Configuration utility by source IP address</a>. From a security perspective, you should always restrict access to the BIG-IP Configuration utility and only allow the necessary host(s) to connect as needed.</span></p>
+<pre><code>tmsh modify auth user admin shell bash
+tmsh save sys config</code></pre>
+<p><strong>Install the dependency</strong></p>
+<pre><code>pip install requests urllib3</code></pre>
+<h2>Answer/Recommended Actions</h2>
+<p>Once the prerequisites above are complete — including the pre-migration revoke session described in the warning — the tool provides six modes, used in sequence for a full migration. Run the script with no arguments to see the interactive mode menu:</p>
+<pre><code>python f5_license_tool.py</code></pre>
+<p>(On BIG-IQ 8.2, use python2.7 f5_license_tool.py as noted above.)</p>
+<p><strong>Step 1 — summary: understand your SKU inventory</strong></p>
+<p>Export the BIG-IQ pool usage JSON (one file per pool) and run a count of active devices per SKU. Records with a revoked timestamp are automatically excluded. See <em>How to collect historic FCP license usage data from BIG-IQ License Manager for FCP</em> for guidance on producing this export.</p>
+<pre><code>python f5_license_tool.py --mode summary --json /path/to/pool_export.json</code></pre>
+<p><strong>Step 2 — map: correlate BIG-IQ devices to portal registration keys</strong></p>
+<p>This interactive mode reads the BIG-IQ JSON export and the My F5 portal CSV export and allows the operator to assign a portal registration key to each device record. Keys with a Revoked, Cancelled, or Expired status in the portal CSV are never offered as candidates. The output is a mapping CSV used by all subsequent steps.</p>
+<pre><code>python f5_license_tool.py --mode map \
+    --json /path/to/pool_export.json \
+    --keys /path/to/my_f5_portal_export.csv \
+    --out  mapping.csv</code></pre>
+<p>The resulting mapping.csv contains one row per device with ip, hostname, reg_key, sku, and chargeback fields pre-populated.</p>
+<p><strong>Step 3 — harvest: collect dossiers from BIG-IP devices (air-gap only)</strong></p>
+<p>Skip this step if the machine running the tool has direct internet access. For air-gapped environments, this step connects to each BIG-IP via iControl REST, runs get_dossier on-device, and saves &lt;hostname&gt;_&lt;ip&gt;.dossier files to a local folder. No internet access is required at this stage.</p>
+<pre><code>python f5_license_tool.py --mode harvest \
+    --csv mapping.csv \
+    --dossiers-dir ./dossiers</code></pre>
+<p>Transfer the dossiers/ folder to an internet-connected machine and proceed to Step 4.</p>
+<p><strong>Step 4 — preflight: activate dossiers and generate license files</strong></p>
+<p>Contacts activate.f5.com via SOAP for each registration key, submits the corresponding dossier, and saves &lt;hostname&gt;_&lt;ip&gt;.license files to a local folder. No BIG-IP connection is required. This step is idempotent — if a license file already exists it is skipped unless --force is specified.</p>
+<pre><code>python f5_license_tool.py --mode preflight \
+    --csv mapping.csv \
+    --dossiers-dir ./dossiers \
+    --licenses-dir ./licenses</code></pre>
+<p>This step also produces licenses/portal_updates.csv, a file containing the pre-formatted customer_tag value (UID=;HN=&lt;hostname&gt;;IP=&lt;ip&gt;) for each registration key, ready to paste into the My F5 portal Customer Tag field manually until the portal API becomes available. Transfer the licenses/ folder back to the customer environment if needed.</p>
+<p><strong>Step 5 — batch: push license files to BIG-IP devices</strong></p>
+<p>Connects to each BIG-IP in the mapping CSV, confirms the action with the operator for each device, writes the license file to /config/bigip.license via iControl REST, and runs reloadlic. If a device already carries the correct registration key it is skipped automatically. After each successful license push the remaining device list is written to mapping_remaining.csv, allowing the operator to stop and resume the batch across multiple sessions.</p>
+<pre><code>python f5_license_tool.py --mode batch \
+    --csv mapping.csv \
+    --licenses-dir ./licenses</code></pre>
+<p>To resume a partial batch from a previous session:</p>
+<pre><code>python f5_license_tool.py --mode batch \
+    --csv mapping_remaining.csv \
+    --licenses-dir ./licenses</code></pre>
+<p><strong>Step 6 — update the My F5 portal customer tags</strong></p>
+<p>Open portal_updates.csv. For each row, navigate to the registration key in the My F5 portal (My Products &amp; Plans &gt; Licenses), open the key details, and paste the value from the customer_tag column into the Customer Tag field. This records the device UUID, hostname, and IP against the key for asset management purposes.</p>
+<p><strong>Direct workflow (internet-accessible environment)</strong></p>
+<p>If the BIG-IP network has internet access, Steps 3 and 4 can be skipped. The batch mode will generate the dossier on-device and call activate.f5.com automatically in a single pass:</p>
+<pre><code>python f5_license_tool.py --mode map  --json pool.json --keys portal.csv --out mapping.csv
+python f5_license_tool.py --mode batch --csv mapping.csv</code></pre>
+<h2>Additional Information</h2>
+<ul><li>
+<p><strong>Status of this tool:</strong> this is a community proof of concept built to address a real gap in the FCP migration process. It is shared in good faith to help others facing the same problem, but it has not been through F5&#39;s formal QA, support, or product processes. Use it as a reference implementation and a starting point for your own validated tooling, not as a drop-in production utility.</p>
+</li><li>
+<p><strong>Work with your CSM and CSA:</strong> before planning a migration using this or any similar approach, involve your F5 Customer Success Manager and Customer Success Architect. They can help validate the approach against your specific BIG-IQ version, contract structure, and environment, and may be aware of additional considerations not covered here.</p>
+</li><li>
+<p><strong>The pool-assignment cleanup problem is still open:</strong> as described in the Prerequisites section, no fully safe, automated method for removing a stale BIG-IQ pool license assignment after relicensing has been confirmed at the time of writing. The current guidance — revoke before relicensing rather than after — is a workaround, not a resolution. If F5 support or further community testing identifies a safe post-migration cleanup method, this article should be updated accordingly.</p>
+</li><li>
+<p><strong>Source code:</strong> the full source for f5_license_tool.py is published on DevCentral: <a href="https://community.f5.com/kb/technicalarticles/migrating-fcp-licenses-from-f5-big-iq-to-myf5-portal-%E2%80%94-a-python-tool-for-the-rea/346654" target="_blank" rel="noopener noreferrer"> Migrating FCP Licenses from F5 BIG-IQ to MyF5 Portal — A Python Tool for the Real World</a>. Review the code yourself before running it, and consider it a starting point to adapt for your own environment and controls rather than using it unmodified.</p>
+</li><li>
+<p><strong>Authentication:</strong> the tool attempts token-based authentication (POST /mgmt/shared/authn/login) first, falling back to HTTP Basic. Credentials can be supplied interactively, via the F5_HOST, F5_USER, F5_PASS environment variables, or via a JSON config file (--config).</p>
+</li><li>
+<p><strong>Revoked records:</strong> BIG-IQ pool export JSON records containing a non-empty revoked timestamp field are automatically excluded from all modes. Portal CSV rows with a status of Revoked, Cancelled, or Expired are never offered as candidate keys during mapping.</p>
+</li><li>
+<p><strong>Error 51092:</strong> if activation returns fault 51092 (key already activated on a different unit), the key cannot be re-activated via the script. Contact <a href="mailto:licensingsupport@f5.com" target="_blank" rel="noopener noreferrer">licensingsupport@f5.com</a> with the registration key and chassis serial number.</p>
+</li><li>
+<p><strong>Error 51089:</strong> fault 51089 indicates an internal F5 development or lab key that cannot be activated on the production portal. Use a production or evaluation key obtained from the My F5 portal.</p>
+</li><li>
+<p><strong>Python compatibility:</strong> the tool is written to be compatible with Python 2.7.5 (as shipped on BIG-IQ 8.x) and Python 3.x. The only external dependency is the requests library.</p>
+</li><li>
+<p><strong>Related resources:</strong></p>
+<ul><li>
+<p>DevCentral source code: <a href="https://community.f5.com/kb/technicalarticles/migrating-fcp-licenses-from-f5-big-iq-to-myf5-portal-%E2%80%94-a-python-tool-for-the-rea/346654" target="_blank" rel="noopener noreferrer"> Migrating FCP Licenses from F5 BIG-IQ to MyF5 Portal — A Python Tool for the Real World</a></p>
+</li><li>
+<p>How to collect historic FCP license usage data from BIG-IQ License Manager for FCP</p>
+</li><li>
+<p>K2595: Activating and installing a license file from the command line</p>
+</li><li>
+<p>K7752: Overview of the F5 license activation process</p>
+</li><li>
+<p>My F5 portal: <a href="https://my.f5.com" target="_blank" rel="noopener noreferrer">https://my.f5.com</a></p>
+</li></ul>
+</li></ul>
+</article>
+</body>
+</html>

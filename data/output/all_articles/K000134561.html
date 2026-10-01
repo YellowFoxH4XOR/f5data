@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000134561: Aspen Mesh appends host header in request to authority header</title>
+<meta name="description" content="Support Solution: Aspen Mesh appends host header in request to authority header — &#x27;:authority&#x27;, &#x27;service:9090,svcname.ns.svc.cluster.local:8080&#x27;.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000134561">
+</head>
+<body>
+<header>
+<h1>K000134561: Aspen Mesh appends host header in request to authority header</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-05-23</dd>
+<dt>Updated</dt><dd>2023-05-23</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.14, 1.11</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000134561">https://my.f5.com/manage/s/article/K000134561</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>Aspen Mesh is appending host header received in the request to the :authority header. The following istio-proxy log example shows this behavior:</p>
+
+<pre class="ckeditor_codeblock">
+2023-05-02T14:21:41.258290Z    debug  envoy http     [C9021][S5093339925327115450] request headers complete (end_stream=false):
+&#39;:method&#39;, &#39;POST&#39;
+&#39;:authority&#39;, &#39;service:9090,svcname.ns.svc.cluster.local:8080&#39;.
+</pre>
+
+<h2><br><strong>Environment</strong></h2>
+Aspen Mesh: 1.14.x, 1.11.x<br> 
+<h2><strong>Cause</strong></h2>
+Istio is a versatile and powerful service mesh that provides a myriad of features including traffic management, service discovery, security, and observability. At the heart of Istio&#39;s traffic management capabilities are a few key components that allow users to define complex routing rules and policies. In this article, we will delve into how Istio routes application traffic to its destination service using three fundamental components: VirtualService, DestinationRule, and ServiceEntry.  Istio&#39;s objects typically configured to enable sidecar route the traffic to destination service.<br> 
+<h2><strong>Recommended Actions</strong></h2>
+VirtualService that removes the authority header could be created. Here&#39;s an example configuration:
+
+<pre class="ckeditor_codeblock">
+..
+  http:
+  - route:
+    - destination:
+        host: svc.example.com
+        port:
+          number: 80
+    headers:              
+      request:
+        remove:
+        - :authority
+</pre>
+
+<p>In this example, the :authority header will be removed from the request when sent to svc.example.com. This might not be suitable for all scenarios, as some servers require the :authority or Host header to function correctly.<br> </p>
+
+<h2><strong>Additional Information</strong></h2>
+Istio sidecar will route the traffic if the destination service for example is &quot;svc.example.com&quot;. Based on the :authority header value svc.example.com, the Istio sidecar will attempt to route the traffic. The sidecar will look for a VirtualService that has a matching host field. In this case, it will search for a VirtualService with the host field set to svc.example.com. The sidecar will apply the routing rules defined in the matched VirtualService. In this case, the traffic will be directed to svc.example.com service on port 80.<br><br>After determining the destination, the sidecar will search for a DestinationRule that matches the destination host. In this case, it will look for a DestinationRule with the host field set to svc.example.com. If a matching DestinationRule is found, the sidecar will apply the traffic policies defined in the DestinationRule. As you can see the Istio sidecar will use the :authority header value svc.example.com to match the appropriate VirtualService and DestinationRule, and then route and manage the traffic according to the configurations defined in those objects.
+<p>When a request is made from an application in a pod, it is first intercepted by the Istio sidecar proxy (Envoy) co-located with the application. The sidecar proxy is responsible for routing the traffic according to the rules defined in Istio’s traffic management resources.<br><br>The primary resources we&#39;ll focus on are:</p>
+
+<p><strong><em>VirtualService:</em></strong> This is used to configure the routing rules to direct traffic to specific services within the Istio service mesh. It defines a set of traffic routing rules to apply when a host is addressed.<br><strong><em>DestinationRule:</em></strong> This defines policies that apply to traffic intended for a service after routing has occurred. These rules specify load balancing policies, outlier detection, and TLS settings.<br><strong><em>ServiceEntry:</em></strong><em> </em>This is used to add additional entries to Istio&#39;s internal service registry, so that auto-discovered services in the mesh can route to these manually specified services.<br> </p>
+
+<p><strong style="font-size: 18px;">HTTP 1.1 and HTTP 2.0 Traffic</strong><br>In the context of HTTP 1.1 and HTTP 2.0 traffic, Istio uses the :authority or Host header of the HTTP request to match against the hosts field in the VirtualService configuration. The matched VirtualService then directs the traffic to the appropriate destination.<br><br>VirtualService Example:</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+ name: vs-example
+spec:
+ hosts:
+ - svc.example.com
+ http:
+ - route:
+ - destination:
+  host: svc.example.com
+  port:
+   number: 80 </pre>
+
+<p>In this example, when the :authority or Host header of the HTTP request is svc.example.com, the traffic is routed to the service svc.example.com on port 80.<br> </p>
+
+<p><em>DestinationRule Example:</em></p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+ name: dr-example
+spec:
+ host: svc.example.com
+ trafficPolicy:
+ loadBalancer:
+  simple: ROUND_ROBIN
+</pre>
+
+<p>After the VirtualService has routed the traffic to svc.example.com, the DestinationRule applies additional policies to the traffic. In this case, a round-robin load balancing policy is applied.<br> </p>
+
+<p><strong style="font-size: 18px;">TCP Traffic</strong><br>For TCP traffic, Istio uses the IP and Port of the request to direct traffic based on the ServiceEntry and VirtualService configurations. Unlike HTTP traffic, TCP traffic does not have a Host or :authority header. Therefore, the routing decisions are made based on the destination IP and port.<br> </p>
+
+<p><em>ServiceEntry Example:</em></p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: networking.istio.io/v1alpha3
+kind: ServiceEntry
+metadata:
+ name: external-svc-tcp
+spec:
+ hosts:
+ - svc.example.com
+ addresses:
+ - 198.51.100.0
+ ports:
+ - number: 80
+ name: tcp
+ protocol: TCP
+ location: MESH_EXTERNAL
+ resolution: STATIC
+ endpoints:
+ - address: 198.51.100.1
+</pre>
+
+<p>In this example, a ServiceEntry is created for a service svc.example.com outside the mesh. The addresses field specifies the IP addresses associated with the host. The ports field specifies the port used by the service. The location field is set to MESH_EXTERNAL, indicating that the service is external to the mesh. The resolution field is set to STATIC, and the actual IP address of the service is provided in the endpoints field.</p>
+</article>
+</body>
+</html>

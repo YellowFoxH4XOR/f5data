@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K61242015: Audit shows password hash for root account as MD5-128</title>
+<meta name="description" content="Support Solution: Audit shows password hash for root account as MD5-128 — Security audit discovers that password hash for root account password hash shows up as MD5-128 instead of SHA on devices that have been upgraded from older versions.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K61242015">
+</head>
+<body>
+<header>
+<h1>K61242015: Audit shows password hash for root account as MD5-128</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-02-09</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 13.X.X, 15.X.X, 14.X.X, 12.X.X, 11.X.X, 11.5.X, 11.4.X, 11.3.X, 11.2.X, 11.1.X, 11.0.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 11.6.X, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 11.6.5, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 16.X.X, 11.5.0, 11.4.1, 11.4.0, 11.3.0, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 11.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K61242015">https://my.f5.com/manage/s/article/K61242015</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br><br>Security audit discovers that password hash for root account password hash shows up as MD5-128 instead of SHA on devices that have been upgraded from older versions.<br><br>Password hash should be SHA-512</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP Linux Host subsystem </li><li>/etc/shadow</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br><br>The root password is handled by host not by TMOS but TMOS is in control of the PAM modules that provide login security.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+Change the root password as outlined in<br><br><a href="https://my.f5.com/manage/s/article/K13121" target="_self">K13121: Changing system maintenance account passwords (11.x - 14.x)</a><br><br>This will reset the hash  so that it will be recalculated based on what PAM specifies. <br> 
+<p><span class="sectiontitle">Additional Information</span><br><br>When upgrading versions the password hash will not be updated.  You can use this command to see what, if anything, has been changed from the defaults,  <br><br>tmsh show running-config auth password-policy all-properties<br><br>for example:<br><br><span class="example2"><span class="code">[root@ltm2:Active] pam.d # tmsh show running-config auth password-policy all-properties<br>auth password-policy {<br>    description none<br>    expiration-warning 7<br>    max-duration 99999<br>    max-login-failures 0<br>    min-duration 0<br>    minimum-length 6<br>    password-memory 0<br>    policy-enforcement disabled<br>    required-lowercase 0<br>    required-numeric 0<br>    required-special 0<br>    required-uppercase 0<br>}</span></span><br><br>To see what hash the system is using you&#39;d look at /etc/pam/system-auth.<br><br><span class="example2"><span class="code">[root@ltm2:Active] pam.d # grep password /etc/pam.d/system-auth | grep requisite</span><br><span class="code">password    requisite     pam_unix.so use_authtok sha512 shadow remember=0 min_days=0 max_days=99999 warn_age=7</span></span><br><br><span class="note">Note: most of these command will only work if you&#39;re signed in as the root user, admin or other users will not work to view /etc/shadow.</span><br><br>In the last line you can see the values match up with what the tmsh command reported (parameters that use default values aren&#39;t generally added to the line).  It also shows that we&#39;re configured to be using sha512 to encrypt the password.  <br><br>To see what you&#39;re currently using you can look at /etc/shadow.  The second field in the file is the hashed password for each user, and it is generally separated by $ signs into three parts, which are the hashing algorithm, the salt and the hash itself (if it doesn&#39;t have the first section then it&#39;s using the default hash algorithm, which is DES).<br><br>$0$ is DES,<br>$1$ is MD5,<br>$2$ and $2a$ are Blowfish,<br>$3$ is NT Hash,<br>$5$ is SHA-256<br>$6$ is SHA-512.<br><br>The following command will allow you to just see the encryption hash algorithm:for the root user:<br><br><span class="example2"><span class="code">grep root /etc/shadow | awk -F: &#39;$2 ~ /^\$[0-6]\$/ {print $2}&#39; | cut -c-3</span></span><br><br>For example:<br><br><span class="example2"><span class="code">[root@ltm2:Active] pam.d # grep root /etc/shadow | awk -F: &#39;$2 ~ /^\$[0-6]\$/ {print $2}&#39; | cut -c-3<br>$6$</span></span><br><br>This shows that it&#39;s using encryption hash algorithm 6 or SHA-512, if it&#39;s 1 then it&#39;s MD5.<br><br>This will happen if you&#39;ve done an upgrade from an older version of the LTM software that was using MD5 to a newer version that&#39;s using sha512.  Host can continue to use other version based on the value of that $x$ field.<br> </p>
+</article>
+</body>
+</html>

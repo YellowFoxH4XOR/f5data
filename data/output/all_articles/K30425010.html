@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K30425010: Understanding X-ENVOY-UPSTREAM-SERVICE-TIME in Envoy Access Logs</title>
+<meta name="description" content="Support Solution: Understanding X-ENVOY-UPSTREAM-SERVICE-TIME in Envoy Access Logs — Access Logs are standard outputs for istio-proxy container running beside application workload that outputs access information. By default, access log is enabled in Aspen Mesh. For information about…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K30425010">
+</head>
+<body>
+<header>
+<h1>K30425010: Understanding X-ENVOY-UPSTREAM-SERVICE-TIME in Envoy Access Logs</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-03-17</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K30425010">https://my.f5.com/manage/s/article/K30425010</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>Access Logs are standard outputs for istio-proxy container running beside application workload that outputs access information. By default, access log is enabled in Aspen Mesh. For information about configuring access logs, refer to <a href="https://my.f5.com/manage/s/article/K19302224" target="_self">K19302224: Configure Access Logs in Aspen Mesh</a>.</p>
+
+<p>The default format string of access log is shown as below:</p>
+
+<p><span class="code">[%START_TIME%] &quot;%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%&quot;%RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION%%RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% &quot;%REQ(X-FORWARDED-FOR)%&quot; &quot;%REQ(USER-AGENT)%&quot;&quot;%REQ(X-REQUEST-ID)%&quot; &quot;%REQ(:AUTHORITY)%&quot; &quot;%UPSTREAM_HOST%&quot;\n</span></p>
+
+<p>In this article we discuss the <strong>X-ENVOY-UPSTREAM-SERVICE-TIME</strong> log entry, which is time in milliseconds spent by the upstream host processing the request and the network latency between Envoy and upstream host. For more information, refer to Envoy <a href="https://www.envoyproxy.io/docs/envoy/latest/configuration/observability/access_log/usage" target="_self">Access Logs</a> and <a href="https://github.com/envoyproxy/envoy/blob/main/docs/root/configuration/http/http_filters/router_filter.rst#x-envoy-upstream-stream-duration-ms" target="_self">GitHub</a> documentation. </p>
+
+<p>The access log collected from istio-proxy appears similar to the following example:</p>
+
+<p><span class="example2">[2021-12-30T16:45:07.874Z] &quot;GET /Redacted HTTP/2&quot; 503 URX via_upstream - &quot;-&quot; 0 76 288 287 &quot;-&quot; &quot;-&quot; &quot;807c075d-9469-465b-98dc-8579fba6fcf3&quot; &quot;nscp-w1-001:8081&quot; &quot;203.0.113.109:8081&quot; outbound|8081||nscp-w1-001 192.168.28.26:41406 203.0.113.109:8081 192.168.28.26:64885 - default</span></p>
+
+<p>Below shows a GET request with &quot;807c075d-9469-465b-98dc-8579fba6fcf3&quot; as REQ(X-REQUEST-ID), which is what Envoy uses to find the specific request. You can query for this string in your packet capture to follow the exact request. This packet capture was done on the pod level (closest to the Envoy proxy) and you can see that the time taken for the request to get a response of 503 in this case is 168 milliseconds which is different than 287 milliseconds shown in above access logs. </p>
+
+<p><span class="example2">10315   *REF*   192.168.28.26   203.0.113.109   HTTP2   243 HEADERS[99]: GET /Redacted/ 143<br>10323   0.168   203.0.113.109   192.168.28.26   HTTP2   215 HEADERS[99]: 503 Service Unavailable, DATA[99] (text/plain) 143<br>10325   0.168   192.168.28.26   203.0.113.109   HTTP2   79  RST_STREAM[99]  143</span></p>
+
+<p>The following output is the first request in our capture with REQ “807c075d-9469-465b-98dc-8579fba6fcf3&quot; but we got 2 more request with the same REQ ID:</p>
+
+<p><span class="example2">10326   *REF*   192.168.28.26   203.0.113.109   HTTP2   175 HEADERS[101]: GET /Redacted 143<br>10335   0.032   203.0.113.109   192.168.28.26   HTTP2   172 HEADERS[101]: 503 Service Unavailable, DATA[101] (text/plain)   143<br>10336   0.032   192.168.28.26   203.0.113.109   HTTP2   79  RST_STREAM[101] 143<br>10337   *REF*   192.168.28.26   203.0.113.109   HTTP2   175 HEADERS[103]: GET /Redacted 143<br>10371   0.060   203.0.113.109   192.168.28.26   HTTP2   172 HEADERS[103]: 503 Service Unavailable, DATA[103] (text/plain)   143</span></p>
+
+<p>These multiple requests with same REQ ID are because of the Envoy retries set by default in Aspen Mesh. After adding the time of all three requests (168+60+60) with time in between the reset stream, we get 287 shown in access logs. Therefore, X-ENVOY-UPSTREAM-SERVICE-TIME in access logs is sum of time taken by all the retries to server a request:</p>
+
+<p><span class="example2">10315   *REF*   192.168.28.26   203.0.113.109   HTTP2   243 HEADERS[99]: GET /Redacted  143<br>10337   0.227   192.168.28.26   203.0.113.109   HTTP2   175 HEADERS[103]: GET /Redacted 143<br>10371   0.287   203.0.113.109   192.168.28.26   HTTP2   172 HEADERS[103]: 503 Service Unavailable, DATA[103] (text/plain)   143</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Aspen Mesh: 1.9.x and higher</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>None </p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+None
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>You can check for the REQ ID in <strong>Hypertext Transfer Protocol 2</strong> section for streams in Wireshark.</p>
+</article>
+</body>
+</html>

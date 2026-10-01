@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160569: HTTPS Health Monitors Fail SSL Handshake After Backend Server&#x27;s SNI Enablement</title>
+<meta name="description" content="Support Solution: HTTPS Health Monitors Fail SSL Handshake After Backend Server&#x27;s SNI Enablement — HTTPS health monitors on BIG-IP LTM fail with SSL handshake errors after Server Name Indication (SNI) is enabled on backend servers, like an IIS server. The issue is isolated to SSL/TLS negotiation…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160569">
+</head>
+<body>
+<header>
+<h1>K000160569: HTTPS Health Monitors Fail SSL Handshake After Backend Server&#x27;s SNI Enablement</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-04-01</dd>
+<dt>Updated</dt><dd>2026-04-01</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 21.0.0, 21.0.X, 21.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 16.1.X, 16.X.X, 17.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160569">https://my.f5.com/manage/s/article/K000160569</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p><strong>HTTPS </strong>health monitors on BIG-IP LTM fail with SSL handshake errors after <strong>Server Name Indication (SNI) </strong>is enabled on backend servers, like an IIS server. The issue is isolated to SSL/TLS negotiation, as TCP monitors report pool members as UP, confirming network connectivity and port availability. The problem occurs because the default HTTPS health monitor does not send the required <strong>SNI </strong>in its <strong>Client Hello</strong> messages [<a href="https://my.f5.com/manage/s/article/K65219243" title="K65219243" target="_blank">K65219243</a>].</p>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP LTM</li><li>Backend servers with <strong>SNI </strong>enabled</li><li>HTTPS monitor with default or custom HTTP request and Host header</li><li>Virtual server uses <strong>HTTPS health monitor</strong> for Backend pool members</li><li><strong>In-TMM monitoring</strong> [Disabled by default]</li></ul>
+<p><span style="font-family: NeusaNextProWideMedium-normal-expanded, Arial, Helvetica, sans-serif;font-size: 1em;font-weight: inherit;">Cause</span></p>
+<p>The BIG-IP HTTPS health monitor does not send the required <strong>SNI</strong> in its <strong>SSL Client Hello</strong> messages when <strong>In-TMM</strong> monitoring is disabled and the monitor is not configured to include the SNI value. After SNI is enabled on backend servers, the servers require SNI for successful SSL/TLS handshakes, causing the health checks to fail. </p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li> Enable In-TMM Monitoring, by running the below command [<a href="https://my.f5.com/manage/s/article/K11323537" title="K11323537" target="_blank">K11323537</a>]. This shifts Health-check processing from the &quot;<strong>bigd</strong>&quot; process to &quot;<strong>TMM</strong>&quot;:<br><pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify sys db bigd.tmm value enable</code></pre>
+</li><li>
+<p>Configure HTTPS Monitor to Include SNI:<strong><br></strong></p>
+<ul><li>Assign a <strong>Server SSL</strong> profile to the HTTPS monitor.</li><li>Set the <strong>SNI</strong> value in the desired <strong>Server SSL</strong> profile to match the backend server&#39;s hostname (e.g., <strong>server1.example.com</strong>)<strong><br></strong></li></ul>
+</li><li>
+<p> Review Monitor Send Strings, by ensuring all custom HTTP/HTTPS monitor send strings explicitly specify the HTTP version (e.g., <strong>HTTP/1.1</strong>) and use correct <strong>CR/LF</strong> sequences (<strong>\r\n</strong> ) [<a href="https://my.f5.com/manage/s/article/K16343688" title="K16343688" target="_blank">K16343688</a>]. Example send string:<br><strong></strong></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>GET /path HTTP/1.1\r\nHost: server1.example.com\r\nConnection: Close\r\n\r\n</code></pre>
+</li><li>Check Resource Utilization, since Enabling <strong>In-TMM</strong> monitoring may increase TMM CPU and Memory usage [<a href="https://my.f5.com/manage/s/article/K85210713" title="K85210713" target="_blank">K85210713</a>]. Monitor system resources after enabling for some days.</li><li>Review Monitor Interval and Timeout, by ensuring that the monitor Interval divides evenly into the timeout value to avoid probe timing anomalies [<a href="https://my.f5.com/manage/s/article/K000158945" title="K000158945" target="_blank">K000158945</a>].</li><li>Test in Maintenance Window, by planning for a brief period (up to 2× the longest monitor interval) for monitors to re-establish health status after enabling In-TMM monitoring.</li></ol>
+<p><span style="color: #2ecc71;"><em><strong>Note:</strong> iRules cannot be used to add SNI to health monitor probes.</em></span></p>
+<h2>Additional Information</h2>
+<ul><li>During the transition from &quot;<strong>bigd</strong>&quot; to <strong>In-TMM</strong> monitoring, pool member status may briefly flap or show as <strong>Unknown </strong>until the first TMM-based probe completes.</li><li>HTTPS monitors with SSL Profile set to &quot;<strong>None</strong>&quot; may fail under <strong>In-TMM</strong> monitoring. Explicitly assign a <strong>Server SSL</strong> profile to each HTTPS monitor.</li><li><strong>In-TMM monitoring</strong> is stricter about <strong>HTTP compliance</strong> than &quot;<strong>bigd</strong>&quot;. Non-compliant send strings may cause monitors to fail.</li><li>The actual impact on TMM resources depends on the number of monitors and system capacity; monitor resource usage after changes.</li></ul>
+</article>
+</body>
+</html>

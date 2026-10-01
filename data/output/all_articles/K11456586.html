@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K11456586: Unbalanced TMM connection counts and different CPU utilization across Data Plane CPU cores</title>
+<meta name="description" content="Support Solution: Unbalanced TMM connection counts and different CPU utilization across Data Plane CPU cores — Some iSeries platforms and VIPRION B4450 blades can potentially experience unbalanced TMM (Traffic Management Microkernel) connection counts, viewable using the command tmsh show sys tmm-traffic.…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K11456586">
+</head>
+<body>
+<header>
+<h1>K11456586: Unbalanced TMM connection counts and different CPU utilization across Data Plane CPU cores</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-04-14</dd>
+<dt>Updated</dt><dd>2024-06-06</dd>
+<dt>Applies to</dt><dd><ul><li>VIPRION Platforms</li><li>BIG-IP Platforms</li><li>BIG-IP i5000 Series</li><li>BIG-IP i7000 Series</li><li>VIPRION B4450 Blade</li><li>BIG-IP i10000 Series</li><li>BIG-IP i11000 Series</li><li>BIG-IP i15000 Series</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K11456586">https://my.f5.com/manage/s/article/K11456586</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Some iSeries platforms and VIPRION B4450 blades can potentially experience unbalanced TMM (Traffic Management Microkernel) connection counts, viewable using the command <strong>tmsh show sys tmm-traffic</strong>. Even-numbered (data-plane) CPU cores show skewed utilization across cores.</p>
+<h2>Environment</h2>
+<ul><li>iSeries platforms (i5000/i7000/i10000/i11000/i15000 series)</li><li>VIPRION B4450 blade</li></ul>
+<h2>Cause</h2>
+<p>Linux kernel 2.4+ and potentially other operating systems, can favor the use of even numbered ephemeral ports. If these clients cycle through connections quickly enough or client side IP diversity is small, the disaggregator (DAG) could prefer certain tmm&#39;s over others causing unbalanced tmm connection loading. Using the command <strong>tmsh show sys tmm-traffic</strong>, the BIG-IP system might report connection that are substantially unbalanced as show in the example below.<br><br><span class="example2"><span class="code">show /sys tmm-traffic<br>---------------------------<br>Sys::TMM: 0.0<br>---------------------------<br>TMM Traffic                ClientSide  ServerSide<br>...<br>  Current Connections           11.4K       29.1K<br>  Maximum Connections           13.5K       31.8K<br>  Total Connections            830.1M      829.5M<br>  Total Requests                20.8M           -<br>...<br> <br>---------------------------<br>Sys::TMM: 0.2<br>---------------------------<br>TMM Traffic                ClientSide  ServerSide<br>...<br>  Current Connections           13.7K       31.9K<br>  Maximum Connections           17.1K       33.9K<br>  Total Connections            354.1M      353.0M<br>  Total Requests                26.7M           -<br>...<br> <br>---------------------------<br>Sys::TMM: 0.4<br>---------------------------<br>TMM Traffic                ClientSide  ServerSide<br>...<br>  Current Connections            9.1K       20.5K<br>  Maximum Connections           10.1K       22.2K<br>  Total Connections            827.0M      827.8M<br>  Total Requests                16.1M           -<br>...</span></span></p>
+<h2>Recommended Actions</h2>
+<h3>Alter db variable to change DAG hashing algorithm</h3>
+<p>With the fix of <a href="https://cdn.f5.com/product/bugtracker/ID913829.html" target="_blank">ID 913829</a>, a new db variable <strong>dagv2.pu.table.size.multiplier</strong> was introduced. The db variable changes the normal DAG hashing algorithm to compensate for the port striding use from client system. Valid db values are 1 (default), 2, or 3 and altering requires a tmm restart. <span>F5 has found the value 2 to be the most effective setting for <strong>dagv2.pu.table.size.multiplier</strong> for the most common situation where this occurs.</span></p>
+<p><em><strong>Impact of workaround</strong>: Restarting TMM will disrupt service traffic. F5 recommends to perform this action while the device is in Standby or in a maintenance window.</em></p>
+<ol><li>Alter the db variable.<br><code>tmsh modify sys db dagv2.pu.table.size.multiplier value 2</code></li></ol>
+<ol start="2"><li>Restart tmm. This will cause traffic groups to failover within HA pair, or disrupt service traffic in case of a standalone device.<br><code>bigstart restart tmm</code></li></ol>
+<p>Monitor the BIG-IP, validating traffic is balanced. If the value 2 does not produce the desired balance pattern, try using the value 3.</p>
+<h3>Programmatically determining which setting provides proper balancing</h3>
+<p>Using source and destination ports from a packet in the client side VLAN, run the command on the platform that has the unbalanced traffic using the command:<br><span class="code"># cmp_dest --command resolve --pu_table_size_multiplier &lt;dag db variable&gt; --remote_port &lt;source_port&gt; --local_port &lt;dest_port&gt;</span><br><span style="color: rgb(21, 137, 31);"><strong>Note</strong>: Option <strong>--command resolve</strong>, queries the local hardware for number of tmm and various other options. Hence, it is critical to run on exact same hardware as device experiencing unbalanced connections.</span><br><span style="color: rgb(21, 137, 31);"><strong>Note</strong>: Option <strong>--pu_table_size_multiplier</strong>, is db variable <strong>dagv2.pu.table.size.multiplier</strong> values can be 1, 2, or 3 overriding the setting it gets from<strong>--command resolve</strong> option.</span></p>
+<p>Likewise, if you would like to test with even numbered 200 (COUNT) ephemeral ports starting from the source port 10000 (START), you can run the following command:</p>
+<p><code>START=10000; COUNT=200; for i in $(seq 0 $((COUNT-1))); do rp=$((START+i*2)); printf $rp:<br>cmp_dest --command resolve --pu_table_size_multiplier 2 --remote_port $rp --local_port 80<br>done |awk -F &#39;/&#39; &#39;{print $3}&#39; |sort |uniq -c</code></p>
+<p>Sample output would be like:<span style="font-family: &#39;courier new&#39;, courier, monospace;"></span></p>
+<pre>     32 tmm0
+     34 tmm1
+     32 tmm2
+     34 tmm3
+     34 tmm4
+     34 tmm5</pre>
+<p>Using this information, you should be able to determine the appropriate <strong>dagv2.pu.table.size.multiplier</strong> value.</p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

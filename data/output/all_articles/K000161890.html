@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161890: NGINX App Protect: HTTP Status Code 000 for XML/JSON Parser OOM After Module Update</title>
+<meta name="description" content="Support Solution: NGINX App Protect: HTTP Status Code 000 for XML/JSON Parser OOM After Module Update — NGINX App Protect returns HTTP status code 000 to the client when the XML/JSON parser encounters an out-of-memory (OOM) condition after updating the nginx-plus-module-appprotect and related NAP…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161890">
+</head>
+<body>
+<header>
+<h1>K000161890: NGINX App Protect: HTTP Status Code 000 for XML/JSON Parser OOM After Module Update</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-25</dd>
+<dt>Updated</dt><dd>2026-06-25</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX App Protect WAF: 5.6.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161890">https://my.f5.com/manage/s/article/K000161890</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>NGINX App Protect returns HTTP status code <span style="background-color: #f1f1f1;">000</span> to the client when the XML/JSON parser encounters an out-of-memory (OOM) condition after updating the <span style="background-color: #f1f1f1;">nginx-plus-module-appprotect</span> and related NAP components. Previously, such requests were passed to the backend and logged in the access log, but now they are dropped and logged with more detailed information. </p>
+<p><strong>Symptoms:</strong></p>
+<ul><li>Application access errors.</li><li>NGINX access logs show HTTP status code <span style="background-color: #f1f1f1;">000</span> for affected requests.</li><li>NGINX error logs contain messages such as:
+<ul><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">APP_PROTECT aborting request ... reason: xml_json parser oom from: ngx_http_app_protect_module.c:3619</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">Cannot allocate ... more bytes for XML parser. current memory size ...</span></li></ul>
+</li><li>The issue is triggered when the XML/JSON parser exceeds its allocated memory buffer.</li></ul>
+<h2>Environment</h2>
+<ul><li>Product: NGINX App Protect</li><li>Platform: Ubuntu 22.04.5 LTS and Ubuntu 24.04.4 LTS</li><li>NGINX Plus and NAP installed on Ubuntu VMs</li><li>Key package versions:
+<ul><li><span style="background-color: #f1f1f1;">nginx-plus-module-appprotect:amd64</span> (36+5.607.1-1~jammy, 36+5.607.1-1~noble)</li><li><span style="background-color: #f1f1f1;">app-protect-plugin:amd64</span> (6.28.0-1~jammy, 6.28.0-1~noble)</li><li><span style="background-color: #f1f1f1;">app-protect:amd64</span> (36+5.607.1-1~jammy, 36+5.607.1-1~noble)</li></ul>
+</li><li>Recent action: Upgrade of NGINX Plus and NAP modules (from 6.25.0-1~jammy to 6.28.0-1~jammy)</li></ul>
+<h2>Cause</h2>
+<p>A change in the default behavior of NGINX App Protect in recent versions: when the XML/JSON parser encounters an OOM condition, the request is now dropped and HTTP status code <span style="background-color: #f1f1f1;">000</span> is returned. Previously, such requests were passed to the backend. This change was made to &quot;fail close&quot; rather than &quot;fail open,&quot; providing more information to help address the root issue.</p>
+<h2>Workaround Example</h2>
+<p>To mitigate OOM errors and the resulting HTTP status code <span style="background-color: #f1f1f1;">000</span>, increase the XML/JSON engine memory allocation as follows:</p>
+<ol><li>Edit the NAP service and save the file:
+<pre># sudo systemctl edit --full nginx-app-protect.service
+
+root@00725279-nginx-plus-waf:/var/log/nginx
+# grep total_xml_memory /etc/systemd/system/nginx-app-protect.service
+ExecStart=/bin/sh -c &#39;usr/share/ts/bin/bd-socket-plugin tmm_count 4 proc_cpuinfo_cpu_mhz 2000000 <strong>total_xml_memory 1073741824</strong> total_umu_max_size 3129344 sys_max_account_id 1024 no_static_config 2
+&gt;&amp;1 &gt;&gt; /var/log/app_protect/bd-socket-plugin.log&#39;
+    </pre>
+</li><li>Restart NAP:
+<pre># systemctl restart nginx-app-protect
+    </pre>
+</li><li>Check the status and the memory change:
+<pre># systemctl status nginx-app-protect
+● nginx-app-protect.service - Nginx App Protect
+   Loaded: loaded (/etc/systemd/system/nginx-app-protect.service; enabled; vendor preset: enabled)
+   Active: active (running) since Wed 2024-11-13 14:42:32 UTC; 4s ago
+    Docs: https://www.nginx.com/resources
+  Main PID: 21315 (sh)
+   Tasks: 8 (limit: 9493)
+   Memory: 26.8M
+   CGroup: /system.slice/nginx-app-protect.service
+       ├─21315 /bin/sh -c usr/share/ts/bin/bd-socket-plugin tmm_count 4 proc_cpuinfo_cpu_mhz 2000000 <strong>total_xml_memory 1073741824</strong> total_umu_max_size 3129344 sys_max_account_id 1024 no_static_config 2&gt;&amp;1 &gt;&gt; /var/log/app_protect/bd-socket-plugin.log
+       └─21318 usr/share/ts/bin/bd-socket-plugin tmm_count 4 proc_cpuinfo_cpu_mhz 2000000 <strong>total_xml_memory 1073741824</strong> total_umu_max_size 3129344 sys_max_account_id 1024 no_static_config
+
+Nov 13 14:42:32 00725279-nginx-plus-waf systemd[1]: Started Nginx App Protect.
+    </pre>
+</li></ol>
+<h2>Answer/Recommended Actions</h2>
+<ol><li><strong>Increase XML/JSON Engine Memory:</strong>
+<ul><li>Follow the workaround above to allocate more memory for XML/JSON parsing. Monitor logs for OOM errors and adjust memory allocation as needed.</li></ul>
+</li><li><strong>Monitor System Resources:</strong>
+<ul><li>Ensure the system has sufficient memory to accommodate increased allocations.</li><li>If memory is tight, consider increasing system RAM.</li></ul>
+</li><li><strong>Understand New Behavior:</strong>
+<ul><li>HTTP status code <span style="background-color: #f1f1f1;">000</span> is now expected for OOM errors in recent NAP versions.</li><li>This code is not part of the HTTP RFC and is specific to NGINX/F5 WAF for NGINX.</li></ul>
+</li><li><strong>Request for Enhancement (RFE):</strong>
+<ul><li>If the new behavior is not desirable, submit an RFE to request a configurable option to revert to the previous behavior or to return an RFC-compliant status code.</li></ul>
+</li></ol>
+<h2>Additional Information</h2>
+<ul><li>There is currently no documented option to revert to the previous behavior; an RFE is required to request this feature.</li><li>The HTTP status code <span style="background-color: #f1f1f1;">000</span> is an NGINX/F5 WAF construct and not a standard HTTP code.</li><li>The issue is traffic-dependent; memory allocation should be tuned based on observed OOM errors in logs.</li><li>If the system is running low on memory, increasing system RAM may be necessary.</li></ul>
+</article>
+</body>
+</html>

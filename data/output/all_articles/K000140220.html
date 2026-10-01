@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000140220: Checking for configuration deployment errors on a Next instance</title>
+<meta name="description" content="Knowledge: Checking for configuration deployment errors on a Next instance — When an App or other configuration is deployed from Central Manager to a Next instance, the configuration validation may fail. Central Manager may provide an ambiguous reason for the failure, or in…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000140220">
+</head>
+<body>
+<header>
+<h1>K000140220: Checking for configuration deployment errors on a Next instance</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2024-07-02</dd>
+<dt>Updated</dt><dd>2025-02-07</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP Next</li><li>BIG-IP Next LTM</li><li>BIG-IP Next WAF</li><li>BIG-IP Next Access</li><li>BIG-IP Next SSL Orchestrator</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000140220">https://my.f5.com/manage/s/article/K000140220</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h1>Introduction</h1>
+<p>When an App or other configuration is deployed from Central Manager to a Next instance, the configuration validation may fail. Central Manager may provide an ambiguous reason for the failure, or in rare cases the configuration validation may fail without Central Manager knowing. This article provides some pointers to monitoring for and resolving such cases.</p>
+<p> </p>
+<h1>Environment</h1>
+<p>Central Manager web UI or API deploying Apps or other configuration to BIG-IP Next. </p>
+<p> </p>
+<h1>Symptoms</h1>
+<ul><li>An App is deployed but does not work.</li><li>An App or other configuration is deployed but the response indicates the deployment failed.</li></ul>
+<p> </p>
+<h1>Collect Data</h1>
+<p>Logs must be reviewed. There are two methods, either via a qkview or by directly accessing the system hosting the Next instance.</p>
+<p> </p>
+<h2>qkview</h2>
+<p>In many cases, it may not be possible to login to the Next host system or access logfiles. In which case, collecting a qkview via Central Manager is the simplest approach.</p>
+<p><a href="/articles/Knowledge/K50050103" target="_top">Generate a QKView diagnostic file for a BIG-IP Next instance using BIG-IP Next Central Manager</a></p>
+<p>Find the f5-fsm-tmm and f5-csm-icb logfiles in the qkview by extracting the qkview tar archive, or uploading to <a href="https://ihealth.f5.com/" target="_blank">iHealth</a>.</p>
+<p>The pod logs in the qkview tar are found in qkview/subpackages/host-qkview/qkview/filesystem/var/log/pods/:</p>
+<p><code>$ ls -l ./qkview/subpackages/host-qkview/qkview/filesystem/var/log/pods/default_f5-fsm-tmm-*/f5-fsm-tmm/<br>total 462<br>-rw-r----- 1 moffatt users 2891134 Apr 18 03:13 0.log</code></p>
+<p><code>$ ls -l ./qkview/subpackages/host-qkview/qkview/filesystem/var/log/pods/default_f5-csm-icb-*/f5-csm-icb/<br>total 607<br>-rw-r----- 1 moffatt users 2934053 Apr 18 03:13 0.log</code></p>
+<p>Or, after uploading the qkview to <a href="https://ihealth.f5.com/" target="_blank">iHealth</a> browse to &quot;Files -&gt; subpackage-logs&quot; and look for the files starting with f5-fsm-tmm-* and f5-csm-icb-*</p>
+<p> </p>
+<h2>Host System (VE)</h2>
+<p>If host access to the Next instance is available, then there are two logfile locations that are of the most help.</p>
+<p>First, identify the names of the running pods of interest:</p>
+<p><code>user@big-ip-next:~$ sudo ls /var/log/pods/ | grep -E &#39;tmm|icb&#39;<br>default_f5-csm-icb-745dc85f6b-xj2h5_b286a0e8-ce3b-427e-bd6b-3dd54add7af0<br>default_f5-fsm-tmm-7cff7fbd8b-wlkxh_124b64bc-3524-4836-8c3b-8c2f699f6860</code></p>
+<p>Second, identify the latest logfile:</p>
+<p><code>user@big-ip-next:~$ ls -l /var/log/pods/default_f5-fsm-tmm-7cff7fbd8b-wlkxh_124b64bc-3524-4836-8c3b-8c2f699f6860/f5-fsm-tmm/<br>total 19392<br>-rw-r----- 1 root root  8562423 <strong>Jul  2 12:02</strong> 0.log<br>-rw-r--r-- 1 root root   791025 Jul  1 08:35 0.log.20240629-230003.gz<br>-rw-r----- 1 root root 10486079 Jul  1 08:35 0.log.20240701-083540</code></p>
+<p><code>user@big-ip-next:~$ ls -l /var/log/pods/default_f5-csm-icb-745dc85f6b-xj2h5_b286a0e8-ce3b-427e-bd6b-3dd54add7af0/f5-csm-icb/<br>total 12220<br>-rw-r----- 1 root root  2011793 <strong>Jul  2 12:02</strong> 0.log<br>-rw-r----- 1 root root 10486258 Jul  1 20:40 0.log.20240701-204042</code></p>
+<p>The latest logfile has the latest timestamp.</p>
+<p> </p>
+<h1>Analysing</h1>
+<p>The <strong>f5-fsm-tmm</strong> pod log will drop log messages from tmm-dpvd, which validates data before it is sent to deployed to tmm.</p>
+<p>Here is an example failure:</p>
+<p><code>2024-01-01T00:00:01.000000001Z stdout F <strong>tmm-dpvd</strong>   2024/01/01 00:00:00.000002 <strong>Error</strong>: vs_validation.go:132  Configured application /app/tenant&lt;string&gt;:application1/stack/tenant&lt;string&gt;:application1:&lt;name1&gt; has conflicting traffic matching criteria with application /app/tenant&lt;string&gt;:application2/stack/tenantjtIcjihnRVuKRU0IC0ysVg:application2:&lt;name2&gt; </code></p>
+<p>The error from tmm-dpvd says that the application being deployed conflicts with a second application. The resolution would be to undeploy the new application and fix the conflict - in this case traffic matching criteria indicates that there is an IP and port overlap.</p>
+<p>The <strong>f5-csm-icb</strong> pod takes care of updating the configuration database. Errors here will mean that the configuration is not updated correctly to the saved configuration.</p>
+<p><code>2024-06-20T12:56:27.810856944Z stdout F 2024/06/20 12:56:27.810772 Info: f5-csm-jp-jobmanager: jobmanager.go:780  Writing error message: &amp;{14432-00201 declareJobErrorGeneric {&quot;14432-00201&quot;:[&quot;[Error on SaveL1Network([{&quot;id&quot;:&quot;3bfc0231-cfa7-4792-b4a7-f31dde14a97c&quot;,&quot;l1Link&quot;:{&quot;linkType&quot;:&quot;Interface&quot;,&quot;name&quot;:&quot;1.2&quot;},&quot;name&quot;:&quot;External-interface&quot;,&quot;vlans&quot;:[{&quot;name&quot;:&quot;External&quot;,&quot;selfIps&quot;:[{&quot;address&quot;:&quot;10.107.1.1/29&quot;,&quot;deviceName&quot;:&quot;1.1&quot;}]}]},{&quot;id&quot;:&quot;b6bdc33a-307a-4f2a-b78c-6ecda81348a4&quot;,&quot;l1Link&quot;:{&quot;linkType&quot;:&quot;Interface&quot;,&quot;name&quot;:&quot;1.1&quot;},&quot;name&quot;:&quot;Internal-interface&quot;,&quot;vlans&quot;:[{&quot;name&quot;:&quot;Internal&quot;,&quot;selfIps&quot;:[{&quot;address&quot;:&quot;10.107.1.9/29&quot;,&quot;deviceName&quot;:&quot;1.2&quot;}]}]},{&quot;l1Link&quot;:{&quot;linkType&quot;:&quot;Interface&quot;,&quot;name&quot;:&quot;1.3&quot;},&quot;name&quot;:&quot;ha-dp&quot;,&quot;vlans&quot;:[{&quot;name&quot;:&quot;ha-dp&quot;,&quot;selfIps&quot;:[{&quot;address&quot;:&quot;10.107.1.25/29&quot;,&quot;deviceName&quot;:&quot;1.4&quot;}]}]},{&quot;l1Link&quot;:{&quot;linkType&quot;:&quot;Interface&quot;,&quot;name&quot;:&quot;1.4&quot;},&quot;name&quot;:&quot;ha-cp&quot;,&quot;vlans&quot;:[{&quot;name&quot;:&quot;ha-cp&quot;,&quot;selfIps&quot;:[{&quot;address&quot;:&quot;10.107.1.16/29&quot;,&quot;deviceName&quot;:&quot;1.3&quot;}]}]}]). Request rejected. Response message: code:&quot;13167-02005&quot;  title:&quot;transformerErrDatabase&quot;  detail:&quot;{\&quot;13167-02005\&quot;:[\&quot;ERROR: duplicate key value violates unique constraint \&quot;KEY_internal_self-ip_uniqueName\&quot; (SQLSTATE 23505), Details:Key (name, _deleted)=(10.107.1.1/29, f) already exists.\&quot;]}&quot;]&quot;]} []}, to db for jobId: af81bcb2-3849-43b3-b73a-83cded84df89, for role: DECLARE</code></p>
+<p>The error seen here is:</p>
+<blockquote>
+<p>Error writing to tables: ERROR: duplicate key value violates unique constraint &quot;KEY_internal_self-ip_uniqueName&quot; (SQLSTATE 23505)&quot;</p>
+</blockquote>
+<p>Problems such as this are indicative of a procedural issue. A part of the existing configuration may need to be deleted or changed before the desired configuration can be made. If Central Manager deploys config that results with errors in this log, a support case may need to be opened.</p>
+<p> </p>
+<h1>Summary</h1>
+<p>The f5-fsm-tmm and f5-csm-icb are the first logs to consult suspected configuration validation problems on a Next instance. They provide greater insight into error conditions that may not be well explained by the result returned to Central Manager or via the API.</p>
+<p> </p>
+<p> </p>
+<p> </p>
+<p> </p>
+<p> </p>
+</article>
+</body>
+</html>

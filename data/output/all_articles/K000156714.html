@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000156714: Producing a TMM diagnostic core file using an iRule trigger</title>
+<meta name="description" content="Support Solution: Producing a TMM diagnostic core file using an iRule trigger — This article shows an example of how you can use iRules to detect problem conditions and trigger a diagnostic tmm core dump.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000156714">
+</head>
+<body>
+<header>
+<h1>K000156714: Producing a TMM diagnostic core file using an iRule trigger</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-09-30</dd>
+<dt>Updated</dt><dd>2025-12-29</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000156714">https://my.f5.com/manage/s/article/K000156714</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>This article shows an example of how you can use iRules to detect problem conditions and trigger a diagnostic tmm core dump.</p>
+<p> </p>
+<h2>Environment</h2>
+<p>A tmm diagnostic corefile can provide good information about the conditions of a fault or unexpected behavior. It can provide the stack trace of the last part of code that was being executed, and it provides a snapshot of the memory state when the core file was dumped.</p>
+<p> </p>
+<p>However, some problem conditions can come and go very quickly. For example, when tmm seems to stall or stop processing a connection, the connection will eventually time out and will be deleted. By that time, the problem condition that shows why the connection was stuck would have gone away, even if you produce a diagnostic core manually ( as described in K15569543 ).</p>
+<p> </p>
+<p>For some of these problems, you might be able to use an irule to detect the problem condition and trigger a core dump.</p>
+<p> </p>
+<p>The following iRules allow you to trigger a tmm core dump by issuing the &quot;DIAG::panic {panic!}&quot; TCL command.</p>
+<p> </p>
+<p>Syntax for DIAG commands:</p>
+<p> </p>
+<p><span style="font-family: courier;">DIAG::panic &lt;message&gt;</span></p>
+<p>-&gt; Cores tmm and never returns</p>
+<p> </p>
+<p><span style="font-family: courier;">DIAG::error &lt;message&gt;</span></p>
+<p>-&gt; Returns a TCL error</p>
+<p> </p>
+<h2></h2>
+<h2>Example</h2>
+<p>In this example, the iRule tries to detect if there is any HTTP response after a certain timeout, and triggers a core if there is no response.</p>
+<pre class="language-javascript" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># iRule to trigger a core dump when there is no HTTP response after a POST message to /my.policy_host
+
+when HTTP_REQUEST {
+  if { [HTTP::uri] starts_with &quot;/my.policy_host&quot; }{
+    if { [HTTP::method] equals &quot;POST&quot; }{
+      set connid &quot;[IP::client_addr]:[TCP::client_port]&quot;
+      set pktnum 0
+      log local0. &quot;$connid URI: [HTTP::uri] Content-Length: [HTTP::header content-length]&quot;
+      set cl [HTTP::header &quot;Content-Length&quot;]
+      HTTP::collect $cl
+
+      set monitor_id [\
+        after 5000 {
+        log local0. &quot;after timer $connid HTTP::collect collected length: [HTTP::payload length]&quot;
+        # If HTTP::payload is still empty after 15 seconds, trigger a diagnostic panic
+        if {[HTTP::payload] &lt; $cl} {
+          log local0. &quot;$connid PANIC: HTTP::collect has been blocked for more than 15 seconds!&quot;
+          # Trigger the diagnostic panic
+          set crash &quot;DIAG::panic {panic!}&quot;
+          eval $crash
+          }\
+        }\
+      ]
+    }
+  }
+}
+
+when HTTP_REQUEST_DATA {
+  set payload [HTTP::payload]
+  # Log the payload for debugging
+  set max [string length [HTTP::payload]]
+  log local0. &quot;$connid Received payload $max: $payload&quot;
+  for {set i 0; set j 0} {$i &lt; $max} {incr i 900} { 
+     set j [expr {($i + 900) - 1}] 
+     log local0. &quot;$connid [string range [HTTP::payload] $i  $j]&quot; 
+  } 
+  HTTP::release
+}
+
+when HTTP_RESPONSE {
+    set svrconnid &quot;[IP::client_addr]:[TCP::client_port] -&gt; [IP::server_addr]:[TCP::server_port]&quot;
+    if {[info exists monitor_id]} {
+        # log local0. &quot;$svrconnid Canceling after script with id $monitor_id&quot;
+        after cancel $monitor_id
+    }
+}
+</code></pre>
+<p> </p>
+<h2>Additional Information</h2>
+<p> </p>
+</article>
+</body>
+</html>

@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K32452422: Enabling istiod debug logging in Aspen Mesh</title>
+<meta name="description" content="Support Solution: Enabling istiod debug logging in Aspen Mesh — Istiod is the unified control plane responsible for configuring Envoy proxies (sidecar and gateways) in your cluster. It provides an abstraction layer for hiding the Envoy proxy APIs while allowing…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K32452422">
+</head>
+<body>
+<header>
+<h1>K32452422: Enabling istiod debug logging in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-09-20</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K32452422">https://my.f5.com/manage/s/article/K32452422</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>Istiod is the unified control plane responsible for configuring Envoy proxies (sidecar and gateways) in your cluster. It provides an abstraction layer for hiding the Envoy proxy APIs while allowing you to configure your mesh using the orchestration environment (in this case Kubernetes) APIs. It is also responsible for validating your mesh configuration as a Kubernetes validation webhook, automatically injecting the sidecar proxies into workloads and managing the lifecycle of keys and certificates used for securing workload-to-workload communication via mutual TLS.</p>
+
+<p>If a pod was not able to get a sidecar injected or any of the Istio/Aspen Mesh resources are not configured properly, istiod is one of the essentials pods that we need to take care and starting to look if something wrong.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li><strong>Kuberntes</strong>: 1.17x,1.18.x,1.19.x,1.20.x</li><li><strong>Aspen Mesh</strong>: 1.6.x, 1.9.x </li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>There are a few things that you should consider doing first before deeply going into activating debug logging in your istiod controlplane:</p>
+
+<ol><li>Ensure that the certificates are not expired if you use your own.</li><li>Verify the validatingwebhooks and mutatingwebhooks works by deploying any resource like a Destination Rule, Virtual Service, Service Entry, or even a pod with a sidecar injected.</li><li>Verify all the pods from your installation are up and running.</li><li>Output the logs from istiod before trying to enable debugging.</li><li>Contact Aspen Mesh Support team.</li></ol>
+If none of the above gives you an insight into what’s going on with your service mesh, enabling debugging in istiod should be the last thing to do.
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ul><li><a href="#Manually" target="_self">Enabling debugging manually</a></li><li><a href="#Template" target="_self">Enabling debugging via deploy template (less preferred)</a></li></ul>
+
+<p><span class="subsectiontitle"><a id="Manually" name="Manually"></a>Enabling debugging manually</span></p>
+
+<p>Here are the steps you need for enabling debug on istiod:</p>
+
+<ol><li>Run the following command:
+	<p><span class="code">istioctl dashboard controlz istiod-76544f59-l6xms.istio-system</span></p>
+
+	<p>If istioctl is not available or didn’t work, try port-forward an istiod pod:</p>
+
+	<p><span class="code">kubectl port-forward pod/istiod-76544f59-l6xms -n istio-system 9876:9876</span></p>
+	</li><li>On the left side panel, click on Logging Scopes.</li><li>In this screen you will see all the logger’s scopes by name, then change the output_level from info to debug.</li></ol>
+If you don’t want to do it via web-ui, then use the following commands via CLI:
+
+<ol><li>We assume that port-forward is still running on another window run:
+	<p><span class="code">curl http://localhost:9876/scopej/ | jq &#39;.[].name&#39; -r &gt; loggers.txt</span></p>
+
+	<p>This will extract all the loggers name.</p>
+	</li><li>Change output level to debug:
+	<p><span class="code">for i in $(cat loggers.txt); do curl -X PUT http://localhost:9876/scopej/$i -H &#39;Content-Type: application/json&#39; -d &#39;{&quot;output_level&quot;:&quot;debug&quot;}&#39; ;  done</span></p>
+	</li><li>You can verify via web or curl the logger is now in debug mode:
+	<p><span class="code">curl http://localhost:9876/scopej/ca {&quot;name&quot;:&quot;ca&quot;,&quot;description&quot;:&quot;ca client&quot;,&quot;output_level&quot;:&quot;debug&quot;,&quot;stack_trace_level&quot;:&quot;none&quot;,&quot;log_callers&quot;:false}</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="Template" name="Template"></a>Enabling debugging via deploy template (less preferred)</span></p>
+
+<p>If for some reason you want the logs scope to run in debug log level for a long time, you can edit your deployment template and add the debug level to log scope in the arguments.</p>
+
+<ol><li>Edit you istiod deployment:
+	<p><span class="code">kubectl edit deployment istiod -n istio-system</span></p>
+	</li><li>Under args you will see the field –log_output_level=default:info, we are going to change to debug:
+	<p><span class="example2">spec:<br>	  containers:<br>	  - args:<br>	    - discovery<br>	    - --monitoringAddr=:15014<br>	    - --log_output_level=default:debug<br>	    - --domain<br>	    - cluster.local<br>	    - --keepaliveMaxServerConnectionAge<br>	    - 30m</span></p>
+	</li><li>After edit the deployment your istiod pods will rollout with new ones with debug level.</li></ol>
+
+<p>The reason why we do not recommend this method is because after the edit on the deployment template your pod will be replaced, losing all the old data.</p>
+
+<p><span class="note"><strong>Note</strong>: You must not leave the istiod in debug mode for a long time, especially in big and complex clusters as will log a huge amount of data.</span></p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

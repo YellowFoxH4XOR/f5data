@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000137914: APM Authentication Timeout when authenticating with SAML takes longer than 60 seconds</title>
+<meta name="description" content="Support Solution: APM Authentication Timeout when authenticating with SAML takes longer than 60 seconds — When trying to access a APM VPN with a Browser, the Authentication Process times out if the SAML Authentication process takes longer than 60 seconds to complete.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000137914">
+</head>
+<body>
+<header>
+<h1>K000137914: APM Authentication Timeout when authenticating with SAML takes longer than 60 seconds</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-12-15</dd>
+<dt>Updated</dt><dd>2023-12-15</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 15.1.6</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000137914">https://my.f5.com/manage/s/article/K000137914</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h1>Description</h1>
+When trying to access a APM VPN with a Browser, the Authentication Process times out if the SAML Authentication process takes longer than 60 seconds to complete.
+
+<h1>Environment</h1>
+
+<ul><li>BIG-IP APM Access Profile</li><li>SAML AAA Authentication Object</li><li>Using a Browser to access the APM Profile</li></ul>
+
+<h1>Cause</h1>
+If the SAML Authentication process takes longer than 60 seconds, when the SAML iDP returns the SAML Response to the Broswer, the Browser then sends the SAML Response to the APM Policy, but the Browser doesn&#39;t send the APM Session cookie (MRHSession). When APM sees the SAML Response without the MRHSession cookie, it redirects the Client to create a new APM Session. The reason the Browser does not send the MRHSession cookie, is that the MRHSession cookie does not have the SameSite attribute set.<br> 
+<h1>Recommended Actions</h1>
+If you are on v16+, then you can simply enable the SameSite cookie attribute, which is configured under the selected APM Profile -&gt; SSO / Auth Domains section<br><br><span>If you are on a version that does not support the SameSite option for the APM Policy, it is recommended that you upgrade to v16+, which supports this. If this is not possible at this time, then you can try adding the following iRule:</span><br> 
+<pre class="ckeditor_codeblock">
+when RULE_INIT {
+    set static::apm_cookies { &quot;F5_fullWT&quot; &quot;F5_HT_shrinked&quot; &quot;F5_ST&quot; &quot;LastMRH_Session&quot; &quot;MRHSequence&quot; &quot;MRHSession&quot; &quot;MRHSHint&quot; &quot;TIN&quot; &quot;F5_VdiUserClientChoicecitrix&quot; &quot;F5_VdiUserClientChoicevmware_view&quot; }
+}
+
+when CLIENT_ACCEPTED {
+    ACCESS::restrict_irule_events disable
+}
+
+when HTTP_RESPONSE_RELEASE {
+    if { [HTTP::has_responded] } { return };    # Exit if there was a previous HTTP::(respond|redirect|retry)
+    foreach apm_cookie ${static::apm_cookies} {
+        if { [HTTP::cookie exists ${apm_cookie}] } {
+            HTTP::cookie attribute ${apm_cookie} insert &quot;SameSite&quot; None
+                if  { ![HTTP::cookie attribute ${apm_cookie} exists &quot;secure&quot;] } {
+                        HTTP::cookie attribute ${apm_cookie} insert &quot;Secure&quot;
+                }
+        }
+    }
+}</pre>
+<br> 
+</article>
+</body>
+</html>

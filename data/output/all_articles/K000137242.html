@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000137242: Config sync error after setting up device service clustering</title>
+<meta name="description" content="Support Solution: Config sync error after setting up device service clustering — Sync error on ltm1.bigip: Load failed from /Common/ltm2.bigip 01071769:3: Decryption of the field (restricted_key) for object (/Common/iappKey) failed while loading configuration that is encrypted…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000137242">
+</head>
+<body>
+<header>
+<h1>K000137242: Config sync error after setting up device service clustering</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-10-25</dd>
+<dt>Updated</dt><dd>2023-10-25</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.X.X, 16.X.X, 16.1.X, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000137242">https://my.f5.com/manage/s/article/K000137242</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>While doing config-sync, the below error messages observed in <em>/var/log/ltm</em>:</p>
+
+<pre class="ckeditor_codeblock">
+<em>Sync error on ltm1.bigip: Load failed from /Common/ltm2.bigip <strong>01071769:3: Decryption of the field (restricted_key) for object (/Common/iappKey) failed while loading configuration that is encrypted with a different master key.</strong>
+
+ltm1.bigip err mcpd[7598]: <strong>0107102b:3: Master Key decrypt failure - decrypt failure - final</strong></em></pre>
+
+<p>It also can be obersved by running the following command from CLI:</p>
+
+<pre class="ckeditor_codeblock">
+<span class="test-id__field-value slds-form-element__static slds-grow word-break-ie11">root@(ltm2)(cfg-sync Sync Failed)(Active)(/Common)(tmos)# show cm sync-status
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+CM::Sync Status
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Color red
+Status Sync Failed
+Mode high-availability
+Summary A validation error occurred while syncing to a remote device
+Details
+ltm1.bigip: connected
+device-group-failover (Sync Failed): A validation error occurred while syncing to a remote device
+- Sync error on ltm2.bigip: Load failed from /Common/ltm1.bigip <strong><em>01071769:3: Decryption of the field (passphrase) for object (/Common/f5_api_com.key) failed while loading configuration that is encrypted with a different master key.</em></strong>
+- Recommended action: Review the error message and determine corrective action on the device
+device_trust_group (Sync Failed): A validation error occurred while syncing to a remote device
+- Sync error on ltm2.bigip: Load failed from /Common/ltm1.bigip <em><strong>01071769:3: Decryption of the field (restricted_key) for object (/Common/iappKey) failed while loading configuration that is encrypted with a different master key.</strong></em>
+- Recommended action: Review the error message and determine corrective action on the device</span>
+</pre>
+
+<h2><strong>Environment</strong></h2>
+
+<ul><li>BIG-IP</li><li>HA</li></ul>
+
+<h2><strong>Cause</strong></h2>
+
+<p>Not known at the time of publication</p>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<ol><li> On Standby device (ltm2.bigip), make a copy of the <em>/config/bigip.conf</em> file by typing the following command from CLI:</li></ol>
+
+<pre class="ckeditor_codeblock">
+cp /config/bigip.conf /config/bigip.conf.K000137242</pre>
+
+<ol start="2"><li>Use a text editor to edit the<em> /config/bigip.conf</em> file and remove<strong><em> f5_api_com.key</em></strong> and<strong><em> f5_api_com.crt.</em></strong></li></ol>
+
+<pre class="ckeditor_codeblock">
+The following will be removed from the config file i.e.:
+sys file ssl-cert /Common/<strong>f5_api_com.crt</strong> {
+    cache-path /config/filestore/files_d/Common_d/certificate_d/:Common:f5_api_com.crt_100287_1
+    revision 1
+    source-path file:///config/ssl/ssl.crt/f5_api_com.crt
+}
+sys file ssl-key /Common/<strong>f5_api_com.key</strong> {
+    cache-path /config/filestore/files_d/Common_d/certificate_key_d/:Common:f5_api_com.key_100277_1
+    passphrase ***scrubbed***
+    revision 1
+    source-path file:///config/ssl/ssl.key/f5_api_com.key
+}</pre>
+
+<ol start="3"><li>Load the configuration by typing the following command from CLI:</li></ol>
+
+<pre class="ckeditor_codeblock">
+tmsh load sys config</pre>
+<strong><span style="color: #27ae60;">Note: </span></strong><span style="color: #27ae60;">You may use the following command to verify your configuration:<em> tmsh load sys config verify</em> </span>
+
+<ol start="4"><li>From the Active device (ltm1.bigip) , obtain the master key by typing the following command:</li></ol>
+
+<pre class="ckeditor_codeblock">
+f5mku -K</pre>
+
+<ol start="5"><li>Copy the output and save aside.</li><li>On Standby device (ltm2.bigip), install the master key that you copied in step 5 using the following command syntax:</li></ol>
+
+<pre class="ckeditor_codeblock">
+f5mku -r &lt;key_value&gt;</pre>
+
+<ol start="7"><li>Verify the master key after installed by typing the following command:</li></ol>
+
+<pre class="ckeditor_codeblock">
+f5mku -K</pre>
+
+<ol start="8"><li>Verify the configuration with the following command:</li></ol>
+
+<pre class="ckeditor_codeblock">
+tmsh load sys config verify</pre>
+
+<ol start="9"><li>If there are no errors, save the configuration:</li></ol>
+
+<pre class="ckeditor_codeblock">
+tmsh save sys config</pre>
+
+<ol start="10"><li>Synchronize from active device (<em>ltm1.bigip</em>) to standby (<em>ltm2.bigip</em>).</li></ol>
+
+<h2><strong>Additional Information</strong></h2>
+None.
+</article>
+</body>
+</html>

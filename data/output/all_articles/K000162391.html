@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162391: [Azure ARM Templates] Inconsistent BIG-IP VE interface mapping due to Azure NIC index ordering</title>
+<meta name="description" content="Support Solution: [Azure ARM Templates] Inconsistent BIG-IP VE interface mapping due to Azure NIC index ordering — A three-NIC BIG-IP LTM VE deployment in Microsoft Azure can assign external and internal self IP addresses to the wrong interfaces. This occurs when Azure presents the NICs in an order that differs…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162391">
+</head>
+<body>
+<header>
+<h1>K000162391: [Azure ARM Templates] Inconsistent BIG-IP VE interface mapping due to Azure NIC index ordering</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-07</dd>
+<dt>Updated</dt><dd>2026-08-07</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162391">https://my.f5.com/manage/s/article/K000162391</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>A three-NIC BIG-IP LTM VE deployment in Microsoft Azure can assign external and internal self IP addresses to the wrong interfaces. This occurs when Azure presents the NICs in an order that differs from the order expected by metadata lookups using NIC indexes.</p>
+<p>The resulting error may include:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">metadataProvider should NOT have additional properties</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">metadataProvider should have required property &#39;index&#39;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">metadataProvider should match &quot;then&quot; schema</span></p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM VE.</li><li>Microsoft Azure.</li><li>Three NICs per BIG-IP VE:
+<ul><li>Management network.</li><li>External traffic network.</li><li>Internal traffic network.</li></ul>
+</li><li>HA deployment using <span style="background-color: #f1f1f1;">f5-azure-arm-templates-v2</span>.</li><li>Declarative Onboarding configuration.</li><li>External and internal IPv4 addresses resolved through Azure network metadata with <span style="background-color: #f1f1f1;">index: 1</span> and <span style="background-color: #f1f1f1;">index: 2</span>.</li></ul>
+<h2>Cause</h2>
+<p>Azure NIC attachment or presentation order is not deterministic across virtual machine deployments. Metadata lookups based on NIC indexes can therefore associate external and internal addresses with the wrong BIG-IP interfaces.</p>
+<p>The template uses metadata definitions similar to the following:</p>
+<p><code>- name: SELF_IP_EXTERNAL<br>  type: metadata<br>  metadataProvider:<br>    type: network<br>    environment: azure<br>    field: ipv4<br>    index: 1<br><br>- name: SELF_IP_INTERNAL<br>  type: metadata<br>  metadataProvider:<br>    type: network<br>    environment: azure<br>    field: ipv4<br>    index: 2</code></p>
+<p>Replacing <span style="background-color: #f1f1f1;">index</span> with <span style="background-color: #f1f1f1;">addressPrefix</span> is not accepted by the runtime-init schema and causes declaration validation errors.</p>
+<p>If the self IPs are changed to static values while the default and management gateways remain metadata-based, gateway discovery can select the wrong subnet gateway. This can cause incorrect routing and errors such as:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Unable to register device: connect EHOSTUNREACH &lt;destination&gt;:443</span></p>
+<h2>Recommended Actions</h2>
+<p>For fixed BIG-IP LTM VE HA deployments with pre-allocated IP addresses, use static values for both self IPs and gateways instead of Azure network metadata indexes.</p>
+<ol><li>Replace the external and internal self IP metadata definitions with static definitions:
+<p><code>- name: SELF_IP_EXTERNAL<br>  type: static<br>  value: &#39;&lt;external-self-IP&gt;/24&#39;<br><br>- name: SELF_IP_INTERNAL<br>  type: static<br>  value: &#39;&lt;internal-self-IP&gt;/24&#39;</code></p>
+</li><li>Change the default and management gateway definitions to static values:
+<p><code>- name: DEFAULT_GW<br>  type: static<br>  value: &#39;&lt;external-gateway-IP&gt;&#39;<br><br>- name: MGMT_GW<br>  type: static<br>  value: &#39;&lt;management-gateway-IP&gt;&#39;</code></p>
+</li><li>Use the required value formats:
+<ul><li>Self IP values must use CIDR notation, such as <span style="background-color: #f1f1f1;">&lt;external-self-IP&gt;/24</span>.</li><li>Gateway values must be bare IP addresses without a subnet mask.</li><li>Do not specify a gateway as <span style="background-color: #f1f1f1;">&lt;gateway-IP&gt;/24</span>.</li></ul>
+</li><li>Ensure that the static values correspond to the intended networks:
+<ul><li><span style="background-color: #f1f1f1;">SELF_IP_EXTERNAL</span> must belong to the external subnet.</li><li><span style="background-color: #f1f1f1;">SELF_IP_INTERNAL</span> must belong to the internal subnet.</li><li><span style="background-color: #f1f1f1;">DEFAULT_GW</span> must be the gateway for the external traffic network.</li><li><span style="background-color: #f1f1f1;">MGMT_GW</span> must be the gateway for the management network.</li></ul>
+</li><li>Redeploy or onboard the affected BIG-IP VE using the modified YAML declaration.</li><li>Verify that:
+<ul><li>The external self IP is assigned to BIG-IP interface <span style="background-color: #f1f1f1;">1.1</span>.</li><li>The internal self IP is assigned to BIG-IP interface <span style="background-color: #f1f1f1;">1.2</span>.</li><li>The default route uses the external gateway.</li><li>The management route uses the management gateway.</li><li>Required F5 services are reachable over HTTPS.</li></ul>
+</li></ol>
+<h2>Additional Information</h2>
+<ul><li>The standard template uses metadata to support dynamic provisioning and generic deployment scenarios.</li><li>Metadata-based NIC indexes may be used where interface ordering is controlled and deterministic.</li><li>For fixed HA deployments with explicitly allocated IP addresses, static values avoid dependence on Azure NIC ordering and provide deterministic interface-to-address assignments.</li><li>Using static self IPs without also using static gateway values is not sufficient; all dependent network parameters must be aligned.</li><li>The <span style="background-color: #f1f1f1;">addressPrefix</span> modification should not be used with the affected runtime-init schema because it results in declaration validation failure.</li></ul>
+<p> </p>
+</article>
+</body>
+</html>

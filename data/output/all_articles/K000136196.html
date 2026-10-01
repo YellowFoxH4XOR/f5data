@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000136196: Envoy Proxy Timeout During Initialization</title>
+<meta name="description" content="Support Solution: Envoy Proxy Timeout During Initialization — This technical article addresses the issue of pod initialization failures in a Kubernetes environment due to Envoy proxy timeouts. Specifically, the sidecar logs display the error message &quot;Envoy…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000136196">
+</head>
+<body>
+<header>
+<h1>K000136196: Envoy Proxy Timeout During Initialization</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-09-19</dd>
+<dt>Updated</dt><dd>2023-09-19</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.11</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000136196">https://my.f5.com/manage/s/article/K000136196</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>This technical article addresses the issue of pod initialization failures in a Kubernetes environment due to Envoy proxy timeouts. Specifically, the sidecar logs display the error message <strong>&quot;Envoy proxy is NOT ready.&quot;</strong> The article identifies the potential causes and recommends corrective actions.<br><br>Running the describe pod command yields errors similar to the following: </p>
+
+<pre class="ckeditor_codeblock">
+Normal  Created        52m        kubelet Created container scp-worker
+Normal  Started        52m (x2 over 53m) kubelet Started container istio-proxy
+Warning Unhealthy      51m (x5 over 51m) kubelet Startup probe failed: HTTP probe failed with status code: 503
+Warning FailedPostStartHook 51m        kubelet Exec lifecycle hook ([pilot-agent wait]) for Container &quot;istio-proxy&quot; in Pod &lt;pod-name&gt; failed - error: command &#39;pilot-agent wait&#39; exited with 255: Error: timeout waiting for Envoy proxy to become ready. Last error: HTTP status code 503 </pre>
+
+<p>Also when Inspecting the sidecar Logs using  command<strong> [oc/kubectl -n &lt;namespace&gt; logs &lt;pod-name&gt; -c istio-proxy]</strong> to inspect the sidecar logs. Errors resembling the following may appear:</p>
+
+<pre class="ckeditor_codeblock">
+2023-09-13T16:01:45.354080Z warning envoy config gRPC config for type.googleapis<strong>.</strong>com/envoy.config.cluster.v3.Cluster rejected: Error adding/updating cluster(s) outbound|443||kubernetes.default.svc.cluster.local: LOGICAL_DNS clusters must have a single host, outbound|80||aspen-mesh-alertmanager.istio-system.svc.cluster.local: eds_cluster_config set in a non-EDS cluster, outbound|19001||aspen-mesh-controlplane.istio-system.svc.cluster.local: eds_cluster_config set in a non-EDS cluster, outbound|19000||aspen-mesh-controlplane.istio-system.svc.cluster.local: eds_cluster_config set in a non-EDS cluster, outbound|9105||aspen-mesh-controlplane.istio-system.svc.cluster.local: eds_cluster_config set in a non-EDS cluster, outbound|19005||aspen-mesh-controlplane.istio-system.svc.cluster.local: eds_cluster_config set in a non-EDS cluster, outbound|19006||aspen-mesh-controlplane.istio-system.svc.cluster.local: eds_cluster_config set in a non-EDS cluster, outbound|80||aspen-mesh-dashboard.istio-system.svc.cluster.local: eds_cluster_config set in a non-EDS cluster, outbound|7000||aspen-mesh-event-storage.istio-system.svc.cluster.local: LOGICAL_DNS clusters must have a single host, outbound|7001||aspen-mesh-event-storage.istio-system.svc.cluster.local: LOGICAL_DNS clusters must have a single host, outbound|7199||aspen-mesh-event-storage.istio-system.svc.cluster.local: LOGICAL_DNS clusters must have a single host, outbound|9042||aspen-mesh-event-storage.istio-system.svc.cluster.local: LOGICAL_DNS clusters must have a single host, outbound|9160||aspen-mesh-event-storage.istio-system.svc.cluster.local: LOGICAL_DNS clusters must have a single host, outbound|14250||aspen-mesh-jaeger-collector.istio-system.svc.cluster.local: eds_cluster_config set in a non-EDS cluster, outbound|14267||aspen-mesh-jaeger-collector.istio-system.svc.cluster.local: eds_cluster_config set in a non-EDS cluster, outbound|14268||aspen-mesh-jaeger-collector.istio-system.svc.cluster.local: eds_cluster_config set in a non-EDS cluster, outbound|9411||aspen-mesh-jaeger-collector.istio-system.svc.cluster.local: eds_cluster_config set in a non-EDS cluster, outbound|80||aspen-mesh-jaeger-query.istio-system.svc.cluster.local: eds_cluster_config set in a non-EDS cluster </pre>
+
+<p> </p>
+
+<h2><strong>Environment</strong></h2>
+
+<p>Aspen Mesh 1.11.x<br> </p>
+
+<h2><strong>Cause</strong></h2>
+
+<ul><li>Careful attention to EnvoyFilter configurations (example entry duplicate problem) or overlap settings for the same services.</li><li>Syntax errors (lowercase and uppercase issue) can help resolve such issues. </li></ul>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>This article provides an overview of the common causes behind Envoy proxy timeout issues during pod initialization.<br> </p>
+
+<p><strong>Conflicting EnvoyFilters:</strong> EnvoyFilters configured to modify the services with LOGICAL_DNS settings may conflict and overlap in their logic like the same service is been mentioned more than once (duplicate). Below is an example: </p>
+
+<pre class="ckeditor_codeblock">
+applyTo: CLUSTER 
+match:
+ cluster:
+  service: example.svc.cluster.local
+patch:
+ operation: MERGE
+ value:
+  type: LOGICAL_DNS</pre>
+
+<p><br><strong>Syntax Errors:</strong> Pay close attention to formatting. For instance, the word &quot;CLUSTER&quot; in uppercase in the configuration file is incorrect; it should be in lowercase. An incorrect and corrected example is shown below:</p>
+
+<p>Incorrect:</p>
+
+<pre class="ckeditor_codeblock">
+match:
+ CLUSTER: </pre>
+
+<p>Correct:</p>
+
+<pre class="ckeditor_codeblock">
+match:
+ cluster: </pre>
+
+<h2><br><strong>Additional Information</strong></h2>
+
+<p>Note that the DNS_ROUND_ROBIN resolution in Istio is equivalent to the LOGICAL_DNS resolution in Envoy.</p>
+</article>
+</body>
+</html>

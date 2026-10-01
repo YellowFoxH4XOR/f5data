@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K838: Load balancing DCOM</title>
+<meta name="description" content="Knowledge: Load balancing DCOM — Issues and Solutions Source address in data payload Dynamically assigned ports DCOM communicates on both UDP and TCP Call-backs">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K838">
+</head>
+<body>
+<header>
+<h1>K838: Load balancing DCOM</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2006-02-17</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>BIG-IP 4.X: 4.6.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K838">https://my.f5.com/manage/s/article/K838</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><dl><dt><a href="#intro"><b>Introduction</b></a></dt></dl>
+<dl><dt><a href="#issues"><b>Issues and Solutions</b></a> </dt><dd><a href="#source">Source address in data payload</a> </dd><dd><a href="#dynamic">Dynamically assigned ports</a> </dd><dd><a href="#tcp_udp">DCOM communicates on both UDP and TCP</a> </dd><dd><a href="#callbacks">Call-backs</a></dd></dl>
+<dl><dt><a href="#scenarios"><b>Scenarios</b></a> </dt><dd><a href="#external_client">DCOM server internal to the BIG-IP Controller and clients are external</a> </dd><dd><a href="#internal">DCOM server and clients are internal to the BIG-IP Controller</a></dd></dl>
+<dl><dt><a href="#references"><b>References</b></a></dt></dl>
+<hr></hr>
+
+<h2><a name="intro"></a>Introduction</h2>
+<p>DCOM is a Microsoft protocol analogous to CORBA/IIOP. The design of DCOM makes use with address translation impossible, causing severe challenges to load balancing. This document outlines some strategies for load balancing DCOM.</p>
+<h2><a name="issues"></a>Issues and solutions</h2>
+<p>DCOM Presents four main problems that must be solved or worked around for effective load balancing.</p>
+<h3><a name="source"></a>Source address in data payload</h3>
+<h4>Issue #1</h4>
+<p>A common problem in applications using address translation is a source address located in the data payload of a packet. This occurs because the DCOM servers embed the source address deep in the packet in a non-specific location so it is not possible to translate the address. Because clients respond to this source address, they attempt to respond directly to nodes, rather than to virtual servers (VIPs).</p>
+<h4><a name="sol_source"></a>Solution</h4>
+<p>The only way to address this problem is to allow it to function as intended. With the BIG-IP Controller, this means using routable addresses on the nodes and making use of IP forwarding on the BIG-IP Controller. In this configuration, clients will have the ability to communicate directly with the nodes after the initial connection is load balanced.</p>
+<h3><a name="dynamic"></a>Dynamically assigned ports</h3>
+<h4>Issue #2</h4>
+<p>DCOM makes use of dynamically assigned ports, rather than fixed ports, for object servers. In a default configuration, DCOM can make use of any port from 1024 to 65535 for object servers. Clients learn the port for the object server they need from the DCOM Service Control Manager (SCM) on port 135. Due to the wide range of possible ports, it is very difficult to assign specific VIPs.</p>
+<h4>Solution</h4>
+<p><a name="sol_dynamic"></a>The biggest concern of dynamically assigned ports is security. IP filters can be used to tighten security on the BIG-IP if the range of ports used by DCOM is limited. You can change this range by manipulating some of the registry settings on the DCOM server.</p>
+<p>Follow the steps below to change the port range for Windows NT 4.0:</p>
+<ol><li>If it does not already exist, create the following key (classless):<p class="code">HKEY_LOCAL_MACHINE\Software\Microsoft\Rpc\Internet</p>
+</li><li>Create the value <b>Ports</b>:<p class="code">Type: REG_MULTI_SZ <br> Value: port-range (i.e. 5000-6000)</p>
+</li><li>Create the value <b>PortsInternetAvailable</b>:<p class="code">Type: REG_SZ<br> Value: &quot;Y&quot;</p>
+</li><li>Create the value <b>UseInternetPorts</b>:<p class="code">Type: REG_SZ<br> Value: &quot;Y&quot; or &quot;N&quot;</p>
+<p>(<b>Y</b> indicates you want to use only the ports you indicated in <b>Ports</b>; <b>N</b> indicates that you wish to use any ports other than those you listed.)</p>
+</li></ol>
+<h3><a name="tcp_udp"></a>DCOM communicates on both TCP and UDP</h3>
+<h4>Issue #3</h4>
+<p>DCOM always attempts to connect with UDP first, then with TCP if UDP fails. UDP is only successful when both the client and the server are Windows NT 4.0. There is a 30-second timeout before UDP communications are determined to be unsuccessful. Because this UDP communication can take place on a wide range of ports, it is generally not desired in situations where security is a concern.</p>
+<h4><a name="sol_tcpudp"></a>Solution</h4>
+<p>The easiest way to configure DCOM is to use TCP as its primary mode of communication rather than to allow the wide range of UDP ports it may use. To set DCOM to use TCP-only communication, modify the <b>HKEY_LOCAL_MACHINE\Software\Microsoft\Rpc</b> registry key so that <b>NCACN_IP_TCP</b> is the first listed value.</p>
+<h3><a name="callbacks"></a>Call-backs</h3>
+<h4>Issue #4</h4>
+<p>DCOM can employ <i>call-backs</i>, where the server initiates a connection outbound to the client. This requires the ability to allow outbound connections through the BIG-IP Controller.</p>
+<h4>Solution</h4>
+<p><a name="sol_callbacks"></a>The solution for call-backs is the same as the solution outlined in the <a href="#sol_source">Source address in data payload</a> section. IP forwarding in combination with internet-routable addresses eliminates this problem.</p>
+<h2><a name="scenarios"></a>Scenarios</h2>
+<h3><a name="external_client"></a>DCOM server internal to the BIG-IP Controller and clients are external</h3>
+<p>In this scenario, clients on the internet need to connect to a group of DCOM servers behind a BIG-IP Controller. The goal in this case, is to load balance the initial connections to the servers and then allow them to finish the sessions directly. Following the steps below to create this configuration:</p>
+<ol><li>Create a VIP using TCP port 135 (DCOM Service Control Manager) that load balances to port 135 on the DCOM servers.<p>For instructions specific to the version of the BIG-IP Controller you are using, refer to the <a href="https://support.f5.com/content/kb/en-us/archived_products/big-ip.html" target="_blank">BIG-IP manual</a>:</p>
+</li><li>Enable IP forwarding on the BIG-IP Controller.<p>For instructions specific to the version of the BIG-IP Controller you are using, refer to the <a href="https://support.f5.com/content/kb/en-us/archived_products/big-ip.html" target="_blank">BIG-IP manual</a>:</p>
+</li><li>Set the <b>treaper</b> for port 135 to a very low value (such as 1 second).<p>For information on the <b>treaper</b> command and how to use it, see <a href="https://my.f5.com/manage/s/article/K397" target="_blank">K397: Configuring BIG-IP to close idle connections</a>.</p>
+</li><li>Configure the DCOM server to use only TCP (see the<a href="#sol_tcpudp"> DCOM communicates on both TCP and UDP</a> section above).</li></ol>
+<h3><a name="internal"></a>DCOM Server and Clients Internal to BIG-IP</h3>
+<p>In this scenario, both clients and server are internal to the BIG-IP Controller. The goal is to load balance the initial connections using VIP bounceback. Following the steps below to create this configuration:</p>
+<ol><li>Create a VIP using TCP port 135 (DCOM Service Control Manager) that load balances to port 135 on the DCOM servers.<p>For instructions specific to the version of the BIG-IP Controller you are using, refer to the <a href="https://support.f5.com/content/kb/en-us/archived_products/big-ip.html" target="_blank">BIG-IP manual</a>:</p>
+</li><li>Create either a default SNAT or a SNAT that includes all clients that will use DCOM.<p>For instructions specific to the version of the BIG-IP Controller you are using, refer to the <a href="https://support.f5.com/content/kb/en-us/archived_products/big-ip.html" target="_blank">BIG-IP manual</a>:</p>
+</li><li>Enable IP forwarding on the BIG-IP Controller.<p>For instructions specific to the version of the BIG-IP Controller you are using, refer to the <a href="https://support.f5.com/content/kb/en-us/archived_products/big-ip.html" target="_blank">BIG-IP manual</a>:</p>
+</li><li>Set the <b>treaper</b> for port 135 to a very low value (such as 1 second).<p>For information on the <b>treaper</b> command and how to use it, see <a href="https://my.f5.com/manage/s/article/K397" target="_blank">K397: Configuring BIG-IP to close idle connections</a>.</p>
+</li><li>Configure the DCOM server to use only TCP (see the<a href="#sol_tcpudp"> DCOM communicates on both TCP and UDP</a> section above).</li></ol>
+<h2><a name="references"></a>References</h2>
+<p>Understanding the DCOM Wire Protocol:<br> <a href="http://www.microsoft.com/msj/0398/dcom.htm" target="_blank">http://www.microsoft.com/msj/0398/dcom.htm</a></p>
+</article>
+</body>
+</html>

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000148734: iRule comments will not disable elseif statements</title>
+<meta name="description" content="Support Solution: iRule comments will not disable elseif statements — Using # to comment out an elseif clause in a if/elseif/else structure will not prevent the elseif from executing, or may result in a syntax error.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000148734">
+</head>
+<body>
+<header>
+<h1>K000148734: iRule comments will not disable elseif statements</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-12-18</dd>
+<dt>Updated</dt><dd>2025-04-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.0.0, 17.X.X, 16.X.X, 17.5.X, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000148734">https://my.f5.com/manage/s/article/K000148734</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Using <strong>#</strong> to comment out an <strong>elseif</strong> clause in a <em>if/elseif/else</em> structure will not prevent the <strong>elseif</strong> from executing, or may result in a syntax error.</p>
+<p>Take the following TCL code:</p>
+<p><code>set my_var 0<br>set chk {1}<br><br>if {$chk eq &quot;0&quot; } {<br>    set my_var 1&lt;<br>    break<br>#} elseif {$chk eq &quot;1&quot; } {<br>#    set my_var 1<br>#    break<br>} elseif {$chk eq &quot;1&quot; } {<br>    set my_var 2<br>    break<br>}</code></p>
+<p>With the comments (<strong>#</strong>) in place as they are, we might expect that when executed, the second elseif stanza will run, and <em>my_var</em> has a final value of <strong>2</strong></p>
+<p>However, it actually holds a value of <strong>0</strong></p>
+<p>The first (apparently commented) <strong>elseif</strong> clause</p>
+<p><code><strong>elseif {$chk eq &quot;1&quot; }</strong> </code></p>
+<p>is evaluated and selected, but no variables are set due to the comments,</p>
+<p><code><strong>#    set my_var 1</strong><br><strong>#    break</strong></code></p>
+<p>and the following <strong>elseif</strong> clause</p>
+<p><code><strong>elseif {$chk eq &quot;1&quot; }</strong> </code></p>
+<p>is not evaluated.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>iRules</li></ul>
+<h2>Cause</h2>
+<p>TCL comments (as denoted by <strong>#</strong>) are only treated as comments in specific circumstances.</p>
+<p> </p>
+<p>From <a href="https://wiki.tcl-lang.org/page/comment" target="_blank">https://wiki.tcl-lang.org/page/comment</a></p>
+<blockquote>
+<p class="ql-indent-1"><span style="font-size: 13px;">The dodekalogue defines one method for creating a comment in a Tcl script: If A hash character (&quot;#&quot;) appears at a point where Tcl is expecting the first character of the first word of a command, then the hash character and the characters that follow it, up through the next newline, are treated as a comment and ignored. The comment character only has significance when it appears at the beginning of a command.</span></p>
+</blockquote>
+<p><span style="color: #15891f;"><em><span><strong>Note</strong>: This link takes you to a resource outside of MyF5, and the third party could remove the document without our knowledge.</span> </em></span></p>
+<p>Unlike C/C++ style comments that are processed by a preprocessor, and commented lines or partial lines are removed from the assembled code that is to be compiled, TCL comment symbols are evaluated at runtime based on where they appear.</p>
+<p>So in the code example above, the first hash (<strong>#</strong>) symbol does not occur where <em>Tcl is expecting the first character of the first word of a command</em>. <br>The first hash is just part of the <em><strong>if</strong> function string</em> that will be passed to <span style="font-family: &#39;courier new&#39;, courier, monospace;">eval</span>:</p>
+<p><code>{<br>    set my_var 1<br>    break<br>#}</code></p>
+<p>So this hash is <em>not a comment</em>, and the line is not excluded.</p>
+<p>After the <span style="font-family: &#39;courier new&#39;, courier, monospace;"><strong><em>if</em></strong></span><em> function string</em>, TCL is expecting an <span style="font-family: &#39;courier new&#39;, courier, monospace;">elseif</span>, <span style="font-family: &#39;courier new&#39;, courier, monospace;">else</span>, or the first character of the first word of a command.<br>This is an <span style="font-family: &#39;courier new&#39;, courier, monospace;"><strong>elseif - </strong></span>the <em><span style="font-family: &#39;courier new&#39;, courier, monospace;"><strong>elseif</strong></span> expression string</em> is evaluated, and returns true, so the <em><span style="font-family: &#39;courier new&#39;, courier, monospace;"><strong>elseif</strong></span> function string</em> between the braces is collected and evaluated:</p>
+<p><code>{<br>#    set my_var 1<br>#    break<br>}</code></p>
+<p>Here, the # symbols are appearing where <em>Tcl is expecting the first character of the first word of a command</em>. These are valid comments, and no functional execution occurs.<br>After an <span style="font-family: &#39;courier new&#39;, courier, monospace;">elseif</span> branch has been executed, no further <span style="font-family: &#39;courier new&#39;, courier, monospace;">elseif</span> branches are evaluated, and the <span style="font-family: &#39;courier new&#39;, courier, monospace;">if</span> statement is completed.</p>
+<p>The following approach might spring to mind:</p>
+<p><code>set my_var 0<br>set chk {1}<br><br>if {$chk eq &quot;0&quot; } {<br>    set my_var 1<br>   break<br>}<br># elseif {$chk eq &quot;1&quot; } {<br>#    set my_var 1<br>#    break<br>#}<br>elseif {$chk eq &quot;1&quot; } {<br>    set my_var 2<br>    break<br>}</code><br><br></p>
+<p>This would appear to satisfy the requirement that the <strong>#</strong> symbol occurs where <em>Tcl is expecting the first character of the first word of a command</em>.<br>However, this causes a syntax error - the intervening comment terminates the relationship between the following <span style="font-family: &#39;courier new&#39;, courier, monospace;">elseif</span> (or <span style="font-family: &#39;courier new&#39;, courier, monospace;">else</span>) clause and the closing brace of the preceding <span style="font-family: &#39;courier new&#39;, courier, monospace;">if</span> function string.</p>
+<p>Without the preceding <span style="font-family: &#39;courier new&#39;, courier, monospace;"><strong>if</strong></span>, <span style="font-family: &#39;courier new&#39;, courier, monospace;"><em><strong>else</strong></em></span> and <span style="font-family: &#39;courier new&#39;, courier, monospace;"><em><strong>elseif</strong></em></span> are not valid commands on their own.</p>
+<p><em><span style="color: #15891f;"><strong>Note:</strong> these issues are inherent to TCL Language syntax, and this is not expected to change in the future.</span></em></p>
+<h2>Recommended Actions</h2>
+<p>use logic statements to bypass an element of the <span style="font-family: &#39;courier new&#39;, courier, monospace;"><em><strong>elseif</strong></em></span>, rather than comments</p>
+<p><code>set my_var 0<br>set chk {1}<br>set skip 0<br><br>if {$chk eq &quot;0&quot; } {<br>    set my_var 1<br>    break<br>}<br>elseif {($chk eq &quot;1&quot;) eq 0 } {<br> set my_var 1<br> break<br>}<br>elseif {$chk eq &quot;1&quot; } {<br> set my_var 2<br> break<br>}</code></p>
+<p>This changes the expression for the first <span style="font-family: &#39;courier new&#39;, courier, monospace;"><em><strong>elseif</strong></em></span> into something that will never be true, and so the entire stanza is not executed.</p>
+<h2>Additional Information</h2>
+<p><a href="https://my.f5.com/manage/s/article/K15363" target="_blank">K15363: An improperly placed comment character in an iRule may cause a TCL syntax error</a></p>
+<p><a href="https://wiki.tcl-lang.org/page/Why+can+I+not+place+unmatched+braces+in+Tcl+comments" target="_blank">https://wiki.tcl-lang.org/page/Why+can+I+not+place+unmatched+braces+in+Tcl+comments</a></p>
+<p><span style="color: #15891f;"><em><span><strong>Note</strong>: This link takes you to a resource outside of MyF5, and the third party could remove the document without our knowledge.</span> </em></span></p>
+</article>
+</body>
+</html>

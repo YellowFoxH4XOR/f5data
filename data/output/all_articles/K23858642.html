@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K23858642: DNSSEC with External HSM not working after upgrade</title>
+<meta name="description" content="Support Solution: DNSSEC with External HSM not working after upgrade — warning mcpd[6951]: 010712da:4: DNSSEC Key /Common/example.com_ksk may not be stored in FIPS due to platform support.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K23858642">
+</head>
+<body>
+<header>
+<h1>K23858642: DNSSEC with External HSM not working after upgrade</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-01-06</dd>
+<dt>Updated</dt><dd>2026-02-06</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.1.9, 16.1.6, 16.1.5, 16.1.4, 15.1.10, 14.X.X, 15.X.X, 16.X.X, 14.0.0, 14.0.1, 14.0.X, 14.1.2, 14.1.3, 14.1.4, 14.1.5, 14.1.0, 14.1.X, 15.0.0, 15.0.1, 15.0.X, 15.1.0, 15.1.1, 15.1.2, 15.1.3, 15.1.4, 15.1.5, 15.1.7, 15.1.8, 15.1.X, 16.0.0, 16.0.1, 16.0.X, 16.1.0, 16.1.1, 16.1.2, 16.1.3, 16.1.X, 15.1.6</li><li>BIG-IP DNS: 16.1.6, 16.1.5, 16.1.4, 15.1.10, 15.1.9, 15.X.X, 16.X.X, 14.X.X, 15.1.7, 15.1.8, 15.1.X, 16.0.0, 16.0.1, 16.0.X, 16.1.2, 16.1.3, 16.1.0, 16.1.1, 16.1.X, 14.0.0, 14.0.1, 14.0.X, 14.1.0, 14.1.2, 14.1.3, 14.1.4, 14.1.5, 14.1.X, 15.0.0, 15.0.1, 15.0.X, 15.1.0, 15.1.1, 15.1.2, 15.1.3, 15.1.4, 15.1.5, 15.1.6</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K23858642">https://my.f5.com/manage/s/article/K23858642</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br><br>After upgrading to v14.1.0 or later, you may find that External HSM is no longer managing DNSSEC keys as previously configured.  You will see the following log message in /var/log/ltm during the upgrade process:</p>
+<pre><span class="example2">warning mcpd[6951]: 010712da:4: DNSSEC Key /Common/example.com_ksk may not be stored in FIPS due to platform support.
+</span></pre>
+<p>After upgrade all keys are &quot;use-fips none&quot;:<br><br><span class="code">tmsh list ltm dns dnssec key use-fips</span><br><br><span class="example2">ltm dns dnssec key example.com_ksk {<br>    use-fips none<br>}</span><br> </p>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>BIG-IP DNS</li><li>Upgrading from pre-v14.1.0 to v14.1.0 or later</li><li>DNSSEC</li><li>External HSM (netHSM)</li></ul>
+<p><span class="sectiontitle">Cause</span><br><br><a href="https://cdn.f5.com/product/bugtracker/ID758491.html" title="BugID 758491" target="_blank">BugID 758491</a></p>
+<p>If this issue is occurring post v14.1.0, troubleshoot connectivity between BIG-IP and External HSM prior to initiating the upgrade process. Do not uninstall the External HSM client from BIG-IP prior to software upgrade.<br>Otherwise re-install the HSM client post upgrade and re-establish communication between BIG-IP and External HSM, then restore the UCS taken pre-upgrade. This will restore the original value for &quot;<span class="example2">use-fips&quot; for all keys from the ucs archive.</span></p>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<p>There are two options to resolve this issue once you have upgraded to v14.1.0 or later.</p>
+<ol><li>Generate new keys from External HSM<br>- Example:
+<p><span class="code">tmsh create ltm dns dnssec key example.com_new_ksk key-type ksk use-fips external</span></p>
+</li><li>Re-import existing keys from External HSM<br>- This example is for nCipher (Thales) HSM where encrypted keys are stored in /opt/nfast/kmdata/local/<br><br>Identify the &lt;key label&gt; using the following command:
+<p><span class="code"><span class="example2">nfkminfo -l</span></span></p>
+<p><span class="example2">Keys with module protection:<br>key_pkcs11_ua1437fb053c98bf81e97046a52e2aa51b1a2b8979 `_Common_zsk-static-1639D393A48A0D7A9F473B7F8788BC44&#39;<br>key_pkcs11_ua405e7319c90c963f161a7314a37c35d75a7375fc `_Common_ksk-static-127E2219D4B539513F8D77553810D4E1&#39;</span></p>
+<p><span class="code"><span class="example2">tmsh install sys crypto key _Common_zsk-static-1639D393A48A0D7A9F473B7F8788BC44 from-nethsm<br>tmsh install sys crypto key _Common_ksk-static-127E2219D4B539513F8D77553810D4E1 from-nethsm</span></span></p>
+<p>The above 2 commands import DNSSEC keys as RSA private keys (System  ››  Certificate Management : Traffic Certificate Management : SSL Certificate List) so they may be removed after conversion:</p>
+<p><span class="code"><span class="example2">tmsh delete sys crypto key _Common_ksk-static-127E2219D4B539513F8D77553810D4E1<br>tmsh delete sys crypto key _Common_zsk-static-1639D393A48A0D7A9F473B7F8788BC44</span></span></p>
+</li></ol>
+<p><br><span class="sectiontitle">Additional Information</span><br><br><a href="https://techdocs.f5.com/en-us/bigip-15-1-0/big-ip-system-and-net-hsm-implementation/managing-external-hsm-keys-for-ltm-nethsm.html#task-8940" target="_self"><strong></strong></a></p>
+<p><a href="https://techdocs.f5.com/en-us/bigip-17-0-0/big-ip-system-and-net-hsm-implementation.html" target="_self"><strong>Manual Chapter</strong> : BIG-IP System and Network HSM: Implementation</a></p>
+<p><a href="https://techdocs.f5.com/en-us/bigip-16-0-0/big-ip-system-and-nshield-hsm-implementation/nShield-Hsm-Maintenance.html" target="_self"><strong>Manual Chapter </strong>: Upgrading the BIG-IP software when using the nShield HSM</a></p>
+<p><a href="https://techdocs.f5.com/en-us/bigip-15-1-0/big-ip-dns-services-implementations/configuring-dnssec.html" target="_self"><strong>Manual Chapter</strong> : Configuring DNSSEC</a><br><br></p>
+<p> </p>
+</article>
+</body>
+</html>

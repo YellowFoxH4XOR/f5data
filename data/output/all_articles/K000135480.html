@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000135480: Disk partition /shared/vmdisks (slot x) has only 0%</title>
+<meta name="description" content="Support Solution: Disk partition /shared/vmdisks (slot x) has only 0% — err diskmonitor[18789]: 011d0004:3: Disk partition /shared/vmdisks (slot 2) has only 0% &lt;--">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000135480">
+</head>
+<body>
+<header>
+<h1>K000135480: Disk partition /shared/vmdisks (slot x) has only 0%</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-07-13</dd>
+<dt>Updated</dt><dd>2023-07-13</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000135480">https://my.f5.com/manage/s/article/K000135480</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>vCMP guests experiencing disk space issues. From logs of vCMP Host you can see logs similar to the following samples (in the /var/log/ltm):</p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">err diskmonitor[18789]: 011d0004:3: Disk partition /shared/vmdisks (slot 2) has only 0% &lt;--<br>err diskmonitor[13892]: 011d0004:3: Disk partition /shared/vmdisks (slot 1) has only 13% free</span></p>
+
+<p><br>Output from &quot;df-h&quot; shows:</p>
+
+<p><span style="font-family: Courier New,Courier,monospace;">Filesystem Size Used Avail Use% Mounted on<br>/dev/mapper/vg--db--sda-app.vcmp.dat.vmdisks 230G 219G 0 100% /shared/vmdisks</span><br> </p>
+
+<h2><strong>Environment</strong></h2>
+
+<ul><li>vCMP</li><li>vmdisks</li></ul>
+ 
+
+<h2><strong>Cause</strong></h2>
+
+<p>When deployed, a guest is assigned 100Gb or 150Gb of space (depending on platform) in the host virtual disk. However, it should be taken into account that the virtual disk is created as a sparse file (which means that the file size is not the same that the disk space it occupies, this is because the null bytes are not saved to the disk therefore, the virtual disk takes much less than 150 G). It is important to understand that a sparse file works as a high watermark.</p>
+
+<p>Over time, the guest&#39;s virtual disk size can grow. Any time the guest writes new data to the disk, it converts unallocated space into allocated space.<br><br>When data is deleted from the guest, there is not any automatic procedure to recover sparseness.</p>
+ 
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>There are two possible methods/options to address this scenario.</p>
+
+<ul><li>Option 1: Remove unwanted/unused guests and their virtual disks to release the space.</li><li>Option 2: Create a sparse version of the original virtual disk of a guest or multiple guests.</li></ul>
+Example of procedure for option 2:<br><br>1.- Verify the current virtual disks with command: <span style="font-family: Courier New,Courier,monospace;"> # tmsh show vcmp virtual-disk</span>
+
+<p>      For the purpose of this example, we&#39;ll do the process on a guest labeled as GUEST2:</p>
+<br><span style="font-family: Courier New,Courier,monospace;"># tmsh show vcmp virtual-disk<br>------------------------------------------------------------------------------------------<br>Vcmp::VirtualDisk<br>Name                Slot ID  Operating System  Status  Disk Use (bytes)  Disk Size (bytes)<br>------------------------------------------------------------------------------------------<br><strong>GUEST2.img                2              tmos  in-use              5.1G             150.0G<br>GUEST2.img                1              tmos  in-use              5.3G             150.0G</strong><br>Guest1.img                2              tmos  in-use              4.8G             150.0G<br>Guest1.img                1              tmos  in-use              5.2G             150.0G</span>
+
+<p><br>2.- Navigate to the directory of the vmdisks with: <br>       <span style="font-family: Courier New,Courier,monospace;"># cd /shared/vmdisks/</span><br><br>3.- Create a sparse copy of the vdisk image of the guest (this should be lower in size)<br>    <span style="font-family: Courier New,Courier,monospace;">  # cp --sparse=always GUEST2.img <strong>Sparse_GUEST_2.img</strong></span><br><br>4.- Display the virtual disk and you should see the copy created above:<br><br><span style="font-family: Courier New,Courier,monospace;"># tmsh show vcmp virtual-disk<br>-------------------------------------------------------------------------------------------<br>Vcmp::VirtualDisk<br>Name                Slot ID  Operating System   Status  Disk Use (bytes)  Disk Size (bytes)<br>-------------------------------------------------------------------------------------------<br><strong>Sparse_GUEST_2.img                    1                         unknown  unknown                                       4.2G                               150.0G</strong><br>GUEST2.img                2              tmos   in-use              5.1G             150.0G<br>GUEST2.img                1              tmos   in-use              5.3G             150.0G<br>Guest1.img                2              tmos   in-use              4.9G             150.0G<br>Guest1.img                1              tmos   in-use              5.2G             150.0G</span><br><br>5.- Now, you should pass the Guest to Configured state with command: <br>       <span style="font-family: Courier New,Courier,monospace;"># tmsh modify vcmp guest GUEST2 state configured</span><br><br>6.- Once the guest is in ‘configured’ state, you can assign to it the new .img to the guest:<br>      <span style="font-family: Courier New,Courier,monospace;"># tmsh modify vcmp guest GUEST2 virtual-disk Sparse_GUEST_2.img</span><br><br>7.- Then you can pass the guest to Deployed state again:<br><span style="font-family: Courier New,Courier,monospace;">   # tmsh modify vcmp guest GUEST2 state deployed</span><br><br>8.- Once the guest is fully deployed and we can confirm it&#39;s operational, we are ready to delete the original virtual disk &quot;GUEST2.img &quot; and recover disk space in the host. (this example shows the deleting command for a guest that has been deployed on 2 Slots)<br>     <span style="font-family: Courier New,Courier,monospace;"># tmsh delete vcmp virtual-disk GUEST2.img/1<br>  # tmsh delete vcmp virtual-disk GUEST2.img/2</span><br><br>9.- After the procedure, you should see an output similar to this:<br><br><span style="font-family: Courier New,Courier,monospace;"># show vcmp virtual-disk<br>------------------------------------------------------------------------------------------<br>Vcmp::VirtualDisk<br>Name                Slot ID  Operating System  Status  Disk Use (bytes)  Disk Size (bytes)<br>------------------------------------------------------------------------------------------<br><strong>Sparse_GUEST_2.img                       2                           tmos  in-use                                             4.4G                     150.0G<br>Sparse_GUEST_2.img                       1                            tmos  in-use                                             4.2G                     150.0G</strong><br>Guest1.img                2              tmos  in-use              4.9G             150.0G<br>Guest1.img                1              tmos  in-use              5.3G             150.0G</span><br> </p>
+</article>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K37209021: Configuring SNMP trap when iQuery status is not connected</title>
+<meta name="description" content="Support Solution: Configuring SNMP trap when iQuery status is not connected — Users can create custom SNMP traps for iQuery status when disconnected from the iQuery mesh. This will log an alert under /var/log/ltm to view.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K37209021">
+</head>
+<body>
+<header>
+<h1>K37209021: Configuring SNMP trap when iQuery status is not connected</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-02-02</dd>
+<dt>Updated</dt><dd>2024-02-26</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 17.X.X, 16.X.X, 15.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K37209021">https://my.f5.com/manage/s/article/K37209021</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong><span class="sectiontitle">Description</span></strong></h2>
+
+<p><br>Users can create custom SNMP traps for iQuery status when disconnected from the iQuery mesh. This will log an alert under /var/log/ltm to view. </p>
+
+<h2><strong><span class="sectiontitle">Environment</span></strong></h2>
+
+<ul><li>BIG-IP GTM/DNS</li><li>iQuery</li><li>SNMP trap</li><li>CLI</li></ul>
+
+<h2><strong><span class="sectiontitle">Cause</span></strong></h2>
+
+<p>The GTM will log when iquery connections are starting, but does not log when connections are in a disconnected state.</p>
+
+<h2><strong><span class="sectiontitle">Recommended Actions</span></strong></h2>
+1. Create a new file for the script.<br><br><span style="background-color: #f1f1f1;">touch /config/gtm_iquery_monitor.sh</span><br><br>2. Use an editor such as nano to paste the below text to the file /config/gtm_iquery_monitor.sh<br><br><span style="background-color: #f1f1f1;">nano /config/gtm_iquery_monitor.sh</span><br><br><span style="background-color: #f1f1f1;">#!/bin/bash</span><br><br>#Check to see if any iquery connections are in state not-connected or connecting<br><span style="background-color: #f1f1f1;">nc1=$(tmsh show gtm iquery | awk &#39;/not-connected/ { count++ } END { print count }&#39;)</span><br><span style="background-color: #f1f1f1;">nc2=$(tmsh show gtm iquery | awk &#39;/connecting/ { count++ } END { print count }&#39;)</span><br> 
+<pre class="ckeditor_codeblock">
+#set null responses to 0
+if [ -z &quot;$nc1&quot; ]; then nc1=0; fi
+if [ -z &quot;$nc2&quot; ]; then nc2=0; fi</pre>
+
+<pre class="ckeditor_codeblock">
+#add responses
+nc3=$(($nc1+$nc2))</pre>
+
+<pre class="ckeditor_codeblock">
+#log if responses are &gt; 0
+if [ $nc3 -ge 1 ]; then
+    logger -p local0.notice &quot;$nc3 iquery connections not connected&quot;
+fi</pre>
+<br>3. Make the script executable:<br><br><span style="background-color: #f1f1f1;">chmod +x /config/gtm_iquery_monitor.sh</span><br><br>4. Run this script as a crontab, maybe every 10 minutes. For example:<br>  a. run this command:<br><span style="background-color: #f1f1f1;">    crontab -e</span><br>  b. and add this entry to the list of cron jobs<br>   <span style="background-color: #f1f1f1;"> */10 * * * * /config/gtm_iquery_monitor.sh</span><br><br>5. The script will create a log message in /var/log/ltm when the amount of iquery connections that aren&#39;t connected is above 0.<br><br>6. Finally, create a custom SNMP trap by adding the following lines to the /config/user_alert.conf file to alert you when the message with &quot;iquery connections not connected&quot; appears in /var/log/ltm:<br> 
+<pre class="ckeditor_codeblock">
+alert IQUERY_ALARM &quot;iquery connections not connected&quot; {
+   snmptrap OID=&quot;.1.3.6.1.4.1.3375.2.4.0.300&quot;
+}</pre>
+<br><em><span style="color: #27ae60;"><strong>Note:</strong> The OID for custom traps starts at 300, if you have existing traps then increment the last octet accordingly</span>.</em><br> 
+<h2><strong><span class="sectiontitle">Additional Information</span></strong></h2>
+
+<p><a href="https://my.f5.com/manage/s/article/K3727" target="_blank">K3727: Configuring custom SNMP traps</a><br> </p>
+</article>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K15347119: Problem connecting client to server when testing C3D</title>
+<meta name="description" content="Support Solution: Problem connecting client to server when testing C3D — Unable to establish a connection when implementing a virtual server with Client Certificate Constrained Delegation (C3D).">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K15347119">
+</head>
+<body>
+<header>
+<h1>K15347119: Problem connecting client to server when testing C3D</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-05-21</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.X.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 14.X.X, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K15347119">https://my.f5.com/manage/s/article/K15347119</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>Unable to establish a connection when implementing a virtual server with <strong>Client Certificate Constrained Delegation</strong> (C3D).</p>
+
+<p>Connection fails in a manner similar to the following example:</p>
+
+<p><span class="example2">10.10.10.1 → 10.10.10.5 TLSv1   IN  s1/tmm2 : Client Hello<br>10.10.10.5 → 10.10.10.1 TLSv1.2 OUT s1/tmm2 : Server Hello<br>10.10.10.5 → 10.10.10.1 TLSv1.2 OUT s1/tmm2 : Certificate, Server Key Exchange, Certificate Request, Server Hello Done<br>10.10.10.1 → 10.10.10.5 TLSv1.2 IN  s1/tmm2 : Certificate, Client Key Exchange, Certificate Verify, Change Cipher Spec, Encrypted Handshake Message<br>10.10.10.5 → 10.10.10.1 TLSv1.2 OUT s1/tmm2 : Alert (Level: Fatal, Description: Unknown CA)</span></p>
+
+<p><span class="example2">Transport Layer Security<br>    TLSv1.2 Record Layer: Alert (Level: Fatal, Description: Unknown CA)<br>        Content Type: Alert (21)<br>        Version: TLS 1.2 (0x0303)<br>        Length: 2<br>        Alert Message<br>            Level: Fatal (2)<br>            Description: Unknown CA (48)</span></p>
+
+<p>Need to verify the C3D configuration.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Virtual Server</li><li>C3D</li><li>SSL/TLS</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>SSL handshake is failing client-side because BIG-IP is unable to validate the received certificate against its configured <strong>trusted CA.</strong></p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>C3D creates a forged copy of a received client certificate and sends it to the backend server during the server-side SSL handshake. A successful SSL handshake must first complete on the client-side of the connection before any server-side C3D operations can take place.</p>
+
+<p>If <strong>Client Certificate</strong> is set to <strong>Require </strong>in the <strong>clientssl </strong>profile, then a client certificate is requested, and any certificate received must be <strong>valid</strong>. If <strong>Request </strong>is used, a client certificate is also requested, and the system will attempt to validate it, but the handshake will continue even if the certificate is not considered valid. It is recommended to use <strong>Require</strong>.</p>
+
+<p>To configure C3D, first install a CA bundle that contains the necessary CA certificates needed to validate any expected client certificates. This is configured under <strong>Trusted Certificate Authorities</strong> in the <strong>clientssl</strong> profile, part of subsection <strong>Client Authentication</strong>.</p>
+
+<p>Once the client-side handshake can be completed successfully, the C3D configuration will be used as configured. Refer to the following article for configuring elements of C3D:</p>
+
+<ul><li><a href="https://my.f5.com/manage/s/article/K14065425" target="_self">K14065425: Configuring Client Certificate Constrained Delegation (C3D)</a></li></ul>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>Here is an example C3D configuration:</p>
+
+<p><span class="example2">ltm profile client-ssl /Common/test_clientssl {<br>    app-service none<br>    authenticate always<br>    ca-file /Common/main-clientCA <strong>&lt;-------- Validates client certificate</strong><br>    cert /Common/default.crt<br>    cert-key-chain {<br>        default {<br>            cert /Common/default.crt<br>            key /Common/default.key<br>        }<br>    }<br>    client-cert-ca none         <strong>&lt;---------- This option is not required</strong><br>    defaults-from /Common/clientssl<br>    inherit-ca-certkeychain true<br>    inherit-certkeychain false<br>    key /Common/default.key<br>    peer-cert-mode require      <strong>&lt;---------- Client certificate required</strong><br>    ssl-c3d enabled             <strong>&lt;---------- C3D enabled</strong><br>}<br>ltm profile server-ssl /Common/test_serverssl {<br>    app-service none                        <strong>For forged certificates:</strong><br>    c3d-ca-cert /Common/test-clientCA      <strong>&lt;-------- Signing CA cert</strong><br>    c3d-ca-key /Common/test-clientCA-key   <strong>&lt;-------- Signing CA key</strong><br>    cert /Common/default.crt<br>    defaults-from /Common/serverssl<br>    key /Common/default.key<br>    ssl-c3d enabled             <strong>&lt;---------- C3D enabled</strong><br>}</span></p>
+</article>
+</body>
+</html>

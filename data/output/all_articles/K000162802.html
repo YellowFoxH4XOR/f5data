@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162802: FTP LIST or MLSD requests may fail with TCP reset when FTP Protocol Security is enabled</title>
+<meta name="description" content="Support Solution: FTP LIST or MLSD requests may fail with TCP reset when FTP Protocol Security is enabled — When FTP Protocol Security is enabled in an LTM FTP profile associated with an FTP Virtual Server, FTP clients may be unable to complete passive-mode directory listing operations.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162802">
+</head>
+<body>
+<header>
+<h1>K000162802: FTP LIST or MLSD requests may fail with TCP reset when FTP Protocol Security is enabled</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-05</dd>
+<dt>Updated</dt><dd>2026-09-10</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 17.1.0, 17.1.2, 17.1.1, 17.1.X, 17.5.X, 21.1.X, 21.1.0, 17.5.1, 17.5.0, 17.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162802">https://my.f5.com/manage/s/article/K000162802</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p> </p>
+<p>When FTP Protocol Security is enabled in an LTM FTP profile associated with an FTP Virtual Server, FTP clients may be unable to complete passive-mode directory listing operations.</p>
+<p> </p>
+<p>The FTP client may successfully establish the FTP control connection and authenticate, but directory listing commands such as LIST or MLSD may fail after the client enters passive mode.</p>
+<p> </p>
+<p>Affected clients may report errors similar to:</p>
+<p> </p>
+<ul><li><span style="font-family: courier;">Transfer connection interrupted: ECONNABORTED - Connection aborted</span></li><li><span style="font-family: courier;">Failed to retrieve directory listing</span></li><li><span style="font-family: courier;">425 Error writing to file: ECONNABORTED - Connection aborted</span></li></ul>
+<p>A packet capture taken on BIG-IP may show BIG-IP sending a TCP reset with a message similar to:</p>
+<p> </p>
+<ul><li><span style="font-family: courier;">Internal error (PSM::FTP requested abort (plugin abort error))</span></li></ul>
+<p>In another affected state, FTP connections may fail before login, and bd.log may contain:</p>
+<p> </p>
+<ul><li><span style="font-family: courier;">HSL_PLUGIN|ERR|...|event_open: ***ERROR: Cannot get data profile info from DB</span></li></ul>
+<p> </p>
+<p>When FTP Protocol Security is disabled, the same FTP server and client may successfully complete the operation:</p>
+<p> </p>
+<p><span style="font-family: courier;">PASV</span></p>
+<p><span style="font-family: courier;">227 Entering Passive Mode (...)</span></p>
+<p> </p>
+<p><span style="font-family: courier;">MLSD</span></p>
+<p><span style="font-family: courier;">150 About to start data transfer.</span></p>
+<p><span style="font-family: courier;">226 Operation successful</span></p>
+<p> </p>
+<p>or</p>
+<p> </p>
+<p><span style="font-family: courier;">LIST</span></p>
+<p><span style="font-family: courier;">150 About to start data transfer.</span></p>
+<p><span style="font-family: courier;">226 Transfer complete.</span></p>
+<p> </p>
+<h2>Environment</h2>
+<p> </p>
+<p>This issue may occur under the following conditions:</p>
+<p> </p>
+<ul><li>BIG-IP Advanced WAF / ASM is provisioned.</li><li>An FTP Virtual Server uses an LTM FTP profile.</li><li><strong>Protocol Security</strong> is enabled in the LTM FTP profile.</li><li>An FTP Protocol Security profile is associated with the LTM FTP profile.</li><li>The FTP client uses passive FTP mode (PASV).</li><li>The client performs a directory listing or file transfer operation, such as:
+<ul><li>LIST</li><li>MLSD</li><li>RETR</li><li>STOR</li></ul>
+</li><li>The LTM FTP profile has <strong>Inherit Parent Profile</strong> enabled.</li><li>Or, Protocol Security was disabled on an FTP profile, ASM was restarted while Protocol Security was disabled, and Protocol Security was re-enabled later.</li></ul>
+<p> </p>
+<p> </p>
+<h2>Cause</h2>
+<p> </p>
+<p>This behavior can be caused by either of the following known issues.</p>
+<p> </p>
+<ul><li><a href="https://cdn.f5.com/product/bugtracker/ID700992.html" rel="noopener noreferrer" target="_blank">Bug ID 700992</a>.
+<ul><li>FTP Protocol Security in PASV mode may send an unexpected TCP reset when the FTP profile inherits its parent settings.</li></ul>
+</li></ul>
+<p> </p>
+<ul><li>Bug ID 2390849.
+<ul><li>After Protocol Security is disabled on an FTP profile, ASM is restarted, and Protocol Security is re-enabled, the internal Virtual Server-to-FTP-profile association may not be restored. This can leave Protocol Security in an inconsistent configuration state and produce the following error:
+<ul><li><span style="font-family: courier;">HSL_PLUGIN|ERR|...|event_open: ***ERROR: Cannot get data profile info from DB</span></li></ul>
+</li></ul>
+</li></ul>
+<p> </p>
+<h2>Answer/Recommended Actions</h2>
+<p> </p>
+<p>Apply the workaround that matches the observed condition.</p>
+<p> </p>
+<p><strong>1.- Disable parent profile inheritance</strong></p>
+<p> </p>
+<p>For the condition described in Bug ID 700992, disable Inherit Parent Profile on the affected LTM FTP profile.</p>
+<p> </p>
+<p>Using tmsh:</p>
+<p> </p>
+<p><span style="background-color: #f1f1f1;">tmsh modify ltm profile ftp &lt;ftp_profile_name&gt; inherit-parent-profile disabled</span></p>
+<p><span style="background-color: #f1f1f1;">tmsh save sys config</span></p>
+<p> </p>
+<p>For example:</p>
+<p> </p>
+<p><span style="background-color: #f1f1f1;">tmsh modify ltm profile ftp ftp_security_profile inherit-parent-profile disabled</span></p>
+<p><span style="background-color: #f1f1f1;">tmsh save sys config</span></p>
+<p> </p>
+<p>Verify the configuration:</p>
+<p> </p>
+<p><span style="background-color: #f1f1f1;">tmsh list ltm profile ftp &lt;ftp_profile_name&gt; all-properties</span></p>
+<p> </p>
+<p>The output should include:</p>
+<p> </p>
+<p><span style="background-color: #f1f1f1;">inherit-parent-profile disabled</span></p>
+<p><span style="background-color: #f1f1f1;">security enabled</span></p>
+<p> </p>
+<p>After the change, retest the FTP client connection and passive-mode directory listing operation.</p>
+<p> </p>
+<p><strong>2.- Reattach the FTP Protocol Security profile to the Virtual Server</strong></p>
+<p> </p>
+<p>For the condition described in Bug ID 2390849, reattach the FTP Protocol Security profile to the affected Virtual Server after Protocol Security is re-enabled.</p>
+<p>Using the Configuration utility:</p>
+<p> </p>
+<ol><li>Go to <strong>Local Traffic &gt; Virtual Servers</strong>.</li><li>Select the affected FTP Virtual Server.</li><li>Select the <strong>Security</strong> tab.</li><li>Under <strong>Protocol Security</strong>, select the applicable FTP Protocol Security profile.</li><li>Click <strong>Update</strong>.</li><li>Retest FTP connectivity and FTP data-channel operations.</li></ol>
+<p> </p>
+<p>This action repopulates the required Virtual Server-to-profile association used by FTP Protocol Security.</p>
+<p> </p>
+<p><strong>3.- Validate the result</strong></p>
+<p> </p>
+<p>After applying the applicable workaround, test with an FTP client using passive mode.</p>
+<p> </p>
+<p>A successful sequence should include a passive-mode response followed by a successful completion response:</p>
+<p> </p>
+<p><span style="font-family: courier;">PASV</span></p>
+<p><span style="font-family: courier;">227 Entering Passive Mode (...)</span></p>
+<p> </p>
+<p><span style="font-family: courier;">MLSD</span></p>
+<p><span style="font-family: courier;">150 About to start data transfer.</span></p>
+<p><span style="font-family: courier;">226 Operation successful</span></p>
+<p> </p>
+<p>or</p>
+<p> </p>
+<p><span style="font-family: courier;">LIST</span></p>
+<p><span style="font-family: courier;">150 About to start data transfer.</span></p>
+<p><span style="font-family: courier;">226 Transfer complete.</span></p>
+<p> </p>
+<p>If the issue continues, collect the following information and contact F5 Support:</p>
+<p> </p>
+<ul><li>A qkview</li><li>/var/log/ts/bd.log</li><li>An FTP client log</li><li>A packet capture showing the FTP control connection and the passive FTP data connection</li><li>Output of:
+<ul><li><span style="background-color: #f1f1f1;">tmsh list ltm profile ftp &lt;ftp_profile_name&gt; all-properties</span></li></ul>
+</li></ul>
+<p> </p>
+<p> </p>
+<p> </p>
+<h2>Additional Information</h2>
+<p> </p>
+<p>FTP uses separate control and data connections.</p>
+<ul><li>The control connection commonly uses TCP port 21 and carries commands such as USER, PASS, PASV, LIST, and MLSD.</li><li>The data connection carries the directory listing or file content.</li><li>In passive mode, the server returns a 227 Entering Passive Mode response, and the client establishes the data connection to the advertised port.</li></ul>
+<p>The response:</p>
+<p> </p>
+<p><span style="font-family: courier;">150 About to start data transfer.</span></p>
+<p> </p>
+<p>is an intermediate response. It does not indicate that a directory listing or file transfer completed successfully. A successful operation requires a final completion response, typically:</p>
+<p> </p>
+<p><span style="font-family: courier;">226 Transfer complete.</span></p>
+<p> </p>
+<p>or:</p>
+<p> </p>
+<p><span style="font-family: courier;">226 Operation successful.</span></p>
+<p> </p>
+<p>The informational bd.log message below only reports the number of active Protocol Security Manager jobs and is not, by itself, an error condition:</p>
+<p> </p>
+<p><span style="font-family: courier;">BD_MISC|NOTICE|...|PSM jobs: ftp &lt;number&gt; smtp &lt;number&gt;</span></p>
+<p> </p>
+<p>The following message is significant and can indicate the missing internal FTP Virtual Server-to-profile association described in Bug ID 2390849:</p>
+<p> </p>
+<p><span style="font-family: courier;">HSL_PLUGIN|ERR|...|event_open: ***ERROR: Cannot get data profile info from DB</span></p>
+</article>
+</body>
+</html>

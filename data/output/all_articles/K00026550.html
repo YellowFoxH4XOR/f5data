@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K00026550: Istio Ingress Gateway TCP keepalive</title>
+<meta name="description" content="Support Solution: Istio Ingress Gateway TCP keepalive — The TCP keepalive is a mechanism used to discover closed connections and dead peers. It prevents TCP connections from closing due to network inactivity. TCP keepalive is non-invasive concept, one…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K00026550">
+</head>
+<body>
+<header>
+<h1>K00026550: Istio Ingress Gateway TCP keepalive</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-07-14</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K00026550">https://my.f5.com/manage/s/article/K00026550</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>The TCP keepalive is a mechanism used to discover closed connections and dead peers. It prevents TCP connections from closing due to network inactivity. TCP keepalive is non-invasive concept, one peer of the connection sends TCP frame with no data every time the keepalive timer reaches zero. The remote side of the connections sends the same TCP frame with no data and the TCP ACK flag set. TCP keepalives are implemented on Sockets and are managed by the Linux kernel. This is the opposite to HTTP keepalives which are controlled by applications and the application decides when to send HTTP request to perform verify the peer server.</p>
+
+<p>Most of the linux distribution enables TCP keepalives with the following settings:</p>
+
+<p><span class="example2">sudo sysctl -a | grep tcp_keepalive<br>net.ipv4.tcp_keepalive_intvl = 75<br>net.ipv4.tcp_keepalive_probes = 9<br>net.ipv4.tcp_keepalive_time = 7200</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Aspen Mesh: 1.6.x - 1.11.x</li><li>Kubernetes: 1.17x - 1.22.x</li><li>Red Hat OpenShift: 4.6.x - 4.8.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Some network proxies use tcp keepalive timers different than the usual default settings configured on Linux hosts. One of the examples is AWS Network Load Balanced which sets the idle TCP timeout to 350 seconds and this value cannot be modified. If the client or the server residing between AWS NLB will not send TCP, HTTP or other keepalive messages then the NLB will close the connection without notifying the applications (without sending frames with RST or FIN flags). In that case applications will steel keep the sockets for those connections open and may try to send TCP frames even after 350 seconds (the default TCP timeout on Linux is 7200 seconds). NLB load balancer will reply with RST frame to every frame sent to the closed connection. This may introduce unnecessary errors on the application sides and the need to open a new TCP connection via 3-way handshake.</p>
+
+<p>In a typical cloud architecture Load Balancers (e.g., AWS NLB) route traffic to an ingress gateway which is the entry point to a service mesh. Having the NLB exposed to the internet the client traffic might be distributed and originated from many different sources the service owner might not control. In that scenario connection keepalives should be configured on the server side. Otherwise, the Load Balancer might silently close the connection after the keepalive timeout (350 seconds for AWS NLB). In this article we are going to show how to enable and configure TCP keepalives on Istio Ingress Gateway.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>TCP keepalives are configured on the Linux socket level. The application needs to tell Linux to enable and configure keepalives while opening socket with system calls. Envoy proxy provides an API to specify Socket Options for a specific listener. To apply socket options in Istio we must use EnvoyFilters.</p>
+
+<p>Here is an example of the EnvoyFilter which enables TCP keepalives on the ingress gateway and listener on port 8080. The port number should be customized to the TCP port configured in a Gateway object used to expose the service:</p>
+
+<p><span class="example2">apiVersion: networking.istio.io/v1alpha3<br>kind: EnvoyFilter<br>metadata:<br>  name: ingress-gateway-socket-options<br>  namespace: istio-system<br>spec:<br>  configPatches:<br>  - applyTo: LISTENER<br>    match:<br>      context: GATEWAY<br>      listener:<br>        name: 0.0.0.0_8080<br>        portNumber: 8080<br>    patch:<br>      operation: MERGE<br>      value:<br>        socket_options:<br>        - description: enable keep-alive<br>          int_value: 1<br>          level: 1<br>          name: 9<br>          state: STATE_PREBIND<br>        - description: idle time before first keep-alive probe is sent<br>          int_value: 7<br>          level: 6<br>          name: 4<br>          state: STATE_PREBIND<br>        - description: keep-alive interval<br>          int_value: 5<br>          level: 6<br>          name: 5<br>          state: STATE_PREBIND<br>        - description: keep-alive probes count<br>          int_value: 2<br>          level: 6<br>          name: 6<br>          state: STATE_PREBIND</span></p>
+
+<p>“int_values”, levels and name numbers are specific to the operating system. Numbers from the above example were tested on Ubuntu Linux and EKS 1.21 (Amazon Linux) but should be the same on most of Linux distributions. For more details, please look at socket man pages or “sys/socket” libraries. </p>
+
+<p>To verify that the EnvoyFilter was successfully deployed to the gateway we can use istioctl:</p>
+
+<p><span class="example2">&gt; istioctl pc listener istio-ingressgateway-58968dbf8d-zdqcm.istio-system --port 8080 -o yaml<br>…<br>  name: 0.0.0.0_8080<br>  socketOptions:<br>  - description: enable keep-alive<br>    intValue: &quot;1&quot;<br>    level: &quot;1&quot;<br>    name: &quot;9&quot;<br>  - description: idle time before first keep-alive probe is sent<br>    intValue: &quot;7&quot;<br>    level: &quot;6&quot;<br>    name: &quot;4&quot;<br>  - description: keep-alive interval<br>    intValue: &quot;5&quot;<br>    level: &quot;6&quot;<br>    name: &quot;5&quot;<br>  - description: keep-alive probes count<br>    intValue: &quot;2&quot;<br>    level: &quot;6&quot;<br>    name: &quot;6&quot;<br>  trafficDirection: OUTBOUND</span></p>
+
+<p><span class="note"><strong>Note</strong>: Istio Ingress Gateway must be restarted after EnvoyFilter was deployed and provisioned.</span></p>
+
+<p>Having access to the Kubernetes node where ingress gateway POD is running, we can use netstat or ss tools to verify that TCP keepalives were successfully configured:</p>
+
+<p><span class="example2"># 31078 is a PID associated with Envoy ingress gateway running on k8s node<br>sudo nsenter -n -t 31078 -- sudo ss -antep | grep 8080 LISTEN 0 4096 0.0.0.0:8080 0.0.0.0:* users:((&quot;envoy&quot;,pid=31140,fd=49)) uid:1337 ino:25200243 sk:5 &lt;-&gt; ESTAB 0 0 192.168.90.191:8080 192.168.174.17:40083 users:((&quot;envoy&quot;,pid=31140,fd=50)) timer:(keepalive,2.520ms,0) uid:1337 ino:25222115 sk:1d &lt;-&gt; [ec2-user@ip-192-168-68-167 ~]$ client_loop: send disconnect: Broken pipe<br><br>sudo nsenter -n -t 31078 -- sudo ss -antep | grep 8080<br>State    Recv-Q    Send-Q             Local Address:Port           Peer Address:Port<br>LISTEN     0       1                  127.0.0.1:8080               0.0.0.0:*          users:((&quot;python3&quot;,pid=10699,fd=3)) ino:31877819 sk:3d2 &lt;-&gt;<br>ESTAB      0       0                  127.0.0.1:8080               127.0.0.1:57320    users:((&quot;python3&quot;,pid=10699,fd=4)) timer:(keepalive,340ms,0) ino:31877820 sk:3d3 &lt;-&gt;<br>ESTAB      0       0                  127.0.0.1:57320              127.0.0.1:8080     users:((&quot;telnet&quot;,pid=11173,fd=3)) ino:31880714 sk:3d4 &lt;-&gt;</span></p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K15915: Reallocating disk resources when upgrading a vCMP system</title>
+<meta name="description" content="Knowledge: Reallocating disk resources when upgrading a vCMP system — You want to reallocate disk resources when upgrading a BIG-IP Virtual Clustered Multiprocessing (vCMP) host.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K15915">
+</head>
+<body>
+<header>
+<h1>K15915: Reallocating disk resources when upgrading a vCMP system</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2019-07-01</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.X.X, 13.X.X, 12.X.X, 11.X.X, 11.5.X, 11.4.X, 11.3.X, 11.2.X, 11.1.X, 11.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 11.6.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 11.6.5, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 11.5.1, 11.5.0, 14.X.X, 11.4.0, 11.3.0, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 11.4.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K15915">https://my.f5.com/manage/s/article/K15915</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>You should consider using these procedures under the following condition:</p>
+
+<ul><li>You want to reallocate disk resources when upgrading a BIG-IP Virtual Clustered Multiprocessing (vCMP) host.</li></ul>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisite to use these procedures:</p>
+
+<ul><li>You have access to the TMOS Shell (<strong>tmsh</strong>) or the Advanced Shell (<strong>bash</strong>) command line.</li></ul>
+<h3>Description</h3><p>After you perform an upgrade on a BIG-IP vCMP host, the system may report a disk space allocation error message in the <strong>/var/log/ltm</strong> file that appears similar to one of the following examples:</p>
+
+<p><strong>12.x and later:</strong></p>
+
+<p><span class="example2">warning Provisioning: Over allocation of disk has been detected. Future upgrades or provisioning attempts may fail. See SOL15915.</span></p>
+
+<p><strong>11.x:</strong></p>
+
+<p><span class="example2">emerg Provisioning: Over allocation of disk has been detected. Please check for unused application volumes.</span></p>
+
+<p>The BIG-IP system generates this error message when the &#39;vg-free&#39; disk attribute is less than the &#39;vg-reserved&#39; attribute. This most commonly occurs when vCMP is provisioned on the BIG-IP system, and you perform a software upgrade; when vCMP is first provisioned, the system creates an application volume &#39;vmdisks&#39; that consumes the remaining available disk space &#39;vg-free&#39; minus &#39;vg-reserved&#39;. The next action that requires additional disk space, such as a software upgrade, will cause the free space to dip below the reserved space, resulting in the error message.</p>
+
+<p>There is no immediate impact to the BIG-IP system. However, the error may indicate that future attempts to create additional software volumes or upgrade existing volumes to later software versions may fail unless you take steps to reallocate disk resources before performing the next software upgrade. To reallocate disk resources on the vCMP system, perform one of the following procedures:</p>
+
+<ul><li><a href="#Resizing">Resizing the vg_reserved volume</a></li><li><a href="#De">De-provisioning vCMP from the system, deleting the vmdisks application volume, and re-provisioning vCMP</a></li><li><a href="#Using">Using the lvreduce command to reduce the size of the vmdisks application volume</a></li></ul>
+
+<p><span class="sectiontitle">Procedures</span></p>
+
+<p>You can reallocate disk resources on the vCMP system by performing any of the following procedures:</p>
+
+<p><span class="subsectiontitle"><a name="Resizing"></a>Resizing the vg_reserved volume</span></p>
+
+<p><em><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</em></p>
+
+<ol><li>Log in to <strong>tmsh</strong> by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>Use the following command syntax to display the disk properties on the BIG-IP system:
+	<p><span class="code">list /sys disk logical-disk &lt;logical disk name&gt;</span></p>
+
+	<p>For example, the BIG-IP system returns the properties of its <strong>HD1</strong> disk when you type the following command:</p>
+
+	<p><span class="example2">list /sys disk logical-disk HD1/1</span></p>
+
+	<p><span class="note"><strong>Note</strong>: HD1/1 is a reference to the disk and the blade on the BIG-IP multiple-blade system, where the first number denotes the disk and the second number denotes the blade. You will see HD1 on non-blade systems.</span></p>
+
+	<p>The following output example shows the <strong>vg_reserved</strong> volume is currently allocated with 20,480 MB:</p>
+
+	<p><span class="example2">sys disk logical-disk HD1/1 {<br>	mode mixed<br>	size 102400<br>	vg-free 33052<br>	vg-in-use 68084<br>	vg-reserved 20480<br>	}</span></p>
+	</li><li>Use the following command syntax to resize the <strong>vg_reserved</strong> volume:
+	<p><span class="warning"><strong>Important</strong>: Do not resize the <strong>vg_reserved </strong>volume to a value below 10,000 MB.</span></p>
+
+	<p><span class="code">modify /sys disk logical-disk &lt;storage name&gt; vg-reserved &lt;new size&gt;</span></p>
+
+	<p>For example, type the following command to resize the <strong>vg_reserved</strong> volume to 10,000 MB on the <strong>HD1</strong> disk:</p>
+
+	<p><span class="example2">modify /sys disk logical-disk HD1 vg-reserved 10000</span></p>
+
+	<p><span class="note"><strong>Note: </strong>The system automatically saves any modifications that this command initiates, and the modifications take effect immediately.</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a name="De"></a>De-provisioning vCMP, deleting the vmdisks application volume, and re-provisioning vCMP</span></p>
+
+<p>De-provisioning vCMP, deleting the vmdisks, and re-provisioning vCMP will allow the new vmdisks volume to be recreated using less disk space. To de-provision vCMP on the system, delete the vmdisks application volume, and re-provision vCMP, perform the following steps:</p>
+
+<p><span class="impact"><strong>Impact of procedure: </strong>This procedure will delete all vCMP guests and guest configurations that are defined on the system. To back up the vCMP guest configuration, you must create a user configuration set (UCS) archive for the guest instances that you want to save. In addition, the procedure will automatically reboot the BIG-IP system after steps 2 and 5.</span></p>
+
+<ol><li>Log in to <strong>tmsh</strong> by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>To de-provision vCMP on the system, type the following command:
+	<p><span class="note"><strong>Note: </strong>The BIG-IP system will automatically reboot after this step.</span></p>
+
+	<p><span class="code">modify /sys provision vcmp level none</span></p>
+	</li><li>After the reboot, log in to <strong>tmsh </strong>and delete the vmdisks application volume by typing the following command:
+	<p><span class="code">delete /sys disk application-volume vmdisks</span></p>
+	</li><li>To re-provision vCMP on the system, type the following command:
+	<p><span class="note"><strong>Note: </strong>The BIG-IP system will automatically reboot after this step.</span></p>
+
+	<p><span class="code">modify /sys provision vcmp level dedicated</span></p>
+	</li><li>You can now create the appropriate vCMP guests and restore the desired UCS archives that were previously saved from the vCMP guest.</li></ol>
+
+<p><span class="subsectiontitle"><a name="Using"></a>Using the lvreduce command to reduce the size of the vmdisks application volume</span></p>
+
+<p>You can also reallocate disk resources on the vCMP system by using the <strong>lvreduce</strong> command to reduce the size of the vmdisks application volume. To do so, perform the following procedures:</p>
+
+<ul><li><a href="#Deleting">Deleting unused virtual disks that are not attached to any guest (optional)</a>
+
+	<p><span class="note"><strong>Note</strong>: Deleting unused virtual disks does not reallocate the disk resources unless you also use the <strong>lvreduce</strong> command to reduce the size of the vmdisks application volume.</span></p>
+	</li><li><a href="#lvreduce">Using the lvreduce<strong> </strong>command to reduce the size of the vmdisks application volume</a>
+	<p><span class="note"><strong>Note</strong>: Resizing of vmdisks application volume requires that all vCMP guests be gracefully shut down by setting the requested state to <strong>Configured</strong>, one guest at a time.</span></p>
+	</li></ul>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> F5 recommends creating a UCS archive for the vCMP guest instances that you want to save prior to performing this procedure. Using the <strong>lvreduce </strong>command to shrink a logical volume may destroy the file system located on that volume if you do not make appropriate preparations; you must verify that the file system on the vmdisks volume has enough free space to accommodate the amount of space that you want to reclaim using the<strong> lvreduce</strong> command. Running <strong>lvreduce</strong> command will also require that vmdisks application volume be unmounted, and hence all vCMP guests must be gracefully shut down, one guest at a time</span>. This will disrupt traffic processing and should only be performed during a maintenance window.</p>
+
+<p><span class="subsubsectiontitle"><a name="Deleting"></a>Deleting unused virtual disks that are not attached to any guest (optional)</span></p>
+
+<p><span class="note"><strong>Note: </strong>If the system does not have any unused virtual disks, you can proceed to the <strong>lvreduce </strong>command procedure.</span></p>
+
+<ol><li>Log in to <strong>tmsh</strong> by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>To show the available vCMP virtual disks, type the following command:
+	<p><span class="code">show vcmp virtual-disk detail</span></p>
+
+	<p>For example, the following output indicates that the <strong>host-1.img</strong> virtual disk instances are &#39;in-use&#39; and attached to a vCMP guest:</p>
+
+	<p><span class="example2">-----------------------------------------------------------------<br>	Sys::Vcmp::VirtualDisk<br>	Name Slot ID Operating System Status Disk Use (bytes)<br>	-----------------------------------------------------------------<br>	MULTI.img 1 tmos ready 3.8G<br>	MULTI.img 4 tmos ready 3.8G<br>	MULTI.img 3 tmos ready 3.9G<br>	MULTI.img 2 tmos ready 3.9G<br>	guest1.img 1 tmos ready 4.1G<br>	guest1.img 2 tmos ready 4.1G<br>	helpsasa.img 1 tmos ready 8.1G<br>	host-1.img 2 tmos in-use 3.8G<br>	host-1.img 1 tmos in-use 3.8G<br>	test.img 4 tmos ready 4.8G<br>	test.img 3 tmos ready 4.8G<br>	test.img 2 tmos ready 4.7G</span></p>
+	</li><li>To delete unused virtual disks that are not attached to any guest, use the following command syntax:
+	<p><span class="code">delete vcmp virtual-disk &lt;virtual_disk&gt;</span></p>
+
+	<p>For example, to delete the virtual disk named <strong>my_vdisk</strong>, type the following command:</p>
+
+	<p><span class="example2">delete vcmp virtual-disk my_vdisk</span></p>
+	</li></ol>
+
+<p><span class="subsubsectiontitle"><a name="lvreduce"></a>Using the lvreduce command to reduce the size of the vmdisks application volume</span></p>
+
+<p><span class="warning"><strong>Important</strong>: Prior to 11.6.0 HF6, this command may not work as expected. For more information, refer to <a href="https://my.f5.com/manage/s/article/K46535012" target="_blank">K46535012: Reclaiming unused disk resources may fail on a vCMP system.</a></span></p>
+
+<ol><li>Log in to the BIG-IP <strong>bash</strong> command line.</li><li>Determine the space used and the name of the vmdisks volume by typing the following command:
+	<p><span class="code">lvscan | grep vmdisks</span></p>
+
+	<p>For example, the following output indicates that the <strong>/dev/vg-db-sda/app.vcmp.dat.vmdisks</strong> volume is using 255.84 G:</p>
+
+	<p><span class="example2">ACTIVE &#39;/dev/vg-db-sda/app.vcmp.dat.vmdisks&#39; [255.84 GiB] inherit</span></p>
+	</li><li>Verify that the file system on the vmdisks volume has at least enough free space to accommodate the amount of space that you want to reclaim, by typing the following command:
+	<p><span class="code">df -h /shared/vmdisks</span></p>
+
+	<p>For example, the following output indicates that the vmdisks volume is 255 G with 227 G of free space available:</p>
+
+	<p><span class="example2">Filesystem Size Used Avail Use% Mounted on<br>	/dev/mapper/vg--db--sda-app.vcmp.dat.vmdisks<br>	255G 16G 227G 7% /shared/vmdisks</span></p>
+	</li><li>Shut down all vCMP guests one at a time using the following command syntax:
+	<p><span class="note"><strong>Note</strong>: The vCMP guest may take a long period of time to shut down gracefully.</span></p>
+
+	<p><span class="code">tmsh modify vcmp guest &lt;guest_name&gt; state &lt;vcmp_state&gt; </span></p>
+
+	<p>For example, the following command will shut down vCMP guest <strong>host-1</strong>:</p>
+
+	<p><span class="example2">tmsh modify vcmp guest host-1 state configured</span></p>
+	</li><li>Verify that you have shut down all vCMP guests by typing the following command:
+	<p><span class="note"><strong>Note</strong>: The output of this command will display vCMP guests that are still active.</span></p>
+
+	<p><span class="code">tmsh show vcmp guest</span></p>
+
+	<p>For example, the following output shows that the guest <strong>host-1</strong> is still in the process of shutting down:</p>
+
+	<p><span class="note"><strong>Note:</strong> Proceed to the next step only after host-1 has been shut down. </span></p>
+
+	<p><span class="example2">tmsh show vcmp guest</span></p>
+
+	<p><span class="example2">------------------------------------------------------------------------</span></p>
+
+	<p><span class="example2">Vcmp::Guest</span></p>
+
+	<p><span class="example2">Name Slot ID Status Requested Request Retries Uptime Comment</span></p>
+
+	<p><span class="example2">State Complete </span></p>
+
+	<p><span class="example2">------------------------------------------------------------------------</span></p>
+
+	<p><span class="example2">host-1 2 stopping configured false 0 ---</span></p>
+	</li><li>Decide how much space you want to reclaim using the <strong>lvreduce</strong> command. You can then use the following command syntax to reduce the volume size:
+	<p><span class="note"><strong>Note: </strong>Verify that the amount of space you reclaim does not exceed the free space on the disk. F5 recommends that you start by reclaiming a small amount of space, such as 10 G.</span></p>
+
+	<p><span class="code">lvreduce --resizefs --size -&lt;size_to_reduce&gt; &lt;vmdisks_volume_name&gt;</span></p>
+
+	<p>For example, the following command reduces the volume named <strong>vg--db--sda-app.vcmp.dat.vmdisks</strong> by 10 G:</p>
+
+	<p><span class="example2">lvreduce --resizefs --size -10G /dev/mapper/vg--db--sda-app.vcmp.dat.vmdisks<br>	Do you want to unmount &quot;/shared/vmdisks&quot;? [Y|n] y<br>	fsck from util-linux-ng 2.17.2<br>	/dev/mapper/vg--db--sda-app.vcmp.dat.vmdisks: 21/4356016 files (0.0% non-contiguous), 4353733/67065856 blocks<br>	resize2fs 1.41.12 (17-May-2010)<br>	Resizing the filesystem on /dev/mapper/vg--db--sda-app.vcmp.dat.vmdisks to 64444416 (4k) blocks.<br>	The filesystem on /dev/mapper/vg--db--sda-app.vcmp.dat.vmdisks is now 64444416 blocks long.<br>	<br>	Reducing logical volume app.vcmp.dat.vmdisks to 245.84 GiB<br>	Logical volume app.vcmp.dat.vmdisks successfully resized</span></p>
+	</li><li>Verify that the file system on the vmdisks volume has been reduced by the desired amount by typing the following command:
+	<p><span class="code">df -h /shared/vmdisks</span></p>
+
+	<p>For example, the following output indicates that the vmdisks volume has been reduced by 10 G and is now 245 G, with 217 G of free space available:</p>
+
+	<p><span class="example2">Filesystem Size Used Avail Use% Mounted on<br>	/dev/mapper/vg--db--sda-app.vcmp.dat.vmdisks<br>	245G 16G 217G 7% /shared/vmdisks</span></p>
+	</li><li>Start vCMP guests one at a time using the following command syntax:
+	<p><span class="code">tmsh modify vcmp guest &lt;guest_name&gt; state &lt;vcmp_state&gt;</span></p>
+
+	<p>For example, the following command will power up vCMP guest <strong>host-1</strong>:</p>
+
+	<p><span class="example2">tmsh modify vcmp guest host-1 state deployed</span></p>
+	</li></ol>
+</article>
+</body>
+</html>

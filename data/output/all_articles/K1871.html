@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K1871: Configuring BIG-IP to rewrite URLs so that redirects from an HTTP server specify a port that matches the virtual server</title>
+<meta name="description" content="Knowledge: Configuring BIG-IP to rewrite URLs so that redirects from an HTTP server specify a port that matches the virtual server — Note: This Solution article applies only to BIG-IP 4.x. For information about rewriting redirects on BIG-IP 9.x and later, refer to K6911: Using iRules to rewrite HTTP redirects to match the port…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K1871">
+</head>
+<body>
+<header>
+<h1>K1871: Configuring BIG-IP to rewrite URLs so that redirects from an HTTP server specify a port that matches the virtual server</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2006-02-17</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>BIG-IP 4.X: 4.6.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K1871">https://my.f5.com/manage/s/article/K1871</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p class="note"><b>Note</b>: This Solution article applies only to BIG-IP 4.x. For information about rewriting redirects on BIG-IP 9.x and later, refer to <a href="https://my.f5.com/manage/s/article/K6911" target="_blank">K6911: Using iRules to rewrite HTTP redirects to match the port used by the virtual server</a>.  </p>
+<p>If a virtual server listens on port 80, with web servers listening on a different port, and the web server issues an HTTP redirect because the request does not contain a trailing slash, the web server appends the port to the end of the host portion of the URL.</p>
+<p>For example, if the webserver listens on port 8000 and a client makes the following request:</p>
+<p class="example2">http://www.domain.com/directory1</p>
+<p>The client gets redirected to:</p>
+<p class="example2">http://www.domain.com:8000/directory1/</p>
+<p>To solve this problem, you can either create a port redirect rule or use an F5-supplied ISAPI filter to prevent your IIS servers from issuing incompatible redirects. For more information on port redirect rules, see the following process. For more information on the ISAPI filter, refer to <a href="https://my.f5.com/manage/s/article/K1607" target="_blank">K1607: Using an ISAPI filter on Microsoft IIS to rewrite URLs so that it creates redirects that match the protocol and port used by the BIG-IP virtual server or SSL proxy</a>.</p>
+<h3>Port redirect rule</h3>
+<p>You can create a BIG-IP system redirect rule that listens on the same port as the web servers.</p>
+<p>For example:</p>
+<pre class="example2">
+rule redirect_to_80 {
+    redirect to &quot;http://%h/%u&quot;
+}
+virtual 192.168.1.1:8000 {
+   use rule redirect_to_80
+}
+</pre>
+<p>With this rule, clients that are redirected from the web servers to port 8000 reconnect to the BIG-IP system on port 8000, and the BIG-IP system redirects them to the correct port (port 80). You can also configure the BIG-IP system to host the website on both port 80 and port 8000 on the same server, which would eliminate the need for redirects.</p>
+<h3>Trailing slash redirect rule</h3>
+<p>You can configure the BIG-IP system to issue redirects that append a trailing slash rather than having the web server handle this functionality. To do so, perform the following steps.</p>
+<p><b>Step 1 - Create a class</b></p>
+<p>From the Configuration utility, create a class that contains every possible file extension on your website. For example: <b>html</b>, <b>htm</b>, <b>asp</b>, <b>jsp</b>, <b>jpg</b>, <b>gif</b>, <b>jpeg</b>, <b>png</b>, and so forth. For specific instructions, refer to the <a href="https://support.f5.com/content/kb/en-us/archived_products/big-ip.html" target="_blank">BIG-IP manual</a>.</p>
+<p><b>Step 2 - Create a rule</b></p>
+<p>Create a rule that looks at every URI and appends a trailing slash if the URI:</p>
+<ul><li>Does not end with one of the extensions listed in the extensions class</li><li>Does not already end with a trailing slash</li></ul>
+<p class="note"><b>Note</b>: This rule can be resource intensive, depending on the traffic to your site, the amount of BIG-IP CPU/memory, and the number of connections. F5 recommends that you use this rule only if there is no other alternative.</p>
+<p>For example:</p>
+<pre class="example2">
+if (not (http_uri ends_with one of extensions) and not (http_uri ends_with &quot;/&quot;) ) {
+   redirect to &quot;http://%h/%u/&quot;
+}
+else {
+   use ( Standard_pool )
+}
+</pre>
+<p>Note the use of the <b>one of</b> operator to reference all of the extensions contained within the extensions class; you will need to change the <b>Standard_pool</b> to match the pool that contains your web server.</p>
+</article>
+</body>
+</html>

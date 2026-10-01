@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000133416: HSL Logs through Management Port do not use Management IP as Source</title>
+<meta name="description" content="Support Solution: HSL Logs through Management Port do not use Management IP as Source — You want to use the management network to send logs to Syslog servers through High Speed Logging (HSL), but HSL logs are being sent out with a self-IP address as the source IP rather than the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000133416">
+</head>
+<body>
+<header>
+<h1>K000133416: HSL Logs through Management Port do not use Management IP as Source</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-06-16</dd>
+<dt>Updated</dt><dd>2025-12-01</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000133416">https://my.f5.com/manage/s/article/K000133416</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Description</strong></h2>
+<p>You want to use the management network to send logs to Syslog servers through High Speed Logging (HSL), but HSL logs are being sent out with a self-IP address as the source IP rather than the management IP. Even with a proper management route and using management IP as local IP to bind HSL, logs are still sent from a Self IP.</p>
+<p>For example:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>sys log-config destination management-port remote-syslog-udp {
+  ip-address 192.168.1.1  &lt;&lt;&lt;=== Remote syslog server
+  port 514
+  protocol udp
+}
+sys management-route /Common/syslog_route {
+    gateway 10.1.1.1
+    network 192.168.1.1/32   &lt;&lt;&lt;=== Remote syslog server
+}</code></pre>
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Environment</strong></h2>
+<ul><li>Remote Syslog servers</li><li>Management route configured</li></ul>
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Cause</strong></h2>
+<p>Existing syslog active connections for HSL are using a Self IP as the source IP even though the management route has been configured to syslog server through management interface.  Process <strong>errdefsd</strong> may need to be restarted to start using the Management IP.</p>
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Recommended Actions</strong></h2>
+<ul><li> Please run this command to check and confirm if HSL logs are somehow sent out with Self IP as the source:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>netstat -pan|grep -E &#39;syslog-ng|errdefsd&#39;
+Output example, where IP 192.168.1.3 is a Self IP and 192.168.1.1 is syslog server:
+
+   udp       0      0 127.0.0.1:3794          0.0.0.0:*                           7871/errdefsd
+   udp       0      0 192.168.1.3:50119       192.168.1.1:514         ESTABLISHED 7871/errdefsd</code></pre>
+</li></ul>
+<ul><li>If it is confirmed that the existing active connection is using a Self IP, restart the <strong>errdefsd</strong> process:<br><pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>bigstart restart errdefsd</code></pre>
+Confirm if errdefsd is now sending HSL logs using the Management IP as the source:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>netstat -pan|grep -E &#39;syslog-ng|errdefsd&#39;
+Output example, where IP 1.2.3.4 is the management IP now:
+
+   udp       0      0 127.0.0.1:3794          0.0.0.0:*                           7871/errdefsd
+   udp       0      0 1.2.3.4:50119           192.168.1.1:514         ESTABLISHED 7871/errdefsd</code></pre>
+</li></ul>
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Additional Information</strong></h2>
+<ul><li style="box-sizing: border-box;color: #181818;font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;font-size: 14px;white-space: normal;background-color: #ffffff;">This can occur when the route to the remote syslog server is changed from egressing via the self-IP address to egressing via the management interface. When syslog-ng starts logging to the destination, a socket is created. The source address will be based on the route used to the destination. BIgIP by default uses tmm route if there is no management route is defined. When you create the route, the Linux kernel will start using it to send traffic to the destination via the management interface. However, it is still using the source address as self-ip from the existing socket.</li><li style="box-sizing: border-box;color: #181818;font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;font-size: 14px;white-space: normal;background-color: #ffffff;">Verify the connectivity to the syslog server over the management network using below commands:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ping -I &lt;mgmt_ip&gt; &lt;destination_ip&gt;
+nc -vu -s &lt;mgmt_ip&gt; &lt;destination_ip&gt; &lt;port&gt;</code></pre>
+</li></ul>
+</article>
+</body>
+</html>

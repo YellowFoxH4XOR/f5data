@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K11481312: Overview of the BIG-IP LTM FTP monitor</title>
+<meta name="description" content="Knowledge: Overview of the BIG-IP LTM FTP monitor — This article discusses the behavior of the BIG-IP LTM FTP monitor. For information about the FTP monitor settings, refer to the Monitors Settings Reference chapter of the BIG-IP Local Traffic…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K11481312">
+</head>
+<body>
+<header>
+<h1>K11481312: Overview of the BIG-IP LTM FTP monitor</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2017-10-10</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.0.0, 15.0.X, 15.0.1, 17.X.X, 16.X.X, 15.X.X, 17.5.X, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K11481312">https://my.f5.com/manage/s/article/K11481312</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3>
+<p>This article discusses the behavior of the BIG-IP LTM FTP monitor. For information about the FTP monitor settings, refer to the <strong>Monitors Settings Reference</strong> chapter of the <em><strong>BIG-IP Local Traffic Manager: Monitors Reference</strong></em> guide.</p>
+
+<p><span class="note"><strong>Note</strong>: For information about how to locate F5 product guides, refer to <a href="https://my.f5.com/manage/s/article/K12453464" target="_blank">K12453464: Finding product documentation on AskF5</a>.</span></p>
+<h3>Description</h3><p>You can display or create an FTP monitor by navigating to <strong>Local Traffic</strong> &gt; <strong>Monitors</strong> in the Configuration utility.</p>
+
+<p>The FTP monitor <strong>Mode</strong> setting has two options which dictate how the system establishes the data connection (separate from the control connection for commands):</p>
+
+<ul><li><strong>Passive</strong> mode, in which the BIG-IP system connects to a port on which the FTP server is listening.</li><li><strong>Port </strong> mode (also called active mode), in which the FTP server connects to a port on which the BIG-IP system listens.</li></ul>
+
+<p>The most significant difference among BIG-IP versions occurs with passive mode. In BIG-IP 12.1.2 and later, the BIG-IP system establishes a data connection with the IP address which the FTP server provides in the passive mode reply instead of the pool member IP address. This is inconsequential if you&#39;ve configured the FTP server to supply the IP address of the pool member in the passive mode reply. The following sections describe the behavior of each mode in relation to BIG-IP versions:</p>
+
+<ul><li><a href="#passive">FTP Monitor behavior in Passive mode</a></li><li><a href="#port">FTP Monitor behavior in Port (active) mode</a></li></ul>
+
+<p><a id="passive" name="passive"></a><span class="subsectiontitle">FTP Monitor behavior in Passive mode</span></p>
+
+<p><span class="subsubsectiontitle">BIG-IP 12.1.0 and later</span></p>
+
+<ul><li>The BIG-IP system establishes a control connection to the FTP server, logs in, prints the current directory, and transmits a request for passive mode with a <strong>PASV </strong>command. The FTP server replies with a <strong>227 </strong>reply code, indicating that it is entering passive mode. If you&#39;ve configured the FTP server to specify a different IP address for the data connection, it does so in the <strong>227 </strong>response. In the following example, the BIG-IP system establishes a control connection to a pool member with the IP address <strong>172.16.1.112</strong>. The connection includes packet details similar to the following:
+
+	<p><strong>BIG-IP</strong>                                         <strong>FTP server</strong></p>
+
+	<p><span class="example2">172.16.1.145:41796  -&gt;  172.16.1.112:21 : Request: PASV<br>	172.16.1.145:41796  &lt;-  172.16.1.112:21 : Response: 227 Entering Passive Mode (192,168,1,110,224,142).</span></p>
+	</li><li>The BIG-IP system requests binary mode and the file size and to transfer the file specified in the <strong>Path / Filename </strong>setting of the monitor configuration. The FTP server replies, indicating that it will open a data connection.</li><li>The FTP server listens on the port it provided in the <strong>227 </strong>reply (<strong>57486</strong> in the example: [224* 256] + 142= 57486). The BIG-IP system establishes a separate data connection to the FTP server using the IP address that the FTP server provides in the <strong>227 </strong>reply (<strong>192.168.1.110</strong> in the example) and not the IP address of the pool member (<strong>172.16.1.112</strong> in the example). The system transfers the file over the data connection and then removes both control and data connections. If the file transfer does not complete for any reason, the system marks the pool member down. The data connection establishment includes packet details similar to the following example:
+	<p><strong>BIG-IP</strong>                                         <strong>FTP server</strong></p>
+
+	<p><span class="example2">192.168.1.145:31027  -&gt;  192.168.1.110:57486 : [SYN]<br>	192.168.1.145:31027  &lt;-  192.168.1.110:57486 : [SYN, ACK]<br>	192.168.1.145:31027  -&gt;  192.168.1.110:57486 : [ACK]</span></p>
+	</li></ul>
+
+<p><span class="subsubsectiontitle">BIG-IP 11.6.0 - 12.0.0</span></p>
+
+<ul><li>The BIG-IP system establishes a control connection to the FTP server, logs in, prints the current directory, and transmits a request for extended passive mode with an <strong>EPSV</strong> command. The FTP server replies with a <strong>229 </strong>reply code indicating that it is entering extended passive mode. The <strong>229 </strong>reply does not specify an IP address. In the following example, the BIG-IP system establishes a control connection to the a pool member with the IP address <strong>172.16.1.112</strong>. The connection includes packet details similar to the following:
+
+	<p><strong>BIG-IP</strong>                                       <strong>FTP server</strong></p>
+	<span class="example2">172.16.1.145:36365  -&gt;  172.16.1.112:21 : Request: EPSV<br>	172.16.1.145:36365  &lt;-  172.16.1.112:21 : Response: 229 Entering Extended Passive Mode (|||57486|).</span></li><li>The BIG-IP requests binary mode, the file size, and requests to transfer the file specified in the <strong>Path / Filename </strong>setting of the monitor configuration. The FTP server replies indicating that it will open a data connection.</li><li>The FTP server listens on the port it provided in the <strong>229 </strong>reply (<strong>57486 </strong>in the example). The BIG-IP establishes a separate data connection to the FTP server on this port. The file is then transferred over the data connection and both control and data connections are torn down. If the transfer does not complete for any reason, the pool member will be marked down. The establishment of the data connection includes packet details similar to the following:
+	<p><strong>BIG-IP</strong>                                       <strong>FTP server</strong></p>
+
+	<p><span class="example2">172.16.1.145:50567  -&gt;  172.16.1.112:57486 : [SYN]<br>	172.16.1.145:50567  &lt;-  172.16.1.112:57486 : [SYN, ACK]<br>	172.16.1.145:50567  -&gt;  172.16.1.112:57486 : [ACK]</span></p>
+	</li></ul>
+
+<p><span class="subsubsectiontitle">BIG-IP 11.5.4 and earlier</span></p>
+
+<ul><li>There is no significant difference in control connection and file transfer behavior with BIG-IP 12.1.0 and later; however, data connection behavior is different as noted in the next point.</li><li>The FTP server listens on the port it provided in the <strong>227 </strong>reply (<strong>57486 </strong>in the previous example). The BIG-IP system establishes a separate data connection to the FTP server using the IP address of the pool member (<strong>172.16.1.112</strong> in the previous example) and ignores the IP address in the <strong>227 </strong>reply (<strong>192.168.1.110</strong> in the previous example). The system transfers the file over the data connection and then removes both control and data connections. If the transfer does not complete for any reason, the system marks the pool member down. The data connection establishment includes packet details similar to the following:
+	<p><strong>BIG-IP</strong>                                       <strong>FTP server</strong><br>	<span class="example2">172.16.1.145:59706  -&gt;  172.16.1.112:57486 : [SYN]<br>	172.16.1.145:59706  &lt;-  172.16.1.112:57486 : [SYN, ACK]<br>	172.16.1.145:59706  -&gt;  172.16.1.112:57486 : [ACK]</span></p>
+	</li></ul>
+
+<p><a id="port" name="port"></a><span class="subsectiontitle">FTP Monitor behavior in Port (active) mode</span></p>
+<span class="subsubsectiontitle">BIG-IP 12.1.0 and later, BIG-IP 11.5.4 and earlier </span>
+
+<ul><li>The BIG-IP system establishes a control connection to the FTP server, logs in, prints the current directory, and requests port mode with a <strong>PORT </strong>command. In the following example, the BIG-IP system establishes a control connection to a pool member with the IP address <strong>172.16.1.112</strong>. The FTP server replies with a <strong>200 </strong>reply code indicating that it is entering port mode:
+
+	<p><strong>BIG-IP</strong>                                       <strong>FTP server</strong></p>
+
+	<p><span class="example2">172.16.1.145:59341  -&gt;  172.16.1.112:21 : Request: PORT 172,16,1,145,109,108<br>	172.16.1.145:59341  &lt;-  172.16.1.112:21 : Response: 200 PORT command successful. Consider using PASV.</span></p>
+	</li><li>The BIG-IP system requests binary mode and the file size, and to transfer the file specified in the <strong>Path / Filename</strong> setting of the monitor configuration. The FTP server replies, indicating that it will open a data connection.</li><li>The BIG-IP system listens on the port specified in the <strong>PORT </strong>command, (<strong>28012 </strong>in the example: [109 * 256] + 108= 28012) and the FTP server establishes the data connection with the BIG-IP system. The system then transfers the file over the data connection and then removes both control and data connections. If the transfer does not complete for any reason, the system marks the pool member down. The data connection establishment includes packet details similar to the following example:
+	<p><strong>BIG-IP</strong>                                       <strong>FTP server</strong></p>
+
+	<p><span class="example2">172.16.1.145:28012  &lt;-  172.16.1.112:48147 : [SYN]<br>	172.16.1.145:28012  -&gt;  172.16.1.112:48147 : [SYN, ACK]<br>	172.16.1.145:28012  &lt;-  172.16.1.112:48147 : [ACK]</span></p>
+	</li></ul>
+
+<p><span class="subsubsectiontitle">BIG-IP 11.6.0 - 12.0.0 </span></p>
+
+<ul><li>The BIG-IP system establishes a control connection to the FTP server, logs in, prints the current directory, and requests extended port mode with a <strong>EPRT </strong>command. The FTP server replies with a <strong>200 </strong>reply code indicating that it is entering extended port mode. In the following example, the BIG-IP system establishes a control connection to a pool member with the IP address <strong>172.16.1.112</strong>:
+
+	<p><strong>BIG-IP</strong>                                      <strong>FTP server</strong></p>
+
+	<p><span class="example2">172.16.1.145:50125  -&gt;  172.16.1.112:21 : Request: EPRT |1|172.16.1.145|28012|<br>	172.16.1.145:50125  &lt;-  172.16.1.112:21 : Response: 200 EPRT command successful. Consider using EPSV.</span></p>
+	</li><li>The BIG-IP system requests binary mode and the size of the file and to transfer the file specified in the <strong>Path / Filename </strong>setting of the monitor configuration. The FTP server replies, indicating that it will open a data connection.</li><li>The BIG-IP system listens on the port specified in the <strong>EPRT </strong>command, (<strong>28012 </strong>in the example) and the FTP server establishes the data connection with the BIG-IP system. The system then transfers the file over the data connection and then removes the control and data connections. If the transfer does not complete for any reason, the system marks the pool member down. The data connection establishment includes packet details similar to the following example:
+	<p><strong>BIG-IP</strong>                                       <strong>FTP server</strong></p>
+
+	<p><span class="example2">172.16.1.145:28012  &lt;-  172.16.1.112:48147 : [SYN]<br>	172.16.1.145:28012  -&gt;  172.16.1.112:48147 : [SYN, ACK]<br>	172.16.1.145:28012  &lt;-  172.16.1.112:48147 : [ACK]</span></p>
+	</li></ul>
+</article>
+</body>
+</html>

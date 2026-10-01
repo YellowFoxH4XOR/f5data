@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160728: Configuring HTTPS Pool Monitors for Multiple SNI-Based Applications on a Single Backend Server</title>
+<meta name="description" content="Support Solution: Configuring HTTPS Pool Monitors for Multiple SNI-Based Applications on a Single Backend Server — Standard HTTPS monitors in BIG-IP LTM may fail to mark pool members as &#x27;(Available) UP&#x27; when monitoring a physical backend server hosting Multiple SNI-based Applications. This is due to the monitor…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160728">
+</head>
+<body>
+<header>
+<h1>K000160728: Configuring HTTPS Pool Monitors for Multiple SNI-Based Applications on a Single Backend Server</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-04-13</dd>
+<dt>Updated</dt><dd>2026-04-13</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.0.0, 15.0.X, 15.0.1, 21.X.X, 17.X.X, 16.X.X, 15.X.X, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160728">https://my.f5.com/manage/s/article/K000160728</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Standard HTTPS monitors in BIG-IP LTM may fail to mark pool members as &#39;<strong>(Available) UP</strong>&#39; when monitoring a physical backend server hosting <strong>Multiple SNI-based Applications</strong>. This is due to the monitor not sending a <strong>Server Name Indication (SNI)</strong> extension in the SSL handshake, resulting in TLS handshake failures and the error: &quot;<strong>The children pool member(s) are down.</strong>&quot; To monitor multiple SNI hostnames on the same server, specific configuration steps are required. </p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>Individual backend server hosting multiple SNI-based applications</li><li>Standard HTTPS monitors configured at the pool level</li><li>Default &#39;<strong>serverssl</strong>&#39; profile used for SSL re-encryption and monitoring</li><li>Requirement to monitor both SNI and Non-SNI applications</li></ul>
+<p><span style="font-family: NeusaNextProWideMedium-normal-expanded, Arial, Helvetica, sans-serif;font-size: 1em;font-weight: inherit;">Cause</span></p>
+<p>The standard HTTPS monitor does not include an SNI extension in its SSL handshake, which is required by the backend server to differentiate between multiple SNI-based applications. Without SNI, the server <strong>cannot</strong> present the correct certificate, causing the health check to fail and pool members to be marked down. Enabling <strong>In-TMM</strong> monitoring and configuring custom server SSL profiles with the appropriate SNI values resolves this limitation. </p>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>1. Enable In-TMM Monitoring Globally: [<a href="https://my.f5.com/manage/s/article/K11323537" title="K11323537" target="_blank">K11323537</a>]</strong></p>
+<p>Run the following commands:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify sys db bigd.tmm value enable
+tmsh save sys config</code></pre>
+<p><span style="color: #2ecc71;"><em><strong>Note: </strong>This is a global change affecting all monitors. Plan for a <strong>maintenance window</strong>, as pool member status may briefly show as &#39;<strong>Unknown</strong>&#39; during the transition.</em></span></p>
+<p><strong>2. Configure Monitors for SNI-Based Applications: [<a href="https://my.f5.com/manage/s/article/K000160569" title="K000160569" target="_blank">K000160569</a>]</strong></p>
+<p>For each SNI-based application:</p>
+<ul><li>Create a custom server SSL profile with the server-name field set to the required SNI hostname.</li><li>Create a dedicated HTTPS monitor for each SNI, assigning the corresponding custom server SSL profile.</li><li>Assign SNI-specific monitors at the pool member level.</li></ul>
+<p><strong>3. Configure Monitors for Non-SNI Applications:</strong></p>
+<p>Explicitly assign the default &#39;<strong>serverssl</strong>&#39; profile (/Common/serverssl) to each HTTPS monitor. No custom profile is needed for non-SNI applications.</p>
+<p><strong>4. Update Monitor Send Strings: [<a href="https://my.f5.com/manage/s/article/K16343688" title="K16343688" target="_blank">K16343688</a>]</strong></p>
+<p>Ensure all HTTPS monitor send strings include the HTTP version and correct headers followed by the expected <strong>CR/LF (\r\n\r\n)</strong>. The Host header must match the application&#39;s hostname. Example:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>GET / HTTP/1.1\r\nHost: example.com\r\nConnection: Close\r\n\r\n</code></pre>
+<p><strong>5. Monitor TMM Resource Usage:</strong></p>
+<p>After enabling <strong>In-TMM</strong> monitoring, monitor TMM resource usage to make sure the Device resource utilization is still under desired state:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh show sys memory
+tmsh show sys tmm-info</code></pre>
+<p><span style="color: #2ecc71;"><em><strong>Note: </strong>TMM resource usage may increase proportional to the number of monitors.</em></span></p>
+<h2>Additional Information</h2>
+<ul><li>iRules cannot be used to influence SNI in health monitors; SNI must be set via <strong>server</strong> SSL profiles.</li><li>The difference between <strong>https</strong> and <strong>https_443</strong> monitors is only the default port assignment; functionally, they are identical.</li><li>Enabling <strong>In-TMM Monitoring</strong> is stricter about HTTP compliance; monitors without an explicit HTTP version or Host header will fail.</li><li>During the transition to <strong>In-TMM Monitoring</strong>, pool members may briefly flap or show Unknown status; this is temporary and expected.</li><li>Only SNI-specific applications require custom server SSL profiles; non-SNI applications can use the default <strong>serverssl</strong> profile if explicitly assigned.</li><li>The &#39;<strong>bigd.tmm</strong>&#39; enable command itself is lightweight, but ongoing TMM resource usage depends on monitor count and system resources.</li></ul>
+</article>
+</body>
+</html>

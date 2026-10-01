@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000151746: F5 CIS 2.20.0 Issues with multiple CIS instances controlling a single ExternalDNS resource</title>
+<meta name="description" content="Support Solution: F5 CIS 2.20.0 Issues with multiple CIS instances controlling a single ExternalDNS resource — GTM: Error while creating pool: F5CcclError - Virtual Server Resource not Available in BIG-IP">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000151746">
+</head>
+<body>
+<header>
+<h1>K000151746: F5 CIS 2.20.0 Issues with multiple CIS instances controlling a single ExternalDNS resource</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-06-06</dd>
+<dt>Updated</dt><dd>2025-06-17</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Automation and Orchestration</li><li>BIG-IP</li><li>F5 BIG-IP Container Ingress Services</li><li>BIG-IP DNS: 16.X.X, 17.X.X, 17.5.X, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0</li><li>BIG-IP LTM: 17.X.X, 16.1.X, 17.5.X, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000151746">https://my.f5.com/manage/s/article/K000151746</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When deploying multiple F5 Container Ingress Services (CIS) instances to manage load balancing and GSLB (Global Server Load Balancing) across multiple datacenters, issues may arise when configuring a single ExternalDNS Custom Resource Definition (CRD) with multiple pools referencing different dataServerName values. The following error may be observed:</p>
+<p><span style="font-family: monospace;font-size: 11.8125px;"> GTM: Error while creating pool: F5CcclError - Virtual Server Resource not Available in BIG-IP</span></p>
+<p>Additionally, GSLB pools may be created with missing members, or only one pool is populated as expected.</p>
+<h2>Environment</h2>
+<ul><li>Product: F5 K8S-BIGIP-Controller (CIS)</li><li>Version: 2.16.1 and 2.20.0</li><li>Platform: F5 LTM and GTM appliances in a multi-datacenter deployment</li><li>Configuration:
+<ul><li>Multiple CIS instances (one per datacenter or namespace)</li><li>Each CIS instance manages its own LTM and GTM pair</li><li>ExternalDNS CRDs used for GSLB configuration</li><li>Service discovery enabled (no delete)</li><li>VirtualServer CRDs deployed in separate namespaces</li></ul>
+</li></ul>
+<p> </p>
+<h2>Cause</h2>
+<p>This issue occurs because each CIS instance can only manage resources within its configured namespace(s) and BIG-IP partition(s). When a single ExternalDNS CRD is configured with multiple pools referencing dataServerName values for virtual servers not managed or visible to the current CIS instance, the controller cannot locate the referenced virtual server resources on the BIG-IP, resulting in the error:</p>
+<p><span style="font-size: 11.8125px;font-family: monospace;"> GTM: Error while creating pool: F5CcclError - Virtual Server Resource not Available in BIG-IP</span></p>
+<p>This is due to namespace and resource visibility limitations inherent to CIS controller configuration.</p>
+<h2>Recommended Actions</h2>
+<p><strong>Use Separate ExternalDNS CRDs:</strong></p>
+<p>Instead of specifying multiple pools within a single ExternalDNS CRD, create separate ExternalDNS CRDs in the respective namespaces managed by each CIS instance. Each CRD should reference only the dataServerName that is visible and managed by that specific CIS instance.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>apiVersion: cis.f5.com/v1
+kind: VirtualServer
+metadata:
+  labels:
+    f5cr: &quot;true&quot;
+  name: example-vitual-1
+  namespace: cistest
+spec:
+  host: example.com
+  pools:
+  - monitor:
+      interval: 20
+      recv: &quot;&quot;
+      send: /
+      timeout: 10
+      type: http
+    path: /
+    service: svc-1
+    servicePort: 80
+  virtualServerAddress: 172.16.3.4
+---
+apiVersion: cis.f5.com/v1
+kind: VirtualServer
+metadata:
+  labels:
+    f5cr: &quot;true&quot;
+  name: example-virtual-2
+  namespace: cistest-two
+spec:
+  host: example.com
+  pools:
+  - monitor:
+      interval: 20
+      recv: &quot;&quot;
+      send: /
+      timeout: 10
+      type: http
+    path: /
+    service: svc-2
+    servicePort: 80
+  virtualServerAddress: 172.16.3.5
+</code></pre>
+<p> </p>
+<p> </p>
+<p><strong>Namespace and Controller Configuration:</strong></p>
+<p>Ensure each CIS instance is configured to watch the correct namespace and BIG-IP partition. Each controller should only reference resources it manages.</p>
+<p><strong>GTM and LTM Configuration:</strong></p>
+<p class="ql-indent-1">Both LTMs must be configured as Server objects on the GTM (in the Common partition), with virtual server discovery enabled.</p>
+<p class="ql-indent-1">The <span style="font-size: 13.5px;font-family: monospace;">dataServerName</span> field in the ExternalDNS CRD must match the GTM server name.</p>
+<p class="ql-indent-1">If GTM and LTM resources are on different BIG-IPs, configure your CIS deployment with appropriate GTM parameters (<span style="font-size: 13.5px;font-family: monospace;">gtm-bigip-url</span>, <span style="font-size: 13.5px;font-family: monospace;">gtm-bigip-username</span>, <span style="font-size: 13.5px;font-family: monospace;">gtm-bigip-password</span>).</p>
+<p><strong>Troubleshooting:</strong></p>
+<p>If errors persist, verify that:</p>
+<p class="ql-indent-1">The GTM has discovered the virtual server for the domain matching the ExternalDNS resource.</p>
+<p class="ql-indent-1">The CIS instance has access to both the namespace and partition where its VirtualServer CRD is deployed.</p>
+<p class="ql-indent-1">The virtual server exists and is healthy on its respective LTM.</p>
+<p> </p>
+<h2>Additional Information</h2>
+<ul><li>none</li></ul>
+</article>
+</body>
+</html>

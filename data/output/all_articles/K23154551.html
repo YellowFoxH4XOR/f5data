@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K23154551: Applying a BIG-IP LTM iRule to BIG-IP APM access session content</title>
+<meta name="description" content="Knowledge: Applying a BIG-IP LTM iRule to BIG-IP APM access session content — The BIG-IP APM system can apply iRules to an access session at the Access Policy level, and can configure BIG-IP LTM-level iRules, as well.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K23154551">
+</head>
+<body>
+<header>
+<h1>K23154551: Applying a BIG-IP LTM iRule to BIG-IP APM access session content</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2020-05-08</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 15.X.X, 13.X.X, 12.X.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 15.1.8, 12.1.5, 15.1.7, 12.1.4, 15.1.6, 12.1.3, 15.1.5, 12.1.2, 15.1.4, 12.1.1, 15.1.3, 12.1.0, 14.X.X, 12.0.0, 15.1.1, 15.1.2</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K23154551">https://my.f5.com/manage/s/article/K23154551</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>The BIG-IP APM system can apply iRules to an access session at the Access Policy level, and can configure BIG-IP LTM-level iRules, as well.</p>
+<h3>Description</h3><p>You can configure the BIG-IP APM system with Access Profile-specific iRules (iRule Event) as well as with BIG-IP LTM iRules. Due to the way access sessions are processed by the BIG-IP APM system, using BIG-IP LTM iRules to add, delete, or modify HTTP content specific to an access session can often produce an erratic application of the BIG-IP LTM iRule. The reason for this behavior is, being processed by the BIG-IP APM module, once the access session is established, the BIG-IP LTM system cannot use iRules to access the access session connection content.</p>
+
+<p><span class="sectiontitle">Recommendations</span></p>
+
+<p>When you have to use a BIG-IP LTM iRule to get access to access session content that you cannot get through using an Access Policy iRule, using a layered virtual server scenario may be the most effective way to apply the BIG-IP LTM iRule to the access session.</p>
+
+<p>A layered virtual server involves creating a BIG-IP LTM virtual server that uses a custom iRule that ultimately sends and receives traffic with the BIG-IP APM virtual server. The two virtual server configurations reside on the same BIG-IP system. The custom iRule can also contain BIG-IP LTM iRules functionality that you want to apply to the access session content.</p>
+
+<p>The following procedures demonstrate how to create a BIG-IP LTM layered virtual server to allow using BIG-IP LTM iRules between the BIG-IP APM virtual server and the client requestor. In these procedures, F5 assumes that the BIG-IP APM is configured with a functioning virtual server.</p>
+
+<p><span class="warning"><strong>Important:</strong> Using a layered virtual server to apply BIG-IP LTM iRules to an access session will function only for access sessions that do not use a network tunnel.</span></p>
+
+<ul><li><a href="#iRule" target="_self">Creating the custom iRule</a></li><li><a href="#Layered VS" target="_self">Creating the BIG-IP LTM layered virtual server</a></li></ul>
+
+<p><a id="iRule" name="iRule"></a><span class="subsectiontitle">Creating the custom iRule</span></p>
+
+<p>The following procedure creates an iRule that inserts an HTTP header into the packet on both the request and response sides of the access session.</p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the BIG-IP APM Configuration utility.</li><li>Go to <strong>Local Traffic</strong> &gt; <strong>iRules </strong>&gt;<strong> iRule List</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong> enter the name of the custom iRule.</li><li>For <strong>Definition </strong>paste the following stanza.
+	<p><span class="note"><strong>Note</strong>: This is an example iRule that inserts HTTP headers on the client request and in the BIG-IP APM virtual server response. </span></p>
+
+	<p><span class="code">when RULE_INIT {<br>	# To set debugging - ::debug 1 for debug logging, ::debug 0 to disable debug logging<br>	set ::debug 1<br>	# Using debug logging in a production environment is not recommended<br>	# Only use &quot;::debug 1&quot; when testing and/or troubleshooting.<br>	# Set the variable &quot;apmVS&quot; to the name of the destination BIG-IP APM virtual server (in this example: apm-virtual-server)<br>	set ::apmVS &quot;apm-virtual-server&quot;<br>	}<br>	when HTTP_REQUEST {<br>	# Insert HTTP headers into request when forwarding to the BIG-IP APM virtual server<br>	# Forward request to virtual server as set by the variable &quot;apmVS&quot;<br>	HTTP::header insert &quot;iRule-HTTP-Request-insert&quot; &quot;HTTP-Request-Header&quot;<br>	virtual $::apmVS<br>	}<br>	when HTTP_RESPONSE {<br>	# Insert HTTP headers into request when responding to the client request<br>	HTTP::header insert &quot;iRule-HTTP-Response-insert&quot; &quot;HTTP-Response-Header&quot;<br>	}</span></p>
+
+	<p>In the example iRules stanza, the iRule is inserting HTTP headers; however, you can create an iRule to meet your particular needs. Note the following required iRules event statements. Also, you must set the BIG-IP APM virtual server selection in the HTTP_REQUEST event.</p>
+
+	<ul><li><strong>set ::apmVS &quot;apm-virtual-server&quot; </strong>
+
+		<p>This statement sets the iRule-defined variable <strong>apmVS</strong> to the name of the destination BIG-IP APM virtual server (in the example: <strong>apm-virtual-server</strong>) that the system will use to process traffic after the BIG-IP LTM iRule is processed. When crafting your custom iRule, you can use a different variable name and must set the variable to use the name of the BIG-IP APM virtual server, as defined in your configuration. Be sure to use the same variable name throughout your custom iRule.</p>
+		</li><li><strong>HTTP_REQUEST</strong>
+		<p>This is the client request to the BIG-IP LTM layered virtual server that is modified by the iRule and sent to the BIG-IP APM virtual server.</p>
+		</li><li><strong>HTTP_RESPONSE</strong>
+		<p>This is the server response to the client request that is received by the layered virtual server from the BIG-IP APM virtual server.</p>
+		</li></ul>
+	</li></ol>
+
+<p><a id="Layered VS" name="Layered VS"></a><span class="subsectiontitle">Creating the BIG-IP LTM layered virtual server</span></p>
+
+<p>The following procedure creates the layered virtual server that uses the iRule to process (intercept) traffic destined for the BIG-IP APM virtual server and the client.</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Go to <strong>Local Traffic</strong> &gt;<strong> Virtual Servers</strong> &gt;<strong> Virtual Server List</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong> enter a name.</li><li>For <strong>Type</strong><strong> </strong>select <strong>Standard</strong>.</li><li>For <strong>Destination Address/Mask</strong> select <strong>Host</strong> and enter the <strong>IP address</strong> for the layered virtual server.</li><li>For <strong>Service Port</strong> select the same port used by the BIG-IP APM virtual server, typically port 443.</li><li>For <strong>Protocol</strong> select <strong>TCP</strong>.</li><li>For <strong>Protocol Profile (Client)</strong> and <strong>Protocol Profile (Server), </strong>select the default, <strong>tcp</strong>, unless you want a specific TCP optimization profile for the client.</li><li>For <strong>HTTP Profile (Client)</strong> select <strong>http</strong>.</li><li>For <strong>HTTP Profile (Server)</strong> select the default, <strong>Use Client Profile</strong>.</li><li>For <strong>SSL Profile (Client)</strong> select the same Client SSL profile that the BIG-IP APM virtual server used.</li><li>For <strong>SSL Profile (Server) </strong>select <strong>serverssl</strong>.</li><li>For <strong>VLAN and Tunnel Traffic</strong> select the default, <strong>All VLANs and Tunnels</strong>.</li><li>For <strong>Source Address Translation</strong> select <strong>Auto Map</strong>.</li><li>For <strong>Resources &gt; iRules</strong>, select the iRule created in the previous procedure from the <strong>Available</strong> column and select <strong>&lt;&lt;</strong> to place the iRule in the <strong>Enabled</strong> column.</li><li>Select <strong>Finished</strong>.</li></ol>
+
+<p><span class="note"><strong>Note</strong>:<strong> </strong>Users need to connect to the BIG-IP APM virtual server for their access session by connecting to the BIG-IP LTM layered virtual server.</span></p>
+</article>
+</body>
+</html>

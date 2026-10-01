@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000133585: ISTIO_DUAL_STACK environment variable not set in Istiod pod</title>
+<meta name="description" content="Support Solution: ISTIO_DUAL_STACK environment variable not set in Istiod pod — ➜ aspenmesh-carrier-grade-1.14.6-am4 ki describe pod istiod-6669547d5-46jp4 | grep -A13 &quot;Environment&quot;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000133585">
+</head>
+<body>
+<header>
+<h1>K000133585: ISTIO_DUAL_STACK environment variable not set in Istiod pod</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-08-14</dd>
+<dt>Updated</dt><dd>2023-08-14</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.14</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000133585">https://my.f5.com/manage/s/article/K000133585</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p><span style="font-size: 14px;">After enabling dual-stack in the mesh, ISTIO_DUAL_STACK environment variable is not set in the Istiod pod, even though the override-values file has the following attributes:</span></p>
+
+<pre class="ckeditor_codeblock">
+global:
+      dualStack: true
+      ingressGatewayDualStack: true</pre>
+
+<p>No ISTIO_DUAL_STACK environment variable set in the Istiod pod:</p>
+
+<pre class="ckeditor_codeblock">
+➜  aspenmesh-carrier-grade-1.14.6-am4 ki describe pod istiod-6669547d5-46jp4 | grep -A13 &quot;Environment&quot;
+    Environment:
+      REVISION:                                     default
+      JWT_POLICY:                                   third-party-jwt
+      PILOT_CERT_PROVIDER:                          istiod
+      POD_NAME:                                     istiod-6669547d5-46jp4 (v1:metadata<strong>.</strong>name)
+      POD_NAMESPACE:                                istio-system (v1:metadata.namespace)
+      SERVICE_ACCOUNT:                               (v1:spec.serviceAccountName)
+      KUBECONFIG:                                   /var/run/secrets/remote/config
+      PILOT_TRACE_SAMPLING:                         1
+      PILOT_ENABLE_PROTOCOL_SNIFFING_FOR_OUTBOUND:  false
+      PILOT_ENABLE_PROTOCOL_SNIFFING_FOR_INBOUND:   false
+      ISTIOD_ADDR:                                  istiod.istio-system.svc:15012
+      PILOT_ENABLE_ANALYSIS:                        false
+      CLUSTER_ID:                                   Kubernetes
+</pre>
+
+<h2><strong>Environment</strong></h2>
+
+<p>Aspen Mesh 1.14.x, Dual Stack Cluster</p>
+
+<h2><strong>Cause</strong></h2>
+
+<p>Repeated global configuration in the override values file.<br>When having a double global definition like below, this will cause only the last global section to be applied.</p>
+
+<pre class="ckeditor_codeblock">
+<strong>global:
+      dualStack: true
+      ingressGatewayDualStack: true</strong>
+gateways:
+ istio-ingressgateway:
+   ports:
+   - port: 15021
+     targetPort: 15021
+     nodePort: 32625
+     name: status-port
+   - port: 80
+     targetPort: 8080
+     nodePort: 31058
+     name: http2
+pilot:
+          keepaliveMaxServerConnectionAge: 30m
+<strong>global:
+   proxy:
+      logLevel: &quot;off&quot;</strong>
+</pre>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>Confirm there is only one global section defined in the override values file, group all corresponding attributes under a single section:</p>
+
+<pre class="ckeditor_codeblock">
+<strong>global:
+      dualStack: true
+      ingressGatewayDualStack: true
+      proxy:
+       logLevel: &quot;off&quot;</strong>
+gateways:
+ istio-ingressgateway:
+   ports:
+   - port: 15021
+     targetPort: 15021
+     nodePort: 32625
+     name: status-port
+   - port: 80
+     targetPort: 8080
+     nodePort: 31058
+     name: http2
+   - port: 443
+     targetPort: 8443
+     nodePort: 32442
+     name: https
+   - port: 15443
+     targetPort: 15443
+     name: tls
+     nodePort: 31730
+pilot:
+          keepaliveMaxServerConnectionAge: 30m
+</pre>
+
+<h2><strong>Additional Information</strong></h2>
+After grouping all attributes in a single section ISTIO_DUAL_STACK and upgrading the istiod chart, the environment variable should be set in the Istiod pod, as well as the other attributes.
+
+<pre class="ckeditor_codeblock">
+➜  aspenmesh-carrier-grade-1.14.6-am4 ki describe pod istiod-567997749-24pfx | grep -A13 &quot;Environment&quot;
+    Environment:
+      <strong>ISTIO_DUAL_STACK:                             true</strong>
+      PILOT_USE_ENDPOINT_SLICE:                     true
+      REVISION:                                     default
+      JWT_POLICY:                                   third-party-jwt
+      PILOT_CERT_PROVIDER:                          istiod
+      POD_NAME:                                     istiod-567997749-24pfx (v1:metadata<strong>.</strong>name)
+      POD_NAMESPACE:                                istio-system (v1:metadata.namespace)
+      SERVICE_ACCOUNT:                               (v1:spec.serviceAccountName)
+      KUBECONFIG:                                   /var/run/secrets/remote/config
+      PILOT_TRACE_SAMPLING:                         1
+      PILOT_ENABLE_PROTOCOL_SNIFFING_FOR_OUTBOUND:  false
+      PILOT_ENABLE_PROTOCOL_SNIFFING_FOR_INBOUND:   false
+      ISTIOD_ADDR:                                  istiod.istio-system.svc:15012</pre>
+Setting loglevel to &quot;off&quot;:
+
+<pre class="ckeditor_codeblock">
+    Args:
+      proxy
+      sidecar
+      --domain
+      $(POD_NAMESPACE).svc.cluster.local
+      <strong>--proxyLogLevel=off</strong>
+      --proxyComponentLogLevel=misc:error
+      --log_output_level=default:info
+      --concurrency</pre>
+</article>
+</body>
+</html>

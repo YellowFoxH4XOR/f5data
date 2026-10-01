@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K56058963: How to distribute balance across istio-proxy workers threads in Aspen Mesh</title>
+<meta name="description" content="Support Solution: How to distribute balance across istio-proxy workers threads in Aspen Mesh — You observed that there is an uneven distribution of connections to istio-proxy worker threads. How can you configure istio-proxy to balance the connections?">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K56058963">
+</head>
+<body>
+<header>
+<h1>K56058963: How to distribute balance across istio-proxy workers threads in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-11-22</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K56058963">https://my.f5.com/manage/s/article/K56058963</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+You observed that there is an uneven distribution of connections to <strong>istio-proxy</strong> worker threads. How can you configure istio-proxy to balance the connections?
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Kubernetes: 1.17x, 1.18.x, 1.19.x, 1.20.x</li><li>Aspen Mesh: 1.6.x, 1.9.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>By default, there is no coordination between worker threads. This means that all worker threads independently attempt to accept connections on each listener and rely on the kernel to perform adequate balancing between threads.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>You can override the default behavior of <strong>istio-proxy</strong> and forcibly balance the connections with the following procedures:</p>
+
+<ul><li><a href="#p1" target="_self">Configure envoy filter to implement exact_balance</a></li><li><a href="#p2" target="_self">Verify and test the connections</a></li></ul>
+
+<p><span class="subsectiontitle"><a id="p1" name="p1"></a>Configure envoy filter to implement exact_balance</span></p>
+
+<ol><li>Below you can find two <strong>EnvoyFilters </strong>one for the server-side and the other is client-side, change the namespace and workload selector to your app labels configuration, this is important as you don&#39;t want to apply this to every listener.
+
+	<p><span class="example2"><strong>#Server side</strong><br>	---<br>	apiVersion: networking.istio.io/v1alpha3<br>	kind: EnvoyFilter<br>	metadata:<br>	  name: fortio-server-listener-balance<br>	  namespace: perf-sidecar<br>	spec:<br>	  workloadSelector:<br>	    labels:<br>	      app: fortio-server<br>	  configPatches:<br>	    - applyTo: LISTENER<br>	      match:<br>	        context: SIDECAR_INBOUND<br>	        listener:<br>	          portNumber: 15006 #do not change this port on server<br>	      patch:<br>	        operation: MERGE<br>	        value:<br>	          connection_balance_config:<br>	            exact_balance: {}<br>	 <br>	<strong>#Client side</strong><br>	---<br>	apiVersion: networking.istio.io/v1alpha3<br>	kind: EnvoyFilter<br>	metadata:<br>	  name: fortio-client-listener-balance<br>	  namespace: perf-sidecar<br>	spec:<br>	  workloadSelector:<br>	    labels:<br>	      app: fortio-client<br>	  configPatches:<br>	    - applyTo: LISTENER<br>	      match:<br>	        context: SIDECAR_OUTBOUND<br>	        listener:<br>	          portNumber: 8080 #This can be changed to your client port listener<br>	      patch:<br>	        operation: MERGE<br>	        value:<br>	          connection_balance_config:<br>	            exact_balance: {}</span></p>
+	</li><li>After applying the <strong>EnvoyFilter </strong>you may want to restart the applications with the <strong>istio-proxy</strong> sidecar injected.</li><li>You may notice the server-side port is different from the application you are running with <strong>istio-proxy</strong> sidecar injected, this is because of the proxy behavior of capturing all traffic inbound and redirecting to the application container. The port 15006 is the inbound <strong>istio-proxy</strong> port that will do the redirection. On the other hand, the outbound from the client uses the port definition which could be anything your application uses.
+	<p><span class="note"><strong>Note</strong>: In the current version of Aspen Mesh 1.9.x, only the server-side is balanced, client-side configuration is not working properly, the fix could be merged on a future release.</span></p>
+	</li></ol>
+
+<p><a id="p2" name="p2"></a><span class="subsectiontitle">Verify and test the connections</span></p>
+
+<ol><li>To verify the connections are being distributed evenly, you need to annotate your sidecar to get access to specific metrics. If you don’t know how to annotate your deployment, check out the <strong>Annotate your deployment definition</strong> procedure in <a href="https://my.f5.com/manage/s/article/K12253321" target="_self">K12253321: Holding up application until proxy starts in Aspen Mesh</a></li><li>Include the following stats in your annotation:
+	<p><span class="example2">annotations:<br>	  proxy.istio.io/config: |-<br>	    proxyStatsMatcher:<br>	      inclusionRegexps:<br>	        - &quot;cluster.*.upstream_cx_total&quot;<br>	        - &quot;cluster.*.upstream_cx_active&quot;<br>	        - &quot;listener.*.downstream_cx_total&quot;<br>	        - &quot;listener.*.downstream_cx_active&quot;</span></p>
+	</li><li>You can do the annotation before the restart of the application in point 2 or even after applying the <strong>EnvoyFilter </strong>in the section above.</li><li>Once you have applied the <strong>EnvoyFilter </strong>and the new stats metrics available, you can monitor your connection balance with the following commands:
+	<p><span class="code">kubectl port-forward &lt;pod-name&gt; -n &lt;namespace&gt; 15000:15000</span></p>
+	On another terminal, enter:
+
+	<p><span class="code">curl -s localhost:15000/stats | grep listener.0.0.0.0_15006.worker</span></p>
+	The output should be something like this:
+
+	<p><span class="example2">listener.0.0.0.0_15006.worker_0.downstream_cx_active: 1 listener.0.0.0.0_15006.worker_0.downstream_cx_total: 13 listener.0.0.0.0_15006.worker_1.downstream_cx_active: 1 listener.0.0.0.0_15006.worker_1.downstream_cx_total: 13</span></p>
+
+	<p>Observe the perfectly balanced connections.</p>
+	</li><li>If you found it tricky running these commands in parallel, you can integrate the Aspen Mesh metrics with a Grafana dashboard for easy access; follow <a href="https://my.f5.com/manage/s/article/K11884926" target="_self">K11884926: Integrating Grafana with Aspen Mesh Metrics Collector for monitoring mesh metrics</a></li></ol>
+</article>
+</body>
+</html>

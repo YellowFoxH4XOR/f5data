@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K11784800: Configuring locality failover and load balancing in Aspen Mesh</title>
+<meta name="description" content="Support Solution: Configuring locality failover and load balancing in Aspen Mesh — After successfully installed Aspen Mesh with multicluster enabled in K14643443: Install multi-cluster Aspen Mesh on KOPS Cluster, the common question is what are the next steps?">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K11784800">
+</head>
+<body>
+<header>
+<h1>K11784800: Configuring locality failover and load balancing in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-10-01</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K11784800">https://my.f5.com/manage/s/article/K11784800</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>After successfully installed Aspen Mesh with multicluster enabled in <a href="https://my.f5.com/manage/s/article/K14643443" target="_self">K14643443: Install multi-cluster Aspen Mesh on KOPS Cluster</a>, the common question is what are the next steps?</p>
+
+<p>It all depends on your use case. For example:</p>
+
+<p>Imagine that you want the exact same copy of your environment so in case of a disaster in the remote site, automatically all the requests failover from site 1 it will be redirected to site 2 - A common practice for Disaster Recovery.</p>
+
+<p>On the other hand, instead of performing a failover, you want a distributed weight in requests on multiple regions so the same copy of the application will be running across regions, but the amount of traffic for each workload will be different. </p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li><strong>Kuberntes</strong>: 1.17x,1.18.x,1.19.x,1.20.x</li><li><strong>Aspen Mesh</strong>: 1.9.x </li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>N/A</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>To achieve the scenarios described above, you can use the following configurations:</p>
+
+<ul><li><a href="#failover" target="_self">Configure locality failover</a></li><li><a href="#load-balancing" target="_self">Configure locality load balancing</a></li></ul>
+
+<p><span class="subsectiontitle"><a id="failover" name="failover"></a>Configure locality failover</span></p>
+
+<p><span class="note"><strong>Note</strong>: if your clusters live in different regions (i.e us-west and us-east), labeling might not be necessary.</span></p>
+
+<ol><li>
+	<p>Introducing subzone labeling</p>
+
+	<p>In our example, we have two clusters with Aspen Mesh 1.9.5-am1 deployed in the same region us-west-2, and in the same AZ us-west-2b. This would set our Envoy priority with the same value and failover would not be working as expected.</p>
+
+	<p>To solve this, we would introduce a subzone label that Istio/AM provides to divide zones properly and set a difference between the endpoints.</p>
+
+	<p><span class="subsubsectiontitle">Label the nodes</span></p>
+
+	<p>Run the following command to label all the nodes from your cluster.</p>
+
+	<p><strong>Cluster 1</strong></p>
+
+	<p><span class="code">kubectl get nodes -o json | jq &#39;.items[].metadata.name&#39; | for i in $(xargs); do kubectl label node $i --overwrite topology.istio.io/subzone=cluster1; done</span></p>
+
+	<p><strong>Cluster 2</strong></p>
+
+	<p><span class="code">kubectl get nodes -o json | jq &#39;.items[].metadata.name&#39; | for i in $(xargs); do kubectl label node $i --overwrite topology.istio.io/subzone=cluster2; done</span></p>
+	</li><li>
+	<p>Enable locality failover</p>
+
+	<p>After labeling the nodes, we should restart Pilot and the applications with sidecar in-jected to take over the new configuration.</p>
+
+	<p>Restart istiod pods with the following command:</p>
+
+	<p><span class="code">kubectl rollout restart deploy istiod -n istio-system</span></p>
+
+	<p>Restart the application pods with the following command:</p>
+
+	<p><span class="code">kubectl rollout restart deploy &lt;deployment-name&gt;</span></p>
+
+	<p>After all the pods received the new configuration, you should see that cluster now have the subzone define for the local and the remote pod in cluster2, we could verify this in our client pod with the following command:</p>
+
+	<p><span class="code">kubectl exec sleep3-5cff6fbbf5-h2s46 -c sleep -- curl localhost:15000/clusters | grep hello</span></p>
+
+	<p>You expect to see the subzone field with the nodes labels we set before:</p>
+
+	<p><span class="example2">outbound|5000||helloworld.default.svc.cluster.local::100.96.9.104:5000::region::us-west-2<br>	outbound|5000||helloworld.default.svc.cluster.local::100.96.9.104:5000::zone::us-west-2b<br>	outbound|5000||helloworld.default.svc.cluster.local::100.96.9.104:5000::sub_zone::cluster1<br>	outbound|5000||helloworld.default.svc.cluster.local::100.96.9.104:5000::canary::false<br>	outbound|5000||helloworld.default.svc.cluster.local::100.96.9.104:5000::priority::0<br>	<br>	outbound|5000||helloworld.default.svc.cluster.local::44.240.xx.xx:15443::region::us-west-2<br>	outbound|5000||helloworld.default.svc.cluster.local::44.240.xx.xx:15443::zone::us-west-2b<br>	outbound|5000||helloworld.default.svc.cluster.local::44.240.xx.xx:15443::sub_zone::cluster2<br>	outbound|5000||helloworld.default.svc.cluster.local::44.240.xx.xx:15443::canary::false<br>	outbound|5000||helloworld.default.svc.cluster.local::44.240.xx.xx:15443::priority::0</span></p>
+
+	<p>Note that the priority for both clusters at this point is still the same priority::0</p>
+
+	<p>Internally, <a href="https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/priority.html" target="_self">Envoy priorities</a> are used to control failover. </p>
+
+	<p>These priorities will be assigned as follows for traffic originating from the client pod (in region1 zone1):</p>
+
+	<table class="askf5table" border="1" cellpadding="1" cellspacing="1"><tbody><tr><td colspan="1" rowspan="1">Priority</td><td colspan="1" rowspan="1">Locality</td><td colspan="1" rowspan="1">Details</td></tr><tr><td colspan="1" rowspan="1">0</td><td colspan="1" rowspan="1">region1.zone1</td><td colspan="1" rowspan="1">Region, zone, and sub-zone all match.</td></tr><tr><td colspan="1" rowspan="1">1</td><td colspan="1" rowspan="1">None</td><td colspan="1" rowspan="1">Since this task doesn’t use sub-zones, there are no matches for a different sub-zone.</td></tr><tr><td colspan="1" rowspan="1">2</td><td colspan="1" rowspan="1">region1.zone2</td><td colspan="1" rowspan="1">Different zone within the same region.</td></tr><tr><td colspan="1" rowspan="1">3</td><td colspan="1" rowspan="1">region2.zone3</td><td colspan="1" rowspan="1">No match, however failover is defined for region1-&gt;region2.</td></tr><tr><td colspan="1" rowspan="1">4</td><td colspan="1" rowspan="1">region3.zone4</td><td colspan="1" rowspan="1">No match and no failover defined for region1-&gt;region3.</td></tr></tbody></table>
+
+	<p>In this example we will only work with priority 0 and 1.</p>
+
+	<p>We would solve the priority by applying a <a href="https://istio.io/latest/docs/reference/config/networking/destination-rule/" target="_self">Destination Rule</a> that will enable the locali-ty failover for our host <strong>helloworld.default.svc.cluster.local</strong>.</p>
+
+	<p>Apply this in the namespace your applications are deployed in both clusters:</p>
+
+	<p><span class="example2">kubectl apply -n &lt;namespace&gt; -f - &lt;&lt;EOF<br>	apiVersion: networking.istio.io/v1beta1<br>	kind: DestinationRule<br>	metadata:<br>	  name: helloworld-failover<br>	spec:<br>	  host: helloworld.default.svc.cluster.local<br>	  trafficPolicy:<br>	    connectionPool:<br>	      http:<br>	        maxRequestsPerConnection: 1<br>	    loadBalancer:<br>	      simple: ROUND_ROBIN<br>	      localityLbSetting:<br>	        enabled: true<br>	    outlierDetection:<br>	      consecutive5xxErrors: 1<br>	      interval: 1s<br>	      baseEjectionTime: 1m<br>	EOF</span></p>
+
+	<p><span class="note"><strong>Note</strong>: you can adjust the consecutive5xx errors and the interval time as well baseE-jectionTime, this example would trigger the failover as soon the first request failed.</span></p>
+
+	<p>You could verify with the same command above the cluster are now set up with a proper priority:</p>
+
+	<p><span class="code">kubectl exec sleep3-5cff6fbbf5-h2s46 -c sleep -- curl lo-calhost:15000/clusters | grep hello</span></p>
+
+	<p>You expect to see the subzone field with the nodes labels we set before:</p>
+
+	<p><span class="example2">outbound|5000||helloworld.default.svc.cluster.local::100.96.9.104:5000::region::us-west-2<br>	outbound|5000||helloworld.default.svc.cluster.local::100.96.9.104:5000::zone::us-west-2b<br>	out-bound|5000||helloworld.default.svc.cluster.local::100.96.9.104:5000::sub_zone::cluster1<br>	outbound|5000||helloworld.default.svc.cluster.local::100.96.9.104:5000::canary::false<br>	outbound|5000||helloworld.default.svc.cluster.local::100.96.9.104:5000::priority::0<br>	<br>	outbound|5000||helloworld.default.svc.cluster.local::44.240.xx.xx:15443::region::us-west-2<br>	outbound|5000||helloworld.default.svc.cluster.local::44.240.xx.xx:15443::zone::us-west-2b<br>	out-bound|5000||helloworld.default.svc.cluster.local::44.240.xx.xx:15443::sub_zone::cluster2<br>	outbound|5000||helloworld.default.svc.cluster.local::44.240.xx.xx:15443::canary::false<br>	outbound|5000||helloworld.default.svc.cluster.local::44.240.xx.xx:15443::priority::1</span></p>
+	</li><li>
+	<p>Testing the failover</p>
+
+	<p>Send a request from the client in cluster 1. All the traffic should go over cluster 1:</p>
+
+	<p><span class="code">kubectl exec sleep3-5cff6fbbf5-h2s46 -c sleep -- /bin/sh -c &#39;for i in `seq 1 10`;do curl -sS helloworld.default:5000/hello; done &#39;</span><br>	<span class="example2">Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf</span></p>
+
+	<p>Scale down the deployment in cluster1 wait a few seconds and start the same re-quest. All the traffic should go over cluster2:</p>
+
+	<p><span class="code">kubectl scale deploy helloworld-region1.zone1 --replicas=0</span><br>	<span class="example2">...</span><br>	<span class="code">kubectl exec sleep3-5cff6fbbf5-h2s46 -c sleep -- /bin/sh -c &#39;for i in `seq 1 10`;do curl -sS helloworld.default:5000/hello; done &#39;</span><br>	<span class="example2">Hello version: region1.zone2, instance: helloworld-region1.zone2-5986897b9d-dpzdw<br>	Hello version: region1.zone2, instance: helloworld-region1.zone2-5986897b9d-dpzdw<br>	Hello version: region1.zone2, instance: helloworld-region1.zone2-5986897b9d-dpzdw<br>	Hello version: region1.zone2, instance: helloworld-region1.zone2-5986897b9d-dpzdw<br>	Hello version: region1.zone2, instance: helloworld-region1.zone2-5986897b9d-dpzdw<br>	Hello version: region1.zone2, instance: helloworld-region1.zone2-5986897b9d-dpzdw<br>	Hello version: region1.zone2, instance: helloworld-region1.zone2-5986897b9d-dpzdw<br>	Hello version: region1.zone2, instance: helloworld-region1.zone2-5986897b9d-dpzdw<br>	Hello version: region1.zone2, instance: helloworld-region1.zone2-5986897b9d-dpzdw<br>	Hello version: region1.zone2, instance: helloworld-region1.zone2-5986897b9d-dpzdw</span></p>
+
+	<p>Scale up the deployment and verify the traffic return to cluster 1:</p>
+
+	<p><span class="code">kubectl scale deploy helloworld-region1.zone1 --replicas=1</span><br>	<span class="example2">...</span><br>	<span class="code">kubectl exec sleep3-5cff6fbbf5-h2s46 -c sleep -- /bin/sh -c &#39;for i in `seq 1 10`;do curl -sS helloworld.default:5000/hello; done &#39;</span><br>	<span class="example2">Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>	Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="load-balancing" name="load-balancing"></a>Configure locality load balancing</span></p>
+
+<p>Locality load balancing if fair simpler than the failover, from our example above, delete the destination rule <strong>helloworld-failover</strong>.</p>
+
+<p>Instead, we will apply this new destination rule:</p>
+
+<p><span class="example2">kubectl apply -n &lt;namespace&gt; -f - &lt;&lt;EOF<br>apiVersion: networking.istio.io/v1beta1<br>kind: DestinationRule<br>metadata:<br>  name: helloworld-loadbalancing<br>spec:<br>  host: helloworld.default.svc.cluster.local<br>  trafficPolicy:<br>    loadBalancer:<br>      localityLbSetting:<br>        enabled: true<br>        distribute:<br>        - from: us-west-2/us-west-2b/*<br>          to: &quot;us-west-2/us-west-2b/cluster1&quot;: 10<br>              &quot;us-west-2/us-west-2b/cluster2&quot;: 90<br>    outlierDetection:<br>      consecutive5xxErrors: 100<br>      interval: 1s<br>      baseEjectionTime: 1m<br>EOF</span></p>
+
+<p>In this example, we are going to send traffic to helloworld service and 10% will go to cluster 1 and 90% to cluster 2.</p>
+
+<p>If we send ten requests at least one request will go to cluster 1. For example:</p>
+
+<p><span class="code">kubectl exec sleep3-5cff6fbbf5-h2s46 -c sleep -- /bin/sh -c &#39;for i in `seq 1 10`;do curl -sS helloworld.default:5000/hello; done &#39;</span><br><span class="example2">Hello version: region1.zone2, instance: helloworld-region1.zone2-6b6c78b79f-rljqf<br>Hello version: region1.zone2, instance: helloworld-region1.zone2-6b6c78b79f-rljqf<br>Hello version: region1.zone2, instance: helloworld-region1.zone2-6b6c78b79f-rljqf<br>Hello version: region1.zone2, instance: helloworld-region1.zone2-6b6c78b79f-rljqf<br>Hello version: region1.zone2, instance: helloworld-region1.zone2-6b6c78b79f-rljqf<br>Hello version: region1.zone1, instance: helloworld-region1.zone1-6b6c78b79f-rljqf<br>Hello version: region1.zone2, instance: helloworld-region1.zone2-6b6c78b79f-rljqf<br>Hello version: region1.zone2, instance: helloworld-region1.zone2-6b6c78b79f-rljqf<br>Hello version: region1.zone2, instance: helloworld-region1.zone2-6b6c78b79f-rljqf<br>Hello version: region1.zone2, instance: helloworld-region1.zone2-6b6c78b79f-rljqf</span></p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

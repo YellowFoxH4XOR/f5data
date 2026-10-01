@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162794: NGINX Plus (stream): &quot;upstream timed out (110) while connecting to upstream&quot; when Direct Server Return or proxy_responses is applied to TCP services</title>
+<meta name="description" content="Support Solution: NGINX Plus (stream): &quot;upstream timed out (110) while connecting to upstream&quot; when Direct Server Return or proxy_responses is applied to TCP services — upstream timed out (110: Connection timed out) while connecting to upstream,">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162794">
+</head>
+<body>
+<header>
+<h1>K000162794: NGINX Plus (stream): &quot;upstream timed out (110) while connecting to upstream&quot; when Direct Server Return or proxy_responses is applied to TCP services</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-05</dd>
+<dt>Updated</dt><dd>2026-08-05</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Plus: 37.0.0, 37.0.3, 37.0.2, 37.0.1, 37.X.X, R36, R35, R33, 37.0.X, 37.0.4, R34</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162794">https://my.f5.com/manage/s/article/K000162794</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>In an NGINX Plus stream (Layer 4) configuration, you may see repeated errors such as:</p>
+<pre style="padding-left: 40px;">upstream timed out (110: Connection timed out) while connecting to upstream,
+client: X.X.X.X, server: VIP:443, upstream: &quot;BACKEND:443&quot;,
+bytes from/to client:0/0, bytes from/to upstream:0/0</pre>
+<p>These errors persist even after setting proxy_responses 0 and/or commenting out proxy_timeout. This article explains why: <strong>Direct Server Return (DSR) and the proxy_responses directive apply only to UDP</strong>. When they are applied to a <strong>TCP</strong> stream service, they have no effect, and a DSR-style return path breaks the TCP handshake. The correct method for preserving the client source IP on TCP is <strong>IP Transparency</strong>.</p>
+<h4>Symptoms</h4>
+<ul><li>High volume of upstream timed out (110: Connection timed out) while connecting to upstream entries in the NGINX error log.</li><li>Log entries consistently show bytes from/to client:0/0 and bytes from/to upstream:0/0 (no data exchanged).</li><li>May be accompanied by upstream server temporarily disabled while connecting to upstream and no live upstreams.</li><li>Errors continue unchanged after setting proxy_responses 0 and/or removing proxy_timeout.</li></ul>
+<h2>Environment</h2>
+<ul><li>NGINX Plus (and NGINX Open Source built with --with-stream)</li><li>stream (Layer 4 TCP/UDP) proxying</li><li>proxy_bind ... transparent (IP transparency / transparent proxy) in use</li><li>A Direct Server Return (DSR) style network design (backend return traffic routed around NGINX toward the client)</li></ul>
+<h2>Cause</h2>
+<h3>1. Stream servers default to TCP</h3>
+<p>In the stream context, TCP is the default protocol. UDP requires the explicit udp parameter on the listen directive. A listener without udp is a TCP service:</p>
+<pre>server {
+    listen VIP:443 ;      # no &quot;udp&quot; =&gt; TCP
+    # ...
+}</pre>
+<p>As a TCP reverse proxy, NGINX opens its own connection to the upstream and must complete the full TCP three-way handshake (SYN → SYN-ACK → ACK) before any data can flow. NGINX always requires the upstream&#39;s SYN-ACK to arrive back at its own socket. This is inherent to TCP proxying and cannot be disabled by any directive.</p>
+<h3>2. proxy_responses is UDP-only</h3>
+<p>Per the NGINX documentation, proxy_responses:</p>
+<blockquote>&quot;Sets the number of datagrams expected from the proxied server in response to the client request <strong>if the UDP protocol is used</strong>.&quot;</blockquote>
+<p>It counts <strong>UDP datagrams</strong>. On a TCP connection it is a no-op, so changing it from 1 to 0 has no effect on a TCP service.</p>
+<h3>3. proxy_timeout does not govern the connect phase</h3>
+<p>The error text while connecting to upstream indicates the failure occurred in the TCP <em>connect</em> phase (establishing the connection), and 0/0 bytes confirms no data was exchanged. The connect phase is governed by proxy_connect_timeout (default 60s), not by proxy_timeout. Removing proxy_timeout therefore does not change this behavior.</p>
+<h3>4. DSR is UDP-only; it is not supported for TCP</h3>
+<p>The F5 blog <em>IP Transparency and Direct Server Return with NGINX and NGINX Plus as Transparent Proxy</em> states that DSR applies to UDP-based protocols only:</p>
+<table border="1" cellpadding="6" cellspacing="0"><thead><tr><th colspan="1" rowspan="1">Method</th><th colspan="1" rowspan="1">Supported protocols</th><th colspan="1" rowspan="1">UDP required config</th></tr></thead><tbody><tr><td colspan="1" rowspan="1">IP Transparency (Method 1)</td><td colspan="1" rowspan="1"><strong>TCP-based and UDP-based</strong> (TCP: works by default)</td><td colspan="1" rowspan="1">UDP: proxy_responses 1</td></tr><tr><td colspan="1" rowspan="1">DSR – Router NAT (Method 2a)</td><td colspan="1" rowspan="1"><strong>UDP-based only</strong> (TCP: not supported)</td><td colspan="1" rowspan="1">UDP: proxy_responses 0</td></tr><tr><td colspan="1" rowspan="1">DSR – Origin NAT (Method 2b)</td><td colspan="1" rowspan="1"><strong>UDP-based only</strong> (TCP: not supported)</td><td colspan="1" rowspan="1">UDP: proxy_responses 0</td></tr></tbody></table>
+<p>In a DSR design the backend&#39;s return traffic is intentionally routed around NGINX toward the client. For a TCP service this means the upstream&#39;s SYN-ACK never returns to NGINX, so connect() never completes and times out with 0/0 bytes exchanged. DSR fundamentally cannot work for TCP.</p>
+<h2>How to confirm</h2>
+<p>The symptom (110 / 0-0 bytes / &quot;while connecting to upstream&quot;) is a TCP connect failure, but on its own it does not prove <em>why</em> the SYN-ACK is not returning. Three distinct causes produce an identical log line:</p>
+<ol><li>A DSR-style return path routes the backend SYN-ACK around NGINX (design issue).</li><li>A firewall/ACL between NGINX and the backend drops the SYN or the returning SYN-ACK.</li><li>The backend is not listening on the port (this usually returns a RST / 111 ECONNREFUSED rather than 110, but confirm).</li></ol>
+<p>Take a simultaneous packet capture on both hosts while errors are occurring:</p>
+<pre style="padding-left: 40px;"># On the NGINX host
+sudo tcpdump -ni any host BACKEND_IP and tcp port 443 -w /tmp/nginx-443.pcap
+
+# On the backend host
+sudo tcpdump -ni any tcp port 443 -w /tmp/backend-443.pcap</pre>
+<p>Interpretation:</p>
+<ul><li>Backend <strong>sends a SYN-ACK but NGINX never sees it</strong> → return-path / DSR bypass.</li><li>Backend <strong>never receives the SYN</strong> → firewall/routing dropping outbound traffic.</li><li>Backend <strong>sends a RST</strong> → service not listening on that port.</li></ul>
+<h2>Resolution</h2>
+<p>To preserve the client source IP on <strong>TCP</strong> services while keeping NGINX functional, use <strong>IP Transparency (Method 1)</strong>, not DSR. In this model the backend return traffic is routed <em>back through</em> NGINX and intercepted at its local socket, so the TCP handshake completes normally. For TCP, the blog notes this &quot;works by default&quot; once the return routing and transparent intercept are in place.</p>
+<ul><li>Keep proxy_bind $remote_addr:$remote_port transparent; (client-IP spoofing on egress is correct).</li><li>Remove any DSR-style forwarding rules that send backend return traffic directly to the client.</li><li>Route the backends&#39; return traffic back to the NGINX host (NGINX as the return path for that traffic).</li><li>Configure NGINX to intercept the returning traffic to its local socket (policy routing + transparent intercept, per the &quot;IP Transparency&quot; section of the blog).</li><li>Do not rely on proxy_responses / proxy_timeout for TCP — they are UDP-oriented and irrelevant here.</li></ul>
+<p><strong>Note on port 443 in a stream block:</strong> this is SSL passthrough (Layer 4) and is fully supported. The backends terminate TLS. This is unrelated to the connect-timeout issue.</p>
+<h2>Directive quick reference</h2>
+<table border="1" cellpadding="6" cellspacing="0"><thead><tr><th colspan="1" rowspan="1">Directive</th><th colspan="1" rowspan="1">Applies to</th><th colspan="1" rowspan="1">Notes</th></tr></thead><tbody><tr><td colspan="1" rowspan="1">proxy_responses</td><td colspan="1" rowspan="1">UDP only</td><td colspan="1" rowspan="1">Counts expected UDP response datagrams. No effect on TCP.</td></tr><tr><td colspan="1" rowspan="1">proxy_timeout</td><td colspan="1" rowspan="1">TCP &amp; UDP</td><td colspan="1" rowspan="1">Timeout between two successive read/write operations on an established session. Does not govern the initial connect.</td></tr><tr><td colspan="1" rowspan="1">proxy_connect_timeout</td><td colspan="1" rowspan="1">TCP &amp; UDP</td><td colspan="1" rowspan="1">Timeout for establishing the connection to the upstream (default 60s). This is what expires in the &quot;while connecting to upstream&quot; error.</td></tr><tr><td colspan="1" rowspan="1">proxy_bind ... transparent</td><td colspan="1" rowspan="1">TCP &amp; UDP</td><td colspan="1" rowspan="1">Originate the upstream connection from the client&#39;s real IP. Requires kernel routing/intercept configuration.</td></tr></tbody></table>
+<h2>References</h2>
+<ul><li><a href="https://nginx.org/en/docs/stream/ngx_stream_proxy_module.html" target="_blank" rel="noopener noreferrer">NGINX Module ngx_stream_proxy_module (proxy_responses, proxy_connect_timeout, proxy_timeout, proxy_bind)</a></li><li><a href="https://nginx.org/en/docs/stream/ngx_stream_core_module.html" target="_blank" rel="noopener noreferrer">NGINX Module ngx_stream_core_module (listen / udp parameter)</a></li><li>F5 blog:<a href="https://www.f5.com/company/blog/nginx/ip-transparency-direct-server-return-nginx-plus-transparent-proxy" target="_blank" rel="noopener noreferrer"> IP Transparency and Direct Server Return with NGINX and NGINX Plus as Transparent Proxy</a></li></ul>
+</article>
+</body>
+</html>

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000130328: SNMP is not working on vCMP guest after vCMP host was rebooted without disabling vCMP guest(s)</title>
+<meta name="description" content="Support Solution: SNMP is not working on vCMP guest after vCMP host was rebooted without disabling vCMP guest(s) — When a vCMP host is rebooted, intentionally or unintentionally, without putting vCMP guests into configured state first, upon the next boot-up of the vCMP guest, it would fail to 1) parse/load SNMPv3…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000130328">
+</head>
+<body>
+<header>
+<h1>K000130328: SNMP is not working on vCMP guest after vCMP host was rebooted without disabling vCMP guest(s)</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-12-22</dd>
+<dt>Updated</dt><dd>2022-12-22</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000130328">https://my.f5.com/manage/s/article/K000130328</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>When a vCMP host is rebooted, intentionally or unintentionally, without putting vCMP guests into configured state first, upon the next boot-up of the vCMP guest, it would fail to 1) parse/load SNMPv3 usmUser, 2) create an oldEngineID in /config/net-snmp/snmpd.conf.</p>
+
+<p>The resulting configuration appears as follows<span style="font-family: Courier New,Courier,monospace;">:</span><br><br><span style="font-family: Courier New,Courier,monospace;"><span style="background-color: #dddddd;">[root@guest1:Active:Standalone] config # cat net-snmp/snmpd.conf | egrep &quot;^[a-z]&quot;</span><br><span style="background-color: #dddddd;">usmUser 1 3 0x80001f88808481a27ed8be5063 &quot;user2&quot; &quot;user2&quot; NULL .1.3.6.1.6.3.10.1.1.3 0x86745fb6ba630de483ba9cbc4ef5a7a9d2879bdc .1.3.6.1.6.3.10.1.2.4 0x103700ae1c7d0f73d8f04a45fd4f377f </span><strong><span style="background-color: #dddddd;">0x</span></strong><span style="background-color: #dddddd;"> 0x2f436f6d6d6f6e2f6975736572325f3100</span><br><span style="background-color: #dddddd;">setserialno 1745462443</span><br><span style="background-color: #dddddd;">engineBoots 94</span><br><span style="background-color: #dddddd;">[root@guest1:Active:Standalone] config #</span></span><br><br>Note the &quot;<strong>0x</strong>&quot; on second-to-the-last column of usmUser token, and the absence of oldEngineID.</p>
+
+<p>The symptoms would normally be:</p>
+
+<p>1. Failure to query the BIG-IP using SNMPv3, which returns an Engine ID error.<br><br><span style="font-family: Courier New,Courier,monospace;"><span style="background-color: #dddddd;">[root@guest1:Active:Standalone] config # snmpget -v 3 -u user2 -a SHA -A &quot;123456789&quot; -x AES -X &quot;123456789&quot; -l authPriv localhost sysSystemUptime.0</span><br><span style="background-color: #dddddd;">snmpget: Unknown engine ID (Sub-id not found: (top) -&gt; sysSystemUptime)</span></span><br><br>2. An error in /var/log/snmpd.log that says:<br><br><span style="font-family: Courier New,Courier,monospace;"><span style="background-color: #dddddd;">&lt;snip&gt;</span><br><span style="background-color: #dddddd;">snmpd[PID]: Starting snmpd</span><br><span style="background-color: #dddddd;">snmpd[PID]: buffer too small to read octet string (13 &lt; 13)</span><br><span style="background-color: #dddddd;">&lt;/snip&gt;</span></span><br><br>The issue appears to affect vCMP guests that use NET-SNMP v5.8 via (ID858769). It doesn&#39;t affect vCMP guests running NET-SNMP v5.7.2 such as BIG-IP v13.1.5.1.<br><br>Re-starting snmpd with &#39;bigstart restart snmpd&#39; only resolves the oldEngineID issue, but never fixes the usmUser issue.<br> </p>
+
+<h2><strong>Environment</strong></h2>
+
+<p>BIG-IP vCMP guest<br>NET-SNMP v5.8</p>
+
+<h2><br><strong>Cause</strong></h2>
+
+<p>ID1209465</p>
+
+<h2><br><strong>Recommended Actions</strong></h2>
+
+<p>The workaround is to reboot the vCMP guest. After which you&#39;ll see the &quot;fixed&quot; config, with the correctly formatted usmUser token together with the presence of oldEngineID token.<br><br><span style="font-family: Courier New,Courier,monospace;"><span style="background-color: #dddddd;">[root@guest1:Active:Standalone] config # cat net-snmp/snmpd.conf | egrep &quot;^[a-z]&quot;</span><br><span style="background-color: #dddddd;">usmUser 1 3 0x80001f888097ff1b0318c25063 &quot;user2&quot; &quot;user2&quot; NULL .1.3.6.1.6.3.10.1.1.3 0x12ad9432678f4946ccb98e4543b660606c87b061 .1.3.6.1.6.3.10.1.2.4 0x5e7573ce43e2d2d3ff1b6d939df10ea1 &quot;&quot; 0x2f436f6d6d6f6e2f6975736572325f3100</span><br><span style="background-color: #dddddd;">setserialno 1745462444</span><br><span style="background-color: #dddddd;">engineBoots 95</span><br><span style="background-color: #dddddd;">oldEngineID 0x80001f888097ff1b0318c25063</span></span><br><br>Mitigation is to ensure that vCMP guest is set to configured prior to rebooting the vCMP host.</p>
+
+<h2><br><strong>Additional Information</strong></h2>
+
+<p>None.</p>
+</article>
+</body>
+</html>

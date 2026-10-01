@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163368: CDN Proxy Integration with BIG-IP LTM: Client IP, Session Affinity, and Geolocation</title>
+<meta name="description" content="Support Solution: CDN Proxy Integration with BIG-IP LTM: Client IP, Session Affinity, and Geolocation — A CDN proxy in front of a BIG-IP LTM virtual server can replace the original client source IP with a proxy address and provide the original address in an HTTP header. This may cause repeated HTTP 302…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163368">
+</head>
+<body>
+<header>
+<h1>K000163368: CDN Proxy Integration with BIG-IP LTM: Client IP, Session Affinity, and Geolocation</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-09-22</dd>
+<dt>Updated</dt><dd>2026-09-22</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163368">https://my.f5.com/manage/s/article/K000163368</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>A CDN proxy in front of a BIG-IP LTM virtual server can replace the original client source IP with a proxy address and provide the original address in an HTTP header. This may cause repeated <strong>HTTP 302</strong> redirects, missing CSS, JavaScript, and icon resources, unexpected application logouts, inconsistent pool-member selection, and incorrect geolocation or WAF decisions. </p>
+<h2>Environment</h2>
+<ul><li>BIG-IP <strong>LTM </strong>virtual server.</li><li>High-availability portal with two application servers.</li><li>Round-robin load balancing.</li><li><strong>Traffic flow: </strong>client → CDN proxy → BIG-IP virtual server → Application-server pool.</li><li>The proxy may:
+<ul><li>Replace the original client source IP at Layer 3.</li><li>Provide the original client IP in <strong>CF-Connecting-IP</strong>,<strong> True-Client-IP</strong>, or another configured header.</li><li>Reuse a TCP connection for requests from different clients.</li></ul>
+</li><li>BIG-IP features associated with the virtual server may include:
+<ul><li>HTTP profile.</li><li>ASM/AWAF security policy.</li><li>Application DoS profile.</li><li>Bot Defense profile.</li><li>Persistence profile.</li><li>Geolocation enforcement.</li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p>Proxy source-IP translation and TCP connection reuse can prevent BIG-IP from consistently applying the original client identity for persistence and security processing. If BIG-IP receives only proxy source addresses, Source Address persistence cannot provide per-client affinity. If requests from different clients share a TCP connection, BIG-IP may make the load-balancing decision when the connection is established, and subsequent persistence information may not be evaluated as expected. </p>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>1) Confirm the client-IP header:</strong></p>
+<p>Confirm the following with the CDN provider:</p>
+<ul><li>Whether source-IP translation occurs before connecting to BIG-IP.</li><li>Which HTTP header contains the original client IP.</li><li>Whether the header is <strong>CF-Connecting-IP</strong>, <strong>True-Client-IP</strong>, or another header.</li><li>Whether TCP connections are reused for requests from different clients.</li></ul>
+<p>Do not configure BIG-IP to trust a header until its name, format, and source are confirmed.</p>
+<p><strong>2) Configure the BIG-IP HTTP profile:</strong></p>
+<p>On the HTTP profile associated with the virtual server:</p>
+<ul><li>Enable <strong>Accept XFF</strong>.</li><li>Configure the verified client-IP header when it is not the default <strong>X-Forwarded-For</strong> header.</li><li>Ensure the header is accepted only from the intended trusted proxy path.</li></ul>
+<p><strong>3) Configure ASM/AWAF geolocation processing:</strong></p>
+<p>For the ASM/AWAF security policy associated with the virtual server:</p>
+<ul><li>Enable <strong>Trust XFF</strong> Header.</li><li>Configure the same verified client-IP header used by the proxy.</li><li>Confirm that geolocation decisions use the intended client-IP information.</li></ul>
+<p><strong>4) Configure Application DoS and Bot Defense client-IP processing:</strong></p>
+<p>Application <strong>DoS</strong> and <strong>Bot Defense</strong> profiles use the HTTP profile’s <strong>Accept XFF</strong> configuration for client-IP identification. They do not use the ASM policy’s <strong>Trust XFF</strong> Header setting for this purpose.</p>
+<p>Verify the <strong>HTTP profile</strong> configuration when Application <strong>DoS</strong> or <strong>Bot Defense</strong> is enabled.</p>
+<p><strong>5) Review session-affinity design:</strong></p>
+<p><strong>Source Address</strong> persistence uses the Layer 3 source IP address received by BIG-IP. It <strong>cannot </strong>use the original client IP when BIG-IP receives only proxy source addresses.</p>
+<p>If the original client IP is available only in an HTTP header:</p>
+<ul><li>Use a carefully validated <strong>universal-persistence</strong> design that extracts the verified client-IP header.</li><li>Use the extracted client IP as the persistence key.</li><li>Validate the behavior with one application server enabled and then with both servers enabled.</li><li>Confirm that requests from the same client consistently use the expected persistence key and pool member.</li></ul>
+<p>Custom <strong>iRules </strong>and <strong>universal </strong>persistence require design and implementation validation. <strong>Professional Services</strong> may be required for this activity. You may contact with your F5 Account Team.</p>
+<p><strong>6) Review connection handling:</strong></p>
+<p>If the proxy sends requests from different clients over the same TCP connection, review BIG-IP connection and persistence behavior. Evaluate <strong>OneConnect</strong> or an appropriate<strong> iRule-based</strong> design according to the application requirements.</p>
+<p><strong>7) Validate the complete path:</strong></p>
+<p>Compare CDN, BIG-IP, and application logs or HTTP traces to verify:</p>
+<ul><li>The expected client-IP header is present.</li><li>The header contains the correct original client address.</li><li>BIG-IP trusts the header only from the intended proxy.</li><li>The persistence key remains consistent for the same client.</li><li>Requests are sent to the expected application server.</li><li>HTTP 302 redirects do not repeat unexpectedly.</li><li>CSS, JavaScript, and icon resources load successfully.</li><li>Application sessions remain active.</li><li>Geolocation decisions use the intended client address.</li></ul>
+<p><strong>8) Validate geolocation data:</strong></p>
+<p>BIG-IP does not automatically use a CDN country header for its own geolocation decisions. BIG-IP must first identify the original client IP from a trusted HTTP header and then map that address to a country using its local geolocation database.</p>
+<p>Ensure that the <strong>Geolocation database</strong> is current. In an HA deployment, update each BIG-IP system because geolocation database updates are <strong>not </strong>synchronized through the Configuration utility. </p>
+<h2>Additional Information</h2>
+<ul><li>The client-IP header and country header serve different purposes. Configuring a country header alone does not cause BIG-IP to use the original client IP for geolocation.</li><li>Enabling <strong>Accept XFF</strong> in the <strong>HTTP profile</strong> is important for client-IP processing by features that rely on the HTTP profile, including Application DoS and Bot Defense.</li><li>Enabling <strong>Trust XFF</strong> Header in the <strong>ASM security policy</strong> is relevant to ASM/AWAF processing, including geolocation enforcement.</li><li>A custom iRule that copies <strong>CF-Connecting-IP</strong> or <strong>True-Client-IP</strong> into <strong>X-Forwarded-For</strong> does not by itself prove that persistence, ASM, Bot Defense, Application DoS, and application-session behavior are correctly implemented.</li><li>A fix is available for the documented connection and persistence behavior. Complete design, implementation, and validation assistance may require <a href="https://my.f5.com/manage/s/article/K000159591" title="Professional Services" target="_blank" rel="noopener noreferrer"><strong>Professional Services</strong></a>.</li></ul>
+</article>
+</body>
+</html>

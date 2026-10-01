@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161277: Best Practices for Configuring F5 XC HTTP Load Balancer Behind a CDN</title>
+<meta name="description" content="Support Solution: Best Practices for Configuring F5 XC HTTP Load Balancer Behind a CDN — You have a CDN (F5 XC CDN or an external CDN such as Akamai, Cloudflare, AWS CloudFront, etc.) in front of your F5® Distributed Cloud HTTP Load Balancer.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161277">
+</head>
+<body>
+<header>
+<h1>K000161277: Best Practices for Configuring F5 XC HTTP Load Balancer Behind a CDN</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-05-14</dd>
+<dt>Updated</dt><dd>2026-05-27</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Distributed Cloud Services</li><li>F5 Distributed Cloud WAF</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161277">https://my.f5.com/manage/s/article/K000161277</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<ul><li>You have a CDN (F5 XC CDN or an external CDN such as Akamai, Cloudflare, AWS CloudFront, etc.) in front of your F5® Distributed Cloud HTTP Load Balancer.</li><li>You want to ensure the XC Load Balancer correctly identifies the real client IP address for logging, security controls, and policy enforcement.</li><li>You are unsure whether to enable the Trusted Client IP Headers setting and how to do so safely.</li></ul>
+<h2>Environment</h2>
+<ul><li>F5® Distributed Cloud (XC) HTTP Load Balancer</li><li>Content Delivery Network (CDN): F5 XC CDN or any external CDN/reverse proxy in the data path</li></ul>
+<h2></h2>
+<h2>Client IP Preservation</h2>
+<p>By default, the F5 XC HTTP Load Balancer uses the <strong>Layer 3 source IP address</strong> as the client IP. When a CDN sits in front of the XC LB, the L3 source IP will be the <strong>CDN&#39;s egress IP</strong>, not the original client&#39;s IP address.</p>
+<p> </p>
+<p>To preserve true client IP information in the upstream request, CDNs typically embed the original client IP in an HTTP request header before forwarding traffic to the origin.  The archetypal header for this purpose is X-Forwarded-For (XFF), but depending on the CDN it may be called True-Client-IP, X-Client-IP, X-Connecting-IP, or a custom name.  We will use the archetypal XFF descriptively in the below, but when referenced it denotes any such header containing client IP information.</p>
+<p> </p>
+<h2>Trusted Client IP Headers</h2>
+<p><strong style="font-size: 14px;">Configure the Trusted Client IP Header on the XC Load Balancer</strong></p>
+<p>Navigate to your HTTP Load Balancer configuration and set the <strong>Trusted Client IP Headers</strong> field:</p>
+<p><strong>HTTP Load Balancer → Other Settings → Trusted Client IP Headers</strong></p>
+<p>Enter the header name that your CDN injects (such as: <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">True-Client-IP,</span> <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 13px;">X-Forwarded-For</span>).</p>
+<p> </p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000kFAX&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000j1bDJ"></img></p>
+<p> </p>
+<p><strong>Result of this configuration:</strong> The rightmost IP value found in the named header will be treated as the true client source IP by the XC LB, for the purposes of:</p>
+<ul><li>Logging</li><li>IP-based security controls (Service Policies)</li><li>User Identification Policy and dependent functions (Rate Limiting)</li><li>Malicious Users</li><li>IP Reputation checks</li><li>L7DDoS Automitigation</li></ul>
+<p><strong>Important Note</strong>: It is recommended that the Trusted Client IP Headers setting should only be enabled when a trusted proxy or CDN is confirmed to be in the data path between the client and the XC LB. Enabling this setting without a CDN in the path allows clients to spoof their source IP by injecting arbitrary header values.</p>
+<p> </p>
+<h2>Network Access Controls</h2>
+<p>A decision to trust a client IP header like XFF is predicated on it having been inserted by a trusted proxy.  We assume the downstream CDN is trusted, but how can we be sure the header was inserted by the CDN?  HTTP headers are entirely within the client&#39;s control, and a client connecting directly to an XC LB with Trusted Client IP Headers enabled could abuse the implicit trust of the header to obfuscate their source and potentially evade security controls.</p>
+<p>Therefore, it&#39;s strongly recommended to restrict network access to the XC LB allowing only the CDN&#39;s IP ranges to reach it (customers may choose to selectively add additional IPs to the whitelist for testers, operations staff, and others who may have a legitimate need to bypass the CDN).</p>
+<p>The first step toward implementing such a control is to obtain the IP ranges definition from the CDN provider.  All CDN providers will provide a reference document for this.  Consult with your provider if you cannot find it.</p>
+<p>In F5 XC, the control can be implemented in either of two ways:</p>
+<ol><li>A <a href="https://docs.cloud.f5.com/docs-v2/multi-cloud-network-connect/how-tos/network-firewall/fast-acls" target="_self">Fast ACL</a> applied to the LB&#39;s public VIP.  Add the CDN IP ranges to the Fast ACL with the Allow action, and append a default deny to the end.  More information can be found <a href="https://community.f5.com/kb/TechnicalArticles/protect-your-applications-using-f5%E2%80%99s-distributed-cloud-and-fast-acl%E2%80%99s/296626" target="_self">here</a>.</li><li>A <a href="https://docs.cloud.f5.com/docs-v2/multi-cloud-app-connect/how-to/app-security/service-policy" target="_self">Service Policy</a> applied to the LB (it should be first in the order).  For ease of administration, it&#39;s recommended to enter the CDN IP ranges in an <a href="https://docs.cloud.f5.com/docs-v2/shared-configuration/how-to/adv-security/configure-ip-prefix" target="_self">IP Prefix Set</a> and reference the prefix-set in a Service Policy Rule to permit the CDN range and deny access to other sources.
+<ol><li>Note: if there are additional Service Policies on the LB, the NEXT_POLICY action should be used on the whitelist rule.  Using the ALLOW action will result in matched traffic skipping all subsequent Service Policy rule evaluation, which is typically not intended. </li></ol>
+</li></ol>
+<p> </p>
+<h2>Validation Checklist</h2>
+<p>To ensure proper configuration of the XC LB for a downstream CDN data path, perform the following checks:</p>
+<ol><li>Access the application through its normal public data path, i.e. through the CDN.  Ensure that:
+<ol><li>The application operates as expected</li><li>Your test traffic is identifiable in XC request logs with a source IP of your client, not the CDN.</li><li>True client IP information is logged at the origin servers as expected.</li></ol>
+</li></ol>
+<ol start="2"><li>Attempt to access the XC LB directly from an external source not in the CDN whitelist.
+<ol><li>Ensure the XC LB is not reachable, or returns an error response.</li><li>Add the relevant HTTP header with a trusted client IP to your request (for instance, append to a curl command -H &#39;X-Forwarded-For: 1.2.3.4&#39; where 1.2.3.4 is within the CDN&#39;s trusted range).  This spoofing attempt should not permit access to the LB.</li></ol>
+</li></ol>
+<p> </p>
+<p> </p>
+<h2>Additional Information</h2>
+<p>The Trusted Client IP Headers setting affects all IP-based security functions on the XC LB. Validate your Service Policies, and rate limiting rules after enabling this setting to ensure they behave as expected with real client IPs.</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K21505152: Portal access RST :  SSL proxy shutdown (unrecognized name(112))</title>
+<meta name="description" content="Support Solution: Portal access RST :  SSL proxy shutdown (unrecognized name(112)) — Admin has configured Portal access and the page loads partially or does not load at all.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K21505152">
+</head>
+<body>
+<header>
+<h1>K21505152: Portal access RST :  SSL proxy shutdown (unrecognized name(112))</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-07-14</dd>
+<dt>Updated</dt><dd>2025-04-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 13.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K21505152">https://my.f5.com/manage/s/article/K21505152</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<p>Admin has configured Portal access and the page loads partially or does not load at all.<br> </p>
+<h2><strong>Environment</strong></h2>
+<ul><li>Portal Access on port 443 </li><li>SNI value set on client hello on server side connection</li></ul>
+<h2><strong>Cause</strong></h2>
+<p>Packet Captures confirms that   https<strong>:</strong>//example<strong>.</strong>com has Server name on Client hello (extension) , which Portal access does not support </p>
+<p>BUGID : 588518<br> </p>
+<h2><strong>Recommended Actions</strong></h2>
+<ul><li>VS has default &quot;serverssl&quot; profile</li></ul>
+<p>ltm virtual /Common/VS_portal {<br>    destination /Common/192.168.20.21:443<br>    profiles {<br>        /Common/serverssl {<br>            context serverside</p>
+<ul><li>Create serverssl profile &quot;/Common/serverssl_sni_cdn&quot;</li></ul>
+<p>ltm profile server-ssl /Common/serverssl_sni_cdn {<br>    app-service none<br>    defaults-from /Common/serverssl<br>   <strong> server-name sample<em>.</em>example<em>.</em>com </strong><br>}</p>
+<ul><li>Add this irule to that VS a </li></ul>
+<p>(user hex to strong convertor to get this value like : <a href="https://string-functions.com/string-hex.aspx" target="_blank">Online Text To Hex Converter Tool</a> <em><span style="color: #16a085;"><strong>Note</strong>: This link takes you to a resource outside of myf5. The third parties could remove these documents without our knowledge.</span></em>) </p>
+<pre>when HTTP_REQUEST {
+    if { [HTTP::has_responded] } { return }
+    set ssp 0
+    # sample<strong>.</strong>example<strong>.</strong>com -&gt; 63646e2e6a6ss16d616e6574776f726b2e636f6d
+    if {[HTTP::path] contains &quot;63646e2e6a6ss16d616e6574776f726b2e636f6d&quot;} {
+      set ssp 1
+    }
+}
+when SERVER_CONNECTED {
+  if {[info exists ssp] &amp;&amp; $ssp} {
+    SSL::profile serverssl_sni_cdn
+    set ssp 0
+  } else {
+      SSL::profile serverssl
+    }</pre>
+<p> </p>
+<h2><strong>Additional Information</strong></h2>
+<p><br>on the server side handshake on Client Hello we should see something like <br><br><br>6352    2023-07-13 15:08:59.704196    192.168.20.11  0.001630    60508    192.168.20.28   443    /Common/VS_porta   TLSv1.2    281        IN  s1/tmm0 : Client Hello<br>[..]<br>Extension: server_name (len=23)<br>    Type: server_name (0)<br>    Length: 23<br>    Server Name Indication extension<br>        Server Name list length: 21<br>        Server Name Type: host_name (0)<br>        Server Name length: 18<br>        Server Name: <strong>sample<em>.</em>example<em>.</em>com </strong><br>[...]</p>
+</article>
+</body>
+</html>

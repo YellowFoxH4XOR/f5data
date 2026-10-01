@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K17089: The BIG-IP APM MySQL database may grow to consume all available disk space</title>
+<meta name="description" content="Known Issue: The BIG-IP APM MySQL database may grow to consume all available disk space — The BIG-IP APM MySQL database may grow to consume all available disk space.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K17089">
+</head>
+<body>
+<header>
+<h1>K17089: The BIG-IP APM MySQL database may grow to consume all available disk space</h1>
+<dl>
+<dt>Type</dt><dd>Known Issue</dd>
+<dt>Published</dt><dd>2015-11-06</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 11.6.0, 11.5.2, 11.5.1, 11.5.0, 11.5.3, 11.4.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K17089">https://my.f5.com/manage/s/article/K17089</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Known Issue</h3><p>The BIG-IP APM MySQL database may grow to consume all available disk space. </p>
+
+<p>The BIG-IP APM system stores user session reporting data in the local MySQL database instance. When the BIG-IP APM system is experiencing high traffic volume and continuously creating a large number of sessions per hour, the session data logged to the <strong>log_session_details</strong> table may grow and eventually consume all available disk space on the filesystem.</p>
+
+<p><span class="sectiontitle">Impact</span></p>
+
+<p>The filesystem containing the MySQL instance may fill with data, potentially causing traffic disruptions and system instability.</p>
+
+<p><span class="sectiontitle">Symptoms</span></p>
+
+<p>As a result of this issue, you may encounter one or more of the following symptoms:</p>
+
+<ul><li>Your BIG-IP APM system becomes unresponsive or unstable.</li><li>Administrators are unable to access the Configuration utility.</li><li>Services that rely on MySQL, such as ASM, AVR, APM reporting, the Configuration utility, and the <strong>qkview</strong> utility, are degraded or they malfunction.</li><li>Output of the <strong>df -h</strong> command shows no available space left in the filesystem mounted on the <strong>/var/lib/mysql</strong> directory.</li></ul>
+<h3>Resolution</h3><p><span class="sectiontitle">Status</span></p>
+
+<p>F5 Product Development has assigned ID 483286 to this issue. F5 has confirmed that this issue exists in the products listed in the <strong>Applies to (see versions)</strong> box, located in the upper-right corner of this article. For information about releases, point releases, or hotfixes that resolve this issue, refer to the following table:</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1" style="width: 100%;"><tbody><tr><td colspan="1" rowspan="1">Type of fix</td><td colspan="1" rowspan="1">Fixes introduced in</td><td colspan="1" rowspan="1">Related articles</td></tr><tr><td colspan="1" rowspan="1">Release</td><td colspan="1" rowspan="1">12.0.0</td><td colspan="1" rowspan="1"><a href="https://my.f5.com/manage/s/article/K2200" target="_blank">K2200: Most recent versions of F5 software</a></td></tr><tr><td colspan="1" rowspan="1">Hotfix</td><td colspan="1" rowspan="1">11.6.0 HF6<br>			11.5.3 HF2<br>			11.4.1 HF9</td><td colspan="1" rowspan="1"><a href="https://my.f5.com/manage/s/article/K9502" target="_blank">K9502: BIG-IP hotfix matrix</a></td></tr></tbody></table>
+
+<p><span class="sectiontitle">Workaround</span></p>
+
+<p>To work around this issue, you can manually prune the <strong>log_session_details</strong> table from the command line.  To mitigate future occurrences of this issue, you can configure a <strong>cron</strong> job to run a pruning script hourly. To do so, perform the following procedures:</p>
+
+<p><span class="subsectiontitle">Manually pruning the log_session_details table</span></p>
+
+<p>If your system is currently experiencing instability, you may need to manually remove unnecessary rows from the <strong>log_session_details</strong> table. </p>
+
+<p><span class="impact"><strong>Impact of workaround</strong>: </span><span class="impact">Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the BIG-IP APM command line.</li><li>To prune the <strong>log_session_details</strong> table, type the following command on a single line and press <strong>Enter</strong>:
+	<p><span class="code">/usr/bin/mysql -uroot -p`perl -MPassCrypt -nle &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw` --database=apm -e &quot;delete from log_session_details where active = &#39;N&#39;;&quot;</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle">Using a cron job to run a pruning script</span></p>
+
+<p><span class="impact"><strong>Impact of workaround</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the BIG-IP APM command line.</li><li>To change to the <strong>/etc/cron.hourly</strong> directory, type the following command:
+	<p><span class="code">cd /etc/cron.hourly</span></p>
+	</li><li>Use a text editor to create a file named <strong>apm_prune_log_session_details.sh</strong> with the following content:
+	<p><span class="code">#!/bin/sh<br>	<br>	# This script prunes the log_session_details table in MySql with unreferenced sid.<br>	<br>	# Mysql parameters<br>	MYSQL_PW=`perl -MPassCrypt -nle \<br>	    &#39;print PassCrypt::decrypt_password($_)&#39; /var/db/mysqlpw`<br>	SES_TABLE_NAME=&quot;log_session_details&quot;<br>	COL_SID=&quot;sid&quot;<br>	COL_ACTIVE=&quot;active&quot;<br>	WLIST_TABLE_NAME=&quot;log_sid_wlist&quot;<br>	BLIST_TABLE_NAME=&quot;log_sid_blist&quot;<br>	LOG_TABLE_NAME=&quot;log_data&quot;<br>	COL_LOG_SID=&quot;log_sid&quot;<br>	<br>	# Resulting mysql command<br>	CMD_WLIST_DROP=&quot;drop table if exists $WLIST_TABLE_NAME&quot;<br>	CMD_WLIST_CREATE=&quot;create table $WLIST_TABLE_NAME ($COL_LOG_SID int(10) unsigned NOT NULL, PRIMARY KEY($COL_LOG_SID)) engine=MyISAM&quot;<br>	CMD_WLIST_FETCH_0=&quot;insert ignore into $WLIST_TABLE_NAME select distinct $COL_LOG_SID from ${LOG_TABLE_NAME}_0&quot;<br>	CMD_WLIST_FETCH_1=&quot;insert ignore into $WLIST_TABLE_NAME select distinct $COL_LOG_SID from ${LOG_TABLE_NAME}_1&quot;<br>	CMD_WLIST_FETCH_2=&quot;insert ignore into $WLIST_TABLE_NAME select distinct $COL_LOG_SID from ${LOG_TABLE_NAME}_2&quot;<br>	CMD_WLIST_FETCH_3=&quot;insert ignore into $WLIST_TABLE_NAME select distinct $COL_LOG_SID from ${LOG_TABLE_NAME}_3&quot;<br>	CMD_WLIST_FETCH_4=&quot;insert ignore into $WLIST_TABLE_NAME select distinct $COL_LOG_SID from ${LOG_TABLE_NAME}_4&quot;<br>	CMD_WLIST_FETCH_C=&quot;insert ignore into $WLIST_TABLE_NAME select distinct $COL_LOG_SID from ${LOG_TABLE_NAME}_current&quot;<br>	CMD_BLIST_DROP=&quot;drop table if exists $BLIST_TABLE_NAME&quot;<br>	CMD_BLIST_CREATE=&quot;create table $BLIST_TABLE_NAME ($COL_SID int(10) unsigned NOT NULL, PRIMARY KEY($COL_SID)) engine=MyISAM&quot;<br>	CMD_BLIST_FETCH=&quot;insert into $BLIST_TABLE_NAME select $SES_TABLE_NAME.$COL_SID from $SES_TABLE_NAME left join $WLIST_TABLE_NAME on $SES_TABLE_NAME.$COL_SID = $WLIST_TABLE_NAME.$COL_LOG_SID where $WLIST_TABLE_NAME.$COL_LOG_SID is NULL and $SES_TABLE_NAME.$COL_ACTIVE = &#39;N&#39;&quot;<br>	CMD_PRUNE=&quot;delete $SES_TABLE_NAME from $SES_TABLE_NAME join $BLIST_TABLE_NAME on $SES_TABLE_NAME.$COL_SID = $BLIST_TABLE_NAME.$COL_SID&quot;<br>	CMD_OPTI=&quot;optimize table $SES_TABLE_NAME&quot;<br>	<br>	echo &quot;**** Prune $SES_TABLE_NAME&#39;s inactive rows of which $COL_SID is not refernced by $LOG_TABLE_NAME. ****&quot;<br>	echo &quot;  $CMD_WLIST_DROP;&quot;<br>	echo &quot;  $CMD_WLIST_CREATE;&quot;<br>	echo &quot;  $CMD_WLIST_FETCH_0;&quot;<br>	echo &quot;  $CMD_WLIST_FETCH_1;&quot;<br>	echo &quot;  $CMD_WLIST_FETCH_2;&quot;<br>	echo &quot;  $CMD_WLIST_FETCH_3;&quot;<br>	echo &quot;  $CMD_WLIST_FETCH_4;&quot;<br>	echo &quot;  $CMD_WLIST_FETCH_C;&quot;<br>	echo &quot;  $CMD_BLIST_DROP;&quot;<br>	echo &quot;  $CMD_BLIST_CREATE;&quot;<br>	echo &quot;  $CMD_BLIST_FETCH;&quot;<br>	echo &quot;  $CMD_PRUNE;&quot;<br>	echo &quot;  $CMD_BLIST_DROP;&quot;<br>	echo &quot;  $CMD_WLIST_DROP;&quot;<br>	echo &quot;  $CMD_OPTI;&quot;<br>	<br>	CMD_WLIST_FETCH=&quot;$CMD_WLIST_FETCH_0; $CMD_WLIST_FETCH_1; $CMD_WLIST_FETCH_2; $CMD_WLIST_FETCH_3; $CMD_WLIST_FETCH_4; $CMD_WLIST_FETCH_C&quot;<br>	CMD=&quot;$CMD_WLIST_DROP; $CMD_WLIST_CREATE; $CMD_WLIST_FETCH; $CMD_BLIST_DROP; $CMD_BLIST_CREATE; $CMD_BLIST_FETCH; $CMD_PRUNE; $CMD_BLIST_DROP; $CMD_WLIST_DROP; $CMD_OPTI;&quot;<br>	<br>	echo &quot;**** $CMD&quot;<br>	<br>	/usr/bin/mysql -uroot -p${MYSQL_PW} --database=apm -e &quot;$CMD&quot;</span></p>
+	</li><li>Save and exit the file.</li><li>To make the file executable, type the following command:
+	<p><span class="code">chmod +x /etc/cron.hourly/apm_prune_log_session_details.sh</span></p>
+	</li><li>To test the script by running it, type the following command:
+	<p><span class="code">/etc/cron.hourly/apm_prune_log_session_details.sh</span></p>
+	</li></ol>
+</article>
+</body>
+</html>

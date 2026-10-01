@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K14643443: Install multi-cluster Aspen Mesh on KOPS Cluster</title>
+<meta name="description" content="Support Solution: Install multi-cluster Aspen Mesh on KOPS Cluster — There are multiple ways to configure Aspen Mesh on a multi-cluster environment. You install Aspen Mesh Istio distribution on both of your clusters in the following example, and the installation type…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K14643443">
+</head>
+<body>
+<header>
+<h1>K14643443: Install multi-cluster Aspen Mesh on KOPS Cluster</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-07-30</dd>
+<dt>Updated</dt><dd>2023-02-02</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K14643443">https://my.f5.com/manage/s/article/K14643443</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+In this article, you install multi-cluster Aspen Mesh on two KOPS clusters. First, ensure that you have two Kubernetes clusters with the same version of Aspen Mesh installed on each of them. Enter the following command:
+
+<p><span class="code">kops get cluster</span></p>
+You should see an output similar to the following:
+
+<p><span class="example2">ssah-test1.dev.k8s.local        aws    us-west-2a<br>ssah-test2.dev.k8s.local        aws    us-west-2a</span></p>
+
+<p>There are multiple ways to configure Aspen Mesh on a multi-cluster environment. You install Aspen Mesh Istio distribution on both of your clusters in the following example, and the installation type is &quot;Multi-Primary on different networks&quot;</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Kubernetes: 1.18.x - 1.23.x  </li><li>Aspen Mesh:  1.9.x, 1.11.x, 1.14.x</li></ul>
+The details below are applicable for Aspen Mesh 1.14.x and earlier version. For the procedure about 1.9.5 and future versions, refer to <a href="https://my.f5.com/manage/s/article/K44817186" target="_self">K44817186: Installing multi-cluster Aspen Mesh version 1.9.5-x</a>.
+
+<p><span class="sectiontitle">Cause</span></p>
+N/A
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ul><li><a href="#configure_trust" target="_self">Configure trust</a></li><li><a href="#enable_multicluster" target="_self">Enable multi-cluster</a>
+	<ul><li><a href="#yaml1" target="_self">Cluster 1: sample_overrides-aspenmesh.yaml</a></li><li><a href="#yaml2" target="_self">Cluster 2: sample_overrides-aspenmesh_2.yaml</a></li></ul>
+	<a href="#install_instiod" target="_self">Upgrade/Install istiod manifest</a></li><li><a href="#create_gw" target="_self">Create ingress gateway</a>
+	<ul><li><a href="#yaml3" target="_self">Cluster 1: cluster1_gateway_config.yaml</a></li><li><a href="#yaml4" target="_self">Cluster 2: cluster2_gateway_config.yaml</a></li></ul>
+	</li><li><a href="#api_comms" target="_self">Configure API communications</a></li><li><a href="#ew_gateway" target="_self">Edit the ingress east-west gateway</a></li></ul>
+<strong>Pre-requisites for the Setup:</strong>
+
+<ul><li><strong>API</strong>: The servers of each cluster must be able to access the API server of the other cluster.</li><li><strong>Trust</strong>: Trust must be established between all clusters in the mesh. This is achieved by having a common Root CA to generate intermediate certs for each cluster.</li></ul>
+<strong><a id="configure_trust" name="configure_trust"></a>Configure trust:</strong>
+
+<ol><li>Create an RSA type certificate for your root cert.</li><li>Download the Aspen Mesh installer from <a href="https://my.aspenmesh.io/client/docs/latest/" target="_self">Aspen Mesh</a>.</li><li>Extract the installer. It contains a tools directory to create your certificate.
+	<p><span class="code">cd tools</span></p>
+	</li><li>Create a cert folder and add the folder to the directory stack by entering the following commands:
+	<p><span class="example2">mkdir -p certs; pushd certs</span></p>
+	</li><li>Run the <strong>make </strong>command to create a root-ca folder, which will consist of four files: <strong>root-ca.conf, root-cert.csr, root-cert.pem </strong>and <strong>root-key.pem</strong>.
+	<p><span class="note"><strong>Note</strong>: For more information on the <strong>make </strong>command, refer to the <strong>README.md</strong> file in the <strong>tools/certs</strong> directory.</span></p>
+
+	<p><span class="example2">make -f ../tools/certs/Makefile.selfsigned.mk root-ca<br>	make -f ../tools/certs/Makefile.selfsigned.mk cluster1-cacerts<br>	make -f ../tools/certs/Makefile.selfsigned.mk cluster2-cacerts</span></p>
+	The following lists the example output when you enter the following commands:
+
+	<p><span class="example2">&gt; cd certs<br>	&gt; ls<br>	# root CA certificates<br>	cluster1    cluster2    root-ca.conf    root-cert.csr    root-cert.pem    root-cert.srl    root-key.pem<br>	&gt; ls -l cluster1<br>	# Intermediate CA certificates signed by the common root CA certificate<br>	total 32<br>	[...] 1895 May 10 20:04 ca-cert.pem<br>	[...] 3243 May 10 20:04 ca-key.pem<br>	[...] 3700 May 10 20:04 cert-chain.pem<br>	[...] 1805 May 10 20:04 root-cert.pem<br>	&gt; ls -l cluster2<br>	total 32<br>	[...] 1895 May 10 20:08 ca-cert.pem<br>	[...] 3243 May 10 20:08 ca-key.pem<br>	[...] 3700 May 10 20:08 cert-chain.pem<br>	[...] 1805 May 10 20:08 root-cert.pem</span></p>
+
+	<p>For each of your clusters, you will need to generate an intermediate cert and key for the Istio CA.</p>
+	</li><li>Create secrets for each of your clusters in the <strong>istio-system</strong> namespace with all the input files that you generated from the last step using the following commands:
+	<p><span class="note"><strong>Note</strong>: These secrets at each of the clusters is what configures trust between them as the same <strong>root-cert.pem</strong> is used to create the intermediate cert.</span></p>
+
+	<p><span class="example2">kubectl  create secret generic cacerts -n istio-system  --from-file=ca-cert.pem  --from-file=ca-key.pem  --from-file=root-cert.pem  --from-file=cert-chain.pem --context=&quot;${CTX_CLUSTER1}&quot;<br>	kubectl create secret generic cacerts -n istio-system --from-file=ca-cert.pem  --from-file=ca-key.pem  --from-file=root-cert.pem --from-file=cert-chain.pem --context=&quot;${CTX_CLUSTER2}&quot;</span></p>
+	</li></ol>
+<span class="subsectiontitle"><a id="enable_multicluster" name="enable_multicluster"></a>Enable multi-cluster</span>
+
+<p>Move on to the Aspen Mesh configuration. You will enable multi-cluster for <strong>istiod </strong>and give names to the network and cluster. Create a separate file for each cluster, adding the fields to your override files as shown below for each cluster. The files will be used during the Helm installation/upgrade. You will also need to label the <strong>istio-system</strong> namespace in both of your clusters with the appropriate label. Use the following command syntaxes:</p>
+<span class="code">kubectl --context=&quot;${CTX_CLUSTER1}&quot; label namespace istio-system topology.istio.io/network=network1<br>kubectl --context=&quot;${CTX_CLUSTER2}&quot; label namespace istio-system topology.istio.io/network=network2</span>
+
+<p><span class="subsubsectiontitle"><a id="yaml1" name="yaml1"></a>Cluster 1: sample_overrides-aspenmesh.yaml</span></p>
+<span class="example2"># Global DNS Proxy configuration is optional, can be also enabled per POD with POD annotations.<br># In order to make the application service callable from any cluster, the DNS lookup must succeed in each cluster<br>#This provides DNS interception for all workloads with a sidecar, allowing Istio to perform DNS lookup on behalf of the application.<br>#meshConfig:<br># defaultConfig:<br>#   proxyMetadata:<br>    # Enable Istio agent to handle DNS requests for known hosts<br>    # Unknown hosts will automatically be resolved using upstream dns servers in resolv.conf<br>    #  ISTIO_META_DNS_CAPTURE: &quot;true&quot;<br><br>global:<br>  meshID: mesh1<br>  multiCluster:<br>    # Set to true to connect two kubernetes clusters via their respective<br>    # ingressgateway services when pods in each cluster cannot directly<br>    # talk to one another. All clusters should be using Istio mTLS and must<br>    # have a shared root CA for this model to work.<br>    enabled: true<br>    # Should be set to the name of the cluster this installation will run in. This is required for sidecar injection<br>    # to properly label proxies<br>    clusterName: &quot;cluster1&quot;<br>    globalDomainSuffix: &quot;local&quot;<br>    # Enable envoy filter to translate `globalDomainSuffix` to cluster local suffix for cross cluster communication<br>    includeEnvoyFilter: false<br>  network: network1</span>
+
+<p><span class="subsubsectiontitle"><a id="yaml2" name="yaml2"></a>Cluster 2: sample_overrides-aspenmesh_2.yaml</span></p>
+
+<p><br><span class="example2">global:<br>  meshID: mesh1<br>  multiCluster:<br>    # Set to true to connect two kubernetes clusters via their respective<br>    # ingressgateway services when pods in each cluster cannot directly<br>    # talk to one another. All clusters should be using Istio mTLS and must<br>    # have a shared root CA for this model to work.<br>    enabled: true<br>    # Should be set to the name of the cluster this installation will run in. This is required for sidecar injection<br>    # to properly label proxies<br>    clusterName: &quot;cluster2&quot;<br>    globalDomainSuffix: &quot;local&quot;<br>    # Enable envoy filter to translate `globalDomainSuffix` to cluster local suffix for cross cluster communication<br>    includeEnvoyFilter: false<br>  network: network2</span></p>
+<span class="subsectiontitle"><a id="install_instiod" name="install_instiod"></a>Upgrade/Install istiod manifest</span>
+
+<p>Now, you will upgrade/install the <strong>istiod </strong>manifest with the newly added configuration from the override file. You have separate override files for each cluster.</p>
+
+<p><span class="example2">helm upgrade istiod manifests/charts/istio-control/istio-discovery -n istio-system --values sample_overrides-aspenmesh_2.yaml<br>helm upgrade istiod manifests/charts/istio-control/istio-discovery -n istio-system --values sample_overrides-aspenmesh.yaml</span></p>
+Check the pods in the <strong>istio-system</strong> namespace to see if all are in a running state. Be sure to delete all your application pods in your default namespace for the new configuration to kick in when the new pods will be spun. You can also check to see if the root cert used for pods in each cluster is the same. You are using pods from the <strong>bookinfo </strong>sample application.
+
+<p><span class="example2">istioctl pc secrets details-v1-79f774bdb9-pqpjw -o json | jq &#39;[.dynamicActiveSecrets[] | select(.name == &quot;ROOTCA&quot;)][0].secret.validationContext.trustedCa.inlineBytes&#39; -r | base64 -d | openssl x509 -noout -text | md5istioctl pc secrets details-v1-79c697d759-tw2l7 -o json | jq &#39;[.dynamicActiveSecrets[] | select(.name == &quot;ROOTCA&quot;)][0].secret.validationContext.trustedCa.inlineBytes&#39; -r | base64 -d | openssl x509 -noout -text |md5</span></p>
+
+<p><span class="subsectiontitle"><a id="create_gw" name="create_gw"></a>Create ingress gateway</span></p>
+Once <strong>istiod </strong>is upgraded, create an ingress gateway used for communication between the two clusters by installing an east-west gateway. Use the following configuration to create yaml files which will be used with Helm to install in each of the clusters.<br> <br>Create two yaml files: <strong>cluster1_gateway_config.yaml </strong>and <strong>cluster2_gateway_config.yaml</strong> that will be used with the respective clusters:
+
+<p><span class="subsubsectiontitle"><strong><a id="yaml3" name="yaml3"></a>Cluster 1: cluster1_gateway_config.yaml</strong></span></p>
+
+<p><span class="example2">#This can be on separate override file as we will install a custom IGW<br>gateways:<br>  istio-ingressgateway:<br>    name: istio-eastwestgateway<br>    labels:<br>      app: istio-eastwestgateway<br>      istio: eastwestgateway<br>      topology.istio.io/network: network1<br>    ports:<br>    ## You can add custom gateway ports in user values overrides, but it must include those ports since helm replaces.<br>    # Note that AWS ELB will by default perform health checks on the first port<br>    # on this list. Setting this to the health check port will ensure that health<br>    # checks always work. <a href="https://github.com/istio/istio/issues/12503" target="_blank">https://github.com/istio/istio/issues/12503</a><br>    - port: 15021<br>      targetPort: 15021<br>      name: status-port<br>      protocol: TCP<br>    - port: 15012<br>      targetPort: 15012<br>      name: tcp-istiod<br>      protocol: TCP<br>    # This is the port where sni routing happens<br>    - port: 15443<br>      targetPort: 15443<br>      name: tls<br>      protocol: TCP<br>    - name: tls-webhook<br>      port: 15017<br>      targetPort: 15017<br>    env:<br>      # A gateway with this mode ensures that pilot generates an additional<br>      # set of clusters for internal services but without Istio mTLS, to<br>      # enable cross cluster routing.<br>      ISTIO_META_ROUTER_MODE: &quot;sni-dnat&quot;<br>      ISTIO_META_REQUESTED_NETWORK_VIEW: &quot;network1&quot;<br>    serviceAnnotations:<br>      service.beta.kubernetes.io/aws-load-balancer-type: nlb<br> <br>global:<br>  meshID: mesh1<br>  multiCluster:<br>    # Set to true to connect two kubernetes clusters via their respective<br>    # ingressgateway services when pods in each cluster cannot directly<br>    # talk to one another. All clusters should be using Istio mTLS and must<br>    # have a shared root CA for this model to work.<br>    enabled: true<br>    # Should be set to the name of the cluster this installation will run in. This is required for sidecar injection<br>    # to properly label proxies<br>    clusterName: &quot;cluster1&quot;<br>    globalDomainSuffix: &quot;local&quot;<br>    # Enable envoy filter to translate `globalDomainSuffix` to cluster local suffix for cross cluster communication<br>    includeEnvoyFilter: false<br>  network: network1</span></p>
+
+<p><span class="subsubsectiontitle"><a id="yaml4" name="yaml4"></a>Cluster 2: cluster2_gateway_config.yaml</span></p>
+<span class="example2">gateways:<br>  istio-ingressgateway:<br>    name: istio-eastwestgateway<br>    labels:<br>      app: istio-eastwestgateway<br>      istio: eastwestgateway<br>      topology.istio.io/network: network2<br>    ports:<br>    ## You can add custom gateway ports in user values overrides, but it must include those ports since helm replaces.<br>    # Note that AWS ELB will by default perform health checks on the first port<br>    # on this list. Setting this to the health check port will ensure that health<br>    # checks always work. <a href="https://github.com/istio/istio/issues/12503" target="_blank">https://github.com/istio/istio/issues/12503</a><br>    - port: 15021<br>      targetPort: 15021<br>      name: status-port<br>      protocol: TCP<br>    - port: 15012<br>      targetPort: 15012<br>      name: tcp-istiod<br>      protocol: TCP<br>    # This is the port where sni routing happens<br>    - port: 15443<br>      targetPort: 15443<br>      name: tls<br>      protocol: TCP<br>    - name: tls-webhook<br>      port: 15017<br>      targetPort: 15017<br>    env:<br>      # A gateway with this mode ensures that pilot generates an additional<br>      # set of clusters for internal services but without Istio mTLS, to<br>      # enable cross cluster routing.<br>      ISTIO_META_ROUTER_MODE: &quot;sni-dnat&quot;<br>      ISTIO_META_REQUESTED_NETWORK_VIEW: &quot;network2&quot;<br>    serviceAnnotations:<br>      service.beta.kubernetes.io/aws-load-balancer-type: nlb<br>global:<br>  meshID: mesh1<br>  multiCluster:<br>    # Set to true to connect two kubernetes clusters via their respective<br>    # ingressgateway services when pods in each cluster cannot directly<br>    # talk to one another. All clusters should be using Istio mTLS and must<br>    # have a shared root CA for this model to work.<br>    enabled: true<br>    # Should be set to the name of the cluster this installation will run in. This is required for sidecar injection<br>    # to properly label proxies<br>    clusterName: &quot;cluster2&quot;<br>    globalDomainSuffix: &quot;local&quot;<br>    # Enable envoy filter to translate `globalDomainSuffix` to cluster local suffix for cross cluster communication<br>    includeEnvoyFilter: false<br>  network: network2<br><br>Use Helm to install eastwest gateways on each cluster to open data plane communication between clusters.<br><strong>helm install egressgw  manifests/charts/gateways/istio-ingress --namespace istio-system --kube-context  </strong></span><strong>&quot;${CTX_CLUSTER1}&quot;<span class="example2">   --values </span><span class="subsubsectiontitle">cluster1_gateway_config.yaml</span></strong><br><span class="example2"><strong>helm install egressgw  manifests/charts/gateways/istio-ingress --namespace istio-system --kube-context  </strong></span><strong>&quot;${CTX_CLUSTER2}&quot;<span class="example2">   --values </span><span class="subsubsectiontitle">cluster2_gateway_config.yaml</span></strong><br> 
+<p><span class="subsectiontitle"><a id="api_comms" name="api_comms"></a>Configure API communications</span></p>
+Now that the gateway is configured to communicate, enable the API of each cluster to talk to the other cluster. You can do this in AWS by making sure API instances are accessible to each other by creating specific rules for their security group. You will then need to create a secret in cluster 1 that provides access to cluster 2’s API server and vice versa for endpoint discovery.
+
+<p>Enable endpoint discovery Cluster 2:<br><strong>istioctl x create-remote-secret --context=&quot;${CTX_CLUSTER1}&quot; --name=cluster1 | kubectl apply -f - --context=&quot;${CTX_CLUSTER2}&quot;</strong></p>
+Enable endpoint discovery Cluster 1:<br><strong>istioctl x create-remote-secret --context=&quot;${CTX_CLUSTER2}&quot; --name=cluster2 |kubectl apply -f - --context=&quot;${CTX_CLUSTER1}&quot;</strong>
+
+<p><span class="subsectiontitle"><a id="ew_gateway" name="ew_gateway"></a>Edit the ingress east-west gateway</span></p>
+At this stage, the pilot (which is bundled in the istiod binary) should have the new configuration. When you tail the logs for the pod, you should be able see the log’s message
+
+<p><span class="code">Number of remote cluster: 1</span></p>
+With this version, you would also need to edit the ingress east-west gateway in the <strong>istio-system</strong> namespace that you created earlier as the selector label and the annotation added via Helm chart is different from expected. It shows <strong>istio: ingressgateway</strong> but should be <strong>istio: eastwestgateway</strong>.
+
+<p>You can now create pods in each cluster and verify it is working as expected. For more information on the verification steps, refer to <a href="https://istio.io/latest/docs/setup/install/multicluster/verify/" target="_self">Verify the installation</a> in the <strong>Istio </strong>documentation.</p>
+
+<p>The following is an example of an east-west gateway you can use to route traffic to remote cluster.<br>The Gateway has to be applied on both clusters</p>
+
+<p><span class="example2"># Cluster1<br>apiVersion: networking.istio.io/v1beta1<br>kind: Gateway<br>metadata:<br>  labels:<br>    app: istio-eastwestgateway<br>    istio: eastwestgateway<br>    release: istio-eastwestgateway<br>    topology.istio.io/network: network1<br>  name: istio-multicluster-ingressgateway<br>  namespace: istio-system<br>spec:<br>  selector:<br>    istio: eastwestgateway<br>  servers:<br>  - hosts:<br>    - &#39;*.local&#39;<br>    port:<br>      name: tls<br>      number: 15443<br>      protocol: TLS<br>    tls:<br>      mode: AUTO_PASSTHROUGH<br><br># Cluster2<br>apiVersion: networking.istio.io/v1beta1<br>kind: Gateway<br>metadata:<br>  labels:<br>    app: istio-eastwestgateway<br>    istio: eastwestgateway<br>    release: istio-eastwestgateway<br>    topology.istio.io/network: network2<br>  name: istio-multicluster-ingressgateway<br>  namespace: istio-system<br>spec:<br>  selector:<br>    istio: eastwestgateway<br>  servers:<br>  - hosts:<br>    - &#39;*.local&#39;<br>    port:<br>      name: tls<br>      number: 15443<br>      protocol: TLS<br>    tls:<br>      mode: AUTO_PASSTHROUGH</span></p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+None
+</article>
+</body>
+</html>

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161582: Three Methods to Block Untrusted Bots</title>
+<meta name="description" content="Support Solution: Three Methods to Block Untrusted Bots — This article describes three recommended methods to block untrusted bots, such as Amazonbot, using BIG-IP ASM and LTM. These approaches are applicable when default Bot Defense or ASM policies do not…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161582">
+</head>
+<body>
+<header>
+<h1>K000161582: Three Methods to Block Untrusted Bots</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-04</dd>
+<dt>Updated</dt><dd>2026-06-04</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.0.0, 16.0.X, 16.0.1, 21.X.X, 17.X.X, 16.X.X, 21.1.X, 21.1.0, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0</li><li>BIG-IP ASM: 21.X.X, 17.X.X, 16.X.X, 21.1.X, 21.1.0, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161582">https://my.f5.com/manage/s/article/K000161582</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>This article describes three recommended methods to block untrusted bots, such as Amazonbot, using BIG-IP ASM and LTM. These approaches are applicable when default Bot Defense or ASM policies do not block specific bots.</p>
+<h2>Environment</h2>
+<ul><li>AdvWAF/ASM, LTM</li><li>L7 Security for Bot Defense.</li></ul>
+<h2>Cause</h2>
+<p>The request may include an unwanted or unknown bot. If that happens it may be necessary to add protection against it.<br>Example:<code>GET /index.html HTTP/1.1<br>Connection: keep-alive<br>Pragma: no-cache<br>Cache-Control: no-cache<br>X-Requested-With: XMLHttpRequest<br>User-Agent: Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Amazonbot/0.1; +<a href="https://example.com/bot-info)" target="_blank">https://example.com/bot-info)</a> Chrome/100.0 Safari/537.36<br>Accept: application/json, text/javascript, */*; q=0.01<br>sec-ch-ua: &quot;Not:A-Brand&quot;;v=&quot;99&quot;, &quot;HeadlessChrome&quot;;v=&quot;145&quot;, &quot;Chromium&quot;;v=&quot;145&quot;<br>sec-ch-ua-mobile: ?0<br>sec-ch-ua-platform: &quot;Windows&quot;<br>Sec-Fetch-Site: same-origin<br>Sec-Fetch-Mode: cors<br>Sec-Fetch-Dest: empty</code></p>
+<p>In the above example Amazonbot has been added to the User-Agent and would be considered an unknown bot. </p>
+<h2>Answer/Recommended Actions</h2>
+<p>There are 3 ways to possibly deal with this using a BIG-IP...</p>
+<ol><li>Using AdvWAF/ASM create a custom bot signature and add it to the policy. For example...<img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000kqZt&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000kvaFZ" alt=""></img> 
+<ol><li> To add that to the policy follow these steps...<a href="https://techdocs.f5.com/en-us/bigip-14-1-0/big-ip-asm-attack-and-bot-signatures-14-1-0/writing-custom-bot-signatures.html" target="_self">Writing Custom Bot Signatures</a>
+<ol><li>To get the proper Bot Category may require some research, but it is mostly informative so as to provide a category to fit it in.</li></ol>
+</li></ol>
+</li><li><span class="uiOutputText" dir="ltr">Using an iRule* that focuses on the User-Agent. There are a couple of ways to do this...</span>
+<ol><li><span class="uiOutputText" dir="ltr">Create an iRule the simply drops/discards the connection (No RST is sent to the client). Example:<code>when HTTP_REQUEST {<br>    # Block requests containing &quot;Amazonbot&quot; in the User-Agent (case-insensitive)<br>    if { [string tolower [HTTP::header value &quot;User-Agent&quot;]] contains &quot;Amazonbot&quot; } {<br>        # Drop the connection immediately<br>        drop<br>    }<br>}</code></span>
+<ol><li><span class="uiOutputText" dir="ltr">Use <strong>reject </strong>instead of <strong>drop </strong>if you want a TCP RST returned.</span></li><li><span class="uiOutputText" dir="ltr">The <strong>contains </strong>operator performs a substring match, so Amazonbot will match Amazonbot/0.1, Amazonbot/1.0, etc. Use the full string Amazonbot/0.1 if you want to restrict to that specific version only.</span></li><li><span class="uiOutputText" dir="ltr">The virtual server must have an HTTP profile attached </span></li></ol>
+</li><li><span class="uiOutputText" dir="ltr">Another way is to use an iRule using <strong>HTTP::respond</strong> to return a 403 Forbidden instead of silently dropping the connection...<code>when HTTP_REQUEST {<br>    if { [HTTP::header &quot;User-Agent&quot;] contains &quot;Amazonbot&quot; } {<br>        log local0. &quot;Blocked User-Agent: [HTTP::header &quot;User-Agent&quot;] from [IP::client_addr]&quot;<br>        HTTP::respond 403 content &quot;Access Denied&quot; &quot;Content-Type&quot; &quot;text/plain&quot;<br>    }<br>}</code></span>
+<ol><li><span class="uiOutputText" dir="ltr">HTTP::respond sends an HTTP response directly from the BIG-IP to the client and terminates the request — the connection is not forwarded to the pool member. </span></li><li><span class="uiOutputText" dir="ltr">The virtual server must have an HTTP profile attached for HTTP::respond to work (same prerequisite as before).</span></li><li><span class="uiOutputText" dir="ltr">No drop or reject is needed after HTTP::respond — the command handles connection termination implicitly for that request.</span></li></ol>
+</li><li>The third way is to use a LTM Local Traffic Policy. However, while is is simpler to manage than iRules for straightforward header matching it is less flexible for complex logic.
+<ol><li>The following image shows provides an example of how to set one up...<img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000kqZt&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000kvlVz" alt=""></img> NOTE: In the first block DO NOT use &quot;HTTP User Agent&quot;...<a href="https://my.f5.com/manage/s/article/K000140088" target="_self">KB K000140088: Using &quot;HTTP User Agent&quot; in LTM policy doesn&#39;t block unwanted user-agents</a>. Use the format shown in the image.</li></ol>
+</li></ol>
+</li></ol>
+<p><span style="color: #c0392b;">*IMPORTANT: The iRule examples are just that &quot;examples&quot;.  F5 Support does not write iRules per F5 Policy but can help with troubleshooting. <a href="https://www.f5.com/company/policies/support-policies" target="_self">F5 Support Policy</a> If you need assistance beyond that please contact F5 Professional Services.</span></p>
+<p><span style="color: #c0392b;">IMPORTANT: Please review and test any of these steps prior to implementing them in a impactful environment.</span></p>
+<h2>Additional Information</h2>
+<p>These three methods should work for a Malicious Bot that identify themselves via a recognizable User-Agent string, also. However, there are some important caveats...</p>
+<ol><li>
+<p>Malicious bots may spoof their User-Agent:<strong> </strong>Unlike Amazonbot, which identifies itself openly, a truly malicious bot may disguise itself as a legitimate browser (e.g., Chrome, Firefox). In that case, User-Agent matching alone would be insufficient.</p>
+</li><li>
+<p>Bot Defense is better suited for malicious bots: Bot Defense uses JavaScript challenges, device fingerprinting, and behavioral analysis — making it much harder for malicious bots to bypass compared to simple header matching.</p>
+</li><li>
+<p>ASM Attack Signatures: For malicious bots carrying attack payloads (e.g., SQL injection, XSS), ASM policy inspection would be the most appropriate layer of defense, as it inspects the actual request content rather than just the headers.</p>
+</li></ol>
+<p>For malicious bots, a layered approach is strongly recommended:</p>
+<ul><li>Bot Defense as the first line of defense</li><li>DoS Protection to mitigate volumetric attacks</li><li>ASM to catch any attack payloads that bypass the first two layers</li></ul>
+<p> </p>
+</article>
+</body>
+</html>

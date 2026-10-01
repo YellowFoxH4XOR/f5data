@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000159998: Issue reassembling and forwarding fragmented UDP packets</title>
+<meta name="description" content="Support Solution: Issue reassembling and forwarding fragmented UDP packets — The BIG-IP is not forwarding fragmented UDP packets where fragmentation has occurred multiple times, and are being dropped.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000159998">
+</head>
+<body>
+<header>
+<h1>K000159998: Issue reassembling and forwarding fragmented UDP packets</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-03-05</dd>
+<dt>Updated</dt><dd>2026-03-13</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>F5 Distributed Cloud Services</li><li>BIG-IP LTM: 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000159998">https://my.f5.com/manage/s/article/K000159998</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>The BIG-IP is not forwarding fragmented UDP packets where fragmentation has occurred multiple times, and are being dropped.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM </li><li>Virtual Server with a UDP protocol </li><li>Network segments with reduced MTU in the path between the client device and the BIG-IP</li><li>Jumbo frames being allowed on client network </li></ul>
+<h2>Cause</h2>
+<p>The typical MTU size for most networks is 1500, so a UDP datagram should be no larger than 1480 bytes, plus the 20 byte IP header , making 1500 bytes. <br>However if your client is on a network that supports jumbo frames, then the client is able to send UDP datagrams that exceed the size of 1480 bytes, and this is also normal.</p>
+<p>The expected behaviour once it passes a router that has an MTU of 1500 is that fragmentation will occur, and the jumbo sized packets will be split into fragments of 1480 , plus the IP header of 20 bytes. If these packets then traverse a network path that has a smaller MTU (for example a VPN, metro-ethernet with vlan tagging, or satellite links), the result is that fragmentation will occur again. <br>Therefore an initial UDP packet of 1580 bytes that is sent to a network with jumbo frames, will have an IP header of 20 bytes and a datagram of 1560 bytes, resulting with the initial fragmentation for MTU 1500 as two packets with the first being 1500 bytes (IP header of 20 bytes + fragmented datagram of 1480 bytes, and MF(more fragments) bit will be set to 1 ) and the next being 100 bytes (IP header of 20 bytes + fragmented datagram of 80 bytes and MF will be set to 0). On passing through the network path with a smaller MTU of 1450, it will cause fragmentation to occur again. The first fragmented packet will be split again into two more packets with the first now being 1450 bytes (20+1430, MF=1) and the next fragmented packet being 70 bytes (20+50,MF=1), and the last fragment will be unchanged. </p>
+<p>It will result in the following 3 packets : 1450 bytes,MF=1,  70 bytes,MF=1 and 100 bytes,MF=0</p>
+<p>The problem is that the 2nd fragment is very small and has MF set to 1. Usually only the last fragment will be very small, and MF will be set to zero.   This behaviour matches the pattern of a fragmentation DoS attack, and so the BIG-IP drops the fragments.   </p>
+<h2>Answer/Recommended Actions</h2>
+<p>Identify how small the intermediate fragments could be, either be looking at a packet trace, and checking the fragmented packets, or by calculating the size in the same way as the illustration above.</p>
+<p>Modify the tm.minipfragsize BigDB variable to allow fragments as small as the calculated size.</p>
+<p><span style="background-color: #f1f1f1;">tmsh modify sys db tm.minipfragsize value &lt;<em>new value</em>&gt;<br>tmsh save sys config</span></p>
+<p>The change takes effect immediately without requiring a system restart</p>
+<p><em><span style="color: #c20025;background-color: #f1f1f1;"><strong>Important security consideration:</strong> Lowering tm.minipfragsize below the default value exposes the BIG-IP system to potential IP fragmentation attacks and denial-of-service (DoS) exploits</span></em></p>
+<h2>Additional Information</h2>
+<p><em>This can also happen with TCP packets, but is less likely because the 3WHS will prevent the client sending segments that are larger than the client and destination network MTU. It&#39;s possible that intermediate network paths may have a smaller MTU, but fragmentation will occur only once, and not multiple times. </em></p>
+<p> </p>
+</article>
+</body>
+</html>

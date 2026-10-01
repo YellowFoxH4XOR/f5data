@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000159675: Resolving TCP ZeroWindow packet loss for MQTT traffic through BIG-IP LTM</title>
+<meta name="description" content="Support Solution: Resolving TCP ZeroWindow packet loss for MQTT traffic through BIG-IP LTM — MQTT service experiences packet loss when traffic is load balanced through a BIG-IP virtual server, while direct connections to pool member servers show no loss. Packet capture analysis reveals TCP…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000159675">
+</head>
+<body>
+<header>
+<h1>K000159675: Resolving TCP ZeroWindow packet loss for MQTT traffic through BIG-IP LTM</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-01-22</dd>
+<dt>Updated</dt><dd>2026-01-22</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.0.0, 15.0.X, 15.0.1, 21.X.X, 17.X.X, 16.X.X, 15.X.X, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000159675">https://my.f5.com/manage/s/article/K000159675</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>MQTT service experiences packet loss when traffic is load balanced through a BIG-IP virtual server, while direct connections to pool member servers show no loss. Packet capture analysis reveals TCP ZeroWindow advertisements being sent from the BIG-IP to the MQTT servers, indicating buffer exhaustion on the proxy device.</p>
+<p><strong>Symptoms:</strong></p>
+<ul><li>Packet loss observed for MQTT clients connecting through the F5 load balancer</li><li>No packet loss when clients connect directly to MQTT servers</li><li>TCP ZeroWindow advertisements visible in packet captures (Win=0)</li><li>Performance degradation for MQTT service</li></ul>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM version 17.1.3</li><li>Platform: F5-BIG-BT-R4800, C131</li><li>Virtual server with MQTT profile configured</li><li>TCP profiles: f5-tcp-wan (clientside) and f5-tcp-lan (serverside)</li><li>Load balancing pool with MQTT servers on port 1883</li><li>Source NAT: Automap enabled</li><li>Standard TCP virtual server configuration</li></ul>
+<h2>Cause</h2>
+<p>The TCP proxy buffer on the BIG-IP fills up due to inadequate buffer sizing in the default TCP profiles. When the proxy buffer reaches capacity, the system advertises TCP ZeroWindow conditions to the MQTT servers, preventing them from sending additional data until buffer space becomes available. This results in transmission delays and packet loss. The default f5-tcp-lan profile&#39;s receive window and proxy buffer settings are insufficient to handle the MQTT traffic volume and pattern.</p>
+<h2>Recommended Actions</h2>
+<p><strong>Step 1: Create a custom TCP profile with optimized buffer settings</strong></p>
+<p><code>create ltm profile tcp mqtt-optimized-serverside {<br>    defaults-from f5-tcp-progressive<br>    idle-timeout 86400<br>    push-flag auto<br>    receive-window-size 1048576<br>    send-buffer-size 1048576<br>    proxy-buffer-high 2097152<br>    proxy-buffer-low 2031616<br>}</code></p>
+<p><strong>Step 2: Apply the optimized profiles to the virtual server</strong></p>
+<p><code>tmsh modify ltm virtual &lt;virtual_server_name&gt; profiles replace-all-with {<br>    f5-tcp-progressive { context clientside }<br>    mqtt-optimized-serverside { context serverside }<br>    mqtt { }<br>}</code></p>
+<p><strong>Step 3: Monitor traffic for improvement</strong></p>
+<ul><li>Capture packet traces after implementing the changes</li><li>Verify that TCP ZeroWindow advertisements are eliminated or significantly reduced</li><li>Confirm packet loss is resolved</li></ul>
+<p><strong>Alternative approach (if TCP profile optimization does not fully resolve the issue):</strong></p>
+<p>Consider testing with a FastL4 profile as an alternative configuration approach.</p>
+<h2>Additional Information</h2>
+<p><strong>Understanding the optimized settings:</strong></p>
+<ul><li><strong>Receive window size (1048576 bytes)</strong>: Larger receive window allows the BIG-IP to accept more data before advertising flow control</li><li><strong>Proxy buffer high (2097152 bytes)</strong>: Increased buffer capacity prevents buffer exhaustion during traffic bursts</li><li><strong>Proxy buffer low (2031616 bytes)</strong>: Threshold for resuming normal operations after buffer pressure</li><li><strong>f5-tcp-progressive base profile</strong>: Provides Auto Receive Window and Auto Proxy Buffer features that dynamically adjust based on network measurements</li></ul>
+<p><strong>Key features of f5-tcp-progressive profile:</strong></p>
+<ul><li>Auto Receive Window: Enabled - Uses network measurements to set optimal receive window size</li><li>Auto Proxy Buffer: Enabled - Sets optimal proxy buffer size based on network measurements</li><li>Congestion Control: Woodside algorithm for improved performance on high-speed networks</li><li>Larger default buffer sizes to accommodate more data before advertising zero window</li></ul>
+</article>
+</body>
+</html>

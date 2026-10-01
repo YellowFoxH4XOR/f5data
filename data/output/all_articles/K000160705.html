@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160705: Configuring multiple log rotation policies for custom log files using syslog-include on BIG-IP</title>
+<meta name="description" content="Support Solution: Configuring multiple log rotation policies for custom log files using syslog-include on BIG-IP — The BIG-IP TMSH data model only supports a single string value for the syslog-include parameter. Multiple logrotate stanzas must be concatenated into one string for proper operation.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160705">
+</head>
+<body>
+<header>
+<h1>K000160705: Configuring multiple log rotation policies for custom log files using syslog-include on BIG-IP</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-14</dd>
+<dt>Updated</dt><dd>2026-06-14</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.0.0, 15.0.X, 15.0.1, 17.X.X, 16.X.X, 15.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160705">https://my.f5.com/manage/s/article/K000160705</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>The customer attempted to configure two separate log rotation stanzas under sys log-rotate syslog-include:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>syslog-include &quot;/var/log/test1.log {
+nocompress
+missingok
+notifempty
+sharedscripts
+postrotate
+endscript
+rotate 14
+}&quot;
+
+syslog-include &quot;/var/log/test2 {
+nocompress
+missingok
+notifempty
+sharedscripts
+postrotate
+endscript
+rotate 7
+}&quot;</code></pre>
+<p>He attempted to define two separate syslog-include entries.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>Syslog</li></ul>
+<h2>Cause</h2>
+<p>The BIG-IP TMSH data model only supports a single string value for the syslog-include parameter. Multiple <em><strong>logrotate </strong></em>stanzas must be concatenated into one string for proper operation.</p>
+<h2>Recommended Actions</h2>
+<p>To configure log rotation for multiple custom log files with different policies:</p>
+<ol><li>Concatenate all required logrotate stanzas into a single syslog-include string, with each file block defined sequentially.</li><li>Apply the configuration using the following TMSH command (adjust file names and rotation parameters as needed):
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify sys log-rotate syslog-include &quot;/var/log/test1.log {
+    nocompress
+    missingok
+    notifempty
+    sharedscripts
+    postrotate
+    endscript
+    rotate 14
+} /var/log/test2 {
+    nocompress
+    missingok
+    notifempty
+    sharedscripts
+    postrotate
+    endscript
+    rotate 7
+}&quot;
+tmsh save sys config</code></pre>
+</li><li>Verify the running config after applying change:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh list sys log-rotate syslog-include</code></pre>
+This will confirm the concatenated string was accepted correctly before testing rotation.</li><li>(Optional) Validity test without performing actual rotation (This command does NOT perform any actual rotation and will show why <em><strong>postrotate</strong></em> script is not executed): 
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>logrotate -d /etc/logrotate.conf</code></pre>
+</li><li>(Optional) Force an immediate rotation to validate the configuration: 
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>logrotate -f /etc/logrotate.conf</code></pre>
+This forces rotation of all configured log files immediately, regardless of schedule. Verify that rotated files appear (e.g., /var/log/test1.log.1, /var/log/test2.1)</li><li>Validate log rotation by checking <strong><em>/var/lib/logrotate.status</em></strong> and listing rotated log files:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>cat /var/lib/logrotate.status | grep test1
+ls -lhk /var/log/test1*
+
+cat /var/lib/logrotate.status | grep test2
+ls -lhk /var/log/test2*</code></pre>
+</li><li>Reapply the configuration after software upgrades, as it may not persist.</li><li>Apply the same configuration on all devices in an HA pair, as this setting is not always synced.</li></ol>
+<p> </p>
+<h2>Additional Information</h2>
+<ul><li>The syslog-include parameter is a single string and does not support multiple discrete entries.</li><li>Each logrotate stanza for different log files must be included sequentially within the same syslog-include string.</li><li>Successful log rotation can be confirmed by checking the <strong><em>/var/lib/logrotate.status</em></strong> file and verifying the presence of rotated log files.</li><li>Always back up your configuration before making changes.</li></ul>
+</article>
+</body>
+</html>

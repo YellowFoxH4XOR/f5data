@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000159968: Azure Cloud Failover Extension Unable to Move IP Configurations Due to IMDS Authentication Timeout</title>
+<meta name="description" content="Support Solution: Azure Cloud Failover Extension Unable to Move IP Configurations Due to IMDS Authentication Timeout — During a BIG-IP High Availability (HA) failover event in Azure, the Cloud Failover Extension (CFE) on the newly active device fails to reassociate IP configurations from the previous active device&#x27;s…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000159968">
+</head>
+<body>
+<header>
+<h1>K000159968: Azure Cloud Failover Extension Unable to Move IP Configurations Due to IMDS Authentication Timeout</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-11</dd>
+<dt>Updated</dt><dd>2026-02-11</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 21.X.X, 17.X.X, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000159968">https://my.f5.com/manage/s/article/K000159968</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>During a BIG-IP High Availability (HA) failover event in Azure, the Cloud Failover Extension (CFE) on the newly active device fails to reassociate IP configurations from the previous active device&#39;s network interface. The failover is triggered successfully, and the standby device becomes active, but the floating IP addresses remain associated with the original active device&#39;s network interface, resulting in a network outage.</p>
+<p>The following error messages appear in <span style="background-color: #f1f1f1;">/var/log/restnoded/restnoded.log`:</span>:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Failover initialization failed: Error getting auth token Error: HTTP request failed: 503 {&quot;error&quot;:&quot;InternalError&quot;,&quot;error_description&quot;:&quot;Request has timed out.&quot;}</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">HA Connection with peer 10.0.13.11 lost.</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">CMI heartbeat timer expired, status: 10.0.13.11</span></p>
+<p>The issue occurs when CFE attempts to obtain an authentication token from the Azure Instance Metadata Service (IMDS) but receives a timeout error, preventing it from executing the necessary Azure API calls to move IP configurations.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM </li><li>Cloud Failover Extension </li><li>Active/Standby HA configuration</li></ul>
+<h2>Cause</h2>
+<p>Transient unavailability or connectivity issue with the Azure Instance Metadata Service (IMDS) endpoint at the time of failover. CFE requires access to IMDS to obtain an authentication token for making Azure API calls. When IMDS is unreachable or times out, CFE cannot authenticate and therefore cannot perform IP address reassociation operations.</p>
+<h2>Recommended Actions</h2>
+<p><strong>Immediate Recovery:</strong></p>
+<ol><li>If CFE fails to move IP configurations during a failover, perform a manual failback to restore service:
+<ul><li>Force a failover back to the original active device</li><li>Verify that IP configurations are correctly associated after the manual failback</li></ul>
+</li></ol>
+<p><strong>Verification and Testing:</strong></p>
+<ol start="2"><li>Test Azure IMDS connectivity from the BIG-IP device:
+<ul><li>From the bash shell, run:<br><span style="background-color: #f1f1f1;">curl -H Metadata:true &quot;http:/169.254.169.254/metadata/instance?api-version=2021-02-01&quot; --max-time 5 --</span></li><li>Test OAuth token retrieval:<br><span style="background-color: #f1f1f1;">curl -H Metadata:true &quot;http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&amp;resource=https://management.azure.com/&quot; --max-time 10</span></li><li>If these commands fail or timeout, there is a connectivity issue to IMDS</li></ul>
+</li><li>Verify network routing to IMDS endpoint:
+<ul><li>Ensure the BIG-IP has a route to 169.254.169.254</li><li>IMDS is accessible only from within the Azure VM and should not require special routing</li><li>Check for any network security groups or firewall rules that might block access</li></ul>
+</li><li>Schedule a planned failover test during a maintenance window:
+<ul><li>Monitor CFE logs in real-time during the test</li><li>Verify that IP configurations move successfully</li><li>Document the time required for complete failover</li></ul>
+</li></ol>
+<p><strong>Monitoring and Prevention:</strong></p>
+<ol start="5"><li>Enable detailed CFE logging for ongoing monitoring:
+<ul><li>Set <span style="background-color: #f1f1f1;">logLevel</span> to &quot;silly&quot; in CFE configuration</li><li>Monitor <span style="background-color: #f1f1f1;"></span> for authentication errors</li></ul>
+</li><li>Review Azure Service Health:
+<ul><li>Check for any platform incidents or maintenance events in your Azure region</li><li>Subscribe to Azure Service Health alerts for proactive notification</li></ul>
+</li></ol>
+<h2>Additional Information</h2>
+<p><strong>Understanding BIG-IP HA Failover Behavior:</strong></p>
+<ul><li>BIG-IP HA failover is triggered by loss of heartbeat communication between cluster members, independent of Azure IMDS availability</li><li>The failover mechanism is designed to prevent split-brain scenarios; the active device will step down if it cannot communicate with its peer</li><li>CFE operations occur after the BIG-IP failover is complete; CFE does not control when failover happens</li></ul>
+<p><strong>CFE and Azure IMDS:</strong></p>
+<ul><li>CFE requires access to Azure IMDS to obtain managed identity authentication tokens</li><li>IMDS is a REST endpoint available at 169.254.169.254 accessible only from within accessible only from within the Azure VM</li><li>Authentication tokens are required for CFE to make Azure API calls to reassociate IP configurations</li><li>Transient IMDS issues are rare but can occur during Azure platform maintenance or network disruptions</li></ul>
+</article>
+</body>
+</html>

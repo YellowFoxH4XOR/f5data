@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160839: How to Restrict NGINX Plus OIDC Authentication to IPv4 Only When IPv6 Is Disabled</title>
+<meta name="description" content="Support Solution: How to Restrict NGINX Plus OIDC Authentication to IPv4 Only When IPv6 Is Disabled — [error] connect() to [2603:1036:3000:e8::3]:443 failed (101: Network is unreachable) while connecting to upstream">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160839">
+</head>
+<body>
+<header>
+<h1>K000160839: How to Restrict NGINX Plus OIDC Authentication to IPv4 Only When IPv6 Is Disabled</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-04-16</dd>
+<dt>Updated</dt><dd>2026-04-16</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Plus: R35, R36, R33, R34</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160839">https://my.f5.com/manage/s/article/K000160839</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When using NGINX Plus with the OpenID Connect (OIDC) module for Azure AD authentication, DNS resolution for login.microsoftonline.com returns both IPv4 and IPv6 addresses. In environments where IPv6 is disabled (such as AWS Cloud VPCs), NGINX attempts to connect to IPv6 addresses first, resulting in errors like:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">[error] connect() to [2603:1036:3000:e8::3]:443 failed (101: Network is unreachable) while connecting to upstream</span></p>
+<p>Although NGINX eventually connects via IPv4, this causes degraded performance and unnecessary error logs.</p>
+<h2>Environment</h2>
+<ul><li>NGINX Plus</li><li>OIDC module configured for Azure AD authentication</li><li>AWS Cloud VPC with IPv6 disabled</li><li>DNS resolution for login.microsoftonline.com returns both IPv4 and IPv6 addresses</li></ul>
+<h2>Cause</h2>
+<p>NGINX attempts to connect to IPv6 addresses returned by DNS, but IPv6 is disabled in the AWS VPC. This results in failed connection attempts and error logs before falling back to IPv4.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>To restrict OIDC authentication to IPv4 only for Azure AD, use the <span style="background-color: #f1f1f1;">ipv6=off</span> parameter in the NGINX resolver directive for relevant locations or upstreams. This ensures only IPv4 addresses are used for OIDC authentication, while IPv6 remains available elsewhere.</p>
+<p><strong>Method 1: Using <span style="background-color: #f1f1f1;">proxy_location</span> Directive within <span style="background-color: #f1f1f1;">oidc_provider</span> Context</strong></p>
+<ol><li>Configure the OIDC provider and location block as follows:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">oidc_provider entra_id {</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> issuer https://login.microsoftonline.com/....;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> ssl_trusted_certificate ca.crt;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> ...</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> proxy_location /entra;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></p>
+<br><p><span style="font-family: &#39;courier new&#39;, courier, monospace;">location /entra {</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> internal;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> resolver 1.1.1.1 valid=60s ipv6=off;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> subrequest_output_buffer_size 64k;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> proxy_ssl_trusted_certificate ca.crt;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> proxy_ssl_server_name on;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> proxy_ssl_verify on;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> proxy_ssl_verify_depth 5;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> proxy_pass $oidc_idp_request_uri;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></p>
+</li><li>Ensure all <span style="background-color: #f1f1f1;">proxy_ssl_*</span> directives are properly configured for TLS security.</li></ol>
+<p><strong>Method 2: Upstream Override</strong></p>
+<ol><li>Define an upstream block for login.microsoftonline.com:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">upstream login.microsoftonline.com {</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> resolver 8.8.8.8 valid=60s ipv6=off;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> zone login_microsoft 64k;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> server login.microsoftonline.com:443 resolve;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></p>
+</li><li>Use this upstream in your OIDC authentication flow.</li></ol>
+<h2>Additional Information</h2>
+<ul><li>The <span style="background-color: #f1f1f1;">ipv6=off</span> parameter in the resolver directive disables IPv6 address resolution for the specified context, preventing connection attempts to IPv6 addresses.</li><li>These changes can be applied only to OIDC authentication flows, allowing IPv6 support elsewhere in your configuration as needed.</li></ul>
+</article>
+</body>
+</html>

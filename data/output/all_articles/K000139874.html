@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000139874: DEVICE-0206: BIG-IP Next instance discovery error failed to verify certificate</title>
+<meta name="description" content="Support Solution: DEVICE-0206: BIG-IP Next instance discovery error failed to verify certificate — DEVICE-0206: BIG-IP Next instance discovery error: Failed to login to instance x.x.x.x with error: rpc error: code = Unknown desc = tls: failed to verify certificate: x509">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000139874">
+</head>
+<body>
+<header>
+<h1>K000139874: DEVICE-0206: BIG-IP Next instance discovery error failed to verify certificate</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-06-05</dd>
+<dt>Updated</dt><dd>2025-09-02</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP Next</li><li>BIG-IP Next Central Manager: 20.2.X, 20.2.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000139874">https://my.f5.com/manage/s/article/K000139874</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When you attempt to add a BIG-IP Next instance on the BIG-IP Next Central Manager, the BIG-IP Next Central Manager fails to add returns an error similar to the following example:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">DEVICE-0206: BIG-IP Next instance discovery error: Failed to login to instance x.x.x.x with error: rpc error: code = Unknown desc = tls: failed to verify certificate: x509</span></p>
+<h2>Environment</h2>
+<ul><li>BIG-IP Next Central Manager 20.2.0 and later</li></ul>
+<h2>Cause</h2>
+<p>The BIG-IP Next Central Manager 20.2.0 and later requires that the BIG-IP Next instance uses a TLS certificate with well formed Subject Alternative Names (SAN). The IP option in SAN must equals to the management IP of BIG-IP Next instance.</p>
+<h2>Recommended Actions</h2>
+<p>You can run the script below on BIG-IP Next Central Manager or any Linux which installed OpenSSL to create a new TLS certificate and then upload to BIG-IP Next instance to replace the TLS certificate currently used.  Need to change the first 3 lines to match your BIG-IP Next instance settings.</p>
+<pre class="language-markup"><code>IP=192.168.80.16             #set ip of BIG-IP Next instance
+api_username=admin           #set username of BIG-IP Next instance
+api_password=&#39;admin&#39;      #set password of BIG-IP Next instance
+  
+#genereate cert contains SAN DNS and IP
+token=$(curl -sk -u &quot;$api_username:$api_password&quot; https://$IP:5443/api/v1/login |jq &quot;.token&quot;|tr -d &#39;&quot;&#39;)
+hostname=$(curl -sk -X GET  -H &quot;Authorization: Bearer $token&quot;  https://$IP:5443/api/v1/systems|jq &#39;._embedded.systems[].hostname&#39;|tr -d &#39;&quot;&#39;)
+DNS=$hostname
+echo &quot;DNS $DNS&quot;
+mkdir test_certs 2&gt; /dev/null
+n=$RANDOM
+openssl genrsa -out test_certs/ca$n_key.pem 4096
+openssl req -new -x509 -nodes -days 3600 -key test_certs/ca$n_key.pem -out test_certs/ca$n.pem -subj &quot;/C=US/ST=Washington/L=Seattle/O=$DNS/CN=$DNS&quot; -addext &quot;subjectAltName = DNS:$DNS,IP:$IP&quot;
+openssl req -newkey rsa:4096 -nodes -keyout test_certs/key$n.pem -out test_certs/req$n.csr -subj &quot;/C=US/ST=Washington/L=Seattle/O=$DNS/CN=$DNS&quot; -addext &quot;subjectAltName = DNS:$DNS,IP:$IP&quot;
+openssl x509 -req -extfile &lt;(printf &quot;subjectAltName = DNS:$DNS,IP:$IP&quot;) -days 3500 -set_serial 01 -in test_certs/req$n.csr -out test_certs/cert$n.pem -CA test_certs/ca$n.pem -CAkey test_certs/ca$n_key.pem
+  
+#uploading cert, key and ca
+curl -k -X POST -H &quot;Authorization: Bearer $token&quot; -H &#39;Content-Type: multipart/form-data&#39;  -F &quot;fileName=@test_certs/cert$n.pem;type=application/x-x509-ca-cert&quot; -F &quot;name=cert$n.pem&quot; https://$IP:5443/api/v1/files
+curl -k -X POST -H &quot;Authorization: Bearer $token&quot; -H &#39;Content-Type: multipart/form-data&#39;  -F &quot;fileName=@test_certs/ca$n.pem;type=application/x-x509-ca-cert&quot; -F &quot;name=ca$n.pem&quot; https://$IP:5443/api/v1/files
+curl -k -X POST -H &quot;Authorization: Bearer $token&quot; -H &#39;Content-Type: multipart/form-data&#39;  -F &quot;fileName=@test_certs/key$n.pem;type=application/pkcs8&quot; -F &quot;name=key$n.pem&quot; https://$IP:5443/api/v1/files
+  
+#change device-certificate
+systemid=$(curl -sk -X GET -H &quot;Authorization: Bearer $token&quot; -H &#39;Content-type: application/json&#39; https://$IP:5443/api/v1/systems|jq &#39;._embedded.systems[].id&#39;|tr -d &#39;&quot;&#39;)
+jobid=$(curl -sk -X PUT -H &quot;Authorization: Bearer $token&quot; -H &#39;Content-type: application/json&#39; -d &quot;{\&quot;cert\&quot;: \&quot;cert$n.pem\&quot;, \&quot;key\&quot;: \&quot;key$n.pem\&quot;, \&quot;rootCA\&quot;: \&quot;ca$n.pem\&quot;}&quot;  &quot;https://$IP:5443/api/v1/systems/$systemid/device-certificate&quot; | jq .id |tr -d &#39;&quot;&#39;)
+ 
+echo &quot;jobid $jobid&quot;
+sleep 20
+ 
+#check job status
+curl -sk  -H &quot;Authorization: Bearer $token&quot; https://$IP:5443/api/v1/jobs/$jobid |jq .message</code></pre>
+<h2>Additional Information</h2>
+<p><a href="https://my.f5.com/manage/s/article/K000139300" target="_blank"></a>None</p>
+<p> </p>
+<div class="theme-default" id="sfnavStyleBox">
+<div id="sfnavSearchBox">
+<div class="sfnav_wrapper"><img id="sfnavLoader"></img> <img id="sfnav_logo"></img></div>
+<div class="sfnav_shadow" id="sfnav_shadow">
+<div class="sfnavOutput" id="sfnavOutput"></div>
+</div>
+</div>
+</div>
+<div class="theme-default" id="sfnavStyleBox">
+<div id="sfnavSearchBox">
+<div class="sfnav_wrapper"><img id="sfnavLoader"></img> <img id="sfnav_logo"></img></div>
+<div class="sfnav_shadow" id="sfnav_shadow">
+<div class="sfnavOutput" id="sfnavOutput"></div>
+</div>
+</div>
+</div>
+</article>
+</body>
+</html>

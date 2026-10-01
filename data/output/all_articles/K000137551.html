@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000137551: Not all asm event logs are sent to remote logging server in peak traffic hours</title>
+<meta name="description" content="Support Solution: Not all asm event logs are sent to remote logging server in peak traffic hours — Event log(s) may not be sent to remote logging server(s) during peak traffic. Remote event logs are dropped, while locally logged (when configured).">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000137551">
+</head>
+<body>
+<header>
+<h1>K000137551: Not all asm event logs are sent to remote logging server in peak traffic hours</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-11-26</dd>
+<dt>Updated</dt><dd>2025-04-07</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 14.0.0, 14.0.X, 14.0.1, 17.X.X, 16.X.X, 15.X.X, 14.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000137551">https://my.f5.com/manage/s/article/K000137551</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<p>Event log(s) may not be sent to remote logging server(s) during peak traffic. Remote event logs are dropped, while locally logged (when configured).</p>
+<p>When traffic volume reduces, logging resumes to remote logging server(s).</p>
+<p>Stable connectivity with remote logging server(s) during the peak traffic and loss of event(s).</p>
+<h2><strong>Environment</strong></h2>
+<ul><li>ASM remote logging profile</li></ul>
+<h2><strong>Cause</strong></h2>
+<p>During peak traffic, too many event logs are generated. Virtual server(s) may have multiple remote logging profile(s) attached. Multiple remote logging profiles could multiply the remote logging volume. When remote event log volume exceeds the internal remote_logger queue size some logs are dropped.</p>
+<h2><strong>Recommended Actions</strong></h2>
+<p>ASM remote logging flows through two queues:</p>
+<p>First the socket queue (TCP connection queue). Socket behavior is controlled via internal parameter: &quot;guarantee_remote_logging&quot;</p>
+<p>Second is an internal BD queue between the traffic enforcement (plugin) thread) and the remote logger thread. The plugin thread adds log messages to the remote_logger queue. The remote logger thread sends and then removes the messages from the queue.</p>
+<p> </p>
+<p>If the queue reaches the max queue length, 500 messages by default, further messages are silently dropped. No message is logged of the dropped log messages.</p>
+<p>The 6th column of the UMU message printed in the bd.log file, in part, represents the number of remote log messages. There are additional uses of this UMU column, not only the request log messages.</p>
+<p>BD_MISC|NOTICE|Oct 18 11:34:15.197|16992|temp_func.c:4154|UMU: 0 0 0 0 0 0 0 0 0 || 733 385 203 590 134 <span style="color: #e74c3c;">744</span> 62 123 335 0 0 0 || 0 41 454 0 1 8834</p>
+<p> </p>
+<p>Simply seeing the 6th column exceeding the default queue length, 500 by default, does not indicate messages are being dropped. Only a need to further inspect the stats for the remote_logger tmstat information for drops.</p>
+<p><span style="background-color: #f1f1f1;"># tmctl -f /var/tmstat/blade/asm_bd asm/bd_remote_log_pipe name=remote_logger<br>name          internal_drop external_drop successful<br>------------- ------------- ------------- ----------<br>remote_logger             0             0          0</span></p>
+<p> </p>
+<p>The size of this queue is defined by the internal parameter prx_batch_queue_len.</p>
+<p> </p>
+<p>For the internal BD queue, the internal parameter &quot;remote_logging_guarentee_logging&quot; controls holding the traffic until queue space is available. When enabled, the log event will check for available queue space until space is available, endlessly. This does not block other threads from writing to the queue, only the reporting thread will loop the check until there is space to write the log event to the remote logging queue. When disabled, if queue space is not available, the log event is dropped and reported in the &quot;internal_drop&quot; counter.</p>
+<p>Use &quot;remote_logging_guarentee_logging&quot; when memory resources are low,  or cannot increase the prx_batch_queue_len size, and logging all the data is required, regardless of traffic volume.<br> </p>
+<p>For the socket queue, the &quot;quarantee_remote_logging&quot; parameter is used. Failure of log events at the socket connection are reported in the &quot;external_drop&quot; counter.</p>
+<p>&quot;guarantee_remote_logging&quot; is not displayed under &quot;Security ›› Options : Application Security : Advanced Configuration : System Variables&quot;, but is enabled by default.</p>
+<p>If present, verify &quot;guarantee_remote_logging&quot; is enabled. Then adjust the size of internal bd queue using &quot;prx_batch_queue_len&quot;.</p>
+<p> </p>
+<p>To increase:</p>
+<p><span style="background-color: #f1f1f1;"># /usr/share/ts/bin/add_del_internal add prx_batch_queue_len xxx</span><br><span style="background-color: #f1f1f1;"># tmsh restart sys service asm</span></p>
+<p>To revert to default: </p>
+<p><span style="background-color: #f1f1f1;"># /usr/share/ts/bin/add_del_internal add prx_batch_queue_len 500</span><br><span style="background-color: #f1f1f1;"># tmsh restart sys service asm</span></p>
+<p><span style="color: #c20025;"><em><strong><span style="background-color: #f1f1f1;">IMPORTANT</span></strong><span style="background-color: #f1f1f1;">: The bigger the size, the more memory the system will use for buffering and holding data from the message until it will get actually queued. There is no algrithom to calculate how many more memory is consumed when you change the value. We recommend you to increase the value gradually and monitor memory usage on device.</span></em></span></p>
+<p><em><strong>Impact of procedures</strong>: device will be in offline status and production traffic will be impacted, so please schedule a maintenance window do to it.</em></p>
+<h2><strong>Additional Information</strong></h2>
+<p>None</p>
+</article>
+</body>
+</html>

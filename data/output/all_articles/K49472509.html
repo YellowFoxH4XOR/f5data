@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K49472509: Components Overview of Aspen Mesh Packet Inspector 1</title>
+<meta name="description" content="Support Solution: Components Overview of Aspen Mesh Packet Inspector 1 — Aspen Mesh Packet Inspector 1 is a component available in Aspen Mesh Carrier Grade distribution. It provides advanced HTTP traffic inspection and capture capabilities for applications running in a…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K49472509">
+</head>
+<body>
+<header>
+<h1>K49472509: Components Overview of Aspen Mesh Packet Inspector 1</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-01-24</dd>
+<dt>Updated</dt><dd>2023-07-19</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.11, 1.14</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K49472509">https://my.f5.com/manage/s/article/K49472509</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+<p>Aspen Mesh Packet Inspector 1 is a component available in Aspen Mesh Carrier Grade distribution. It provides advanced HTTP traffic inspection and capture capabilities for applications running in a Kubernetes mesh environment. Packet Inspector allows capturing application network traffic in plain text before it is encrypted by sidecar proxies. The captures add contextual metadata about pods and services to match captures with workloads running in the Kubernetes cluster. Data are stored in a well-known pcap format so they can be analyzed by tools like Wireshark. This article presents a technical overview about Packet Inspector architecture and components. </p>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>Kubernetes: 1.17.x, - 1.23.x, </li><li>Aspen Mesh: 1.6.x, 1.9.x, 1.11.x, 1.14.x</li></ul>
+<p><span class="sectiontitle">Cause</span></p>
+<p>None</p>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<p>None</p>
+<p><span class="sectiontitle">Additional Information</span></p>
+<p>Aspen Mesh Packet Inspector 1 consists of several components that work together:</p>
+<ul><li>Envoy filter used by every istio-sidecar proxy and gateway capturing and forwarding packets to Packet Inspector daemon set.</li><li>Packet Inspector Daemon Set deployed on every Kubernetes node receiving data from Envoy filters, transforming packets into pcap format, and forwarding files to network analysis tool or emulator.</li><li>Network analysis tool or analysis emulator receiving pcap files from Daemon set and storing them on a filesystem.</li></ul>
+<p>Below graph presents Packet Inspector 1 architecture and data flows:</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000ZHfV&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000VyS2n" alt="" width="998" height="548"></img></p>
+<p><span class="figuretitle">Figure: Packet Inspector architecture and data flows</span><br><br>To use Packet Inspector, we need to install Aspen Mesh Carrier Grade release which is distributed as a separate installation package. At the moment of writing this article Packet Inspector is not available a separate package installed at the top of standard Aspen Mesh system. Packet Inspector filters are compiled as all other Envoy filters and Aspen Mesh is building dedicated carrier grade istio-proxy container with all required software to run packet inspector.</p>
+<p>For Packet Inspector Installation, refer to <a href="https://clouddocs.f5.com/products/aspen-service-mesh/1.11/tasks/packet-inspector-1/" target="_blank">Aspen Mesh Packet Inspector Installation Guide</a> .</p>
+<p>Installation process is a few steps procedure:</p>
+<ol><li>Create and provision custom CA certificate for Istio and Aspen Mesh.
+<ol><li>Refer to <a href="https://clouddocs.f5.com/products/aspen-service-mesh/1.11/operations/security/configure-certificates.html" target="_blank">Provisioning custom CA certificate for Aspen Mesh</a> .</li><li>Custom CA certificate is necessary to generate TLS certificates used by Packet Inspector Daemonset and optionally Analysis Emulator.</li></ol>
+</li><li>Label istio-system and optionally analysis-emulator namespaces for Citadel to generate SDS certificate secrets.
+<ol><li>Follow the steps described in <a href="https://clouddocs.f5.com/products/aspen-service-mesh/1.11/tasks/packet-inspector-1/" target="_blank">Installation Guide</a> and <a href="https://clouddocs.f5.com/products/aspen-service-mesh/1.11/tasks/packet-inspector-1/#about-the-analysis-emulator" target="_blank">Analysis Emulator Install Guide</a> .</li></ol>
+</li><li>Installing Aspen Mesh Carrier Grade release with enabled: Citadel, PacketInspector, and certificateCustomFields.</li></ol>
+<p>We can customise installation settings for Packet Inspector in override Helm values yaml file as we always do for Aspen Mesh. For all available fields, refer to <a href="https://clouddocs.f5.com/products/aspen-service-mesh/1.11/tasks/packet-inspector-1/pi1-configuration-reference.html#configuration-reference" target="_blank">Packet Inspector Config Reference Guide</a> .</p>
+<p>Analysis Emulator tools included into Aspen Mesh Carrier Grade release can be used as a replacement for other production ready Network Analysis solutions like Gigamon or Netscout. Analysis Emulator should not be used in production and it is intended for test purposes only. Customers wanting to use Analysis Emulator can follow <a href="https://clouddocs.f5.com/products/aspen-service-mesh/1.11/tasks/packet-inspector-1/#about-the-analysis-emulator" target="_blank">Analysis Emulator Installation Guide</a> to install the tools. Helm chart is used to create all emulator resources. </p>
+<p>Envoy filters are deployed to all Envoy proxies using EnvoyFilter Istio CustomResourceDefinition residing in istio-system namespace. Below is an example of the filter deployed in a test cluster. All Envoy Filter parameters reflect settings used in override Helm values.yaml files during the installation process:</p>
+<pre class="ckeditor_codeblock"> k get EnvoyFilter http-capture-filter -n istio-system -o yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: http-capture-filter
+  namespace: istio-system
+  selfLink: /apis/networking.istio.io/v1alpha3/namespaces/istio-system/envoyfilters/http-capture-filter
+spec:
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: SIDECAR_INBOUND
+      listener:
+        filterChain:
+          filter:
+            name: envoy.http_connection_manager
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: aspenmesh.packet.inspector
+        typed_config:
+          &#39;@type&#39;: type.googleapis.com/udpa.type.v1.TypedStruct
+          type_url: type.googleapis.com/envoy.http.aspenmesh_packet_inspector.protos.FilterConfig
+          value:
+            context: SIDECAR_INBOUND
+            filter_buffer: 500kb
+            filter_timeout: 3s
+            mac_address: &quot;00:00:00:00:00:00&quot;
+            node_port: &quot;31672&quot;
+  - applyTo: HTTP_FILTER
+    match:
+      context: SIDECAR_OUTBOUND
+      listener:
+        filterChain:
+          filter:
+            name: envoy.http_connection_manager
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: aspenmesh.packet.inspector
+        typed_config:
+          &#39;@type&#39;: type.googleapis.com/udpa.type.v1.TypedStruct
+          type_url: type.googleapis.com/envoy.http.aspenmesh_packet_inspector.protos.FilterConfig
+          value:
+            context: SIDECAR_OUTBOUND
+            filter_buffer: 500kb
+            filter_timeout: 3s
+            mac_address: &quot;00:00:00:00:00:00&quot;
+            node_port: &quot;31672&quot;
+  - applyTo: HTTP_FILTER
+    match:
+      context: GATEWAY
+      listener:
+        filterChain:
+          filter:
+            name: envoy.http_connection_manager
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: aspenmesh.packet.inspector
+        typed_config:
+          &#39;@type&#39;: type.googleapis.com/udpa.type.v1.TypedStruct
+          type_url: type.googleapis.com/envoy.http.aspenmesh_packet_inspector.protos.FilterConfig
+          value:
+            context: GATEWAY
+            filter_buffer: 500kb
+            filter_timeout: 3s
+            mac_address: &quot;00:00:00:00:00:00&quot;
+            node_port: &quot;31672&quot;</pre>
+<p> </p>
+<p>Packet Inspector 1 Envoy filters are using gRPC protocol to stream packets from PODs to the Daemonset using NodePort 31672 exposed by the Kubernetes Service. Topology Aware routing was not available in later releases of Kubernetes and Packet Inspector cannot guarantee that Envoy filters will connect to local Daemon set POD using Node Port. </p>
+<p>Daemon set PODs are implemented as circular buffers. The size of the buffer can be controlled by <strong>daemonSetBufferMemoryPercent</strong> field in the override values.yaml file. This value is a percentage of the total amount of memory allocated to the Packet Inspector daemon set. When this buffer limit is exceeded, packet captures will be dropped starting with the oldest capture and proceeding in capture order. The total memory allocated defaults to 128MB. If the daemon set does not have a memory limit assigned, this value will be based on the total node memory available. It is strongly recommended to set the memory limits depending on your environment to ensure all packets can be captured.</p>
+<p>Packet Inspector daemon set PODs are forwarding packets stored in pcap files to network analysis emulator tool using HTTP2 protocol on port 2100 (can be customized).<br><br>Beginning Aspenmesh 1.11.8-am4 we introduced Packet Inspector 2 component to our Istio distribution.<br>Packet Inspector 2 has simplified architecture. Sidecars are streaming application traffic directly to analysis service (either the network analysis tool or the analysis emulator). The Aggregator Daemonset PODs were removed and are not installed with Packet Inspector 2.<br>The Solution redesign allowed us to give a user the control of what kind of application traffic is being captured.<br>By setting labels on PODs and namespaces we can configure which Sidecar should capture application traffic:</p>
+<ol><li>All pods with sidecars, regardless of namespace    </li><li>All pods with sidecars in a namespace    </li><li>A set of labeled pods with sidecars, regardless of namespace</li><li>A set of labeled pods with sidecars in a namespace</li></ol>
+<p>For the latest documentation of Aspenmesh Packet Inspector 2 please visit <a href="https://clouddocs.f5.com/products/aspen-service-mesh/1.11/tasks/packet-inspector-2/" target="_blank">Aspenmesh documentation</a></p>
+</article>
+</body>
+</html>

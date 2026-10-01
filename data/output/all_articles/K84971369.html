@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K84971369: Perform Mesh Services health checks using HTTP and TCP Probes</title>
+<meta name="description" content="Support Solution: Perform Mesh Services health checks using HTTP and TCP Probes — When probes are configured for the POD, kubelet performs actions (e.g. by opening TCP connection or making HTTP request) to check whether the application running within the POD is ready (status is…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K84971369">
+</head>
+<body>
+<header>
+<h1>K84971369: Perform Mesh Services health checks using HTTP and TCP Probes</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-09-02</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K84971369">https://my.f5.com/manage/s/article/K84971369</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>To monitor availability and health of Applications running on Kubernetes Clusters we use Liveness, Readiness and Startup Probes. You can find documentation explaining what probes are on the official <strong>Kubernetes </strong>documentation are <a href="https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/" target="_self">here</a>:</p>
+
+<p>When probes are configured for the POD, <strong>kubelet </strong>performs actions (e.g. by opening TCP connection or making HTTP request) to check whether the application running within the POD is ready (status is then changed from <strong>PodInitializing</strong> to <strong>Running</strong> or <strong>healthy</strong>.</p>
+
+<p>To integrate applications using Probes with early releases of Aspen Mesh and Istio Service Mesh, you have to apply changes to the configuration. Istio and Aspen Mesh do not have built-in functionality for fixing and translating Kubernetes Probes. This problem and possible solutions can be found in <a href="https://my.aspenmesh.io/client/docs/1.9/operations/troubleshooting/vet-notes/mtls-probes-incompatible" target="_self">Liveness or Readiness Probe Incompatible with mTLS</a> in the Aspen Mesh documentation.</p>
+There are 3 possible solutions when you want to integrate applications using HTTP Liveness Probes with Aspen Mesh and mTLS:
+
+<ol><li>Disable mTLS for the health probe port.</li><li>Use a Liveness Command Instead.</li><li>Disable liveness probes.</li></ol>
+
+<p>Istio 1.2 introduced a new solution to Kubernetes Probes - added Kubernetes health check prober rewrite per deployment via <strong>sidecar.istio.io/rewriteAppHTTPProbers: &quot;true&quot;</strong> in the <strong>PodSpec</strong> annotation. Probes rewrite can also be enabled globally by setting the <strong>sidecarInjectorWebhook.rewriteAppHTTPProbe=true</strong> option in the <strong>values.yaml</strong> file.</p>
+Aspen Mesh is enabling the <strong>rewriteAppHTTPProbe</strong> feature by default and the <strong>sidecarInjectorWebhook.rewriteAppHTTPProbe</strong> option is set to <strong>true</strong> by default in the Helm <strong>values.yaml</strong> file. You can disable the Probes rewrite feature by applying the <strong>rewriteAppHTTPProbers: “false“</strong> annotations
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Kubernetes 1.17x,1.18.x,1.19.x,1.20.x  </li><li>Aspen Mesh 1.6.x, 1.9.x  </li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>None</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>HTTP Liveness and Ready Probes configured for the POD are modified by Istio after deployment. <strong>kubelet </strong>is responsible for executing Probes and checking POD health or readiness. Kubelet probes request will be rejected if the istio proxy sidecar is injected into the POD and mTLS is enabled because kubelet is not part of the service mesh and does not have a TLS certificate accepted by istio proxy.</p>
+
+<p>The following example describes what changes are made to HTTP probes to allow polling PODs health and readiness. Create the POD yaml manifest with HTTP <strong>livenessProbe</strong> configured to the namespace with istio proxy injection enabled:</p>
+
+<p><span class="example2">apiVersion: apps/v1<br>kind: Deployment<br>metadata:<br>  name: liveness-http<br>spec:<br>  selector:<br>    matchLabels:<br>      app: liveness-http<br>      version: v1<br>  template:<br>    metadata:<br>      labels:<br>        app: liveness-http<br>        version: v1<br>    spec:<br>      containers:<br>      - name: liveness-http<br>        image: docker.io/istio/health:example<br>        ports:<br>        - containerPort: 8001<br>        livenessProbe:<br>          httpGet:<br>            path: /examplepath<br>            port: 8001</span></p>
+After applying the above configuration, you observe that the <strong>livenessProbe</strong> is modified:
+
+<p><span class="example2">kubectl get pod liveness-http-&lt;xxx&gt;-&lt;yyy&gt; -o yaml</span><br><span class="example2">…<br>spec:<br>  containers:<br>    name: liveness-http<br>    livenessProbe:<br>      failureThreshold: 3<br>      httpGet:<br>        path: /app-health/liveness-http/livez<br>        port: 15020<br>        scheme: HTTP<br>      periodSeconds: 10<br>      successThreshold: 1<br>      timeoutSeconds: 1<br>    name: liveness-http<br>…</span></p>
+You observe that the port was changed from 8001 to 15020 and path was modified from <strong>/examplepath</strong> to <strong>/app-health/liveness-http/livez</strong>.
+
+<p><span class="subsectiontitle">How is this implemented by Istio and Aspenmesh?</span><br>Liveness and Readiness probes ports are always changed to port 15020. Port 15020 is a special port used by Istio for Applications telemetry. This port is not intercepted by the iptables rules. You can confirm this by checking the iptables rules on the POD network namespace by running the <strong>iptables –S</strong> command on the Kubernetes node shell:  </p>
+<span class="example2">nsenter -t &lt;PIID&gt; -n iptables -t nat –S<br>...<br>-A ISTIO_INBOUND -p tcp -m tcp --dport 15020 -j RETURN</span>
+
+<p>The <strong>pilot-agent</strong> application, running along with the Envoy proxy inside the <strong>istio-proxy </strong>container, is listening on port 15020 and taking HTTP requests to the <strong>/app-health </strong>URI from <strong>kubelet</strong>.</p>
+The Istio injection webhook adds environment variable with original probes configuration to the istio-proxy container:
+
+<p><span class="example2">- name: ISTIO_KUBE_APP_PROBERS<br>      value: &#39;{&quot;/app-health/liveness-http/livez&quot;:{&quot;httpGet&quot;:{&quot;path&quot;:&quot;/examplepath&quot;,&quot;port&quot;:8001,&quot;scheme&quot;:&quot;HTTP&quot;},&quot;timeoutSeconds&quot;:1}}&#39;</span></p>
+The <strong>pilot-agent</strong> unmarshals the JSON object from the <strong>ISTIO_KUBE_APP_PROBERS</strong> variable to go struct called <strong>Prober</strong>.
+
+<p><span class="example2">type Prober struct {<br>        HTTPGet        *apimirror.HTTPGetAction `json:&quot;httpGet&quot;`<br>        TimeoutSeconds int32                    `json:&quot;timeoutSeconds,omitempty&quot;`<br>}</span></p>
+<strong>pilot-agent</strong> receives the request to the <strong>/app-health/liveness-http/livez</strong> URI and it then sends the request to the original probe URI, configured by the <strong>ISTIO_KUBE_APP_PROBERS</strong> variable, to the application using the localhost IP address. The application container and the <strong>istio-proxy</strong> container are running in the same POD and share the same network namespace. This is why the <strong>pilot-agent</strong> running inside a different container can reach the application, running in another container, using localhost as IP address.
+
+<p><span class="example2">if prober.HTTPGet.Scheme == apimirror.URISchemeHTTPS {<br>                        url = fmt.Sprintf(&quot;https://localhost:%v%s&quot;, prober.HTTPGet.Port.IntValue(), proberPath)<br>            } else {<br>                        url = fmt.Sprintf(&quot;http://localhost:%v%s&quot;, prober.HTTPGet.Port.IntValue(), proberPath)<br>}</span></p>
+At the end of the flow <strong>pilot-agent</strong> returns the HTTP response code received from the application to <strong>kubelet</strong>. Only the response code is returned by the <strong>pilot-agent</strong>. All headers or response body is skipped by <strong>pilot-agent</strong>.
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>In Istio 1.10 the IP address used by <strong>pilot-agent</strong> was changed to the POD IP address (instead of localhost).</p>
+The change was required to address Envoy proxy behavior changes documented in the following Istio blog post and GitHub issue:
+
+<ul><li><a href="https://istio.io/latest/blog/2021/upcoming-networking-changes/" target="_self">Upcoming networking changes in Istio 1.10</a> Istio blog.</li><li><a href="https://github.com/istio/istio/issues/25177" target="_self">Rewrite app probe sends requests to the wrong endpoint, breaking pod IP listeners</a> <strong>issue in Istio</strong> GitHub.</li><li><a href="https://github.com/istio/istio/pull/31121" target="_self">Match inbound cluster logic in prober</a> <strong>issue in Istio</strong> GitHub.</li><li>The <a href="https://docs.google.com/document/d/1j-5_XpeMTnT9mV_8dbSOeU7rfH-5YNtN_JJFZ2mmQ_w/edit#heading=h.xw1gqgyqs5b" target="_self">Istio design</a> documentation.</li></ul>
+<span class="note"><strong>Note</strong>: These links takes you to a resource outside of AskF5, and it is possible that the documents may be removed without our knowledge.</span>
+</article>
+</body>
+</html>

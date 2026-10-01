@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000159852: BIG-IP ASM Service Restart on Standby device led to an Unexpected Failover</title>
+<meta name="description" content="Support Solution: BIG-IP ASM Service Restart on Standby device led to an Unexpected Failover — The previous Active Device changed to Standby, and the other Standby device changed state to Offline (during service restart) and finally to Active role">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000159852">
+</head>
+<body>
+<header>
+<h1>K000159852: BIG-IP ASM Service Restart on Standby device led to an Unexpected Failover</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-03</dd>
+<dt>Updated</dt><dd>2026-02-03</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.0.0, 15.0.X, 15.0.1, 17.X.X, 16.X.X, 15.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li><li>BIG-IP ASM: 15.X.X, 16.X.X, 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000159852">https://my.f5.com/manage/s/article/K000159852</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When restarting the BIG-IP ASM service on a <strong>Standby</strong> device in a high availability (HA) pair, both devices may simultaneously enter standby state, causing a brief traffic outage. The <strong>Active</strong> device unexpectedly transitions to <strong>Standby</strong> and leaves the <strong><span style="text-decoration: underline;">Active</span></strong> role, while the <strong>Standby</strong> device is still completing its ASM service restart and not ready to handle the Traffic yet. Below could be the symptoms:</p>
+<ul><li>The previous Active Device changed to <strong>Standby</strong>, and the other Standby device changed state to <strong>Offline</strong> (during service restart) and finally to <strong>Active</strong> role</li><li>Brief traffic disruption during ASM service restart</li><li>Log message: &#39;<strong>Leaving active in favor of active peer</strong>&#39; on previous Active device</li><li>Log message: &#39;<strong>HA proc_running bd fails action is go offline and down links</strong>&#39; on the Standby unit after the &#39;<strong>asm</strong>&#39; service restart</li><li>Log message: &#39;<strong>Not receiving status updates from peer device (Disconnected)</strong>&#39; on the Standby unit</li><li>Log message: &#39;<strong>No failover status messages received for X.XXX seconds</strong>&#39; on the Standby unit</li><li>Log message: &#39;<strong>Leaving Standby for Active: Next Active, peers agree on config</strong>&#39; on the Standby unit</li></ul>
+<h2>Environment</h2>
+<ul><li>BIG-IP ASM version 11.0.0 and later</li><li>High Availability (HA) configuration with two devices</li><li>HA daemon monitoring enabled for bd (BIG-IP ASM daemon) process</li><li>Asymmetric unicast failover configuration where one device lacks the <strong>Management IP Address</strong> in its unicast address list</li><li>ASM service restart performed using: &#39;<strong>tmsh restart sys service asm</strong>&#39; on Standby unit</li><li><strong>HA-Group</strong> configured on both HA devices as the preferred Traffic-Group&#39;s <strong>Failover Method</strong> with same <strong>Score</strong> in normal situations</li></ul>
+<h2>Cause</h2>
+<p>This behavior is expected by design since BIG-IP ASM 11.0.0. When the ASM service restarts, the <strong>bd </strong>process temporarily stops responding, causing the HA system to detect this as a failure condition. The HA daemon executes the configured failover action: &quot;<strong>go offline and down links,</strong>&quot; transitioning the device to <strong>Offline </strong>state, at first step.</p>
+<p>The <strong>race condition</strong> where one Instance changed to <strong>Standby </strong>and the other device enters &#39;<strong>Offline</strong>&#39;<strong> --&gt; </strong>&#39;<strong>Active</strong>&#39; state results from:</p>
+<ul><li>The <strong>bd </strong>process being monitored by the HA daemon, and its restart triggering failover actions</li><li>HA communication gaps during the ASM restart window when TMM interfaces temporarily go down</li><li>Missing <strong>Management IP Address</strong> in the unicast failover address list on one device, eliminating all HA heartbeat channels when <strong>TMM </strong>interfaces are unavailable</li><li>Failover decision logic where the recovering device sends an <strong>Active </strong>enforcement message before being fully operational, causing the <strong>Active</strong> peer to yield control prematurely</li><li>In case of having similar <strong>Failover Score</strong> for <strong>HA-Group</strong>, the device with higher <strong>Management IP Address</strong> will be the final preferred <strong><span style="text-decoration: underline;">Active</span></strong> unit [<a href="https://my.f5.com/manage/s/article/K99462468" title="K99462468" target="_blank">K99462468</a>]</li></ul>
+<h2>Answer/Recommended Actions</h2>
+<p>Please consider the below best-practices to avoid such unexpected Failovers: </p>
+<ol><li>Configure the <strong>Management IP Address</strong> in the unicast failover address list on both HA devices to ensure HA heartbeat communication can continue via the <strong>Management </strong>interface when <strong>TMM </strong>interfaces are temporarily unavailable. Verify both devices have consistent unicast address configurations including both <strong>TMM </strong>interfaces and the <strong>Management </strong>IP address.</li><li>Consider the higher value for &quot;<strong>Active Bonus&quot;</strong> under HA-Group settings of your preferred device to keep it as <strong><span style="text-decoration: underline;">Active</span></strong>, in case of having similar <strong>Failover Score</strong> for both peer. [<a href="https://my.f5.com/manage/s/article/K16947" title="K16947" target="_blank">K16947</a>]</li><li>Always schedule ASM or any Service Restarts / Reboot during a planned Maintenance window</li></ol>
+<h2>Additional Information</h2>
+<p>None.</p>
+</article>
+</body>
+</html>

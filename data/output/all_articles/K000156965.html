@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000156965: Generic HTTP Telemetry Streaming configuration to stream LTM request logs to remote consumer system</title>
+<meta name="description" content="Support Solution: Generic HTTP Telemetry Streaming configuration to stream LTM request logs to remote consumer system — When configuring BIG-IP Telemetry Streaming (TS) to forward LTM request logs to a Generic HTTP consumer, the expected logs may not appear at the remote HTTP endpoint.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000156965">
+</head>
+<body>
+<header>
+<h1>K000156965: Generic HTTP Telemetry Streaming configuration to stream LTM request logs to remote consumer system</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-10-09</dd>
+<dt>Updated</dt><dd>2025-10-14</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Automation and Orchestration</li><li>BIG-IP</li><li>BIG-IP Distributed Cloud Services</li><li>BIG-IP Cloud Edition</li><li>F5 BIG-IP Telemetry Streaming</li><li>BIG-IP AFM</li><li>BIG-IP Analytics</li><li>BIG-IP AAM</li><li>BIG-IP APM</li><li>BIG-IP ASM</li><li>BIG-IP DNS</li><li>BIG-IP FPS</li><li>BIG-IP GTM</li><li>BIG-IP Link Controller</li><li>BIG-IP PEM</li><li>BIG-IP LTM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000156965">https://my.f5.com/manage/s/article/K000156965</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<ul><li>When configuring BIG-IP Telemetry Streaming (TS) to forward LTM request logs to a Generic HTTP consumer, the expected logs may not appear at the remote HTTP endpoint.</li><li>The request-log profile is attached to a virtual server, and the telemetry declaration includes a properly defined Generic HTTP consumer. However, no log data is received by the destination. Trace logs do not show errors, and packet captures may lack evidence of HTTP POST requests being sent.</li></ul>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP LTM</li><li>Telemetry Streaming extension configured with:
+<ul><li>Telemetry Listener (default port 6514)</li><li>Generic HTTP Consumer (custom port such as 8085 or 9570)</li><li>LTM request-log profile attached to a virtual server</li><li>Request-log pool forwarding logs to a pool member (e.g., syslog-tls port)</li></ul>
+</li></ul>
+<p> </p>
+<ul><li>Example request-log template:
+<pre><code>event_source=&quot;request_logging&quot;,hostname=&quot;$BIGIP_HOSTNAME&quot;,client_ip=&quot;$CLIENT_IP&quot;,server_ip=&quot;$SERVER_IP&quot;,http_method=&quot;$HTTP_METHOD&quot;,http_uri=&quot;$HTTP_URI&quot;,virtual_name=&quot;$VIRTUAL_NAME&quot;,event_timestamp=&quot;$DATE_HTTP&quot;
+</code></pre>
+</li></ul>
+<h2>Cause</h2>
+<ul><li>Logs are not delivered because the configuration path between the LTM request-log profile and the Telemetry Streaming listener/consumer is incomplete or incorrect. If the request-log profile sends logs to a pool that does not route traffic correctly to the local TS listener (typically on loopback interface and port 6514), or if loopback addresses are not allowed for node selection in pools/iRules, then logs will not be processed or forwarded.</li></ul>
+<h2>Recommended Actions</h2>
+<ol><li> Configure Request-Log Profile Correctly:
+<ol><li>Ensure the request-log-pool in your LTM request-log profile points to a pool whose member is the loopback address (e.g., 127.0.0.1 or local self IP) and uses the port where TS listens (default: 6514)</li><li>Example configuration:<strong></strong></li></ol>
+</li></ol>
+<p style="padding-left: 80px;"> </p>
+<pre class="language-c" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ltm pool telemetry {
+    members {
+        &lt;loopback_or_self_ip&gt;:6514 { address &lt;loopback_or_self_ip&gt; }
+    }
+}</code></pre>
+<p style="padding-left: 80px;"> </p>
+<ol><li>Allow Loopback Node Selection:
+<ol><li>Enable use of loopback addresses for node selection by setting this database variable:</li></ol>
+</li></ol>
+<p> </p>
+<pre class="language-c" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify sys db tmm.tcl.rule.node.allow_loopback_addresses value true</code></pre>
+<p> </p>
+<ol><li>Verify Telemetry Streaming Declaration:
+<ol><li>Your declaration should include both a telemetry_listener on port 6514 and a generic HTTP consumer with accurate endpoint details</li><li>Example Generic HTTP declaration</li></ol>
+</li></ol>
+<p> </p>
+<pre class="language-c" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>{
+  &quot;class&quot;: &quot;Telemetry&quot;,
+  &quot;Event_Listener&quot;: {
+    &quot;class&quot;: &quot;Telemetry_Listener&quot;,
+    &quot;port&quot;: 6514,
+    &quot;enable&quot;: true
+  },
+  &quot;Generic_HTTP_Consumer&quot;: {
+    &quot;class&quot;: &quot;Telemetry_Consumer&quot;,
+    &quot;type&quot;: &quot;Generic_HTTP&quot;,
+    &quot;host&quot;: &quot;&lt;remote_http_endpoint&gt;&quot;,
+    &quot;port&quot;: &lt;port&gt;,
+    &quot;path&quot;: &quot;/&quot;,
+    &quot;protocol&quot;: &quot;http&quot;,
+    &quot;method&quot;: &quot;POST&quot;,
+    &quot;outputMode&quot;: &quot;processed&quot;,
+    &quot;allowSelfSignedCert&quot;: false,
+    &quot;headers&quot;: [
+      { &quot;name&quot;: &quot;Content-Type&quot;, &quot;value&quot;: &quot;application/json&quot; }
+    ]
+  }
+}</code></pre>
+<p> </p>
+<ol><li>Test End-to-End Connectivity:
+<ol><li>Use curl from BIG-IP shell to verify remote endpoint accessibility:</li><li>Example command syntax:</li></ol>
+</li></ol>
+<p> </p>
+<pre class="language-c" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>curl -s -X POST http://&lt;remote_http_endpoint&gt;:&lt;port&gt;/ \
+     -H &#39;Content-Type: application/json&#39; \
+     -d &#39;{&quot;metric&quot;:&quot;cpu_usage&quot;,&quot;value&quot;:75.4}&#39;</code></pre>
+<p> </p>
+<ol><li>Packet Capture &amp; Troubleshooting:
+<ol><li>Use tcpdump/tshark on BIG-IP to confirm that log messages are sent from BIG-IP → TS listener → remote HTTP consumer.</li><li>Look for outbound HTTP POST requests on your configured ports.<strong></strong></li></ol>
+</li></ol>
+<h2>Additional Information</h2>
+<p><a href="https://clouddocs.f5.com/products/extensions/f5-telemetry-streaming/latest/quick-start.html" target="_blank"></a><a href="https://clouddocs.f5.com/products/extensions/f5-telemetry-streaming/latest/quick-start.html" target="_blank">https://clouddocs.f5.com/products/extensions/f5-telemetry-streaming/latest/quick-start.html</a><a href="https://clouddocs.f5.com/products/extensions/f5-telemetry-streaming/latest/quick-start.html" target="_blank"></a></p>
+<p><a href="https://clouddocs.f5.com/products/extensions/f5-telemetry-streaming/latest/setting-up-consumer.html#generic-http" target="_blank">https://clouddocs.f5.com/products/extensions/f5-telemetry-streaming/latest/setting-up-consumer.html#generic-http</a></p>
+</article>
+</body>
+</html>

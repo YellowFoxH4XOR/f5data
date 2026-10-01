@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K35909434: Error: The system returned an unexpected error (400 Bad Request). Mounting external storage failed due to command execution timeout. Please ensure there is no network connectivity issues between external storage server and ES cluster.</title>
+<meta name="description" content="Support Solution: Error: The system returned an unexpected error (400 Bad Request). Mounting external storage failed due to command execution timeout. Please ensure there is no network connectivity issues between external storage server and ES cluster. — In BIG-IQ Centralized Management, when trying to mount the external storage for snapshot backup, the following error are seen">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K35909434">
+</head>
+<body>
+<header>
+<h1>K35909434: Error: The system returned an unexpected error (400 Bad Request). Mounting external storage failed due to command execution timeout. Please ensure there is no network connectivity issues between external storage server and ES cluster.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-06-03</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K35909434">https://my.f5.com/manage/s/article/K35909434</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br><br>In BIG-IQ Centralized Management, when trying to mount the external storage for snapshot backup, the following error are seen<br><br><span class="example">The system returned an unexpected error (400 Bad Request). Mounting external storage failed due to command execution timeout. Please ensure there is no network connectivity issues between external storage server and ES cluster</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IQ Centralized Management</li><li>BIG-IQ Snapshot backup</li><li>External storage server</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br><br>This issue can trigger due to any or all of the below reasons. </p>
+
+<ol><li>If you are using BIG-IQ v7 or earlier it will allow only SMBv1, be sure the external storage SMB server is using SMBv1 protocol.<br>	<span class="note">NOTE: BIG-IQ v8.X now supports SMBv2 and SMBv3</span></li><li>The external storage SMB server is not allowing SMB connections from the Big-IQ Centralized Management.</li><li>The local snapshots folder (/var/config/rest/elasticsearch/data/essnapshot) is already mounted</li></ol>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<ol><li>
+	<p>Make sure the SMB server is listening and negotiating properly on port TCP 139 or TCP 445.</p>
+	</li><li>
+	<p>If the local snapshots folder (/var/config/rest/elasticsearch/data/essnapshot) is already mounted on SMB server, remove the mount using the command as below on the SMB server. <br>	<span class="code"># umount /var/config/rest/elasticsearch/data/essnapshot</span></p>
+	</li><li>Take a packet and verify if the SMB server is responding properly, to verify you can do the following:
+	<ol><li>Open 2 SSH session on the BIG-IQ DCD &#39;10.12.0.247&#39;, in one session run the tcpdump: (replace IP_STORAGE_SERVER with your storage server IP)<br>		<span class="code">tcpdump -vni eth0 host IP_STORAGE_SERVER -s0 -w /var/tmp/capture1.pcap</span></li><li>While running the above tcpdump command, in the second SSH session from the bash run:<br>		<span class="code">mount -t cifs //IP_STORAGE_SERVER/&lt;folder&gt; /var/config/rest/elasticsearch/data/essnapshot -o uid=elasticsearch,gid=elasticsearch,rw,iocharset=utf8,noauto,sec=ntlm,user=&lt;user&gt;,password=&#39;&lt;pass&gt;&#39;,domain=&lt;domain&gt;</span><br>		(Replace &lt;user&gt;, &lt;pass&gt; and &lt;domain&gt; with the corresponding values)</li><li>Stop the packet capture with CTRL+C and download it from the BIG-IQ DCD using any Secure FTP application like WinSCP or FileZilla. </li><li>Once you have the pcap file in your desktop open it with Wireshark and follow the sequence. </li><li>In this example we can see the SMB server is not responding accordingly:</li></ol>
+	</li></ol>
+
+<div style="margin-left: 80px;"><span class="code">BIG-IQ DCD  192.168.1.2<br>Storage Server: 172.16.1.1<br><br>TCP HANDSHAKE<br>No.     Time              Source           sPort  Destination        dPort  Protocol Info<br> 2 21:19:59.934755   192.168.1.2           38664  172.16.1.1          445    TCP      38664 → 445 [SYN]<br> 3 21:19:59.935293   172.16.1.1            445    192.168.1.2         38664  TCP      445 → 38664 [SYN, ACK]<br> 4 21:19:59.935328   192.168.1.2           38664  172.16.1.1          445    TCP      38664 → 445 [ACK]<br><br>BIG-IQ tries to negotiate the SMB protocol but it does not get the &#39;Negotiate Protocol Response&#39; from the Storage Server 172.16.1.1, BIG-IQ sends TCP Retransmission but does not get any response from Storage Server:<br> 5 21:19:59.935957   192.168.1.2           38664  172.16.1.1          445    SMB2     Negotiate Protocol Request<br> 6 21:20:00.136047   192.168.1.2           38664  172.16.1.1          445    TCP      [TCP Retransmission] 38664 → 445<br><br>This is an example for a good communication:<br>BIG-IQ DCD  10.210.1.54  <br>Storage Server: 172.16.1.1<br>No.     Time               Source            sPort  Destination       dPort  Protocol Info<br>  2 21:19:59.950414    10.210.1.54           44462  172.16.1.1          445    TCP      44462 → 445 [SYN]<br>  3 21:19:59.982288    172.16.1.1            445    10.210.1.54         44462  TCP      445 → 44462 [SYN, ACK]<br>  4 21:19:59.982325    10.210.1.54           44462  172.16.1.1          445    TCP      44462 → 445 [ACK]<br><br>  5 21:19:59.982987    10.210.1.54           44462  172.16.1.1          445    SMB2     Negotiate Protocol Request<br>  6 21:20:00.014558    172.16.1.1            445    10.210.1.54         44462  SMB2     Negotiate Protocol Response<br><br>  8 21:20:00.014828    10.210.1.54           44462  172.16.1.1          445    SMB2     Session Setup Request, NTLMSSP_NEGOTIATE<br>  10 21:20:00.046996    172.16.1.1           445    10.210.1.54         44462  SMB2     Session Setup Response, Error: STATUS_MORE_PROCESSING_REQUIRED, NTLMSSP_CHALLENGE<br> 11 21:20:00.047616    10.210.1.54           44462  172.16.1.1          445    SMB2     Session Setup Request, NTLMSSP_AUTH, User: domain\User<br> 12 21:20:00.088566    172.16.1.1            445    10.210.1.54         44462  SMB2     Session Setup Response<br> 13 21:20:00.088650    10.210.1.54           44462  172.16.1.1          445    SMB2     Tree Connect Request Tree: \\SMB-Server.org.us\bigiq_snapshot<br> 14 21:20:00.121510    172.16.1.1            445    10.210.1.54         44462  SMB2     Tree Connect Response<br> 15 21:20:00.121567    10.210.1.54           44462  172.16.1.1          445    SMB2     Create Request File:<br> 16 21:20:00.153347    172.16.1.1            445    10.210.1.54         44462  SMB2     Create Response File:</span></div>
+ 
+
+<p><span class="sectiontitle">Additional Information</span><br><a href="https://techdocs.f5.com/en-us/bigiq-8-0-0/release-notes-big-iq/chapter-rel-note-behavior-changes.html" target="_self">Manual Chapter : Behavior Changes in BIG-IQ Version 8.0.0</a><br>BIG-IQ now supports DCD backup storage on SMB versions 1-3. The new default external storage settings are for version SMB3. SMB 1 is still supported, but this version is not recommended due to its security vulnerabilities.   </p>
+</article>
+</body>
+</html>

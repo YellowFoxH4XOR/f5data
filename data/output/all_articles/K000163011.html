@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163011: Characters, emojis and other items are not rendering when a DoSL7 profile is assigned to the virtual server.</title>
+<meta name="description" content="Support Solution: Characters, emojis and other items are not rendering when a DoSL7 profile is assigned to the virtual server. — Emoji and other wide or multibyte UTF-8 characters may display as invalid characters, gibberish, or replacement symbols in an application when a BIG-IP L7 DoS profile is attached to a virtual server.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163011">
+</head>
+<body>
+<header>
+<h1>K000163011: Characters, emojis and other items are not rendering when a DoSL7 profile is assigned to the virtual server.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-08-20</dd>
+<dt>Updated</dt><dd>2026-08-20</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163011">https://my.f5.com/manage/s/article/K000163011</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Emoji and other wide or multibyte UTF-8 characters may display as invalid characters, gibberish, or replacement symbols in an application when a BIG-IP L7 DoS profile is attached to a virtual server.</p>
+<p>The issue can occur even when the DoS profile is configured in <strong>Transparent</strong> mode. This is due to the Javascript (JS) that happens whether it is in Blocking or Transparent mode. Removing the DoS profile allows the characters to display correctly.</p>
+<h2>Environment</h2>
+<ul><li>UTF-8 characters in the HTML</li><li>Chinese or other language characters, emojis</li><li>The character set is defined by an HTML &lt;meta&gt; tag rather than the HTTP Content-Type header</li><li>The application contains more than one &lt;meta&gt; tag</li><li>L7 DoS Application Security profile</li></ul>
+<h2>Cause</h2>
+<p><a href="https://cdn.f5.com/product/bugtracker/ID795497.html" target="_blank" rel="noopener noreferrer">ID795497</a> covers an issue where character sets are not displaying correctly. However, there can be other issues where symptoms similar to this ID can occur.;</p>
+<p>For example Chrome and Firefox require that the Charset declaration is present within the first 1024 bytes. But, after the injection, the Charset declaration UTF-8 is moved after 4435 bytes.</p>
+<p>The ID solution works when the Charset declaration is located in the first meta tag in the HTTP response (most cases), but in this case it&#39;s included in the second meta tag. <code>&lt;head&gt;<br>&lt;meta name=&quot;GENERATOR&quot; content=&quot;Microsoft SharePoint&quot; /&gt;<br>&lt;meta http-equiv=&quot;Content-type&quot; content=&quot;text/html; charset=utf-8&quot; /&gt;<br>...</code></p>
+<p>The standard solution for ID795497 is after,meta,before,script,before,/head,before,body. The JS injection can be injected in 4 different places: </p>
+<ul><li>Priority 1: after, meta</li><li>Priority 2: before, script</li><li>Priority 3: before, /head</li><li>Priority 4: before, body <code>&lt;head&gt;<br>&lt;meta name=&quot;GENERATOR&quot; content=&quot;Microsoft SharePoint&quot; /&gt;<br>&lt;APM_DO_NOT_TOUCH&gt; &lt;--------------- Script was injected AFTER FIRST META TAG<br>&lt;meta http-equiv=&quot;Content-type&quot; content=&quot;text/html; charset=utf-8&quot; /&gt;<br>...</code></li></ul>
+<h2>Answer/Recommended Actions</h2>
+<p>When the application has multiple &lt;meta&gt; tags and the charset declaration is not the first one, change the injection order so BIG-IP does not use the after,meta anchor.</p>
+<p>Run the following command on the BIG-IP device:<code>tmsh modify sys db dosl7.parse_html_inject_tags value before,/head,before,/body</code></p>
+<p>This changes the available injection locations to:</p>
+<ol><li>    Before the closing &lt;/head&gt; tag</li><li>    Before the closing &lt;/body&gt; tag if &lt;/head&gt; is unavailable</li></ol>
+<p>The JavaScript is therefore inserted after the existing &lt;meta charset=&quot;utf-8&quot;&gt; declaration, leaving the charset declaration in its original position.</p>
+<p>Considerations:</p>
+<p>1) This is a global sys db variable — it will change injection anchor behavior for all VIPs on the box using DoS/SPA/Bot Defense JS injection, not just dosl7_http_Spus. Confirm whether other applications behind other DoS/Bot Defense profiles could be affected by this anchor-order change (in practice, injecting after meta instead of after head should be a safe, non-breaking reordering, but review is still warranted since this is production).</p>
+<p>2) No restart is required for sys db variables in general, but confirm this specific one takes effect immediately by testing right after the change (some like this dosl7-related setting apply to newly established connections/responses immediately since it&#39;s read by tmm at injection time, not just at daemon startup).</p>
+<h2>Additional Information</h2>
+</article>
+</body>
+</html>

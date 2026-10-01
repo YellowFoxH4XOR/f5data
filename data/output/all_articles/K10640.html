@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K10640: Pool member reselection options</title>
+<meta name="description" content="Knowledge: Pool member reselection options — On a BIG-IP system, in the event that a pool member fails, the default behavior is for connection attempts to that pool member to continue until the pool member is marked down by its assigned…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K10640">
+</head>
+<body>
+<header>
+<h1>K10640: Pool member reselection options</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2015-03-27</dd>
+<dt>Updated</dt><dd>2024-10-30</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 12.1.2, 12.1.1, 12.1.0, 12.0.0, 10.2.2, 10.2.1, 10.2.0, 10.1.0, 11.6.1, 10.0.1, 11.6.0, 10.0.0, 9.6.1, 9.6.0, 9.4.8, 13.0.0, 11.5.3, 11.5.2, 11.5.1, 11.5.0, 11.4.1, 11.4.0, 11.3.0, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 10.2.4, 10.2.3, 11.5.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K10640">https://my.f5.com/manage/s/article/K10640</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>On a BIG-IP system, in the event that a pool member fails, the default behavior is for connection attempts to that pool member to continue until the pool member is marked down by its assigned monitors. This behavior may cause the BIG-IP system to load balance new connections to a pool member that has just failed, but whose monitor has not yet timed out.</p>
+
+<p>Refer to the following example scenario, in which a BIG-IP system is configured with the <strong>http_servers</strong> pool:</p>
+
+<p><span class="example2">pool http_servers {<br>   monitor all http<br>   members {<br>      192.168.1.10:http {}<br>      192.168.1.11:http {}<br>   }<br>}</span></p>
+
+<ul><li>The <strong>http_servers</strong> pool uses the default HTTP monitor, which has an interval of five seconds and a timeout of 16 seconds.
+
+	<p><span class="note"><strong>Note</strong>: F5 recommends setting the timeout of custom monitors to three times the chosen interval time, plus one. This particular ratio ensures that more than one health check must fail in order for a pool member to be marked down. For example, with an interval of five seconds and a timeout of 16 seconds, the BIG-IP system must not receive any valid response from a pool member for 16 seconds before it can mark the pool member down. Because in 16 seconds the BIG-IP system runs four health checks against the pool member, all four health checks must fail for the system to consider the pool member down. Ultimately, this configuration prevents the status of a pool member from flapping unnecessarily.</span></p>
+	</li><li>The <strong>192.168.1.11:http</strong> pool member, last checked by the HTTP monitor at 21:10:00 (HH:MM:SS), is marked up. The <strong>192.168.1.11:http</strong> pool member&#39;s next health check is not due until 21:10:05.</li><li>At 21:10:02, the <strong>192.168.1.11:http</strong> pool member suffers a failure and becomes unresponsive.</li><li>At 21:10:03, a new connection arrives to the virtual server using the <strong>http_servers</strong> pool. The system makes a load balancing decision and load balances the client to the <strong>192.168.1.11:http</strong> pool member. This behavior is a valid load balancing decision because the BIG-IP system does not yet recognize that the pool member has failed.</li><li>The BIG-IP system attempts to establish a TCP connection to the pool member. When this server-side connection fails, the system resets the client&#39;s connection.</li><li>Additionally, the BIG-IP system may also load balance further connections to the <strong>192.168.1.11:http</strong> pool member before the HTTP monitor marks it down, which occurs 16 seconds after the BIG-IP system receives the last successful response. The system also resets client connections.</li></ul>
+
+<p>You can change the behavior outlined in the previous example by performing the following actions:</p>
+
+<ul><li>Select a new pool member as soon as the BIG-IP system detects that the pool member to which it is attempting to connect has become unresponsive.</li><li>Immediately mark the unresponsive pool member down to avoid further connections being load balanced to that pool member.</li></ul>
+
+<p>To perform these actions, you can either write an iRule, or, beginning in BIG-IP 10.0.0, you can use features readily available within the Configuration utility.</p>
+
+<p><span class="subsectiontitle">Changing the default behavior using an iRule</span></p>
+
+<p>You can change the default behavior with an iRule similar to the following example:</p>
+
+<p><span class="example2">when LB_FAILED {<br>   if { [active_members [LB::server pool]] &gt; 0 } {<br>      catch { LB::down }<br>      LB::mode rr</span><br><span class="example2">      LB::reselect<br>   }<br>}</span></p>
+
+<p>This iRule allows a client-side connection to remain open after a pool member has become unresponsive. For example, if the pool member failed to complete a TCP handshake or respond to an ARP request.</p>
+
+<p>Using the <strong>LB::reselect</strong> iRules command, the client request is then load balanced to a different pool member, or even to a different pool, once the <strong>LB_FAILED</strong> event fires. The time between the initial connection attempt and <strong>LB_FAILED</strong> is dependent on profile parameters. For example, in regards to TCP, the profile parameters that affect SYN retransmission.</p>
+
+<p>The <strong>LB::down</strong> iRules command causes the pool member to be marked down upon the <strong>LB_FAILED</strong> event rather than wait for its monitors to time out and limit the number of client connections affected. You can write more complex iRules to defer <strong>LB::down</strong> until a number of failures have occurred to allow a margin of error.</p>
+
+<p>When an iRule marks a pool member down, the BIG-IP system logs a message to the <strong>/var/log/ltm</strong> file that appears similar to the following example:</p>
+
+<ul><li><strong>BIG-IP 11.x and later</strong>
+
+	<p><span class="example2">01070638:5: Pool /Common/http_servers member /Common/192.168.1.11:80 monitor status iRule down. [ was up for 0hr:3min:24sec ]</span></p>
+	</li></ul>
+
+<ul><li><strong>BIG-IP 9.x through 10.x</strong>
+
+	<p><span class="example2">01070638:5: Pool member 192.168.1.11:http monitor status iRule down.</span></p>
+	</li></ul>
+
+<p><span class="note"><strong>Note</strong>: When the pool member becomes responsive again, the health monitors associated with the pool marks the pool member up.</span></p>
+
+<p><span class="subsectiontitle">Changing the default behavior using the Inband monitor feature (10.x or later)</span></p>
+
+<p>Beginning in BIG-IP 10.x, the <strong>Inband</strong> monitor type is introduced. The <strong>Inband</strong> monitor determines the availability of a pool member based on a specified number of failed connection attempts or data request attempts within a specified time interval. This monitor works in parallel with regular monitors, and you can use it instead of the <strong>LB::down</strong> iRules command.</p>
+
+<p><span class="note"><strong>Note</strong>: For more information about the <strong>Inband</strong> monitor, refer to the <em><strong>Configuration Guide for BIG-IP Local Traffic Management</strong></em></span>.</p>
+
+<p><span class="note"><strong>Note</strong>: For information about how to locate F5 product manuals, refer to <a href="https://my.f5.com/manage/s/article/K98133564" target="_blank">K98133564: Tips for searching AskF5 and finding product documentation</a>.</span></p>
+
+<p>The <strong>Inband</strong> monitor provides no error handling for in-progress connections. Therefore, it does not replace the <strong>LB::reselect</strong> functionality. However, beginning in BIG-IP 10.x, you can cause a reselection by using the <strong>Reselect Tries</strong> advanced pool feature. This feature is equivalent to the <strong>LB::reselect</strong> iRules command. After the BIG-IP system considers a connection attempt to a pool member as failed (equivalent to the <strong>LB_FAILED</strong> iRules event), the system selects a new pool member using the load balancing settings of that pool. If that pool member also fails, the system repeats the reselection until it reaches the limit configured for this option. Only at this point does the system reset the client connection.</p>
+
+<p><span class="note"><strong>Note</strong>: Do not confuse this feature with the <strong>Reselect</strong> option under the <strong>Action on Service Down</strong> advanced pool feature, which manages established client connections by moving them to an alternative pool member when monitors mark the original pool member down. For more information about <strong>Action on Service Down</strong>, refer to <a href="https://my.f5.com/manage/s/article/K15095" target="_blank">K15095: Overview of the Action On Service Down feature.</a></span></p>
+
+<p>As a result, in BIG-IP 10.x and later, you can avoid many failure situations without the need for an iRule since you can use the combination of <strong>Inband</strong> monitors and the <strong>Reselect Tries</strong> feature instead of the <strong>LB::down</strong> iRules command and the <strong>LB::reselect</strong> iRules command. iRules continue to offer greater flexibility, and you can still use them in combination with these features where a particular behavior is required.</p>
+</article>
+</body>
+</html>

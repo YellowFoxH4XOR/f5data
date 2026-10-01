@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000148303: Connection reset when sending API calls through a virtual server which uses an iRule to direct traffic</title>
+<meta name="description" content="Support Solution: Connection reset when sending API calls through a virtual server which uses an iRule to direct traffic — Clients getting connection resets when sending API calls through the BIG-IP, the virtual server uses an iRule to direct the traffic on the server side based on the HTTP Host value on the header, but…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000148303">
+</head>
+<body>
+<header>
+<h1>K000148303: Connection reset when sending API calls through a virtual server which uses an iRule to direct traffic</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-10-29</dd>
+<dt>Updated</dt><dd>2024-10-30</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 13.0.0, 13.0.X, 13.0.1, 13.X.X, 14.X.X, 15.X.X, 16.X.X, 17.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0, 13.1.X, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000148303">https://my.f5.com/manage/s/article/K000148303</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Clients getting connection resets when sending API calls through the BIG-IP, the virtual server uses an iRule to direct the traffic on the server side based on the HTTP Host value on the header, but when accessing the servers directly the connection is successful.</p>
+<p> </p>
+<h2>Environment</h2>
+<ul><li>LTM</li><li>iRule</li><li>HTTP Headers</li><li>TCP Reset with reason &quot;No server selected&quot;</li></ul>
+<p> </p>
+<h2>Cause</h2>
+<p>The client is sending a non matching &#39;Host&#39; value on the HTTP header according to the iRule list of eligible hosts to direct the connection, the iRule will not take any action to direct the request to a specific pool since none of the conditions match the &quot;Host&quot; header causing the BIG-IP to send TCP reset to the client with the reason &quot;No server selected&quot;.</p>
+<p>For example this is the configured iRule assigned to the virtual server to direct incoming HTTP requests to different server pools based on the value of the HTTP &quot;Host&quot; header:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when HTTP_REQUEST {
+  if { [HTTP::host] eq &quot;server-1.com&quot; } {
+           pool Pool-1
+         } elseif { [HTTP::host] eq &quot;server-2.com&quot; } {
+           pool Pool-2
+         } elseif { [HTTP::host] eq &quot;server-3.com&quot; } {
+           pool Pool-3
+         } 
+}</code></pre>
+<p> </p>
+<p>When analysing the packet capture you can see that the BIG-IP is sending TCP resets to the client with the reason &quot;No server selected&quot;:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tshark -r packet-capture.pcap &#39;f5ethtrailer.rstcausetxt == &quot;No server selected&quot;&#39;
+11376  50.931392 0.000000 227 10.10.10.10 → 10.10.10.100 40 443 52798 TCP OUT s1/tmm2 : 443 → 52798 [RST, ACK] Seq=4218 Ack=9625 Win=0 Len=0 [F5RST: No server selected]</code></pre>
+<p> </p>
+<p>When analysing the http headers coming from the client you see that it is including the host &#39;server-5.com&#39; which is not included on the irule:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>host: server-5.com
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36
+sec-ch-ua-platform: &quot;Windows&quot;
+cache-control: no-store, no-cache, must-revalidate
+pragma: no-cache
+
+......
+</code></pre>
+<p> </p>
+<h2>Recommended Actions</h2>
+<ol><li>Ask the client to sent the correct http host header that matches the list of hosts defined in the iRule, so that the BIG-IP can have an eligible host to send the connection to the server.</li><li>Include conditions to the irule to explicitly handle unmatched hosts, you might want to add an else clause at the end of the iRule, this else clause ensures that unmatched hosts are explicitly handled, either by rejecting the request, logging the event, or forwarding it to a default pool (uncomment the actions you want to use on the iRule):
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when HTTP_REQUEST {
+  if { [HTTP::host] eq &quot;server-1.com&quot; } {
+           pool Pool-1
+         } elseif { [HTTP::host] eq &quot;server-2.com&quot; } {
+           pool Pool-2
+         } elseif { [HTTP::host] eq &quot;server-3.com&quot; } {
+           pool Pool-3
+         } else {
+            # Default action for unmatched hosts
+            reject
+            # Alternatively, log the event or send to a default pool
+            # log local0. &quot;Unmatched host: [HTTP::host]&quot;
+            # pool default_pool
+        }
+}</code></pre>
+</li></ol>
+<h2>Additional Information</h2>
+<p>If the HTTP traffic is using TLS encryption (HTTPS) you will need to decrypt the packet capture using the SSL session secrets in order to analyse the HTTP headers, you can follow this article instructions <a href="https://my.f5.com/manage/s/article/K12783074" target="_blank">K12783074: Decrypting SSL traffic using the SSL::sessionsecret iRules command (12.x and later)</a></p>
+</article>
+</body>
+</html>

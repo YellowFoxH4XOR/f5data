@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000140761: How to create an SNMP OID to monitor FCS Errors (ID1052057)</title>
+<meta name="description" content="Support Solution: How to create an SNMP OID to monitor FCS Errors (ID1052057) — There are cases where the HSB and switch report FCS errors on the HSB &lt;-&gt; switch interfaces.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000140761">
+</head>
+<body>
+<header>
+<h1>K000140761: How to create an SNMP OID to monitor FCS Errors (ID1052057)</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-08-21</dd>
+<dt>Updated</dt><dd>2024-10-22</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.0.0, 15.0.X, 15.0.1, 17.X.X, 16.X.X, 15.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000140761">https://my.f5.com/manage/s/article/K000140761</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<p>There are cases where the HSB and switch report FCS errors on the HSB &lt;-&gt; switch interfaces. <br>This can be seen in the snmp_dot3_stat table:</p>
+<p><code>name    fcs_errors<br>---------- ----------<br>12.1     83233172</code></p>
+<p>This can cause intermittent packet loss, leading to networking errors. This can be observed on the BIG-IP as pool monitor flapping, intermittent networking connectivity, etc.</p>
+<p>This issue is tracked as:</p>
+<p><a href="https://cdn.f5.com/product/bugtracker/ID1052057.html" target="_blank">Bug ID 1052057: FCS errors on switch/HSB interface impacts networking traffic</a></p>
+<p> </p>
+<p>This document describes the creation of a custom SNMP OID that returns the number of FCS Errors.<br>This can be used to trigger alerts from an SNMP monitoring tool when this value is increasing, allow action to be taken to mitigate the issue.</p>
+<h2><strong>Environment</strong></h2>
+<ul><li>BIG-IP platform with HSB</li><li>SNMP</li><li>CLI access to the BIG-IP</li></ul>
+<h2><strong>Cause</strong></h2>
+<p><a href="https://cdn.f5.com/product/bugtracker/ID1052057.html" target="_blank">Bug ID 1052057: FCS errors on switch/HSB interface impacts networking traffic</a></p>
+<h2><strong>Recommended Actions</strong></h2>
+<p>To configure a custom SNMP OID that returns the number of FCS Errors, perform the following procedure:</p>
+<p>1. Log in with administrative privileges to the command line of the target device.</p>
+<p>2. Using a text editor, create the following file</p>
+<p><code>   /shared/fcs_errors.sh</code></p>
+<p>3. Enter the following command syntax into the <em>/shared/fcs_errors.sh</em> file</p>
+<p><code>#!/usr/bin/bash<br># return the number of FCS Errors<br>/usr/bin/tmctl -d blade snmp_dot3_stat -s fcs_errors | /usr/bin/tail -n +3 | /usr/bin/awk &#39;{sum += $1} END {print sum}&#39;</code></p>
+<p>4. Save the changes.</p>
+<p>5. To change the file permissions, type the following command:</p>
+<p><code>  chmod 755 /shared/fcs_errors.sh</code></p>
+<p>6. Using a text editor, create the following file:</p>
+<p><code>  /config/snmp/custom_mib.tcl</code></p>
+<p>7. Enter the following command syntax in the /config/snmp/custom_mib.tcl file:</p>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: if you have existing custom mibs in the <strong>custom_mib.tcl</strong> file, you will need to change the OID number to suit</em></span><code>register_mib &quot;.1&quot; fcs_errors string<br><br>proc fcs_errors {}<br>{<br>  set status [catch {exec /usr/bin/bash /shared/fcs_errors.sh } fcs_errors]<br>  return $fcs_errors<br>}<br></code><span style="background-color: var(--slds-g-color-surface-container-1, var(--lwc-colorbackgroundalt, #fff));color: var(--slds-g-color-neutral-base-10, #181818);font-size: var(--slds-g-font-size-base, 13px);">8. Save the changes.</span></p>
+<p><span style="background-color: var(--slds-g-color-surface-container-1, var(--lwc-colorbackgroundalt, #fff));color: var(--slds-g-color-neutral-base-10, #181818);font-size: var(--slds-g-font-size-base, 13px);"></span><span style="background-color: var(--slds-g-color-surface-container-1, var(--lwc-colorbackgroundalt, #fff));color: var(--slds-g-color-neutral-base-10, #181818);font-size: var(--slds-g-font-size-base, 13px);">9. To restart the SNMP service, type the following command:</span></p>
+<p><code> tmsh restart /sys service snmpd<br></code><span style="background-color: var(--slds-g-color-surface-container-1, var(--lwc-colorbackgroundalt, #fff));color: var(--slds-g-color-neutral-base-10, #181818);font-size: var(--slds-g-font-size-base, 13px);">10. To verify that the OID is functional, type the following command:</span></p>
+<p><code>  snmpwalk -Os -c public -v 2c localhost .1.3.6.1.4.1.3375.2.100.1<br>  bigipTrafficMgmt.100.1.0 = STRING: &quot;0&quot;</code></p>
+<p> </p>
+</article>
+</body>
+</html>

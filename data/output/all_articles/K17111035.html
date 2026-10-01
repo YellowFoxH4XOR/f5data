@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K17111035: Configuring OCSP stapling (11.x - 12.x)</title>
+<meta name="description" content="Knowledge: Configuring OCSP stapling (11.x - 12.x) — You want to configure the BIG-IP system to use Online Certificate Status Protocol (OCSP) stapling.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K17111035">
+</head>
+<body>
+<header>
+<h1>K17111035: Configuring OCSP stapling (11.x - 12.x)</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2016-04-01</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 12.1.2, 12.1.0, 12.0.0, 11.6.1, 12.1.1, 11.6.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K17111035">https://my.f5.com/manage/s/article/K17111035</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>This article applies to BIG-IP 11.x though 12.x. For information about other versions, refer to the following article:</p>
+
+<ul><li><a href="https://my.f5.com/manage/s/article/K75106155" target="_blank">K75106155: Configuring OCSP stapling (13.x - 15.x)</a></li></ul>
+
+<p>You should consider using this procedure under the following condition:</p>
+
+<ul><li>You want to configure the BIG-IP system to use Online Certificate Status Protocol (OCSP) stapling.</li></ul>
+<h3>Description</h3><p><span class="subsectiontitle">OCSP</span></p>
+
+<p>The original OCSP implementation described in RFC 2560 requires that client applications perform a DNS and an OCSP request, using either HTTP or HTTPs, during the Secure Socket Layer (SSL)/Transport Layer Security (TLS) handshake to validate a secure website&#39;s SSL certificate revocation status. The additional DNS and HTTP/HTTPs requests made during the SSL/TLS handshake causes noticeable performance delays for client applications and significantly increases network traffic and processing overhead for the validating OCSP responders. OCSP is introduced to improve SSL/TLS handshake performance while maintaining security.</p>
+
+<p><span class="subsectiontitle">OCSP Stapling</span></p>
+
+<p>OCSP stapling (described in RFC 6066 and RFC 6960) is a performance improvement to the original OCSP internet protocol used to verify SSL certificate revocation status.</p>
+
+<p>When a secure web server implements OCSP stapling and a remote client application makes a new SSL connection, the secure web server queries the OCSP responder and obtains a signed and time-sensitive OCSP response during the SSL/TLS handshake. The secure web server then responds to the client application on behalf of the OCSP responder, sending (or stapling) the OCSP response in the <strong>status_request</strong> TLS Certificate Status Request extension. The client application is then able to verify the SSL certificate&#39;s revocation status. The secure web server also caches the OCSP response, and subsequent client connections to the same secure web site receive the cached stapled response, which greatly improves overall SSL/TLS handshake performance.</p>
+
+<p>While this performance improvement may appear less secure, a trusted entity signs OCSP responses, which allows client applications to verify the authenticity of the response. One possible risk occurs when a certificate revocation notification update (<strong>revoked</strong>) becomes delayed until the previously cached (<strong>good</strong>) OCSP response has expired.</p>
+
+<p><span class="warning"><strong>Important</strong>: The client application must include the <strong>status_request</strong> extension in its TLS Client Hello handshake message to enable OCSP stapling.</span></p>
+
+<p><span class="subsectiontitle">BIG-IP system</span></p>
+
+<p>Beginning in BIG-IP 11.6.0, you can configure the BIG-IP system to use OCSP stapling for websites that are secured using a Client SSL profile. For more information about how a BIG-IP system manages cached OCSP responses, refer to the following list:</p>
+
+<ul><li><strong>Multiple TMMs</strong>
+
+	<p>For BIG-IP systems with multiple Traffic Management Microkernels (TMMs), each TMM maintains its own OCSP response cache. The BIG-IP system continues to query the OCSP responder until each TMM has its own cached copy of an OCSP response. Therefore, you must make an OCSP request for the same secure website until each TMM has its own cached copy.</p>
+	</li><li><strong>Revoked responses</strong>
+	<p>Revoked responses indefinitely remain in the cache. To remove all cached OCSP responses for a specific virtual server and Client SSL profile, use the following command syntax:</p>
+
+	<p><span class="code">tmsh delete ltm clientssl ocsp-stapling-responses clientssl-profile &lt;name&gt; virtual &lt;name&gt;</span></p>
+
+	<p>For example, to delete all of the cached OCSP responses for the virtual server named <strong>example_ocsp_vip</strong> referencing the Client SSL profile named <strong>example_ssl_profile</strong>, type the following command:</p>
+
+	<p><span class="example2">tmsh delete ltm clientssl ocsp-stapling-responses clientssl-profile example_ssl_profile virtual example_ocsp_vip</span></p>
+	</li><li><strong>The nextUpdate extension </strong>
+	<p>OCSP responders can include an optional <strong>nextUpdate</strong> extension to indicate the time that new certificate revocation status information will be made available. The BIG-IP system does not cache an OCSP response when the <strong>nextUpdate</strong> extension is missing.</p>
+	</li><li><strong>Viewing the OCSP response cache</strong>
+	<p>There is currently no command available for viewing the OCSP response cache. To view OCSP response errors associated with a specific virtual server, you can use the following command syntax:</p>
+
+	<p><span class="code">tmsh show ltm virtual &lt;name&gt; detail</span></p>
+
+	<p>For example, to view the OCSP response errors for the virtual server named <strong>example_ocsp_vip</strong>, use the following command:</p>
+
+	<p><span class="example2">tmsh show ltm virtual example_ocsp_vip detail</span></p>
+	</li></ul>
+
+<p><span class="subsectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisites to use this procedure:</p>
+
+<ul><li>You have a remote OCSP responder.</li><li>You have access to the Configuration utility.</li><li>You have a virtual server configured to process SSL traffic using a Client SSL profile.</li><li>You have configured the network time Protocol (NTP) on the BIG-IP system and remote OCSP responder.</li><li>The following service ports are accessible between the BIG-IP system and the OCSP responder: <strong>53</strong> (DNS) and <strong>80</strong> or <strong>443</strong> (OCSP).</li><li>You have access to a Linux command line if testing is required.</li></ul>
+
+<p><span class="subsectiontitle">Procedures</span></p>
+
+<ul><li><a href="#importing">Importing the CA or OCSP responder signing certificate</a></li><li><a href="#configuring">Configuring the OCSP Stapling profile</a></li><li><a href="#modifyprofile">Modifying the Client SSL profile</a></li><li><a href="#testing">Testing the OCSP configuration</a></li></ul>
+
+<p><span class="subsubsectiontitle"><a id="importing" name="importing"></a>Importing the CA or OCSP responder signing certificate</span></p>
+
+<p>The client application and BIG-IP system must verify the authenticity of the OCSP responder&#39;s SSL certificate. Before configuring the OCSP responder and Client SSL profiles, obtain the Certificate Authority (CA) certificate used to sign the responder&#39;s SSL certificate. You can import the CA certificate by performing the following procedure:</p>
+
+<p><span class="note"><strong>Note</strong>: The SSL certificate file should include the <strong>BEGIN CERTIFICATE</strong> and <strong>END CERTIFICATE</strong> lines and contain no white space, extra line breaks, or additional characters.</span></p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Navigate to <strong>System</strong> &gt; <strong>File Management</strong> &gt; <strong>SSL Certificates List</strong>.</li><li>Click <strong>Import</strong>.</li><li>From the <strong>Import Type</strong> list, click <strong>Certificate</strong>.</li><li>For <strong>Certificate Name</strong>, click <strong>Create New</strong> and type a name for the certificate.</li><li>For <strong>Certificate Source</strong>, click <strong>Upload File</strong> and browse to the file on your computer, or click <strong>Paste Text</strong> and paste the source location into the box.</li><li>Click <strong>Import</strong>.</li></ol>
+
+<p><span class="subsubsectiontitle"><a id="configuring" name="configuring"></a>Configuring the OCSP Stapling profile</span></p>
+
+<p>Prior to configuring the OCSP Stapling profile, you may need to contact the OCSP responder&#39;s administrator to ensure the OCSP options are correctly configured. To configure the OCSP stapling profile, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Navigate to <strong>Local Traffic</strong> &gt; <strong>Profiles</strong> &gt; <strong>SSL</strong> &gt; <strong>OCSP Stapling</strong>.</li><li>Click <strong>Create</strong>.</li><li>Configure the <strong>General Properties</strong> options, as appropriate for your purposes:
+	<p><strong>Basic</strong> view</p>
+
+	<p><span class="note"><strong>Note</strong>: The options marked with an asterisk (*) are required.</span></p>
+
+	<ul><li>*<strong>Name</strong> - Type a unique identifier or name for the OCSP profile.</li><li>*<strong>Use Proxy Server</strong> - Select the check box if you intend to use servers that can proxy HTTP requests to an external server to fetch responses or leave this check box unselected if you intend to use a domain name in either the OCSP stapling profile&#39;s <strong>Responder URL</strong> option or in the secure website SSL certificate Authority Information Access (AIA) extension to fetch responses.
+		<p><span class="note"><strong>Note</strong>: You can configure a DNS resolver for the OCSP Responder&#39;s fully-qualified domain name (FQDN) in the Configuration utility under <strong>Network</strong> &gt; <strong>DNS Resolvers</strong>.</span></p>
+		</li><li>*<strong>DNS Resolver</strong>/<strong>Proxy Server Pool</strong> - Depending on your selection for the previous setting, specify the appropriate DNS resolver or proxy server pool.</li><li>*<strong>Trusted Certificate Authorities</strong> - Click the name of the CA certificate the system uses to sign the OCSP responder certificate, which you imported during the <a href="#importing">Importing the CA or OCSP responder signing certificate</a> procedure.</li><li><strong>Trusted Responders</strong> - Click the name of the certificate the system uses for validating the OCSP response when the responder&#39;s certificate is omitted from the response.</li></ul>
+
+	<p><strong>Advanced</strong> view</p>
+
+	<p>The <strong>Advanced</strong> view options include those listed under <strong>Basic</strong> view and the following additional options:</p>
+
+	<p><span class="note"><strong>Note</strong>: The options marked with an asterisk (*) are not required but may have a significant impact and may require additional tuning, depending on the OCSP responder implementation.</span></p>
+
+	<ul><li>*<strong>Responder URL</strong> - Type the HTTP/HTTPs based URL the system uses to override the AIA extension configured in the OCSP responder&#39;s SSL/TLS certificate. By default, this box is empty.</li><li><strong>Signer Certificate</strong> - Click the name of the SSL certificate the system uses for signing the OCSP request. The default is <strong>None</strong>.</li><li><strong>Signer Key</strong> - Click the name of the SSL key the system uses for signing the OCSP request. The default is <strong>None</strong>.</li><li><strong>Signer Key Passphrase</strong> - Type the passphrase the system uses to protect the Signer SSL key. The default value is <strong>empty </strong>or no value.</li><li>*<strong>Sign Hash</strong> - Click the name of the hash algorithm the system uses to sign an OCSP request. The default is <strong>SHA256</strong>. The OCSP responder may require you to sign requests using a specific SHA hashing algorithm.</li><li><strong>Timeout</strong> - Assign the time in seconds that the system waits for a reply from the OCSP responder before dropping the connection. The value should be less than the value set for the handshake timeout in the Client SSL profile referencing the OCSP stapling profile. The default is <strong>8</strong>.</li><li>*<strong>Clock Skew</strong> - Type the maximum allowable difference between the OCSP responder and the BIG-IP system, in seconds. The default value is <strong>300</strong>. It is important that you configure NTP on both the OCSP responder and BIG-IP system to avoid time issues affecting OCSP responses.</li><li>*<strong>Status Age</strong> - Type the allowed age of the OCSP response when the <strong>nextUpdate</strong> field is omitted from the response. The default value is <strong>300</strong>.</li><li>*<strong>Cache Timeout</strong> - Assign the lifetime option of the OCSP response in the cache, in seconds. The lower value between response validity period and the cache timeout will be used for caching the response. The default is <strong>Indefinite</strong>, indicating that the response validity period takes precedence</li><li><strong>Cache Error Timeout</strong> - Assign the lifetime of an error response in the cache, in seconds. The default value is <strong>3600</strong>.</li><li><strong>Options</strong> - Select the <strong>Strict Responder Certificate Checking</strong> check box to enable the OCSP responder&#39;s SSL certificate for the OCSP signing extension <strong>id-kp-OCSPSigning</strong>. The default is <strong>disabled</strong>.</li></ul>
+	</li><li>After you configure the settings, click <strong>Finished</strong>.</li></ol>
+
+<p><span class="subsubsectiontitle"><a id="modifyprofile" name="modifyprofile"></a>Modifying the Client SSL profile</span></p>
+
+<p>You can enable OCSP stapling only on the Client SSL profile. To configure a Client SSL profile to use OCSP stapling, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure enables OCSP verification by client applications when they present the TLS <strong>status_request</strong> extension during the SSL/TLS handshake.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Navigate to <strong>Local Traffic</strong> &gt; <strong>Profiles</strong> &gt; <strong>SSL</strong> &gt; <strong>Client</strong>.</li><li>For <strong>Certificate Key Chain</strong>, click the previously configured SSL certificate and key entry under the <strong>Add</strong> and <strong>Replace</strong> buttons.</li><li>From the <strong>Chain</strong> option, click the CA certificate the system uses to sign the OCSP responder certificate. You imported this during the <a href="#importing">Importing the CA or OCSP responder signing certificate</a> procedure.</li><li>For <strong>OCSP Stapling Parameters</strong>, click the OCSP stapling profile you created in the <a href="#configuring">Configuring the OCSP Stapling profile</a> procedure.</li><li>Click <strong>Add</strong>.</li><li>Click <strong>Update</strong>.</li></ol>
+
+<p><span class="subsubsectiontitle"><a id="testing" name="testing"></a>Testing the OCSP configuration</span></p>
+
+<p>You can use the <strong>openssl</strong> command from a Linux host to test the OCSP stapling after you complete configuration. If any issues arise that indicate OCSP stapling is not working, you can enable SSL debug logging to gather additional diagnostic information logged to the <strong>/var/log/ltm</strong> file. To test and troubleshoot the OCSP stapling configuration, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the command line of a Linux host.</li><li>Test the OCSP configuration using the following command syntax:
+	<p><span class="code">openssl s_client -connect &lt;IP Address&gt;:&lt;Service Port&gt; -status</span></p>
+
+	<p>For example, to test OCSP stapling for a virtual server named <strong>example_ocsp_vip</strong> with IP address <strong>192.168.10.100</strong> using service port <strong>443</strong>, type the following command:</p>
+
+	<p><span class="example2">openssl s_client -connect 192.168.10.100:443 -status</span></p>
+	</li><li>The command output should appear similar to the following example. Ensure the <strong>OCSP Reponse Status</strong> is <strong>successful</strong> and the <strong>Next Update</strong> extension is present:
+	<p><span class="example2">CONNECTED(00000003)<br>	OCSP response:<br>	======================================<br>	OCSP Response Data:<br>	OCSP Response Status: successful (0x0)<br>	Response Type: Basic OCSP Response<br>	Version: 1 (0x0)<br>	Responder Id: C = US, ST = Wa, O = AskF5, OU = AskF5 CA, CN = ca.askf5.net<br>	Produced At: Feb 9 16:34:45 2016 GMT<br>	Responses:<br>	Certificate ID:<br>	Hash Algorithm: sha1<br>	Issuer Name Hash: EF11617B37AD95E216A8CB95F89222FC15EF74E1<br>	Issuer Key Hash: A8AA1ED4F9F3A74BABFF8B8F73D604123BA0C292<br>	Serial Number: 1005<br>	Cert Status: good<br>	This Update: Feb 9 16:34:45 2016 GMT<br>	Next Update: Feb 9 16:36:45 2016 GMT</span></p>
+	</li><li>If the OCSP response status is not successful, you should gather additional diagnostic information by enabling SSL debug logging. To enable SSL debug logging, type the following command:
+	<p><span class="code">tmsh modify sys db log.ssl.level value debug</span></p>
+
+	<p><span class="warning"><strong>Important</strong>: If you enable SSL debug logging, ensure that you follow step 7 for disabling SSL debug logging once testing is complete.</span></p>
+	</li><li>When the Client SSL profile is missing or has the incorrect CA certificate selected in the <strong>Chain</strong> option, the system logs an error message to the <strong>/var/log/ltm</strong> file that appears similar to the following example:
+	<p><span class="example2">crit tmm[12345]: 01260000:2: Profile /Common/example_ssl_profile: Could not retrieve the issuer. Not enabling OCSP Stapling.</span></p>
+	</li><li>When the OCSP stapling profile is missing or has the incorrect CA certificate selected in the <strong>Trusted Certificate Authority</strong> option, the system logs an error message to the <strong>/var/log/ltm</strong> file that appears similar to the following example:
+	<p><span class="example2">debug tmm[12345]: 01260024:7: OCSP failure on profile /Common/example_ssl_profile, certificate with issuer /C=US/ST=Wa/O=AskF5/OU=AskF5 CA/CN=ca.askf5.net and serial number 1005: Validation of the OCSP response returned error - failure in verifying the response with the CA/responder cert</span></p>
+	</li><li>After you complete troubleshooting, turn off SSL debug logging by typing the following command:
+	<p><span class="code">tmsh modify sys db log.ssl.level value warning</span></p>
+	</li></ol>
+</article>
+</body>
+</html>

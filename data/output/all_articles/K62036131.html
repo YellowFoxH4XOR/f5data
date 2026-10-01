@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K62036131: ADFS not working after upgrading to BIG-IP 13.1.3.6</title>
+<meta name="description" content="Support Solution: ADFS not working after upgrading to BIG-IP 13.1.3.6 — After upgrading to BIG-IP 13.1.3.6, your Windows ADFS application is not working when going through the BIG-IP.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K62036131">
+</head>
+<body>
+<header>
+<h1>K62036131: ADFS not working after upgrading to BIG-IP 13.1.3.6</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-05-16</dd>
+<dt>Updated</dt><dd>2026-01-09</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP FPS: 13.1.3</li><li>BIG-IP AAM: 13.1.3</li><li>BIG-IP AFM: 13.1.3</li><li>BIG-IP Analytics: 13.1.3</li><li>BIG-IP APM: 13.1.3</li><li>BIG-IP ASM: 13.1.3</li><li>BIG-IP PEM: 13.1.3</li><li>BIG-IP Link Controller: 13.1.3</li><li>BIG-IP LTM: 13.1.3</li><li>BIG-IP DNS: 13.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K62036131">https://my.f5.com/manage/s/article/K62036131</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>After upgrading to BIG-IP 13.1.3.6, your Windows ADFS application is not working when going through the BIG-IP.<br><br>Your ADFS is using 2 host names (SNI) where after successfully connecting to hostname 1, the connection will redirect to hostname 2. For example in a successful connection, client browser will send a SNI to adfs-1.example.com. This connection will then redirect to adfs-2.example.com.<br><br>You might get the following error message:<br><span class="example2">PR_CONNECT_RESET_ERROR</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP upgraded to 13.1.3.6</li><li>Before upgrade the ADFS application was working</li><li>Your ADFS have 2 hostname where the first hostname will redirect to the second hostname</li><li>To issue when bypass the BIG-IP Virtual Server</li><li>You might have the following error message: <span class="example2">PR_CONNECT_RESET_ERROR</span></li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>The Virtual Server does not forward the SNI which was received by the client browser. SNI is in the Client Hello but this is not seen from the BIG-IP Virtual Server to the ADFS. Because the ADFS does not get the SNI, it will RST the connection immediately after getting the Client Hello.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>You will need to create a new Server SSL Profile for each hostname. After creating these Server SSL Profiles, create an iRule to decide which Server SSL profile to be used based on the SNI received by the client browser. If you do not know the hostname (SNI) of the ADFS, you can run a pcap to identify the hostname from the SNI.</p>
+
+<ol><li>Login to the<strong> BIG-IP GUI</strong>.</li><li>Navigate to <strong>Local Traffic &gt; Profiles &gt; SSL &gt; Server</strong>.</li><li>Click <strong>Create</strong>.</li><li>Enter a <strong>Name</strong>.</li><li><strong>Parent Profile</strong> is <strong>serverssl</strong>.</li><li>Change Configuration from <strong>Basic </strong>to <strong>Advanced</strong>.</li><li>Under <strong>Server Name</strong>, enter the first hostname (SNI).</li><li>Click <strong>Finished</strong>.</li><li>Repeat step 3 to 8 for the next hostname (SNI). Refer <a href="https://my.f5.com/manage/s/article/K14806" target="_self">K14806</a> for further information.</li><li>Create an <strong>iRule </strong>to decide which Server SSL Profile to user. Navigate to <strong>Local Traffic &gt; iRules &gt; iRule List</strong>.</li><li>Click <strong>Create</strong>.</li><li>Enter a <strong>Name</strong>.</li><li>The <strong>iRule </strong>to decide which Server SSL profile to use based on the client browser&#39;s SNI is as below:<br>	<span class="code">when HTTP_REQUEST {<br>	    set hostname [getfield [HTTP::host] &quot;:&quot; 1]<br>	}<br>	when SERVER_CONNECTED {<br>	    switch -glob [string tolower $hostname] {<br>	    &quot;<strong>hostname1</strong>&quot; {<br>	        SSL::profile <strong>serverssl1</strong><br>	    }<br>	    &quot;<strong>hostname2</strong>&quot; {<br>	        SSL::profile <strong>serverssl2</strong><br>	    }<br>	  default {<br>	#default serversssl profile to be selected if Host header value cannot be matched with predefined values<br>	    SSL::profile serverssl<br>	  }<br>	}<br>	}</span><br>	<br>	For example, if <strong>hostname 1</strong> is <strong>adfs-1.example.com</strong>, <strong>hostname 2</strong> is <strong>adfs-2.example.com</strong>, server SSL profile 1 is<strong> adfs1-serverssl</strong> and server SSL profile 2 is <strong>adfs2-serverssl</strong>, the iRule would be:<br>	<span class="example2">when HTTP_REQUEST {<br>	    set hostname [getfield [HTTP::host] &quot;:&quot; 1]<br>	}<br>	when SERVER_CONNECTED {<br>	    switch -glob [string tolower $hostname] {<br>	    &quot;<strong>adfs-1.example.com</strong>&quot; {<br>	        SSL::profile <strong>adfs1-serverssl</strong><br>	    }<br>	    &quot;<strong>adfs-2.example.com</strong>&quot; {<br>	        SSL::profile <strong>adfs2-serverssl</strong><br>	    }<br>	  default {<br>	#default serversssl profile to be selected if Host header value cannot be matched with predefined values<br>	    SSL::profile serverssl<br>	  }<br>	}<br>	}</span></li><li>Click <strong>Finished</strong>.</li><li>Navigate to<strong> Local Traffic &gt; Virtual Servers &gt; Virtual Server List</strong>.</li><li>Click on the mentioned <strong>Virtual Server</strong>.</li><li>Ensure <strong>SSL Profile (Server)</strong>  is <strong>serverssl</strong>.</li><li>Click the <strong>Resources </strong>tab.</li><li>Aligned with <strong>iRule</strong>, click <strong>Manage</strong>.</li><li>Move the created iRule from <strong>Available </strong>to <strong>Enabled</strong>.</li><li>Click <strong>Finished</strong>.</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None.</p>
+</article>
+</body>
+</html>

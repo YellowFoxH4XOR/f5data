@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K48520042: BIG-IQ add standby fails ERROR: Failure establishing streaming replication on the standby.</title>
+<meta name="description" content="Support Solution: BIG-IQ add standby fails ERROR: Failure establishing streaming replication on the standby. — An error occurred while adding the BIG-IQ: ERROR: Failure executing pg_basebackup. status: 1 ERROR: Failure establishing streaming replication on the standby. Error code: 1…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K48520042">
+</head>
+<body>
+<header>
+<h1>K48520042: BIG-IQ add standby fails ERROR: Failure establishing streaming replication on the standby.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-02-01</dd>
+<dt>Updated</dt><dd>2024-04-24</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li><li>BIG-IQ Centralized Management: 7.0.X, 7.0.0, 7.1.0, 7.1.X, 8.0.0, 8.0.X, 8.1.0, 8.1.X, 8.2.0, 8.2.X, 8.3.0, 8.3.X, 7.X.X, 8.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K48520042">https://my.f5.com/manage/s/article/K48520042</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>While attempting to add a Standby BIG-IQ, it fails with an error similar to the following in the GUI:<br><br><span class="code">An error occurred while adding the BIG-IQ: ERROR: Failure executing pg_basebackup. status: 1 ERROR: Failure establishing streaming replication on the standby. Error code: 1 /usr/bin/ha_streaming_replication: line 25: 27623 Terminated ( sleep &quot;$sleep_time&quot; &amp; local sleep_pid=&quot;$!&quot;; trap &quot;kill $sleep_pid 2&gt;/dev/null&quot; EXIT; wait &quot;$sleep_pid&quot;; kill &quot;$cmd_pid&quot; 2&gt; /dev/null ) ERROR: Failure establishing streaming replication with standby. Restored the standby database to its previous state</span></p>
+<p>An error will be logged in restjavad logs with a message:<br><span class="code">ERROR: Failure executing pg_basebackup. status: 1<br>ERROR: Failure establishing streaming replication on the standby. Error code: 1</span><br><br>Additionally, a similar error will be logged in <strong>/var/log/ha.log</strong><br><br>Interface packet captures show a TCP connection from the Standby to the Active on port 5432, which is torn down after the TLS <strong>Encrypted Handshake Message.</strong> The connection ends before any application data is sent over the connection. The failed connection is the Postgres utility <strong>pg_basebackup </strong>attempting to establish a streaming connection to Postgres on the Active and copy the Active BIG-IQ database.<br><br><span class="sectiontitle">Environment</span></p>
+<ul><li>BIG-IQ CMs forming an HA pair</li><li>Hostname and IP not matching  in postgresql certificate</li><li>or expired postgresql certificate</li></ul>
+<p><span class="sectiontitle">Cause</span><br>This TLS failure is caused by host name values in the certificate used by Postgres on the Active BIG-IQ that do not match the IP address on the Active BIG-IQ that is being connected to or expired certificate of Active BIG-IQ device<br><br>For example, if the /var/lib/pgsql/config/server.crt certificate on the Active BIG-IP has a CN that matches the IP address of the management-ip but the self-ips are specified during the HA setup, the pairing would fail the TLS handshake when the Standby attempted to establish a streaming connection. <br><br>Example:<br>If the Active BIG-IQ had the following IP addresses:<br>192.0.2.180        Management-IP<br>203.0.113.180    Self-IP<br><br>And the Postgres certificate on The Active contained these CN values:<br><span class="code">issuer= /CN=192.0.2.180/O=F5 BIG-IQ System<br>subject= /CN=192.0.2.180/O=F5 BIG-IQ System</span><br><br>If the Standby BIG-IQ attempts to connect to 203.0.113.180, the TLS handshake will fail for the streaming replication because &quot;203.0.113.180&quot; does not match the certificate CN &quot;192.0.2.180&quot;<br> </p>
+<p>Or expired certificate example<br><br><span class="code">openssl x509 -in /var/lib/pgsql/config/server.crt -startdate -enddate -noout</span></p>
+<p>notBefore=Jan 26 13:24:42 2022 GMT</p>
+<p><strong>notAfter=Jan 25 13:24:42 2023 GMT. &lt;&lt;  date before current date</strong></p>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<ol><li>
+<p>Use to following openssl command on the Active BIG-IQ to verify that the certificate has the proper CN host name values:<br><span class="code">openssl x509 -in /var/lib/pgsql/config/server.crt -issuer -subject -startdate -enddate -noout</span></p>
+</li><li>
+<p>If the CN values in the output from step #1 do not equal the IP address on the Active used for HA generate a new Postgres certificate with the correct CN values:<br><strong>ha_generate_certs  -f &lt;BIG-IQ Local Discovery Address&gt;</strong><br><br><em><span style="color: #2ecc71;"><strong>Note</strong>: Each HA certificate must contain the Discovery IP configured on the same BIG-IQ device it is generated on. The Discovery address can be identified in the BIG-IQ GUI: System &gt; This Device &gt; General Properties</span></em></p>
+</li></ol>
+<p><span class="sectiontitle">Additional Information</span><br><br>All files must be owned by postgres to allow replication of the db to take place.<br>The ERROR message can also be caused by incorrect file permissions on the Primary CM in /var/lib/pgsql/data<br><span style="background-color: #dddddd;">cd /var/lib/pgsql/data</span><br><br>Verify that all files are owned by postgres:<br><span style="background-color: #dddddd;">ls -l</span><br><br>Modify any files that are not owned by postgres:<br><span style="background-color: #dddddd;">chown postgres:postgres &lt;filename&gt;</span><br><br> </p>
+</article>
+</body>
+</html>

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K47001649: Experiencing Blank Configuration Utility Pages and Observing 403 Codes on the Background Requests</title>
+<meta name="description" content="Support Solution: Experiencing Blank Configuration Utility Pages and Observing 403 Codes on the Background Requests — Your Configuration Utility (WebUi) might be blank on one or multiple pages.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K47001649">
+</head>
+<body>
+<header>
+<h1>K47001649: Experiencing Blank Configuration Utility Pages and Observing 403 Codes on the Background Requests</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-11-19</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.X.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 14.X.X, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K47001649">https://my.f5.com/manage/s/article/K47001649</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<ul><li>
+	<p>Your <strong>Configuration Utility </strong>(WebUi) might be blank on one or multiple pages.</p>
+	</li><li>You may find some of the requests are showing <strong>HTTP response code 403</strong> in web browser developer tools by using  <a href="https://my.f5.com/manage/s/article/K10370211" target="_self">K10370211: Generate an HTTP Archive using a browser</a><br>	For example, if you click any of the red-highlighted failed requests, you will find a general message like below:</li></ul>
+
+<p style="margin-left: 40px;"><span class="example2">Request URL: https://&lt;GUI_IP_addr&gt;/restui/default/js/session-authn.js<br>Request Method: GET<br>Status Code: 403 Forbidden</span></p>
+
+<ul><li>You may find similar log messages in the log file <strong>/var/log/httpd/httpd_errors:</strong></li></ul>
+
+<p style="margin-left: 40px;"><span class="example2">Nov  1 00:00:00 bigip.ltm.local err httpd[&lt;PID&gt;]: [rewrite:error] [pid &lt;PID&gt;] [client &lt;ip_address&gt;:&lt;port&gt;] AH00670: Options FollowSymLinks and SymLinksIfOwnerMatch are both off, so the RewriteRule directive is also forbidden due to its similar ability to circumvent directory restrictions : <strong>/usr/local/www/restui/</strong>default/js/session-authn.js, referer: https://&lt;ip_address&gt;/&lt;path&gt;</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP LTM</li><li>Configuration Utility or WebUI</li><li>Blank Configuration Utility pages</li><li>You have customized httpd include configuration with <strong>RewriteEngine On</strong> configuration</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>While the <strong>RewriteEngine On</strong> is set for the <strong>httpd</strong>, the <strong>Options +FollowSymLinks</strong>, or equal setting <strong>Options +SymLinksIfOwnerMatch</strong>, must be enabled. This configuration may be introduced as a result of performing workaround in  <a href="https://my.f5.com/manage/s/article/K74566933" target="_self">K74566933: How to disable HTTP OPTIONS method at global level for the Configuration Utility</a></p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>You may use the below command to check whether the <strong>RewriteEngine On </strong>is in use or not:<br><br><span class="code">tmsh list sys httpd include</span><br><br>For example, you may observe the below configuration output that has the option in use:</p>
+
+<p><span class="example2">sys httpd {<br>    include &quot;<br>        &lt;Location /&gt;<br>            <strong>RewriteEngine On</strong><br>            RewriteCond %{REQUEST_METHOD} ^(OPTIONS)<br>            RewriteRule .* - [F]<br>        &lt;/Location&gt;<br>        &lt;Directory /usr/local/www/rrdstats&gt;<br>            Options +SymLinksIfOwnerMatch<br>        &lt;/Directory&gt;<br>        &lt;Directory /usr/local/www/mcpq&gt;<br>            Options +SymLinksIfOwnerMatch<br>        &lt;/Directory&gt;<br>        &lt;Directory /usr/local/www/rtstats&gt;<br>            Options +SymLinksIfOwnerMatch<br>        &lt;/Directory&gt;<br>        &lt;Directory /var/www/tmui/tmui/system/stats/images&gt;<br>            Options +SymLinksIfOwnerMatch<br>        &lt;/Directory&gt;<br>        &quot;<br>}</span><br><br>You may add a Directory section to append the <strong>Options +SymLinksIfOwnerMatch. </strong>For example, if you find the error log message like below:<br><br><span class="example2">Nov  1 00:00:00 bigip.ltm.local err httpd[&lt;PID&gt;]: [rewrite:error] [pid &lt;PID&gt;] [client &lt;ip_address&gt;:&lt;port&gt;] AH00670: Options FollowSymLinks and SymLinksIfOwnerMatch are both off, so the RewriteRule directive is also forbidden due to its similar ability to circumvent directory restrictions : <strong>/usr/local/www/restui/</strong>default/js/session-token.js, referer: https://&lt;ip_address&gt;/&lt;path-of-the-page-you-are-accessing&gt;</span><br><br>You can find the restriction directory <strong>/usr/local/www/restui/</strong> in the log messages, so you can use the steps below to insert the Directory sections.</p>
+
+<ol><li>
+	<p>Login to the TMSH utility.<br>	<span class="code">tmsh </span></p>
+	</li><li>
+	<p>Edit the sys httpd  configuration.<br>	<span class="code">edit sys httpd </span></p>
+	</li><li>
+	<p>Press <strong>i</strong> to insert.</p>
+	</li><li>
+	<p>Append the below section at the end of the include section.<br>	<span class="example2">&lt;Directory <strong>/usr/local/www/restui</strong>&gt;             </span><br>	<span class="example2">       Options +SymLinksIfOwnerMatch</span><br>	<span class="example2">&lt;/Directory&gt;</span></p>
+	</li><li>
+	<p>Press <strong>ESC</strong>, <strong>:</strong> and <strong>wq</strong>, choose <strong>y</strong> for the coming prompt.</p>
+	</li><li>
+	<p>Now the full include configuration section should look like:<br>	<span class="note">Note: this configuration can be synced within your clusters automatically while you&#39;re performing synchronization.</span><br>	<span class="example2">sys httpd {<br>	    include &quot;<br>	        &lt;Location /&gt;<br>	            RewriteEngine On<br>	            RewriteCond %{REQUEST_METHOD} ^(OPTIONS)<br>	            RewriteRule .* - [F]<br>	        &lt;/Location&gt;<br>	        &lt;Directory /usr/local/www/rrdstats&gt;<br>	            Options +SymLinksIfOwnerMatch<br>	        &lt;/Directory&gt;<br>	        &lt;Directory /usr/local/www/mcpq&gt;<br>	            Options +SymLinksIfOwnerMatch<br>	        &lt;/Directory&gt;<br>	        &lt;Directory /usr/local/www/rtstats&gt;<br>	            Options +SymLinksIfOwnerMatch<br>	        &lt;/Directory&gt;<br>	        &lt;Directory /var/www/tmui/tmui/system/stats/images&gt;<br>	            Options +SymLinksIfOwnerMatch<br>	        &lt;/Directory&gt;<br>	        &lt;Directory /usr/local/www/restui&gt;              <br>	            Options +SymLinksIfOwnerMatch<br>	        &lt;/Directory&gt;<br>	        &quot;<br>	}</span></p>
+	</li><li>
+	<p>Restart the httpd process following the below command.<br>	<span class="note">Note: this should have no traffic impact on your system, the Configuration Utility will be unavailable shortly during the restart.</span><br>	<br>	<span class="code">bigstart restart httpd</span></p>
+	</li><li>
+	<p>Force refresh your <strong>Configuration Utility</strong> to test the result</p>
+	</li></ol>
+ 
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

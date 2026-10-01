@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000139902: FQDN pool members are marked down</title>
+<meta name="description" content="Support Solution: FQDN pool members are marked down — FQDN pool went offline even when the BIG-IP is able to resolve DNS and reach to the FQDN via TCP port 443 tested using curl command.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000139902">
+</head>
+<body>
+<header>
+<h1>K000139902: FQDN pool members are marked down</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-06-11</dd>
+<dt>Updated</dt><dd>2025-02-19</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.X.X, 15.0.0, 15.0.1, 15.0.X, 15.1.0, 15.1.1, 15.1.2, 15.1.3, 15.1.4, 15.1.5, 15.1.6, 15.1.7, 15.1.8, 15.1.9, 15.1.10, 15.1.X, 16.0.0, 16.0.1, 16.0.X, 16.1.0, 16.1.1, 16.1.2, 16.1.3, 16.1.4, 16.1.X, 17.0.0, 17.0.X, 17.1.0, 17.1.1, 17.1.X, 17.X.X, 16.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000139902">https://my.f5.com/manage/s/article/K000139902</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>FQDN pool went offline even when the BIG-IP is able to resolve DNS and reach to the FQDN via TCP port 443 tested using curl command.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP</li><li>LTM</li><li>FQDN Pool</li><li>Monitor failed</li><li>GUI</li><li>CLI</li></ul>
+<h2>Cause</h2>
+<p>The BIG-IP has the &quot;node default monitor&quot; changed from default &quot;<em><strong>none</strong></em>&quot; to any &quot;<strong>icmp ping</strong>&quot; and this will applied to all the nodes even if the individual node doesn&#39;t has any monitor HC configured.</p>
+<p>If the configured FQDN Pool doesn&#39;t allow ICMP ping, then the &quot;<em><strong>default-node-monitor</strong></em>&quot; configuration will cause the FQDN pool goes down (<span style="color: #c20025;"><strong>red</strong></span>)</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"><em>example:</em></span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;"><em>list ltm default-node-monitor </em></span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;"><em>ltm default-node-monitor {</em></span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;"><em>    rule /Common/icmp</em></span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;"><em>}</em></span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"><em><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000HtT7&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007kxeT" alt="default_node_monitor.png" width="705" height="384"></img> </em></span></p>
+<p> </p>
+<h2>Recommended Actions</h2>
+<p>There are 3 options as listed below that can resolve this issue:</p>
+<ul><li>Restore the &quot;default-node-monitor&quot; to &quot;<em><strong>none</strong></em>&quot;</li></ul>
+<pre class="language-markup"><code>tmsh modify /ltm default-node-monitor rule none
+tmsh save /sys config</code></pre>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000HtT7&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007kxdG" alt="default_node_monitor-none.png" width="904" height="340"></img></p>
+<ul><li>Add another default monitor &quot;<em><strong>https_443</strong></em>&quot; with at least 1 healthy</li></ul>
+<pre class="language-markup"><code>tmsh modify /ltm default-node-monitor rule min 1 of { icmp https_443}
+tmsh save /sys config</code></pre>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000HtT7&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007kxda" alt="default_node_monitor-atleast1.png" width="904" height="384"></img></p>
+<ul><li>Alternatively, change the node FQDN Pool to have it own health check monitor (e.g. default monitor &quot;<em><strong>https_443</strong></em>&quot;).</li></ul>
+<pre class="language-markup"><code>tmsh modify /ltm node removemeFQDN monitor https_443
+tmsh save /sys config</code></pre>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000HtT7&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007kxdu" alt="default_node_monitor-node_specific_monitor.png" width="903" height="930"></img></p>
+<h2>Additional Information</h2>
+<p>If the issue impacts all FQDN pool members on one BIG-IP but not the HA peer, then it&#39;s possible that the dynconfd daemon responsible for resolving FQDN pool members is no longer working.</p>
+<p>Check for logged messages in /var/log/dynconfd.log</p>
+<p>If it has been some time since last logged message, this could indicate a problem even if the process is showing as UP.</p>
+<p>Restart the daemon to restore operation:</p>
+<p><span style="background-color: #dddddd;">tmsh restart sys service dynconfd</span></p>
+<p><span style="color: #27ae60;"><em><strong>Note: </strong>Restart of dynconfd temporarily interrupts queries for FQDN name resolution and updates (deletion/creation) of ephemeral nodes/pool members in response to FQDN resolution changes. This should have no impact to traffic.</em></span></p>
+<p> </p>
+</article>
+</body>
+</html>

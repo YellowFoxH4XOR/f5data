@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000092949: Possible Reasons for 503 errors in Aspen Mesh</title>
+<meta name="description" content="Support Solution: Possible Reasons for 503 errors in Aspen Mesh — 503 errors are one of the most common errors seen in the Aspen Mesh logs. Typically, this error is a result of service connectivity issues. Here are some common reasons for istio-proxy logs to report…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000092949">
+</head>
+<body>
+<header>
+<h1>K000092949: Possible Reasons for 503 errors in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-12-02</dd>
+<dt>Updated</dt><dd>2022-12-02</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000092949">https://my.f5.com/manage/s/article/K000092949</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>503 errors are one of the most common errors seen in the Aspen Mesh logs.  Typically, this error is a result of service connectivity issues.   Here are some common reasons for istio-proxy logs to report 503 errors.  </p>
+
+<h2><strong>Environment</strong></h2>
+
+<ul><li>Redhat Openshift: 4.6x, 4.7.x, 4.8.x, 4.9.x and 4.10.x </li><li>Kubernetes: 1.17x,1.18.x,1.19.x,1.20.x, 1.21.x, 1.22.x, 1.23.x </li><li>Aspen Mesh: 1.6.x,1.9.x,1.11.x,1.14.x </li></ul>
+
+<h2><strong>Cause</strong></h2>
+
+<p>In this example we receive a 503 error code when trying to connect to a service that is in a namespace external to the cluster:  </p>
+
+<pre class="ckeditor_codeblock">
+kubectl exec -it clientpod -- curl -Is nginx-svc.external.svc.cluster.local:8080 
+HTTP/1.1 503 Service Unavailable 
+content-length: 190 
+content-type: text/plain 
+date: Wed, 19 Oct 2022 18:02:48 GMT 
+server: envoy</pre>
+
+<p><br>The log message received in the client’s istio-proxy log shows that 503 was a result of the wrong version number.  </p>
+
+<pre class="ckeditor_codeblock">
+[2022-10-19T18:02:48.496Z] &quot;HEAD / HTTP/1.1&quot; 503 UF,URX upstream_reset_before_response_started{connection_failure,TLS_error:_268435703:SSL_routines:OPENSSL_internal:WRONG_VERSION_NUMBER} - &quot;TLS error: 268435703:SSL routines:OPENSSL_internal:WRONG_VERSION_NUMBER&quot; 0 0 41 - &quot;-&quot; &quot;curl/7.83.1&quot; &quot;de424048-5020-4182-86a0-a01f6e28cace&quot; &quot;nginx-svc.external.svc.cluster.local:8080&quot; &quot;10.244.1.218:80&quot; outbound|8080||nginx-svc.external.svc.cluster.local - 10.107.255.32:8080 10.244.1.212:40982 - default</pre>
+
+<p><br>By default, the workloads that exist within Aspen Mesh use mTLS. Because the nginx service is not using TLS, we need to create a destination rule to disable the TLS for traffic destined to that service.</p>
+
+<pre class="ckeditor_codeblock">
+apiVersion: networking.istio.io/v1beta1 
+kind: DestinationRule 
+metadata: 
+     name: disable-mtls 
+     namespace: default 
+spec: 
+     host: nginx-svc.external.svc.cluster.local
+     trafficPolicy:
+       tls:
+          mode: DISABLE </pre>
+
+<p><br>After applying the destination rule the istio-proxy logs now report a 200 HTTP Response code:</p>
+
+<pre class="ckeditor_codeblock">
+[2022-10-19T18:38:23.787Z] &quot;HEAD /index.html HTTP/1.1&quot; 200 - via_upstream - &quot;-&quot; 0 0 12 12 &quot;-&quot; &quot;curl/7.83.1&quot; &quot;9b6c57a7-1fc7-455f-893f-48840a561ee2&quot; &quot;nginx-svc.external.svc.cluster.local:8080&quot; &quot;10.244.1.218:80&quot; outbound|8080||nginx-svc.external.svc.cluster.local 10.244.1.212:49764 10.107.255.32:8080 10.244.1.212:47606 - default</pre>
+
+<p><br>TCP and HTTP Codes related to 503 errors produced by the istio-proxy (<a href="https://www.envoyproxy.io/docs/envoy/latest/configuration/observability/access_log/usage#config-access-log-format-response-flags" target="_blank">Envoy)</a>:</p>
+
+<pre class="ckeditor_codeblock">
+UH: No healthy upstream hosts in upstream cluster in addition to 503 response code. 
+UF: Upstream connection failure in addition to 503 response code. 
+UO: Upstream overflow (circuit breaking) in addition to 503 response code. 
+NR: No route configured for a given request in addition to 404 response code, or no matching filter chain for a downstream connection. 
+URX: The request was rejected because the upstream retry limit (HTTP) or maximum connect attempts (TCP) was reached. 
+NC: Upstream cluster not found. 
+DT: When a request or connection exceeded max_connection_duration or max_downstream_connection_duration.
+</pre>
+
+<h2><br><strong>Recommended Actions</strong></h2>
+
+<p>Here are a couple of actions on how to resolve the 503 codes:</p>
+
+<ul><li><strong>NR</strong>: No route configured, check your DestinationRule or VirtualService.</li><li><strong>UO</strong>: Upstream overflow with circuit breaking, check your circuit breaker configuration in DestinationRule.</li><li><strong>UF</strong>: Failed to connect to upstream, if you are using Istio authentication, check for a mutual TLS configuration conflict.</li><li><strong>UH</strong>: No healthy upstream hosts in upstream cluster in addition to 503 response code, check if the application or sidecar is responding; review the Service Entries and make sure they are created correctly; check for network latency.</li><li><strong>via_upstream</strong>: Check the application. </li></ul>
+
+<h2><strong>Additional Information</strong></h2>
+
+<ul><li><a href="https://www.envoyproxy.io/docs/envoy/latest/configuration/observability/access_log/usage#config-access-log-format-response-flags" target="_blank">https://www.envoyproxy.io/docs/envoy/latest/configuration/observability/access_log/usage#config-access-log-format-response-flags</a> </li><li><a href="https://support.f5.com/csp/article/K67125033" target="_blank">K67125033: Aspen Mesh: How to get istio-proxy logs</a></li><li><a href="https://support.f5.com/csp/article/K34977262" target="_blank">K34977262: Aspen Mesh: Understanding istio-proxy access logs</a></li><li><a href="https://support.f5.com/csp/article/K50554509" target="_blank">K50554509: Basic troubleshooting commands for istio-proxy in Aspen Mesh</a></li></ul>
+</article>
+</body>
+</html>

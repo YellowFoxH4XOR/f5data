@@ -1,4 +1,4 @@
-"""Command-line entrypoint: `python -m f5scraper.cli {vulns|eol|all} [opts]`."""
+"""Command-line entrypoint: `python -m f5scraper.cli {vulns|eol|compat|articles|all} [opts]`."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 
 from .browser import ArticleSession
-from . import vulns, eol, compat
+from . import vulns, eol, compat, articles
 
 DEFAULT_OUTPUT = Path("data/output")
 
@@ -36,17 +36,20 @@ async def _run(args: argparse.Namespace) -> None:
                 refresh=args.refresh, limit=args.limit, ttl_days=args.ttl_days,
                 no_discover=args.no_discover,
             )
+        # Not part of `all`: the full KB dump is ~37k files and is run on its own.
+        if args.command == "articles":
+            await articles.run(session, args.output, limit=args.limit)
 
 
 def main() -> None:
     p = argparse.ArgumentParser(prog="f5scraper", description=__doc__)
-    p.add_argument("command", choices=["vulns", "eol", "compat", "all"])
+    p.add_argument("command", choices=["vulns", "eol", "compat", "articles", "all"])
     p.add_argument("--output", type=Path, default=DEFAULT_OUTPUT,
                    help="output/cache directory (default: data/output)")
     p.add_argument("--refresh", action="store_true",
                    help="ignore cache; re-scrape everything")
     p.add_argument("--limit", type=int, default=None,
-                   help="cap number of quarterly reports (testing)")
+                   help="cap number of quarterly reports / KB articles (testing)")
     p.add_argument("--ttl-days", type=int, default=0,
                    help="re-scrape mutable articles older than N days (0 = always)")
     p.add_argument("--throttle", type=float, default=1.0,

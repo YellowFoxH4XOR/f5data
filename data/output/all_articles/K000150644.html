@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000150644: Frequent failovers between Azure BIG-IP VEs can result in total loss of Azure-configured secondary IPs (VIPs/floating IPs/SNATs) causing full traffic outage</title>
+<meta name="description" content="Support Solution: Frequent failovers between Azure BIG-IP VEs can result in total loss of Azure-configured secondary IPs (VIPs/floating IPs/SNATs) causing full traffic outage — Frequent failovers between Azure BIGIP VEs can result in total loss of Azure-configured secondary IPs (VIPs/floating IPs/SNATs) causing full traffic outage.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000150644">
+</head>
+<body>
+<header>
+<h1>K000150644: Frequent failovers between Azure BIG-IP VEs can result in total loss of Azure-configured secondary IPs (VIPs/floating IPs/SNATs) causing full traffic outage</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-05-07</dd>
+<dt>Updated</dt><dd>2025-06-04</dd>
+<dt>Applies to</dt><dd><ul><li>Public Cloud</li><li>BIG-IP</li><li>BIG-IP Cloud Edition</li><li>Microsoft Azure</li><li>BIG-IP LTM: 16.1.5</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000150644">https://my.f5.com/manage/s/article/K000150644</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Frequent failovers between Azure BIGIP VEs can result in total loss of Azure-configured secondary IPs (VIPs/floating IPs/SNATs) causing full traffic outage.</p>
+<p>In ltm log we will see indications of connectivity loss between the peers on failover channel and we will see the Standby VE going Active, while its peer stays in Active state as well:</p>
+<p style="line-height: 1;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">Mar 1 01:39:59 &lt;VE2&gt; warning sod[6089]: 010c0083:4: No failover status messages received for 3.100 seconds</span></p>
+<p style="line-height: 1;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">Mar 1 01:40:04 &lt;VE1&gt; notice sod[6654]: 010c006d:5: Leaving Standby for Active: Next Active, peers agree on config.</span></p>
+<p style="line-height: 1;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">Mar 1 01:40:04 &lt;VE1&gt; notice sod[6654]: 010c0053:5: Active for traffic group traffic-group-1.</span></p>
+<p style="line-height: 1;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">Mar 1 01:40:04 &lt;VE1&gt; notice sod[6654]: 010c0019:5: Active</span></p>
+<p style="line-height: 1;"> </p>
+<p>Here VE1 claims itself as Active, while VE2 is also Active.</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Mar 1 01:40:04 &lt;VE2&gt; notice sod[6089]: 010c002a:5: Requesting tmm to resend gratuitous arps for traffic group traffic-group-1.</span></p>
+<p>After a few seconds the connectivity is back and the pair is Active/Standby again, but traffic will be broken and VSs and pools will not be functional.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP VE in Azure running 16.1.5, CFE 2.1.0.</li></ul>
+<h2>Cause</h2>
+<p>When Azure BIGIP VEs in HA pair lose connectivity with one another causing Active-Active (split-brain) situation, CFE begins to remove Azure resources from the current Standby device (previously Active). This process takes about 30 seconds.</p>
+<p>After 4 seconds VEs re-established connectivity and HA immediately failed back, so CFE running on the active device began removing the Azure resources from the standby device, which was still in the process of removing them from the first device (which is now active again).</p>
+<p>At this point one or more of the Azure resources go into a &quot;Failed&quot; state.</p>
+<p>Azure most likely considered the subsequent update request as invalid because the affected network interfaces were already updating.</p>
+<p>As a result, we end up without resources on any of the VE, essentially causing traffic outage until the IPs are re-configured in Azure.</p>
+<p>The 30 seconds timing benchmark for resources removal (and 30 seconds more for addition is essentially Azure-imposed , as we are subject to Azure&#39;s control plane latency when updating the network interfaces directly. This latency can be minimized and even eliminated if Azure LoadBalancer is deployed in front of BIG-IPs and CFE deleted. Here are the latency estimates for CFE failovers for reference:</p>
+<p><a href="https://clouddocs.f5.com/products/extensions/f5-cloud-failover/latest/userguide/performance-sizing.html?highlight=performance#azure" target="_blank">https://clouddocs.f5.com/products/extensions/f5-cloud-failover/latest/userguide/performance-sizing.html?highlight=performance#azure</a></p>
+<h2>Recommended Actions</h2>
+<p>To recover from this situation, we need to perform the following steps:</p>
+<p style="list-style-type: none;">1. Manually restore the Azure resources (network interfaces and route tables) for deployment.</p>
+<p style="list-style-type: none;">2. Reinstall CFE and reapply the correct declaration using the /declare endpoint.</p>
+<p style="list-style-type: none;">3. Then run a dry run failover on the standby device to make sure the output is correct.</p>
+<p> </p>
+<h3>Detailed steps explanation</h3>
+<p>For step 1,  check current IP configuration on the NIC&#39;s.</p>
+<p>It is also possible to use the following commands for that:</p>
+<p style="line-height: 1;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">az network nic ip-config list --resource-group &lt;resource-group-name&gt; --nic-name &lt;NIC name&gt;</span><span style="font-family: &#39;courier new&#39;, courier, monospace;"></span></p>
+<p> </p>
+<p>If any of the virtual addresses are missing from the list of secondary IP&#39;s , they must be added manually and associated with the currently active unit.</p>
+<p>For step 2, to remove current CFE installation and install it again run follow the below steps:</p>
+<p style="list-style-type: none;line-height: 1;">-On the BIG-IP user interface, click <strong>iApps &gt; Package Management LX &gt; f5-cloud-failover &gt; Uninstall</strong></p>
+<p style="list-style-type: none;line-height: 1;">-Download and install CFE as per <a target="_blank" href="https://clouddocs.f5.com/products/extensions/f5-cloud-failover/latest/userguide/installation.html#installation">https://clouddocs.f5.com/products/extensions/f5-cloud-failover/latest/userguide/installation.html#installation</a></p>
+<p style="list-style-type: none;line-height: 1;">-Configure CFE by posting a declaration as per <a target="_blank" href="https://clouddocs.f5.com/products/extensions/f5-cloud-failover/latest/userguide/configuration.html">https://clouddocs.f5.com/products/extensions/f5-cloud-failover/latest/userguide/configuration.html</a></p>
+<p style="line-height: 1;"> </p>
+<p>For step 3,  log in to the standby VE and issue the following curl command:</p>
+<p style="list-style-type: none;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">curl -su admin: -X POST -d &#39;{&quot;action&quot;:&quot;dry-run&quot;}&#39; http<strong>:</strong>//localhost:8100/mgmt/shared/cloud-failover/trigger | jq .</span></p>
+<p>The result will be logged into <strong>/var/log/restnoded/restnoded.log</strong>.</p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

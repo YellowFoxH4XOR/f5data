@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000138175: Check number of user access on each APM branch</title>
+<meta name="description" content="Support Solution: Check number of user access on each APM branch — This article explains how to add in counters to an allow and deny branch on an Access Policy and send it to a High Speed Logging pool on a 24 hour interval.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000138175">
+</head>
+<body>
+<header>
+<h1>K000138175: Check number of user access on each APM branch</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-04-15</dd>
+<dt>Updated</dt><dd>2026-04-24</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 15.X.X, 16.X.X, 17.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000138175">https://my.f5.com/manage/s/article/K000138175</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>This article explains how to add in counters to an allow and deny branch on an Access Policy and send it to a High Speed Logging pool on a 24 hour interval.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP APM</li><li>iRules</li></ul>
+<h2>Cause</h2>
+<h2>Recommended Actions</h2>
+<p>You can create the following iRule and modifications to the VPE to count the sessions.</p>
+<p>Please note:</p>
+<p><strong>A.) </strong>The <strong>hsl_pool</strong> will need to be updated in the iRule to reflect the HSL pool <strong>B.) </strong>There is logging statement that counts each increment, hash this out to keep logs clean.</p>
+<ol><li> Log in to the BIG-IP - Navigate to iRule and create the following:</li></ol>
+<pre class="ckeditor_codeblock">when RULE_INIT {
+    set static::is_allow_counter_initialized 0
+    set static::is_deny_counter_initialized 0
+    set static::next_log_time [expr {[clock seconds] + 86400}]
+}
+ 
+when ACCESS_POLICY_AGENT_EVENT {
+    # Initialization checks
+    if { $static::is_allow_counter_initialized == 0 } {
+        table set allow_counter 0
+        set static::is_allow_counter_initialized 1
+    }
+    if { $static::is_deny_counter_initialized == 0 } {
+        table set deny_counter 0
+        set static::is_deny_counter_initialized 1
+    }
+ 
+    # Incrementing counters
+    if { [ACCESS::policy agent_id] eq &quot;allow_inc_branch&quot; } {
+        set count [table lookup allow_counter]
+        set count [expr {$count + 1}]
+        table set allow_counter $count
+        log local0. &quot;Incremented Allow Counter: $count&quot;
+    } elseif { [ACCESS::policy agent_id] eq &quot;deny_inc_branch&quot; } {
+        set count [table lookup deny_counter]
+        set count [expr {$count + 1}]
+        table set deny_counter $count
+        log local0. &quot;Incremented Deny Counter: $count&quot;
+    }
+ 
+    # Log sending and counter reset
+    if {[clock seconds] &gt;= $static::next_log_time} {
+        set hsl [HSL::open -proto UDP -pool hsl_pool]
+        set allow_count [table lookup allow_counter]
+        set deny_count [table lookup deny_counter]
+        HSL::send $hsl &quot;Total Allow Access Policy Events for the day: $allow_count&quot;
+        HSL::send $hsl &quot;Total Deny Access Policy Events for the day: $deny_count&quot;
+        log local0. &quot;Sent logs. Allow: $allow_count, Deny: $deny_count&quot;
+        table set allow_counter 0
+        table set deny_counter 0
+        set static::next_log_time [expr {[clock seconds] + 86400}]
+    }
+}</pre>
+<ol start="2"><li>Add the following branches in the VPE to trigger the iRule increments</li></ol>
+<p><img alt="Allow Branch" src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000htFl&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007K4Jy" style="width: 1308px;height: 281px;"></img><br><img alt="Deny Branch" src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000htFl&amp;feoid=00N1T00000AOnlF&amp;refid=0EMHs000007K4KD" style="width: 1312px;height: 328px;"></img></p>
+<ol start="3"><li>Update the HSL pool in the iRule to reflect a local High Speed Logging Pool</li></ol>
+<p>The logs will reflect such as the following:</p>
+<pre class="ckeditor_codeblock">Testing Deny Counter:
+	Jan  8 06:13:57 apm4.apmsupport.local info tmm3[18517]: Rule /Common/session_counter_iRule &lt;ACCESS_POLICY_AGENT_EVENT&gt;: Incremented Deny Counter: 1
+	Jan  8 06:14:15 apm4.apmsupport.local info tmm3[18517]: Rule /Common/session_counter_iRule &lt;ACCESS_POLICY_AGENT_EVENT&gt;: Incremented Deny Counter: 2
+	Jan  8 06:14:26 apm4.apmsupport.local info tmm[18517]: Rule /Common/session_counter_iRule &lt;ACCESS_POLICY_AGENT_EVENT&gt;: Incremented Deny Counter: 3
+	Jan  8 06:14:37 apm4.apmsupport.local info tmm2[18517]: Rule /Common/session_counter_iRule &lt;ACCESS_POLICY_AGENT_EVENT&gt;: Incremented Deny Counter: 4
+	Jan  8 06:14:37 apm4.apmsupport.local info tmm2[18517]: Rule /Common/session_counter_iRule &lt;ACCESS_POLICY_AGENT_EVENT&gt;: Sent logs. Allow: 0, Deny: 4
+ 
+Testing Allow Counter:
+	Jan  8 06:14:52 apm4.apmsupport.local info tmm1[18517]: Rule /Common/session_counter_iRule &lt;ACCESS_POLICY_AGENT_EVENT&gt;: Incremented Allow Counter: 1
+	Jan  8 06:15:02 apm4.apmsupport.local info tmm1[18517]: Rule /Common/session_counter_iRule &lt;ACCESS_POLICY_AGENT_EVENT&gt;: Incremented Allow Counter: 2
+	Jan  8 06:15:13 apm4.apmsupport.local info tmm1[18517]: Rule /Common/session_counter_iRule &lt;ACCESS_POLICY_AGENT_EVENT&gt;: Incremented Allow Counter: 3
+	Jan  8 06:15:19 apm4.apmsupport.local info tmm2[18517]: Rule /Common/session_counter_iRule &lt;ACCESS_POLICY_AGENT_EVENT&gt;: Incremented Allow Counter: 4
+	Jan  8 06:15:27 apm4.apmsupport.local info tmm2[18517]: Rule /Common/session_counter_iRule &lt;ACCESS_POLICY_AGENT_EVENT&gt;: Incremented Allow Counter: 5
+	Jan  8 06:15:34 apm4.apmsupport.local info tmm3[18517]: Rule /Common/session_counter_iRule &lt;ACCESS_POLICY_AGENT_EVENT&gt;: Incremented Allow Counter: 6
+	Jan  8 06:15:34 apm4.apmsupport.local info tmm3[18517]: Rule /Common/session_counter_iRule &lt;ACCESS_POLICY_AGENT_EVENT&gt;: Sent logs. Allow: 6, Deny: 0
+</pre>
+<p><span style="color: #e74c3c;">This article is intended as a <strong>use-at-own-risk</strong>. Please use with discretion and engage proper resources if modifications are needed, i.e. Professional Services</span><br><br>Additional Information</p>
+</article>
+</body>
+</html>

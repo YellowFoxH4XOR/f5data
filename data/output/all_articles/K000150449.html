@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000150449: Debugging F5 Kubernetes pods. NGINX Ingress Controller and Container Ingress Services</title>
+<meta name="description" content="Support Solution: Debugging F5 Kubernetes pods. NGINX Ingress Controller and Container Ingress Services — At times you may wish to explore the inside of a running pod.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000150449">
+</head>
+<body>
+<header>
+<h1>K000150449: Debugging F5 Kubernetes pods. NGINX Ingress Controller and Container Ingress Services</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-03-18</dd>
+<dt>Updated</dt><dd>2025-03-18</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Ingress Controller</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000150449">https://my.f5.com/manage/s/article/K000150449</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>At times you may wish to explore the inside of a running pod.</p>
+<p>You can start a shell, but debug tools are missing.</p>
+<h2>Environment</h2>
+<p>A kubernetes cluster.</p>
+<h2>Cause</h2>
+<p>This is by design. Containers are built on minimal images.</p>
+<p>This reduces attack surface and make them smaller and thus faster to deploy.</p>
+<h2>Recommended Actions</h2>
+<p>Kubernetes has the ability to launch an ephemeral container into an existing pod.</p>
+<p>This can have any required debugging tools.</p>
+<p>This example is a version of F5&#39;s NGINX Ingress Controller product.</p>
+<p>We want to inspect it then get a tcpdump.</p>
+<p>The pods wont share its process namespace to other containers by default. ( even with --share-processes set in the debug). This is set by an option in the deployment.</p>
+<p>Find the deployment and patch it.</p>
+<p> </p>
+<p><code># kubectl get deploy -A | grep ingress-con</code></p>
+<p>ingress    kic-371-nginx-ingress-controller  1/1   1      1      29m</p>
+<p> </p>
+<p>Using the deployment name we patch it.</p>
+<p> </p>
+<pre>kubectl patch deployment kic-371-nginx-ingress-controller -n ingress --patch &#39;<br>spec:<br> template:<br>  spec:<br>   shareProcessNamespace: true&#39;<br><br></pre>
+<p>This is idempotent and harmless.</p>
+<p> </p>
+<p>Find the pod name. In this case we know that all these pods are labeled with app.kubernetes.io/name=nginx-ingress.</p>
+<p>Quickly find the name and namespace.</p>
+<p> </p>
+<p><code># kubectl get pod -A -l app.kubernetes.io/name=nginx-ingress</code></p>
+<p>NAMESPACE  NAME                        READY  STATUS  RESTARTS  AGE</p>
+<p>ingress   kic-371-nginx-ingress-controller-6d975bbf5f-bbx4b  1/1   Running  0     15m</p>
+<p> </p>
+<p>We can now attach a debug image. busybox is a minimal image. This starts a shell because we don&#39;t give an explicit command to run.</p>
+<p> </p>
+<p><code># kubectl debug kic-371-nginx-ingress-controller-6d975bbf5f-bbx4b -n ingress --share-processes -it --image=busybox</code></p>
+<p>--profile=legacy is deprecated and will be removed in the future. It is recommended to explicitly specify a profile, for example &quot;--profile=general&quot;.</p>
+<p>Defaulting debug container name to debugger-9s5kf.</p>
+<p>If you don&#39;t see a command prompt, try pressing enter.</p>
+<p>/ # <code>ps aux</code></p>
+<p>PID  USER   TIME COMMAND</p>
+<p>  1 65535   0:00 /pause</p>
+<p>  7 101    0:01 /nginx-ingress -nginx-plus=true -nginx-reload-timeout=60000 -enable-app-protect=true -enable-app-protect-dos=false -nginx-configmaps=ingress/kic-371-nginx-ingress -ingress-class=kic -health-status=false -health-sta</p>
+<p>  28 101    0:00 /usr/share/ts/bin/bd-socket-plugin tmm_count 4 proc_cpuinfo_cpu_mhz 2000000 total_xml_memory 471859200 total_umu_max_size 3129344 sys_max_account_id 1024 no_static_config</p>
+<p>  29 101    0:00 nginx: master process /usr/sbin/nginx -e stderr</p>
+<p>  34 101    0:00 /usr/bin/nginx-agent --instance-group kic-371-nginx-ingress-controller</p>
+<p>  66 101    0:00 nginx: worker process</p>
+<p>  67 101    0:00 nginx: worker process</p>
+<p>  68 101    0:00 nginx: worker process</p>
+<p>  69 101    0:00 nginx: worker process</p>
+<p> 262 root   0:00 sh</p>
+<p> 269 root   0:00 ps aux</p>
+<p>/ #</p>
+<p> </p>
+<p>netstat is available but tcpdump is not. For that and more complete tools, use nicolaka/netshoot</p>
+<p><code>kubectl debug kic-371-nginx-ingress-controller-6d975bbf5f-bbx4b -n ingress -it --share-processes --image=nicolaka/netshoot -- tcpdump -i eth0 -w - udp</code></p>
+<p> </p>
+<p>This runs tcpdump inside the controller pod, filtering for udp and sends the data to stdout.</p>
+<p>So redirect to a pcap file!</p>
+<h2>Additional Information</h2>
+<p>See</p>
+<p>https://kubernetes.io/docs/tasks/debug/debug-application/debug-running-pod/#ephemeral-container</p>
+<p>https://iximiuz.com/en/posts/kubernetes-ephemeral-containers/</p>
+<p>https://kubernetes.io/docs/tasks/configure-pod-container/share-process-namespace/</p>
+<p>https://github.com/nicolaka/netshoot</p>
+<p> </p>
+<p> </p>
+</article>
+</body>
+</html>

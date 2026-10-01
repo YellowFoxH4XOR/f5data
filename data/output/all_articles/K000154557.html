@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000154557: Failover leads to traffic disruption on F5OS FPGA platform with Cisco switch</title>
+<meta name="description" content="Support Solution: Failover leads to traffic disruption on F5OS FPGA platform with Cisco switch — When having HA F5OS VELOS system or rSeries r5/r10/r12k appliance connected to the same set of Cisco ACI switch, when you failover the traffic group from one tenant on one F5OS system to the other…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000154557">
+</head>
+<body>
+<header>
+<h1>K000154557: Failover leads to traffic disruption on F5OS FPGA platform with Cisco switch</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-01-04</dd>
+<dt>Updated</dt><dd>2026-01-04</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS</li><li>F5OS-C: 1.6.4, 1.8.0, 1.8.1, 1.6.2, 1.6.1, 1.6.0, 1.6.X</li><li>F5OS-A: 1.5.X, 1.8.3, 1.8.0, 1.5.4, 1.5.3, 1.5.2, 1.5.1, 1.5.0, 1.8.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000154557">https://my.f5.com/manage/s/article/K000154557</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When having HA F5OS VELOS system or rSeries r5/r10/r12k appliance connected to the same set of Cisco ACI switch, when you failover the traffic group from one tenant on one F5OS system to the other one, you observed that the switch raises alert related to either &quot;Endpoint Retention Policy&quot; , &quot;Rogue EP Control&quot;, or &quot;Disabling learnig in vlan xxx for xxxs due to too many mac moves.&quot;. This kind of alert usually indicate one mac address shows in multiple interfaces in a short time(e.g. within less than 1 second). When such alert is raised, the swich could suspend L2 MAC/ARP/NDP learning for some time given the configurations on the switch and further affecting the overall traffic processing.</p>
+<p>For example:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Learning is disabled on BD &lt;BD_NAME&gt; on node with id &lt;id&gt; with name &lt;name&gt; from pod &lt;x&gt; of fabric &lt;FABRIC_NAME&gt; because of BD Move frequency</span></p>
+<p><span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;">OR</span></p>
+<div>
+<div><span style="font-family: &#39;courier new&#39;, courier, monospace;">&lt;faultRecord ack=&quot;no&quot; affected=&quot;xxxx&quot; cause=&quot;ep-mac-is-rogue&quot; changeSet=&quot;addr:xxx&quot; childAction=&quot;&quot; code=&quot;xxxx&quot; created=&quot;xxxx&quot; delegated=&quot;no&quot; delegatedFrom=&quot;&quot; descr=&quot;EP MAC xxxx is rogue on interface pox of Node xxxx, Pod x, moving from interface port-channelx (0xxxxxxx)&quot; dn=&quot;xxxx&quot; domain=&quot;access&quot; highestSeverity=&quot;warning&quot; id=&quot;xxxxxx&quot; ind=&quot;modification&quot; lc=&quot;raised&quot; modTs=&quot;never&quot; occur=&quot;1&quot; origSeverity=&quot;warning&quot; prevSeverity=&quot;warning&quot; rule=&quot;epm-rogue-mac-ep-epmacrogue&quot; severity=&quot;warning&quot; status=&quot;&quot; subject=&quot;oper-state-change&quot; type=&quot;operational&quot;/&gt;</span></div>
+<p> </p>
+<p><span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;">On some other Cisco switch, it could be observed having the below logs:</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">L2FM-2-L2FM_MAC_FLAP_DISABLE_LEARN: Disabling learnig in vlan xxx for 120s due to too many mac moves.</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">L2FM-2-L2FM_MAC_FLAP_RE_ENABLE_LEARN: Re-enabling learning in vlan xxx</span><span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;"></span></p>
+</div>
+<h2>Environment</h2>
+<ul><li>F5OS VELOS or r5k/r10k/r12k appliances that have FPGA chips</li><li>Mac Masqurade is configured</li><li>Failover event</li><li>Cisco ACI switch</li><li>FastL4 profile</li></ul>
+<h2>Cause</h2>
+<p>On F5OS platforms, the tenant runs like a VE on a hypervisor system. For FPGA platforms, it takes time to send signals to FPGA chip to clear/sync the FPGA states when failover is triggered from the guest tenant to the F5OS platform OS layer and subsequently the underlayer FPGA chip. Thus, there is chance to meet a race condition that the old active device could still forward a small amount traffic at nano-seconds(e.g. 0.0001 seconds) level.</p>
+<p>Additionally, if IPv6 traffic is involved, <a href="https://cdn.f5.com/product/bugtracker/ID2016349.html" target="_self">BUG 2016349</a> could magnificate the impact because of missing NDP NA. NDP NA is used for moving traffic from one device to the other like the ARP in IPv4, when it get missed, the NDP entry on upstream network devices could miss so it might still send traffic to old Active F5OS system. Thus, it magnificate the impact given the aforementioned signaling mechanism.</p>
+<h2>Recommended Actions</h2>
+<p>To mitigate this issue, there could be multiple directions.</p>
+<p>The main two solutions are:</p>
+<ol><li>Adjust the Cisco ACI Switch configuration to be more tolerable. Typically, there are configuration options such as &quot;Move Frequncy&quot; or &quot;Rougue Control&quot; those controls the sensitivity of the trigger, adjusting those options to a more tolerant value could be recommended to have better compability.</li><li>Adjust the db key &quot;pva.standby.flush&quot; to value 1, so the VELOS FPGA flush process could be faster. This is only appliacable for BIG-IP Tenant versions &gt;=17.1.1.2 and F5OS dma-agent &gt;=11.3(F5OS-A/C &gt;=1.8). To do so, you could use the below command and restart the tenant to let the BIG-IP to pick up the change.<em style="font-style: italic;color: #242424;font-family: &#39;Segoe UI&#39;, &#39;Segoe UI Web (West European)&#39;, -apple-system, BlinkMacSystemFont, Roboto, &#39;Helvetica Neue&#39;, sans-serif;font-size: 16px;text-align: left;white-space: normal;"><br><span class="highlightColorGrey fontColorThemeSecondary" style="color: #ae383e;"><strong style="font-weight: 600;">Important</strong>: Restarting would impact traffic processing, please arrange maintenance window for this operation.</span></em>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify sys db pva.standby.flush value 1
+tmsh save sys config</code></pre>
+</li></ol>
+<p> </p>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160041: AS3 RPM Installation Fails with &quot;Command execution process killed&quot; and ENOENT Errors During Spec File Cleanup</title>
+<meta name="description" content="Support Solution: AS3 RPM Installation Fails with &quot;Command execution process killed&quot; and ENOENT Errors During Spec File Cleanup — IappRpmSpecFileCreatorWorker.js onDelete failed with exception: Error: ENOENT: no such file or directory, unlink ...">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160041">
+</head>
+<body>
+<header>
+<h1>K000160041: AS3 RPM Installation Fails with &quot;Command execution process killed&quot; and ENOENT Errors During Spec File Cleanup</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-17</dd>
+<dt>Updated</dt><dd>2026-02-17</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.X.X, 16.X.X, 21.X.X, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160041">https://my.f5.com/manage/s/article/K000160041</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Description</h3>
+<ul><li>AS3 RPM installation fails or times out.</li><li><code>/var/log/restjavad.0.log</code> shows:
+<ul><li><code>WARNING: &quot;Command execution process killed&quot;</code></li><li><code>IappRpmSpecFileCreatorWorker.js onDelete failed with exception: Error: ENOENT: no such file or directory, unlink ...</code></li><li><code>RestOperation failed: ... ENOENT: no such file or directory, unlink &#39;/var/config/rest/node/tmp/&lt;UUID&gt;.spec&#39;</code></li></ul>
+</li><li>The installation process logs show the spec file is created, then cleanup begins, and the process is killed before completion.</li><li>The sys db variable <code>iapplxrpm.timeout</code> is set to the default (60 seconds).</li></ul>
+<h3>Environment</h3>
+<ul><li>BIG-IP (various platforms and versions, including 17.x)</li><li>AS3 (f5-appsvcs) RPM installation or upgrade</li></ul>
+<h3>Cause</h3>
+<p>The AS3 RPM build process can take longer than the default timeout (60 seconds), especially on systems with limited resources or large configurations. If the build process exceeds this timeout, the system forcibly kills the process, resulting in incomplete installation and ENOENT (file not found) errors during cleanup. This is tracked under <a target="_blank" href="https://cdn.f5.com/product/bugtracker/ID985329.html">Bug ID 985329</a> and <a target="_blank" href="https://cdn.f5.com/product/bugtracker/ID929213.html">Bug ID 929213</a>.</p>
+<h3>Solution / Workaround</h3>
+<p><strong>Increase the iapplxrpm.timeout value and retry the installation:</strong></p>
+<ol><li>
+<p><strong>Increase the timeout:</strong></p>
+<pre><code>tmsh modify sys db iapplxrpm.timeout value 300
+tmsh restart sys service restjavad
+</code></pre>
+<ul><li>The value can be set up to 600 if needed. 300 seconds is usually sufficient.</li><li>Restarting restjavad is not traffic impacting.</li></ul>
+</li><li>
+<p><strong>Remove any incomplete/corrupted AS3 RPM and spec files:</strong></p>
+<ul><li>Delete the AS3 RPM from iApps &gt; Package Management LX (GUI) or via CLI.</li><li>Remove any <code>.spec</code> files from <code>/var/config/rest/node/tmp/</code>:
+<pre><code>rm /var/config/rest/node/tmp/*.spec
+</code></pre>
+</li><li>Remove any files in <code>/var/config/rest/iapps/RPMS/</code> and <code>/var/config/rest/iapps/RPMS.save/</code> if present.</li></ul>
+</li><li>
+<p><strong>Re-download the AS3 RPM and verify its integrity (optional but recommended):</strong></p>
+<ul><li>Use <code>sha256sum</code> to verify the RPM file matches the published checksum.</li></ul>
+</li><li>
+<p><strong>Reinstall the AS3 RPM:</strong></p>
+<ul><li>Use the GUI or CLI to upload and install the RPM.</li></ul>
+</li><li>
+<p><strong>Verify installation:</strong></p>
+<ul><li>Confirm that the AS3 package appears in iApps &gt; Package Management LX and that REST API queries to <code>/mgmt/shared/appsvcs/info</code> return the expected version.</li></ul>
+</li><li>
+<p><strong>If the issue persists, collect a new Qkview and review logs for further errors.</strong></p>
+</li></ol>
+<h3>Additional Notes</h3>
+<ul><li>If you see repeated ENOENT errors for spec files, it means the build process was killed before the spec file could be cleaned up.</li><li>This issue can also impact UCS backups and other iAppLX package operations.</li><li>For more details, see:
+<ul><li><a target="_blank" href="https://my.f5.com/manage/s/article/K90721117">K90721117: The /shared/tmp directory is full of rpm-tmp files</a></li><li><a target="_blank" href="https://my.f5.com/manage/s/article/K000140799">K000140799: AS3 plugin installation fails</a></li><li><a target="_blank" href="https://my.f5.com/manage/s/article/K000132348">K000132348: AS3 declaration failure: mgmt shared service-discovery task update response=404 body</a> (internal)</li><li><a target="_blank" href="https://cdn.f5.com/product/bugtracker/ID985329.html">Bug ID 985329</a></li><li><a target="_blank" href="https://cdn.f5.com/product/bugtracker/ID929213.html">Bug ID 929213</a></li></ul>
+</li></ul>
+<h3>Example Log Excerpt</h3>
+<pre><code>03:09:13 UTC - Spec File created / RPM Export started
+03:10:22 UTC - Cleanup begins (temp directory deletion)
+03:10:24 UTC - WARNING: &quot;Command execution process killed&quot;
+Mon, 16 Feb 2026 03:10:24 GMT - info: IappRpmSpecFileCreatorWorker.js onDelete failed with exception: Error: ENOENT: no such file or directory, unlink &#39;/var/config/rest/node/tmp/cb076023-9fe8-4a80-ae12-96dc71205258.spec&#39;
+Mon, 16 Feb 2026 03:10:24 GMT - severe: [ErrorHandlingModule] RestOperation failed: ... ENOENT: no such file or directory, unlink &#39;/var/config/rest/node/tmp/cb076023-9fe8-4a80-ae12-96dc71205258.spec&#39;
+</code></pre>
+<hr></hr>
+<p> </p>
+</article>
+</body>
+</html>

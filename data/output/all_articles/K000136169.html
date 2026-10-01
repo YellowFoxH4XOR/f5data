@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000136169: Enabling automatic periodic backups on rSeries</title>
+<meta name="description" content="Support Solution: Enabling automatic periodic backups on rSeries — You have a rSeries device running F5OS-A, and you wish to backup your configuration automatically.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000136169">
+</head>
+<body>
+<header>
+<h1>K000136169: Enabling automatic periodic backups on rSeries</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-09-12</dd>
+<dt>Updated</dt><dd>2025-07-01</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS</li><li>F5OS-A: 1.5.3, 1.7.X, 1.8.X, 1.8.0, 1.7.0, 1.5.2, 1.5.X, 1.5.1, 1.5.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000136169">https://my.f5.com/manage/s/article/K000136169</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<p>You have a rSeries device running F5OS-A, and you wish to backup your configuration automatically.</p>
+<h2><strong>Environment</strong></h2>
+<p>F5OS-A<br>Usage of APIs</p>
+<h2><strong>Cause</strong></h2>
+<p>None</p>
+<h2><strong>Recommended Actions</strong></h2>
+<p>A full article about <a href="https://clouddocs.f5.com/training/community/rseries-training/html/rseries_f5os_configuration_backup_and_restore.html" target="_blank">rSeries Configuration Backup and Restore (f5.com)</a> tells us that we have 3 options for performing backups: WebUI, F5OS CLI, and API calls. To do this automatically, we will use API calls.</p>
+<p>For an API call to work, considering that it will be called from the same device you want to run this backup on (to let us use crontab), the call will be done from management IP (in our case 192.168.0.1) back to the management IP.</p>
+<p>For this to be successful, we need to allow requests originating from the management IP to access the API. We can follow <a href="https://my.f5.com/manage/s/article/K000134482" target="_blank">Configure the Allow List on the F5 rSeries system</a> and allow them on ports 8888 as well as 443 in F5OS CLI:</p>
+<p><span style="font-family: courier;"><span style="background-color: #ecf0f1;">hostname<strong>.</strong>f5<strong>.</strong>com(config)# system allowed-ips allowed-ip api1 config ipv4 address 192.168.0.1 port 8888 prefix-length 24</span></span></p>
+<p><span style="font-family: courier;"><span style="background-color: #ecf0f1;">hostname<strong>.</strong>f5<strong>.</strong>com(config-allowed-ip-testing)# commit and-quit</span></span></p>
+<p><span style="font-family: courier;"><span style="background-color: #ecf0f1;">Commit complete.</span></span></p>
+<p><span style="font-family: courier;"><span style="background-color: #ecf0f1;">hostname<strong>.</strong>f5<strong>.</strong>com(config)# system allowed-ips allowed-ip api2 config ipv4 address 192.168.0.1 port 443 prefix-length 24</span></span></p>
+<p><span style="font-family: courier;"><span style="background-color: #ecf0f1;">hostname<strong>.</strong>f5<strong>.</strong>com(config-allowed-ip-testing2)# commit and-quit</span></span></p>
+<p><span style="font-family: courier;"><span style="background-color: #ecf0f1;">Commit complete.</span></span></p>
+<p>After adding the management IP to the allow list, please find below an API call that can be used to backup the configuration. In this setup, the credentials to the admin account are admin/admin, and the management IP address is 192.168.0.1. It also shows us the output and the result, so we can use it to test that this is indeed working:</p>
+<p><span style="font-family: courier;"><span style="background-color: #ecf0f1;">[root@appliance-1(hostname<strong>.</strong>f5<strong>.</strong>com) ~]# curl -k -X POST -u admin:admin -H &quot;Content-Type: application/yang-data+json&quot; -d &#39;{&quot;f5-database:name&quot;: &quot;F5OS-BACKUP-APPLIANCE1-&#39;&quot;$(date +&quot;%Y-%m-%d&quot;)&quot;&#39;&quot;}&#39; https<strong>:</strong>//192.168.0.1/api/data/openconfig-system:system/f5-database:database/f5-database:config-backup</span></span></p>
+<p><span style="font-family: courier;"><span style="background-color: #ecf0f1;">{</span></span></p>
+<p><span style="font-family: courier;"><span style="background-color: #ecf0f1;">&quot;f5-database:output&quot;: {</span></span></p>
+<p><span style="font-family: courier;"><span style="background-color: #ecf0f1;">&quot;result&quot;: &quot;Database backup <span style="color: #2ecc71;">successful</span>.&quot;</span></span></p>
+<p><span style="font-family: courier;"><span style="background-color: #ecf0f1;">}</span></span></p>
+<p><span style="font-family: courier;"><span style="background-color: #ecf0f1;">}</span></span></p>
+<p><br>To make it automatic, here&#39;s an example crontab entry that will run this script daily at 2:00 AM, and any output will be discarded to &gt;/dev/null 2&gt;&amp;1:<br><span style="color: #c0392b;"><em><strong>Important</strong>: Completing the following will store the Administrator password in &quot;plain-text&quot; in crontab of the F5OS.  <strong>This is not recommended</strong>.</em></span></p>
+<p><span style="font-family: courier;"><span style="background-color: #ecf0f1;">0 2 * * * curl -k -X POST -u admin:admin -H &quot;Content-Type: application/yang-data+json&quot; -d &#39;{&quot;f5-database:name&quot;: &quot;F5OS-BACKUP-APPLIANCE1-&#39;&quot;$(date +&quot;\%Y-\%m-\%d&quot;)&quot;&#39;&quot;}&#39; https<strong>:</strong>//192.168.0.1/api/data/openconfig-system:system/f5-database:database/f5-database:config-backup &gt;/dev/null 2&gt;&amp;1</span></span></p>
+<h2><strong>Additional Information</strong></h2>
+<p><span style="font-family: var(--c-bodyCopyFont);font-size: var(--c-bodyCopySize);background-color: var(--slds-g-color-surface-container-1, var(--lwc-colorbackgroundalt, #fff));color: var(--slds-g-color-neutral-base-10, #181818);">There could be a concern regarding the plain-text password from the script syntax, here below are steps to mask the password to make it not showing as the plain-text.</span></p>
+<p><span style="font-family: var(--c-bodyCopyFont);font-size: var(--c-bodyCopySize);background-color: var(--slds-g-color-surface-container-1, var(--lwc-colorbackgroundalt, #fff));color: var(--slds-g-color-neutral-base-10, #181818);">1) Masking the password with Base64 format.</span></p>
+<p><span style="font-family: courier;"><span style="background-color: #ecf0f1;">[root@appliance-1(hostname<strong>.</strong>f5<strong>.</strong>com) ~]#<span>echo -n admin:admin | base64<br>YWRtaW46YWRtaW4=</span> </span></span></p>
+<p><span style="font-family: var(--c-bodyCopyFont);font-size: var(--c-bodyCopySize);background-color: var(--slds-g-color-surface-container-1, var(--lwc-colorbackgroundalt, #fff));color: var(--slds-g-color-neutral-base-10, #181818);">2) Create a file under <span style="font-family: courier;"><span style="background-color: #ecf0f1;"><span>/var/F5/system/etc</span></span></span> for pasting the base64 header result.</span><span style="font-family: var(--c-bodyCopyFont);font-size: var(--c-bodyCopySize);background-color: var(--slds-g-color-surface-container-1, var(--lwc-colorbackgroundalt, #fff));color: var(--slds-g-color-neutral-base-10, #181818);"></span></p>
+<p><span style="font-family: var(--c-bodyCopyFont);font-size: var(--c-bodyCopySize);background-color: var(--slds-g-color-surface-container-1, var(--lwc-colorbackgroundalt, #fff));color: var(--slds-g-color-neutral-base-10, #181818);"><span style="font-family: courier;"><span style="background-color: #ecf0f1;"><span># cat /var/F5/system/etc/backup.txt <br>Authorization: Basic <span style="background-color: #ecf0f1;">YWRtaW46YWRtaW4=</span></span></span></span></span></p>
+<p><span style="font-family: var(--c-bodyCopyFont);font-size: var(--c-bodyCopySize);background-color: var(--slds-g-color-surface-container-1, var(--lwc-colorbackgroundalt, #fff));color: var(--slds-g-color-neutral-base-10, #181818);">3) Modify the curl script to point to the file.</span></p>
+<p><span style="font-family: var(--c-bodyCopyFont);font-size: var(--c-bodyCopySize);background-color: var(--slds-g-color-surface-container-1, var(--lwc-colorbackgroundalt, #fff));color: var(--slds-g-color-neutral-base-10, #181818);"><span style="font-family: courier;"><span style="background-color: #ecf0f1;">0 2 * * * curl -k -X POST <strong><span>-H &quot;$(cat /var/F5/system/etc/backup.txt)&quot;</span></strong> -H &quot;Content-Type: application/yang-data+json&quot; -d &#39;{&quot;f5-database:name&quot;: &quot;F5OS-BACKUP-APPLIANCE1-&#39;&quot;$(date +&quot;\%Y-\%m-\%d&quot;)&quot;&#39;&quot;}&#39; https<strong>:</strong>//192.168.0.1/api/data/openconfig-system:system/f5-database:database/f5-database:config-backup &gt;/dev/null 2&gt;&amp;1</span></span></span></p>
+</article>
+</body>
+</html>

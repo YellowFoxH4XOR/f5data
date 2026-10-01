@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160102: WebSocket connections fail intermittently when pool assignment is performed within the WS_REQUEST iRule event.</title>
+<meta name="description" content="Support Solution: WebSocket connections fail intermittently when pool assignment is performed within the WS_REQUEST iRule event. — Approximately 1 in 5 WebSocket connection attempts fail with TCP RST">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160102">
+</head>
+<body>
+<header>
+<h1>K000160102: WebSocket connections fail intermittently when pool assignment is performed within the WS_REQUEST iRule event.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-20</dd>
+<dt>Updated</dt><dd>2026-02-20</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160102">https://my.f5.com/manage/s/article/K000160102</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>WebSocket connections fail intermittently when pool assignment is performed within the <span style="background-color: #f1f1f1;">WS_REQUEST</span> iRule event. Instead of receiving the expected HTTP 101 Switching Protocols response to complete the WebSocket handshake, clients receive a TCP RST from the BIG-IP system. This issue occurs when using the <span style="background-color: #f1f1f1;">pool</span> command in the <span style="background-color: #f1f1f1;">WS_REQUEST</span> event, even though the iRule syntax is valid. Typical symptoms include:</p>
+<ul><li>Approximately 1 in 5 WebSocket connection attempts fail with TCP RST</li><li>Client errors such as &quot;recvAddress(..) failed with error(-104): Connection reset by peer&quot; or &quot;Failed to upgrade to websocket&quot;</li><li>Incomplete WebSocket handshakes visible in packet captures (missing 101 response)</li><li>iRule logs show <span style="background-color: #f1f1f1;">WS_REQUEST</span> event firing but no subsequent <span style="background-color: #f1f1f1;">WS_RESPONSE</span> or WebSocket upgrade completion for failed sessions</li></ul>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>Virtual Server with WebSocket profile configured</li><li>MQTT over WebSocket or similar WebSocket-based application protocols</li><li>iRule using <span style="background-color: #f1f1f1;">pool</span> command within <span style="background-color: #f1f1f1;">WS_REQUEST</span> event</li><li>HTTP profile applied to Virtual Server</li></ul>
+<h2>Cause</h2>
+<p>The BIG-IP system requires pool selection to occur before the WebSocket upgrade process begins. When the <span style="background-color: #f1f1f1;">pool</span> command is executed within the <span style="background-color: #f1f1f1;">WS_REQUEST</span> event, it occurs too late in the connection processing flow. The <span style="background-color: #f1f1f1;">WS_REQUEST</span> event fires after the HTTP Upgrade headers are detected but before the 101 response is generated. Attempting to change pool assignment at this stage causes inconsistent behavior where the system cannot reliably complete the WebSocket handshake, resulting in TCP RST packets being sent instead of the 101 Switching Protocols response.</p>
+<h2>Recommended Actions</h2>
+<p>Separate pool assignment from WebSocket processing by performing pool selection in the <span style="background-color: #f1f1f1;">HTTP_REQUEST</span> event and enabling WebSocket-specific features in the <span style="background-color: #f1f1f1;">WS_REQUEST</span> event.</p>
+<p><strong>Incorrect iRule pattern (causes intermittent failures):</strong></p>
+<p><code>when WS_REQUEST {<br>    if { ($host equals &quot;example.com&quot;) and ([HTTP::path] starts_with &quot;/mqtt&quot;) } {<br>        WS::payload_processing enable<br>        pool $mqtt_websocket_pool<br>    }<br>}</code></p>
+<p><strong>Correct iRule pattern (separate concerns):</strong></p>
+<p><code>when HTTP_REQUEST {<br>    if { ($host equals &quot;example.com&quot;) and ([HTTP::path] starts_with &quot;/mqtt&quot;) } {<br>        pool $mqtt_websocket_pool<br>    }<br>}<br><br>when WS_REQUEST {<br>    if { ($host equals &quot;example.com&quot;) and ([HTTP::path] starts_with &quot;/mqtt&quot;) } {<br>        WS::payload_processing enable<br>    }<br>}</code></p>
+<p>This approach ensures pool selection occurs during normal HTTP request processing, before WebSocket upgrade negotiation begins, while WebSocket-specific configuration is applied at the appropriate event.</p>
+<h2>Additional Information</h2>
+<ul><li>The <span style="background-color: #f1f1f1;">WS_REQUEST</span> event is triggered when WebSocket upgrade headers (Upgrade: websocket, Connection: Upgrade, Sec-WebSocket-Key) are present in the client request</li><li>Pool assignment should always be completed before WebSocket protocol switching occurs</li><li>Other iRule commands that affect connection routing (such as <span style="background-color: #f1f1f1;">node</span> or <span style="background-color: #f1f1f1;">pool member</span>) should also be executed in <span style="background-color: #f1f1f1;">HTTP_REQUEST</span> rather than <span style="background-color: #f1f1f1;">WS_REQUEST</span></li><li>The <span style="background-color: #f1f1f1;">WS::payload_processing</span> command and other WebSocket-specific operations are appropriate for the <span style="background-color: #f1f1f1;">WS_REQUEST</span> event</li></ul>
+</article>
+</body>
+</html>

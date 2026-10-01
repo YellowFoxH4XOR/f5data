@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K31421030: BIG-IP DNS Responds with NXDOMAIN for an existent domain when Query Type does not Match a WideIP</title>
+<meta name="description" content="Support Solution: BIG-IP DNS Responds with NXDOMAIN for an existent domain when Query Type does not Match a WideIP — BIG-IP DNS Responds with NXDOMAIN for an existent domain when Query Type does not Match a Wide IP Resource Record type.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K31421030">
+</head>
+<body>
+<header>
+<h1>K31421030: BIG-IP DNS Responds with NXDOMAIN for an existent domain when Query Type does not Match a WideIP</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2019-09-06</dd>
+<dt>Updated</dt><dd>2024-06-14</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP GTM: 11.3.X, 11.5.X, 11.4.X, 11.2.X, 11.1.X, 11.0.X, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 11.5.1, 11.5.0, 11.4.1, 11.4.0, 11.3.0</li><li>BIG-IP DNS: 13.X.X, 12.X.X, 15.0.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 16.0.1, 16.0.0, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.3, 14.1.2, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K31421030">https://my.f5.com/manage/s/article/K31421030</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><span class="sectiontitle">Description</span></h2>
+<p>BIG-IP DNS Responds with NXDOMAIN for an existent domain when Query Type does not Match a Wide IP Resource Record type.</p>
+<ul><li>NXDOMAIN response for a valid domain</li><li>Negative caching on LDNS</li></ul>
+<h2><span class="sectiontitle">Environment</span></h2>
+<ul><li>At least one of the following
+<ul><li>DNS Express</li><li>Load Balanced Pool attached to Listener</li><li>DNS Caching</li></ul>
+</li><li>Wide IP Configured</li><li>DNS profile with <a href="https://my.f5.com/manage/s/article/K21520582" target="_blank">Unhandled Query Action</a> set to <em>Allow</em>
+<ul><li>Applied to the BIG-IP DNS Listener.</li></ul>
+</li></ul>
+<h2><span class="sectiontitle">Cause</span></h2>
+<p><a href="https://cdn.f5.com/product/bugtracker/ID644192.html" target="_self">ID 644192</a></p>
+<ul></ul>
+<h2><span class="sectiontitle">Recommended Actions</span></h2>
+<p>Upgrade to a version where ID 644192 is Fixed (note that there are two different fixes - one as a db key, and one as a configuration command - see below) For versions where 644192 is fixed, PRIOR to 16.1.0, the fix is implemented as a system db key. To enable the functionality, set the key to a value of &#39;enabled&#39;, for example:</p>
+<pre style="margin-left: 40px;"><span class="code">tmsh modify /sys db gtm.allownxdomainoverride value enable</span></pre>
+<p>In versions 16.1.0 and later, the setting was migrated to a global configuration setting instead:</p>
+<pre style="margin-left: 40px;"><span class="code">tmsh modify gtm global-settings general allow-nxdomain-override</span></pre>
+<p><em><strong>Important </strong>- if you enable the feature in a version of BIG-IP software the uses the DB key (versions prior to 16.1.0), and then upgrade to a version that uses the tmsh command, the functionality will not be automatically migrated, and you will need to enable the feature using the tmsh command after upgrading. This issue is being tracked as bug <a href="https://cdn.f5.com/product/bugtracker/ID1351969.html" target="_blank">ID1351969</a></em><br><br><span class="subsectiontitle">If you are unable to upgrade, and you are running a version of code where <a href="https://cdn.f5.com/product/bugtracker/ID708421.html" target="_self">ID 708421</a> is Fixed, you may use the following iRule:</span></p>
+<p><span class="note"><strong>Note</strong>: Refer to the link <a href="https://cdn.f5.com/product/bugtracker/ID708421.html" target="_blank">ID 708421</a> to identify software versions that have a fix. When ID 708421 is resolved, all of the above configuration may be replaced with the following:</span></p>
+<ol><li>
+<p>Create the following irule</p>
+<p><span class="code">ltm rule is_wideip {<br>when DNS_RESPONSE {<br>  # Looking only for NXDOMAIN type responses.<br>  if { ([DNS::ptype] eq &quot;NXDOMAIN&quot;) } {<br><br>    #Set original question type, so that it can be reset later for proper client response<br>    set orig_type [DNS::question type]<br><br>    #Alter the question type<br>    DNS::question type A<br><br>    # If this actually exists as a WideIP, then change to RCODE=0 (NOERROR)<br>    if {[DNS::is_wideip [DNS::question name]]} {<br>      DNS::header rcode NOERROR<br>    }<br>    #Reset question type for client response<br>    DNS::question type $orig_type<br>  }<br>}</span></p>
+</li><li>
+<p>Apply <strong>ltm rule is_wideip</strong> to all <strong>gtm listener</strong> objects.</p>
+</li></ol>
+<p><span class="subsectiontitle">If you are running a version of BIG-IP Software where ID 708421 nor ID 644192 are fixed, consider the following:</span></p>
+<p>The following will:</p>
+<ul><li>Create a sync-only device-group (/Common/dns_sync-only)</li><li>Create a system folder which uses that device-group (/dns_sync)</li><li>Create a data-group (/dns_sync/dg_wideip) with the domain name of every WideIP</li><li>Create the following iRule and apply it to any &#39;Listener&#39; you desire. (likely all of them)</li></ul>
+<ol><li>SSH to log into the<strong> (tmos) #</strong> prompt of the BIG-IP</li><li>Prepare to load the following configuration into the terminal:
+<p><span class="code">load sys config from-terminal merge</span></p>
+</li><li>
+<p>Copy and paste the following configuration into the terminal</p>
+<span class="example2">ltm rule is_wideip {<br>when DNS_RESPONSE {<br>    # Looking only for NXDOMAIN type responses.<br>    if { ([DNS::ptype] eq &quot;NXDOMAIN&quot;) } {<br>    # If this actually exists as a WideIP, then change to RCODE=0 (NOERROR)<br>        if {[class match -- [DNS::question name] equals /dns_sync/dg_wideip]} {<br>            DNS::header rcode NOERROR<br>        } <br>    }<br>}<br>}<br>sys icall handler periodic dnsx_zone_wip_dg_handler {<br>    interval 60<br>    script dnsx_zone_wip_dg<br>}<br>sys icall script dnsx_zone_wip_dg {<br>    app-service none<br>    definition {<br>        set cm_devices {}<br>        set devicegroup_name &quot;dns_sync-only&quot;<br>        set foldername &quot;/dns_sync&quot;<br>        set datagroup_name &quot;${foldername}/dg_wideip&quot;<br>        set dg_records &quot;&quot;<br>        set records {}<br>        set wips {}<br>        # Find all device names<br>        set devices [tmsh::get_config cm device]<br>        foreach device $devices {<br>            lappend cm_devices [tmsh::get_name $device]<br>        }<br>        # Determine if sync-only device-group exists<br>        if {! ([tmsh::list cm device-group] contains $devicegroup_name) } {<br>            #puts &quot;group $devicegroup_name does not exist&quot;<br>            tmsh::create cm device-group dns_sync-only \{ auto-sync enabled type sync-only devices replace-all-with \{ $cm_devices \} \}<br>        }<br>        # Create a folder and assign it to the above sync-only device-group<br>        if {!([tmsh::list sys folder /*] contains $foldername)} {<br>            #puts &quot;folder $foldername does not exist; creating it&quot;<br>            tmsh::create sys folder $foldername device-group $devicegroup_name traffic-group traffic-group-local-only<br>        }<br>        # Create $datagroup_name datagroup only if it does not exist; typically first-run<br>        if { [catch {tmsh::list ltm data-group internal $datagroup_name } err]} {<br>            #puts stderr &quot;datagroup does not exist; ltm data-group internal $datagroup_name&quot;<br>            tmsh::create ltm data-group internal $datagroup_name type string<br>        }<br>        set dglist [tmsh::get_config ltm data-group internal $datagroup_name records]<br>        catch {set dg_records [tmsh::get_field_value [lindex $dglist 0] &quot;records&quot;]}<br>        foreach record $dg_records {<br>            # Create a list of datagroup objects<br>            lappend records [tmsh::get_name $record]<br>        }<br>       foreach x [tmsh::get_config auth partition] {<br>        set current_partition &quot;/[lindex [split $x &quot; &quot;] 2]&quot;<br>        tmsh::cd $current_partition<br>        set wiplist [tmsh::get_config gtm wideip ]<br>        foreach wip $wiplist {<br>          lappend wips [tmsh::get_name $wip]<br>          }<br>        }<br>        # If there are multiple resource record types; concat unique domain names<br>        set wips [lsort -unique $wips]<br>        foreach wip $wips {<br>            # Does wip exist in a DNS Express zone?<br>            if {[lsearch -exact -ascii $records $wip] == -1} {<br>                # Add $wip to $datagroup_name<br>                tmsh::modify ltm data-group internal $datagroup_name records add \{ $wip \}<br>            }<br>        }<br>        unset cm_devices<br>        unset devicegroup_name<br>        unset foldername<br>        unset datagroup_name<br>        unset dg_records<br>        unset records<br>        unset wips<br>    }<br>}</span></li><li>Press &#39;Ctrl + d&#39; to submit the configuration.</li><li>Apply &#39;<strong>ltm rule is_wideip</strong>&#39; to any (likely all) DNS Listener objects<br><strong>TMUI -&gt; DNS -&gt; Listeners -&gt; `click` the listener -&gt; iRules</strong></li></ol>
+<h2><span class="sectiontitle">Additional Information</span></h2>
+<p>&quot;Unhandled Query Actions&quot; is enabled by default, the request is sent to the next viable <a href="https://my.f5.com/manage/s/article/K14510" target="_blank">DNS processing service</a>.</p>
+<p>When the BIG-IP DNS and GTM systems process DNS requests, there are several systems which may actually process and respond to that request. See <a href="https://my.f5.com/manage/s/article/K14510" target="_blank">K14510: Overview of DNS query processing on BIG-IP systems</a> for more details.</p>
+<p>When a Resource Record exists only as a Wide IP, other DNS systems which are also Authoritative for the requested zone will respond with an NXDOMAIN when that domain is requested.</p>
+</article>
+</body>
+</html>

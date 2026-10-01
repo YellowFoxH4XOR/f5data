@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000132685: Configure Retry Policies on Aspen Mesh (Istio) and Envoy</title>
+<meta name="description" content="Support Solution: Configure Retry Policies on Aspen Mesh (Istio) and Envoy — Aspen Mesh Sidecar proxies are configured by default to retry HTTP requests in case of any network or application failures.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000132685">
+</head>
+<body>
+<header>
+<h1>K000132685: Configure Retry Policies on Aspen Mesh (Istio) and Envoy</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-03-23</dd>
+<dt>Updated</dt><dd>2023-03-23</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.14, 1.11</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000132685">https://my.f5.com/manage/s/article/K000132685</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Description</strong></h2>
+Aspen Mesh Sidecar proxies are configured by default to retry HTTP requests in case of any network or application failures.<br>This article is an overview of HTTP retries policies in Istio and Aspen Mesh<br><br> 
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Environment</strong></h2>
+<span style="font-size: 10.5pt;font-family: Arial, sans-serif;">Aspen Mesh 1.11.x, 1.14.x</span><br><br> 
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Cause</strong></h2>
+
+<p><span style="font-size: 10.5pt;font-family: Arial, sans-serif;">Envoy sidecar proxy is trying to keep persistent TCP connections for HTTP services and workloads deployed within the service mesh. Every POD and workload being a part of the service mesh has the Sidecar proxy injected and the communication is done in a pod-to-pod basis. HTTP requests sent by the client application are proxied by 2 Envoy sidecars, 1st on Client POD and 2nd on Server POD<br><br>In case the service application responds with a HTTP error, Envoy Sidecar can retry the request using the same TCP connection. Envoy Access Logs on client POD do not log the number of retries so it is important to understand how to configure and interpret logging and behaviour on workload/server PODs.</span><br><br> </p>
+
+<h2><span style="font-size: 10.5pt;font-family: Arial, sans-serif;"> </span><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Recommended Actions</strong></h2>
+
+<ol><li><strong>Default Istio retry policy</strong>
+
+	<ol><li>Istio uses Envoy as a proxy inside sidecar container. Retry policy for HTTP Services is configured on Envoy Route section. A route is an http filter attached to http_connection_manager network filter on Envoy. Istio adds default retry policy by default to every http service. To see the policy we can use &quot;<em>istioctl proxy-config route</em>&quot; command. An example below shows the default Envoy retry policy set by Istiod:
+
+		<ul><li>
+			<pre class="ckeditor_codeblock">
+istioctl pc route client-pod.namespace --name 8000 -o yaml
+...
+    retryPolicy:
+     hostSelectionRetryMaxAttempts: &quot;5&quot;
+     numRetries: 2
+     retriableStatusCodes:
+     - 503
+     retryHostPredicate:
+     - name: envoy.retry_host_predicates.previous_hosts
+      typedConfig:
+       &#39;@type&#39;: type.googleapis.com/envoy.extensions.retry.host.previous_hosts.v3.PreviousHostsPredicate
+     retryOn: connect-failure,refused-stream,unavailable,cancelled,retriable-status-codes</pre>
+			<br>			 </li></ul>
+		</li><li>Envoy Retry Policy API is documented on official doc pages <em>5., 6., 7.</em></li><li>By default Istio Sidecar tries to send the request to the upstream service and in case of failure it will retry 2 times.</li><li>Sidecar will retry only in case of the following failure reasons:
+		<ol><li><strong>connect-failure</strong>
+			<ol><li>Envoy will attempt a retry if a request is failed because of a connection failure to the upstream server (connect timeout, etc.). (Included in 5xx).</li><li>NOTE: A connection failure/timeout is a the TCP level, not the request level. This does not include upstream request timeouts specified via x-envoy-upstream-rq-timeout-ms or via route configuration or via virtual host retry policy.</li></ol>
+			</li><li><strong>refused-stream</strong>
+			<ol><li>Envoy will attempt a retry if the upstream server resets the stream with a REFUSED_STREAM error code. This reset type indicates that a request is safe to retry. (Included in 5xx)</li></ol>
+			</li><li><strong>unavailable</strong>
+			<ol><li>Envoy will attempt a retry if the gRPC status code in the response headers is “unavailable” (14)</li></ol>
+			</li><li><strong>cancelled</strong>
+			<ol><li>Envoy will attempt a retry if the gRPC status code in the response headers is “cancelled” (1)</li></ol>
+			</li><li><strong>retriable-status-codes</strong>
+			<ol><li>Envoy will attempt a retry if the upstream server responds with any response code matching one defined in either the retry policy or in the x-envoy-retriable-status-codes header.</li><li>Default retriable status code is only 503</li></ol>
+			</li></ol>
+		</li><li>In addition to the retry policy Istio also sets Retry Host Predicate plugin. During retries host selection for HTTP request follows the same process as the original request. Retry plugins can be used to change this behavior. By default Istio configures Envoy to use PreviousHostPredicate plugin on every route. Thanks to this plugin Envoy will keep track of previously attempted hosts, and rejects hosts that have already been attempted. Having multiple workloads or PODs attached to the same service we do not have to worry that the Sidecar will retry and resend the request to the same instance. Below picture show presents the default request flow in case 1 instance of the service returns 503 error code:
+		<ol><li><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po0000006jLq&amp;feoid=00N1T00000AOnlF&amp;refid=0EM1T000005N6mB"></img></li></ol>
+		</li></ol>
+	</li><li><strong>Changing default retry policy globally within the mesh</strong>
+	<ol><li><strong>​​​​​</strong>Beginning from Istio 1.12 you can configure the global Retry Policy for HTTP services and override the default policy. This feature is available in Aspen Mesh 1.14.x or later releases. In Istio and Aspen Mesh 1.11.x or earlier releases you have to use VirtualService object to specify retry policy per Service (using fully qualified domain name) or per set of Services (using wildcard &quot;*&quot; domain names). Beginning 1.14.x releases VirtualService CRD allows the use of &#39;exportTo&quot; field to specify retry policy limited to a specific namespace.</li><li>In Aspen Mesh, to configure global HTTP retry policy you have to add meshConfig.defaultHttpRetryPolicy option in global override-values.yaml file and upgrade/install istio-discovery Helm chart.
+		<ol><li>defaultHttpRetryPolicy field is documented as an HTTPRetry object in Istio documentation:
+			<ol><li>https://istio.io/latest/docs/reference/config/networking/virtual-service/#HTTPRetry</li><li>The syntax is the same as VirtualService retry field API
+				<ol><li>NOTE: On Envoy API the naming convention of fields is different than Istio. In Istio fields are in camelCase while Envoy uses snake_case convention.</li></ol>
+				</li></ol>
+			</li><li>Example below presents an example of the default HTTP policy specified in a values.yaml file
+			<ul><li>override-value.yaml:</li><li>
+				<pre class="ckeditor_codeblock">
+meshConfig:
+  defaultHttpRetryPolicy:
+    attempts: 3
+    perTryTimeout: 2s
+    retryOn: &quot;connect-failure,refused-stream,503,500,501&quot;</pre>
+				</li></ul>
+			</li><li>To apply the configuration we have to execute Helm upgrade like below:
+			<ul><li>
+				<pre class="ckeditor_codeblock">
+helm upgrade istiod manifests/charts/istio-control/istio-discovery -n istio-system --values override-values-policy.yaml</pre>
+				</li></ul>
+			</li><li>The above meshConfig will result with the following RetryPolicy:
+			<ul><li>
+				<pre class="ckeditor_codeblock">
+➜  ~ istioctl pc route &lt;pod&gt;.&lt;namespace&gt; --name 8000 -o yaml
+...
+        retryPolicy:
+          hostSelectionRetryMaxAttempts: &quot;5&quot;
+          numRetries: 3
+          perTryTimeout: 2s
+          retriableStatusCodes:
+          - 503
+          - 500
+          - 501
+          retryHostPredicate:
+          - name: envoy.retry_host_predicates.previous_hosts
+            typedConfig:
+              &#39;@type&#39;: type.googleapis.com/envoy.extensions.retry.host.previous_hosts.v3.PreviousHostsPredicate
+          retryOn: connect-failure,refused-stream,retriable-status-codes
+          retryPriority:
+            name: envoy.retry_priorities.previous_priorities
+            typedConfig:
+              &#39;@type&#39;: type.googleapis.com/envoy.extensions.retry.priority.previous_priorities.v3.PreviousPrioritiesConfig
+              updateFrequency: 2</pre>
+				</li><li>NOTE: Status codes specified in &quot;defaultHttpRetryPolicy.retryOn&quot; field were appended to retriableStatusCodes list. For the more detailed description please refer to Istio docs 5.</li></ul>
+			</li><li>To disable HTTP retries globally please use the following policy
+			<ul><li>
+				<pre class="ckeditor_codeblock">
+meshConfig:
+  defaultHttpRetryPolicy:
+    attempts: 0</pre>
+				</li><li>Only &quot;attempts&quot; field has to be specified, otherwise Istio will throw an error.<br>				 </li></ul>
+			</li></ol>
+		</li></ol>
+	</li><li><strong>Changing retry policies for specific services</strong>
+	<ol><li>To change HTTP retry policy for specific services we can use VirtualService CRD.</li><li>Example of the policy 
+		<ul><li>
+			<pre class="ckeditor_codeblock">
+kubectl apply -n default -f - &lt;&lt;EOF
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: httpbin-retries
+spec:
+  hosts:
+  - httpbin.default.svc.cluster.local
+  http:
+  - route:
+    - destination:
+        host: httpbin.default.svc.cluster.local
+    retries:
+      attempts: 7
+      perTryTimeout: 5s
+      retryOn: connect-failure,refused-stream,503,504
+EOF</pre>
+			</li></ul>
+		</li><li>Result:
+		<ul><li>
+			<pre class="ckeditor_codeblock">
+➜  ~ istioctl pc route nettools-netadmin-bf8886597-ddwgp.ns1 --name 8000 -o yaml
+- name: &quot;8000&quot;
+...
+      route:
+        cluster: outbound|8000||httpbin.default.svc.cluster.local
+        maxGrpcTimeout: 0s
+        retryPolicy:
+          hostSelectionRetryMaxAttempts: &quot;5&quot;
+          numRetries: 7
+          perTryTimeout: 5s
+          retriableStatusCodes:
+          - 503
+          - 504
+          retryHostPredicate:
+          - name: envoy.retry_host_predicates.previous_hosts
+            typedConfig:
+              &#39;@type&#39;: type.googleapis.com/envoy.extensions.retry.host.previous_hosts.v3.PreviousHostsPredicate
+          retryOn: connect-failure,refused-stream,retriable-status-codes
+        timeout: 0s</pre>
+			</li></ul>
+		</li></ol>
+	</li><li><strong>Changing retries per HTTP request</strong>
+	<ol><li>You can modify the HTTP retry policy configured on Envoy Sidecar by including special HTTP Headers in the request. Those headers are consumed and understood by Envoy route filter. This feature is disabled by default on Istio and Aspen Mesh. For the full list of supported headers please go to:
+		<ol><li>https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/router_filter#http-headers-consumed-from-downstreams</li></ol>
+		</li><li>Envoy will accept &quot;x-envoy-*&quot; headers only sent by trusted applications. Depending on your IP CIDR in the cluster you might need to enable useRemoteAddress feature on Sidecars to allow applications to override retry policy.</li><li>To allow changing retry strategy via HTTP request headers we can use the following EnvoyFilter:
+		<ol><li>NOTE: this is an example and by applying this filter we will change useRemoteAddress field for all services and listeners. Use this only for testing</li><li>Example:
+			<ul><li>
+				<pre class="ckeditor_codeblock">
+kubectl apply -n ns1 -f - &lt;&lt;EOF
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: internal-network2
+spec:
+  configPatches:
+  - applyTo: NETWORK_FILTER # http connection manager is a filter in Envoy
+    match:
+      context: SIDECAR_OUTBOUND
+      listener:
+        filterChain:
+          filter:
+            name: &quot;envoy.filters.network.http_connection_manager&quot;
+    patch:
+      operation: MERGE
+      value:
+        name: &quot;envoy.filters.network.http_connection_manager&quot;
+        typed_config:
+          &quot;@type&quot;: &quot;type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager&quot;
+          useRemoteAddress: true
+EOF</pre>
+				</li></ul>
+			</li><li>For more information please contact Aspen Mesh support or read Envoy documentation</li></ol>
+		</li><li>By adding &quot;X-envoy-* headers you can instruct Envoy about the retry strategy for a specific request:
+		<ul><li>
+			<pre class="ckeditor_codeblock">
+curl -H &quot;X-envoy-retriable-status-codes: 501&quot; -H &quot;x-envoy-max-retries: 2&quot;  httpbin.default:8000/status/501 -v</pre>
+			</li></ul>
+		</li></ol>
+	</li><li><strong>Envoy retry policy API and Advanced retry policies</strong>
+	<ol><li>Istio RetryPolicy API does not expose all features available on Envoy RetryPolicy API. EnvoyFilter CRD has to be used to directly manipulate Envoy Sidecar configuration and to enable those features.</li><li>The list of available retry features looks like below:
+		<ul><li>
+			<pre class="ckeditor_codeblock">
+{
+  &quot;retry_on&quot;: ...,
+  &quot;num_retries&quot;: {...},
+  &quot;per_try_timeout&quot;: {...},
+  &quot;per_try_idle_timeout&quot;: {...},
+  &quot;retry_priority&quot;: {...},
+  &quot;retry_host_predicate&quot;: [],
+  &quot;retry_options_predicates&quot;: [],
+  &quot;host_selection_retry_max_attempts&quot;: ...,
+  &quot;retriable_status_codes&quot;: [],
+  &quot;retry_back_off&quot;: {...},
+  &quot;rate_limited_retry_back_off&quot;: {...},
+  &quot;retriable_headers&quot;: [],
+  &quot;retriable_request_headers&quot;: []
+}</pre>
+			</li></ul>
+		</li><li>For details please refer to Envoy RetryPolicy API documentation available  here:
+		<ol><li>https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/route/v3/route_components.proto#config-route-v3-retrypolicy</li></ol>
+		</li><li>Example of Envoy filter to manipulate Envoy route HTTP retry policy:
+		<ul><li>
+			<pre class="ckeditor_codeblock">
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: httpbin.default.svc.cluster.local
+spec:
+  workloadSelector:
+    labels:
+      app: httpbin
+  configPatches:
+  - applyTo: VIRTUAL_HOST
+    match:
+      context: SIDECAR_OUTBOUND
+      routeConfiguration:
+        vhost:
+          name: &quot;httpbin.default.svc.cluster.local:8000&quot;
+    patch:
+      operation: MERGE
+      value:
+        retry_policy:
+          retriable_headers:
+            name: &quot;HEADER-NAME&quot;
+            string_match:
+              exact: &quot;retry-required&quot;</pre>
+			</li></ul>
+		</li></ol>
+	</li><li><strong>Troubleshooting retry policies</strong>
+	<ol><li>To demonstrate how HTTP retries work on we will use httpbin as a server (deployed in default namespace) and netshoot as a client (deployed in ns1 namespace) applications.
+		<ol><li>Both application PODs have sidecar injected.</li><li>The retry policy for httpbin.default.svc.cluster.local is set as the following:
+			<ul><li>
+				<pre class="ckeditor_codeblock">
+...
+      route:
+        cluster: outbound|8000||httpbin.default.svc.cluster.local
+        maxGrpcTimeout: 0s
+        retryPolicy:
+          hostSelectionRetryMaxAttempts: &quot;5&quot;
+          numRetries: 2
+          perTryTimeout: 5s
+          retriableStatusCodes:
+          - 503
+          - 504
+          retryHostPredicate:
+          - name: envoy.retry_host_predicates.previous_hosts
+            typedConfig:
+              &#39;@type&#39;: type.googleapis.com/envoy.extensions.retry.host.previous_hosts.v3.PreviousHostsPredicate
+          retryOn: connect-failure,refused-stream,retriable-status-codes</pre>
+				</li></ul>
+			</li></ol>
+		</li><li>The number of retries is not specified in Access Logs by Envoy Sidecar however &quot;URX&quot; flag set on the client sidecar proxy may indicate that the request has been retried by Envoy.
+		<ol><li>URX flag is documented by Envoy as:
+			<ol><li>
+				<p><strong>URX</strong>: The request was rejected because the <a href="https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/route/v3/route_components.proto#envoy-v3-api-field-config-route-v3-retrypolicy-num-retries" target="_blank">upstream retry limit (HTTP)</a> or <a href="https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/tcp_proxy/v3/tcp_proxy.proto#envoy-v3-api-field-extensions-filters-network-tcp-proxy-v3-tcpproxy-max-connect-attempts" target="_blank">maximum connect attempts (TCP)</a> was reached.</p>
+				</li></ol>
+			</li></ol>
+		</li><li>Example:
+		<ol><li>We will send 1 request to /status/503 endpoint from the client POD to httpbin application. Httpbin application will return 503 error and the sidecar on client POD will retry the request. 
+			<ol><li>The curl command we used and results:</li><li>
+				<pre class="ckeditor_codeblock">
+curl httpbin.default:8000/status/503 -v
+*   Trying 10.96.137.218:8000...
+* Connected to httpbin.default (10.96.137.218) port 8000 (#0)
+&gt; GET /status/503 HTTP/1.1
+&gt; Host: httpbin.default:8000
+&gt; User-Agent: curl/7.87.0
+&gt; Accept: */*
+&gt;
+* Mark bundle as not supporting multiuse
+&lt; HTTP/1.1 503 Service Unavailable
+&lt; server: envoy
+&lt; date: Fri, 10 Mar 2023 13:36:53 GMT
+&lt; content-type: text/html; charset=utf-8
+&lt; access-control-allow-origin: *
+&lt; access-control-allow-credentials: true
+&lt; content-length: 0
+&lt; x-envoy-upstream-service-time: 727</pre>
+				</li></ol>
+			</li><li>The diagram presents the traffic flow:
+			<ol><li><img alt="image.png" src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po0000006jLq&amp;feoid=00N1T00000AOnlF&amp;refid=0EM1T000005N8OB" style="width: 1008px;height: 470px;"></img></li></ol>
+			</li><li>On client istio-proxy container logs we can observer only 1 Access Log message with URX flag:
+			<ol><li>
+				<pre class="ckeditor_codeblock">
+kubectl logs -n ns1 nettools-netadmin-bf8886597-ddwgp -c istio-proxy
+...
+[2023-03-10T13:36:58.837Z] &quot;GET /status/503 HTTP/1.1&quot; 503 URX via_upstream - &quot;-&quot; 0 0 483 483 &quot;-&quot; &quot;curl/7.87.0&quot; &quot;3daf7289-ccac-486b-a921-3908f9510278&quot; &quot;httpbin.default:8000&quot; &quot;10.244.2.18:80&quot; outbound|8000||httpbin.default.svc.cluster.local 10.244.2.13:35706 10.96.137.218:8000 10.244.2.13:44838 - -</pre>
+				</li></ol>
+			</li><li>On server istio-proxy container logs we see 3 entries for each HTTP request (1 request + 2 retries):
+			<ol><li>
+				<pre class="ckeditor_codeblock">
+➜  ~ k logs -n default  httpbin-9dbd644c7-68m5j -c istio-proxy
+...
+[2023-03-10T13:36:59.158Z] &quot;GET /status/503 HTTP/1.1&quot; 503 - via_upstream - &quot;-&quot; 0 0 1 1 &quot;-&quot; &quot;curl/7.87.0&quot; &quot;3daf7289-ccac-486b-a921-3908f9510278&quot; &quot;httpbin.default:8000&quot; &quot;10.244.2.18:80&quot; inbound|80|| 127.0.0.6:51517 10.244.2.18:80 10.244.2.13:35706 outbound_.8000_._.httpbin.default.svc.cluster.local default
+[2023-03-10T13:36:59.180Z] &quot;GET /status/503 HTTP/1.1&quot; 503 - via_upstream - &quot;-&quot; 0 0 1 1 &quot;-&quot; &quot;curl/7.87.0&quot; &quot;3daf7289-ccac-486b-a921-3908f9510278&quot; &quot;httpbin.default:8000&quot; &quot;10.244.2.18:80&quot; inbound|80|| 127.0.0.6:51517 10.244.2.18:80 10.244.2.13:35706 outbound_.8000_._.httpbin.default.svc.cluster.local default
+[2023-03-10T13:36:59.319Z] &quot;GET /status/503 HTTP/1.1&quot; 503 - via_upstream - &quot;-&quot; 0 0 1 1 &quot;-&quot; &quot;curl/7.87.0&quot; &quot;3daf7289-ccac-486b-a921-3908f9510278&quot; &quot;httpbin.default:8000&quot; &quot;10.244.2.18:80&quot; inbound|80|| 127.0.0.6:51517 10.244.2.18:80 10.244.2.13:35706 outbound_.8000_._.httpbin.default.svc.cluster.local default</pre>
+				</li><li>It is worth noting that TCP connections between Sidecar proxies and between Server POD Sidecar and httpbin application were persistent. Envoy sent all requests in the same TCP connection. &quot;10.244.2.13:35706&quot; was the Client IP: source TCP port and &quot;127.0.0.6:51517&quot; was the local IP: source TCP port used by Envoy on the server POD. 127.0.0.6 address is the address used by Envoy sidecar to intercept and redirect incoming TCP connections. &quot;10.244.2.18:80&quot; was the httpbin POD IP:Port</li></ol>
+			</li></ol>
+		</li></ol>
+	</li></ol>
+
+<h2><br><br><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Additional Information</strong></h2>
+</article>
+</body>
+</html>

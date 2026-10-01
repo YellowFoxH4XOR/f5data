@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K2269: Overview of 3-DNS configuration synchronization</title>
+<meta name="description" content="Knowledge: Overview of 3-DNS configuration synchronization — If the autoconf process is enabled, 3-DNS polls the BIG-IP system for virtual server changes. However, to save processing bandwidth and reduce conflicts, only the principal 3-DNS Controller does this…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K2269">
+</head>
+<body>
+<header>
+<h1>K2269: Overview of 3-DNS configuration synchronization</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2006-08-31</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>3-DNS: 4.6.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K2269">https://my.f5.com/manage/s/article/K2269</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><h3>Sync group operations</h3>
+
+<p>Sync group operations have the five following components:</p>
+
+<ul><li>Auto-configuration</li><li>Configuration synchronization</li><li>Metrics and object status</li><li>LDNS records</li><li>Failover pairs</li></ul>
+
+<h4>Auto-configuration</h4>
+
+<p>If the <strong>autoconf</strong> process is enabled, 3-DNS polls the BIG-IP system for virtual server changes. However, to save processing bandwidth and reduce conflicts, only the principal 3-DNS Controller does this polling when a sync group is configured. Therefore, when <strong>autoconf</strong> discovers a virtual server change, the resulting change to the principal 3-DNS Controller&#39;s <strong>wideip.conf</strong> file causes the <strong>config sync</strong> function to start.</p>
+
+<h4>Configuration synchronization</h4>
+
+<p>3-DNS Controllers send out digests of their configuration files to all other configured 3-DNS Controllers using <strong>big3d</strong> over iQuery every 60 seconds. These digests include a timestamp. If a 3-DNS Controller&#39;s configuration has been changed, the later timestamp prompts 3-DNS to install the more recent configuration during the next update, causing all other 3-DNS Controllers in the sync group to request updates.</p>
+
+<p><strong>3dnsd</strong> requests a copy of the <strong>wideip.conf</strong> file by way of <strong>/usr/local/bin/syncer</strong>, in addition to other configuration files, such as topology records and production rules. These are obtained through Secure Copy (<strong>scp</strong>).</p>
+
+<p>If the <strong>named.conf</strong> timestamp has changed and <strong>sync_named_conf</strong> variable is enabled, <strong>3dnsd</strong> requests copies of the <strong>named.conf</strong> and NameSurfer configuration files, by way of the <strong>/usr/local/bin/rsync</strong> command. If zone information in the <strong>named.conf</strong> file has changed, 3-DNS requests the changes from the primary member of the synchronization group, by executing the <strong>/usr/local/bin/sync_zones</strong> command. Having received these updates, the 3-DNS Controller runs the <strong>ndc reload</strong> process to restart BIND, and runs the <strong>ns_restart</strong> process to restart NameSurfer.</p>
+
+<p class="note"><strong>Note:</strong> This functionality allows for zone files with multiple primaries, which means that BIND&#39;s implementation of primary/secondary synchronization need not be used.</p>
+
+<p>Each 3-DNS Controller now sends its own periodic digests updated with the new timestamp.</p>
+
+<p>A 3-DNS configuration is considered to change, thereby causing a timestamp change, when any of the following actions occur:</p>
+
+<ul><li>Updates are performed in Configuration utility</li><li><strong>3dpipe</strong> enable/disable commands are run</li><li>Changes are made to the configuration through iControl</li><li>The <strong>3ndc</strong> reload command is run</li><li>The <strong>config sync</strong> process is performed with a peer 3-DNS instance (BIG-IP pair with 3-DNS option)</li></ul>
+
+<p class="note"><strong>Note:</strong> It is recommended that all changes are performed on the principal 3-DNS Controller.</p>
+
+<h4>Metrics and object status</h4>
+
+<p>In 3-DNS version 4.5, the <strong>big3d</strong> daemon also collects metrics and status information for configuration objects. The principal 3-DNS Controller selects one <strong>big3d</strong> agent per datacenter to collect metrics on paths, hops, or LDNS statistics. The selected <strong>big3d</strong> agent monitors all other 3-DNS Controllers, including the principal 3-DNS controller, in its sync group and broadcasts collected metrics to all the 3-DNS Controllers directly.</p>
+
+<h4>LDNS records</h4>
+
+<p>LDNS records contain both metric and persistence information. LDNS records are synchronized at the pool TTL interval, rather than the synchronization interval. 3-DNS Controllers exchange LDNS request sequence numbers and the timestamps of their <strong>ldns.gz</strong> files. This is accomplished at a time interval determined by pool TTL. If the LDNS request sequence numbers and timestamp information do not match, a copy of the <strong>ldns.gz</strong> file will be requested using iQuery.</p>
+
+<h4>Failover pairs</h4>
+
+<p>The 3-DNS instance on a standby BIG-IP system with the 3-DNS option remains operational. Even though a sync group may only show the principal 3-DNS as being active, the synchronization process applies between the primary and secondary units.</p>
+
+<h3>Additional troubleshooting suggestions</h3>
+
+<p>Following is a list of additional troubleshooting suggestions:</p>
+
+<ul><li>Since the 3-DNS synchronization process uses <strong>scp</strong>, which requires the use of port 22, verify that port 22 is open within firewalls between the 3-DNS systems.</li><li>Verify that the SSH keys are properly shared between all the 3-DNS systems in the sync group by selecting the Configure SSH communication with remote devices option from the <strong>3dnsmaint</strong> menu on the command line.</li><li>If you edit your zone files manually, run the <strong>touch /etc/named.conf</strong> command when you are finished. This command modifies the timestamp in the <strong>named.conf</strong> file, which synchronizes the changes. If you use NameSurfer to edit zone files, this step is not required.</li><li>If it appears that zone files are not being synchronized properly, it could mean that the <strong>wideip.conf</strong> file contains an entry to disable named synchronization. To correct this issue, perform the following procedure:
+	<ol><li>Edit the <strong>/config/3dns/etc/wideip.conf</strong> file using a text editor, and locate the following line:
+		<p class="code">sync_named_conf no</p>
+		</li><li>If this line exists, remove it and save the file.</li><li>Apply the change by typing the following command:
+		<p class="code">3ndc reload</p>
+		</li></ol>
+	</li></ul>
+</article>
+</body>
+</html>

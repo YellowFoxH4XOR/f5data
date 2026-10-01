@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K85751335: APM: SAML IdP With Multi Certs in Metadata one cert displays in GUI/tmui configuration</title>
+<meta name="description" content="Support Solution: APM: SAML IdP With Multi Certs in Metadata one cert displays in GUI/tmui configuration — When configuring External Identity Provider (IdP) Connectors using metadata exported from the IdP, additional certificate properties may be present in the saml-idp-connector object. These values will…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K85751335">
+</head>
+<body>
+<header>
+<h1>K85751335: APM: SAML IdP With Multi Certs in Metadata one cert displays in GUI/tmui configuration</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2019-08-12</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 15.X.X, 13.X.X, 12.X.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 15.1.8, 12.1.5, 15.1.7, 12.1.4, 15.1.6, 12.1.3, 15.1.5, 12.1.2, 15.1.4, 12.1.1, 15.1.3, 12.1.0, 14.X.X, 12.0.0, 15.1.1, 15.1.2</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K85751335">https://my.f5.com/manage/s/article/K85751335</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>When configuring External Identity Provider (IdP) Connectors using metadata exported from the IdP, additional certificate properties may be present in the saml-idp-connector object. These values will note be visible from the Configuration Utility.</p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP APM as SAML Service Provider (SP)</li><li>External IdP Connector metadata contains two or more signing certificates</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br>Product design</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+None
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>APM as SAML SP implements SAML auth settings from external SAML IdP entities which are referred to as &quot;External IdP Connectors&quot;. These settings can be created either manually or automatically by importing metadata that was exported from the external IdP. When creating manually or re-configuring an External IdP Connector from the BIG-IP Configuration utility (TMUI), only one certificate, used to verify SAML responses from the IdP, can be specified within &quot;Certificate Settings&quot;. Changing the certificate within the IdP connector settings from TMUI also changes the value of attribute &quot;idp-certificate&quot; within the corresponding bigip.conf &quot;apm aaa saml-idp-connector&quot; object. Creating an external IdP connector from exported IdP metadata that contains two or more certificates results in the following:</p>
+
+<ol><li>The first two certificates listed in the imported metadata are stored in the BIG-IP System&#39;s certificate management store while subsequent certificates listed in the metadata are discarded</li><li>The first certificate listed in the imported metadata is specified in the corresponding IdP connector&#39;s &quot;Certificate Settings&quot; and subsequently becomes the value of attribute &quot;idp-certificate&quot; within the corresponding bigip.conf &quot;apm aaa saml-idp-connector&quot; object</li><li>The second certificate listed in the imported metadata becomes the value of attribute &quot;secondary-idp-certificate&quot; within the corresponding bigip.conf &quot;apm aaa saml-idp-connector&quot; object (not exposed in IdP connector settings from TMUI)</li><li>The &quot;secondary-idp-certificate&quot; attribute within the bigip.conf &quot;apm aaa saml-idp-connector&quot; object serves no functional purpose other than to point to the second certificate listed in the imported metadata. </li></ol>
+
+<p>Because the &quot;secondary-idp-certificate&quot; attribute points to the imported certificate said certificate cannot be deleted from BIG-IP System&#39;s certificate management store. The following error occurs when attempting to delete said certificate:</p>
+
+<p style="margin-left: 40px;">&quot;The Certificate File (&lt;name_of_cert_trying_to_delete&gt;) cannot be deleted because it is in use by a IDP Connector (&lt;name_of_idp_connector&gt;).&quot;</p>
+
+<p>Since configuration of the &quot;secondary-idp-certificate&quot; attribute is not exposed in the IdP connector&#39;s &quot;Security Settings&quot; from TMUI, use the following tmsh command to remove the imported certificate from the IdP connector configuration, thus allowing said certificate to be deleted:</p>
+
+<p style="margin-left: 40px;"><span class="code">tmsh modify apm aaa saml-idp-connector &lt;name_of_idp_connector&gt; secondary-idp-certificate none</span></p>
+
+<p>As of BIG-IP build versions &gt;=12.1.3.2 and build versions &gt;=13.1.0, multiple certificates imported from  IdP metadata  will result in the creation of a bundled certificate where all certificates listed in the metadata will reside. The IdP connector&#39;s &quot;Security Settings&quot; will point to the bundled certificate and the &quot;secondary-idp-certificate&quot; attribute within the corresponding bigip.conf &quot;apm aaa saml-idp-connector&quot; object will retain value none.</p>
+
+<p style="margin-left: 40px;"><span class="note">Note: if BIG-IP contains an IdP connector configuration where &quot;secondary-idp-certificate&quot; is pointing to a certificate prior to upgrading to a build version &gt;=12.1.3.2 then that configuration will not change after upgrading to a build version &gt;=12.1.3.2</span></p>
+
+<p>Using a bundled certificate, the signature verification process will match from the list of certificates within the bundle the certificate that signed an incoming SAML IdP assertion/response message and use said certificate to verify said message.</p>
+
+<p style="margin-left: 40px;"><span class="note">Note: To verify if the certificate imported from IdP metadata is a bundled certificate, i.e. if it contains multiple certificates, from TMUI go to the BIG-IP System&#39;s certificate management list, find the imported certificate and look at the value for column &quot;Contents&quot;. If it&#39;s bundled then the &quot;Contents&quot; value will be &quot;Certificate Bundle&quot;. You can also open up the certificate from the BIG-IP System&#39;s certificate management list and view all of the certificates contained within the bundle.</span></p>
+
+<p>Regarding BIG-IP as IdP, importing external SP metadata that contains multiple certificates in BIG-IP build versions prior to v12.1.3.2 will result in the following: </p>
+
+<ol><li>The first certificate listed in the imported metadata is stored in the BIG-IP System&#39;s certificate management store while subsequent certificates listed in the metadata are discarded</li><li>The first certificate listed in the imported metadata is specified in the corresponding SP connector&#39;s &quot;Security Settings&quot; and subsequently becomes the value of attribute &quot;sp-certificate&quot; within the corresponding bigip.conf &quot;apm sso saml-sp-connector&quot; object</li></ol>
+
+<div style="margin-left: 40px;"><span class="note">Note: External SP connector configuration does NOT contain a secondary certificate attribute</span></div>
+
+<p>Importing external SP metadata that contains multiple certificates in BIG-IP build versions &gt;=12.1.3.2 results in the creation and usage of a bundled certificate, just as is done with multi-cert IdP metadata imports.</p>
+</article>
+</body>
+</html>

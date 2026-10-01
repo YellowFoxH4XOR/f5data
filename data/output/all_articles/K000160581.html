@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160581: Slow response when perform  performing high-volume REST API operations to modify GTM objects</title>
+<meta name="description" content="Support Solution: Slow response when perform  performing high-volume REST API operations to modify GTM objects — When performing high-volume REST API operations to modify GTM wide IP configuration items on BIG-IP DNS devices, extremely slow response times (10–16 seconds per request) may occur. This issue…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160581">
+</head>
+<body>
+<header>
+<h1>K000160581: Slow response when perform  performing high-volume REST API operations to modify GTM objects</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-04-02</dd>
+<dt>Updated</dt><dd>2026-04-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 15.X.X, 16.X.X, 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160581">https://my.f5.com/manage/s/article/K000160581</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When performing high-volume REST API operations to modify GTM wide IP configuration items on BIG-IP DNS devices, extremely slow response times (10–16 seconds per request) may occur. This issue happens when an external REST API tool sends concurrent PATCH requests to the management interface. The delay is not caused by backend processing (restjavad, icrd, mcpd), but is related to the httpd process handling incoming connections. Increasing the httpd max-clients value significantly improves API performance.</p>
+<h2>Environment</h2>
+<ul><li>Default httpd max-clients setting: 10</li><li>REST API tool sending concurrent PATCH requests to modify GTM wide IP objects</li><li>Management plane memory available: ~6GB (example)</li><li>Each httpd child process uses ~30MB management plane memory</li></ul>
+<h2>Cause</h2>
+<p>The slow REST API performance is caused by the default httpd max-clients setting (10) being insufficient for the concurrent connection load from the REST API tool. When concurrent HTTPS connections exceed this limit, excess connections are queued and must wait for existing connections to complete. Each httpd child process handles one concurrent connection; with only 10 allowed, high-concurrency API operations experience significant queuing delays. Increasing max-clients allows more concurrent connections to be serviced, eliminating the bottleneck.</p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li><strong>Calculate the appropriate max-clients value:</strong>
+<ul><li>Formula:<br>Max HTTPD child processes = (Available management plane memory × 80% - Current used memory) / 30MB per process</li><li>Example calculation:<br>(9.3GB × 80% - 3.9GB) / 30MB ≈ 118 maximum safe httpd child processes</li></ul>
+</li><li><strong>Configure httpd max-clients to match actual concurrent connection requirements:</strong>
+<ul><li>Monitor httpd process count during API operations to determine the required value.</li></ul>
+</li><li><strong>Apply the configuration change:</strong><br><span style="background-color: #f1f1f1;">tmsh modify sys httpd max-clients &lt;calculated_value&gt;</span><br><span style="background-color: #f1f1f1;">tmsh save /sys config</span><br><span style="background-color: #f1f1f1;">tmsh restart /sys service httpd</span><br><span style="background-color: #f1f1f1;">tmsh restart /sys service tomcat</span></li><li><strong>Monitor httpd process count during API operations:</strong><br><span style="background-color: #f1f1f1;">ps aux | grep &quot;/usr/sbin/httpd -DTrafficShield -DAVRUI -DSAM&quot; | wc -l</span></li><li><strong>Avoid setting max-clients to the maximum value (256) unless necessary:</strong>
+<ul><li>Excessive httpd processes can exhaust management plane memory and trigger OOM events, leading to loss of management access and potential impact on ASM-related processes.</li></ul>
+</li><li><strong>Restarting httpd and tomcat services:</strong>
+<ul><li>Causes temporary loss of GUI connectivity but does not affect data plane traffic or business operations.</li></ul>
+</li></ol>
+<h2>Additional Information</h2>
+<ul><li>Each httpd child process consumes approximately 30MB of management plane memory.</li><li>The management plane OOM threshold is typically 80% of available management plane memory.</li><li>Apache documentation clarifies that MaxClients (max-clients) sets the limit on simultaneous requests; excess connections are queued.</li><li>For environments with varying concurrency, monitor actual usage and adjust max-clients accordingly to balance performance and memory safety.</li></ul>
+</article>
+</body>
+</html>

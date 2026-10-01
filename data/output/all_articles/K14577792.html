@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K14577792: LBaaS assigns duplicated snat ip to different sets of BIG-IP</title>
+<meta name="description" content="Support Solution: LBaaS assigns duplicated snat ip to different sets of BIG-IP — You have assigned a SNAT IP of a subnet to the first set of BIG-IP on your OpenStack platform for a tenant.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K14577792">
+</head>
+<body>
+<header>
+<h1>K14577792: LBaaS assigns duplicated snat ip to different sets of BIG-IP</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-05-05</dd>
+<dt>Updated</dt><dd>2026-07-15</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>Private Cloud</li><li>SDK</li><li>BIG-IP LTM: 11.X.X, 15.X.X, 14.X.X, 13.X.X, 12.X.X, 11.5.X, 11.4.X, 11.3.X, 11.2.X, 11.1.X, 11.0.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 11.6.X, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 11.6.5, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 11.5.1, 11.5.0, 11.4.1, 11.4.0, 16.X.X, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 11.3.0</li><li>SDK Python</li><li>Openstack</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K14577792">https://my.f5.com/manage/s/article/K14577792</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<span class="sectiontitle">Description</span>
+
+<p>You have assigned a SNAT IP of a subnet to the first set of BIG-IP on your OpenStack platform for a tenant.</p>
+
+<p>Then you have assigned another SNAT IP of the same subnet to the second set of BIG-IP for the same tenant. After the operation, there is an issue of business interruption for the corresponding listener.</p>
+
+<p>You may find the SNAT IP on the second set of BIG-IP is the same as the first set of BIG-IP. For example, you may find log messages like the below in the /var/log/ltm on each set of BIG-IP devices:</p>
+
+<p><span class="example2">warning tmm&lt;tmm id&gt;[&lt;pid&gt;]: 01190004:4: <strong>address conflict detected</strong> for &lt;<strong>snat ip</strong>&gt; (&lt;mac address&gt;) on vlan &lt;vlan id&gt;</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>
+	<p>Multiple OpenStack LBaaS providers</p>
+	</li><li>
+	<p>Use the same subnet in the same tenant</p>
+	</li><li>
+	<p>F5 LBaaS agent lite mode </p>
+	</li><li>
+	<p>BIG-IP SNAT IP</p>
+	</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Lack of <strong>provider_name = &#39;&lt;provider_name&gt;&#39; </strong>in F5 LBaaS agent configuration file.</p>
+Each F5 LBaaS provider has its own F5 LBaaS agent configuration file, and each F5 LBaaS agent configuration file defines one set of BIG-IP, namely each provider corresponds to a specific set of BIG-IP.
+
+<p>If there is no <strong>provider_name = &#39;&lt;provider_name&gt;&#39;</strong> in the agent configuration file and a tenant has already issued a SNAT IP of a subnet to a set of BIG-IP of a provider. Then the next time, when this tenant wants to issue a SNAT IP to the set of BIG-IP of another provider, it will get the same SNAT IP as the previous one. It finally leads to address conflicts of the SNAT IP on different sets of BIG-IP and business issues.</p>
+
+<p>The <strong>provider_name = &#39;&lt;provider_name&gt;&#39;</strong> is used for binding SNAT IP to the provider, and making sure that different sets of BIG-IP get different SNAT IP within the same subnet of a tenant.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>You can follow the procedures below to resolve this issue.</p>
+
+<ol start="1"><li>
+	<p>Delete the SNAT IP from OpenStack. This will remove the specific SNAT IP from one set of BIG-IP.<br>	<span class="note"><strong>Note</strong>: it may keep the SNAT IP on the other set of BIG-IP, so you need to manually delete it via configuration utility if the SNAT IP keeps there.</span></p>
+	</li><li>
+	<p>Add entry <strong>provider_name = &#39;&lt;provider_name&gt;&#39;</strong> followed by the <strong>f5_snat_mode = True</strong> to each F5 LBaaS agent configuration file:</p>
+
+	<p><span class="example2">[DEFAULT]</span><br>	<span class="example2">--snipped--</span><br>	<span class="example2"><strong>f5_snat_mode = True</strong><br>	# Make SNAT IP different for the set of BIG-IP of different providers within the same subnet of a tenant.</span><br>	<strong><span class="example2">provider_name = &#39;&lt;provider_name&gt;&#39;</span></strong><br>	<span class="example2">--snipped--</span><br>	 </p>
+
+	<p>For example, if there are 2 F5 LBaaS providers named <strong>Provider01</strong> and <strong>Provider02</strong>, then add the entry <strong>provider_name = &#39;Provider01&#39;</strong> to the agent configuration file of <strong>Provider01</strong> as:</p>
+
+	<p><span class="example2">[DEFAULT]</span><br>	<span class="example2">--snipped--</span><br>	<span class="example2">f5_snat_mode = True</span><br>	<span class="example2"># Make SNAT IP different for the set of BIG-IP of different providers within the same subnet of a tenant.</span><br>	<strong><span class="example2">provider_name = &#39;Provider01&#39;</span></strong><br>	<span class="example2">--snipped--</span></p>
+
+	<p><br>	And then add the entry of <strong>provider_name = &#39;Provider02&#39;</strong> to the agent configuration file of <strong>Provider02</strong> as:</p>
+
+	<p><span class="example2">[DEFAULT]<br>	--snipped--<br>	f5_snat_mode = True<br>	# Make SNAT IP different for the set of BIG-IP of different providers within the same subnet of a tenant.<br>	<strong>provider_name = &#39;Provider02&#39;</strong><br>	--snipped--</span><br>	 </p>
+	</li><li>
+	<p>Save the change and restart the F5 LBaaS agent service in order to make the configuration into effect.</p>
+	</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>If debug is enabled (<strong>debug = True</strong>) in the agent configuration file, you can find the relevant log message of the assignment for <strong>SNAT IP</strong> in the agent log as below:</p>
+
+<ul><li>
+	<p>The log message of the agent</p>
+	</li></ul>
+
+<div style="margin-left: 40px;"><span class="example2">DEBUG [pid:&lt;pid&gt;] [MainThread][tid:&lt;tid&gt;] [req-&lt;request-id&gt;] [session.py:&lt;integer&gt; wrapper] RESPONSE::STATUS: 200 Content-Type: application/json Content-Encoding: None</span></div>
+
+<div style="margin-left: 40px;"><span class="example2">Text: u&#39;{&quot;kind&quot;:&quot;tm:ltm:snat-translation:snat-translationstate&quot;,&quot;name&quot;:&quot;snat-traffic-group-1-&lt;snat ip id&gt;&quot;,&quot;partition&quot;:&quot;&lt;provider name&gt;_&lt;tenant id&gt;&quot;,&quot;fullPath&quot;:&quot;/&lt;provider name&gt;_&lt;tenant id&gt;/snat-traffic-group-&lt;snat ip id&gt;&quot;,&quot;generation&quot;:&lt;generation id&gt;,&quot;selfLink&quot;:&quot;https://localhost/mgmt/tm/ltm/snat-translation/~&lt;provider name&gt;_&lt;tenant id&gt;~snat-traffic-group-1-&lt;snat ip id&gt;?ver=&lt;BIG-IP version&gt;&quot;,&quot;address&quot;:&quot;&lt;snat ip&gt;%&lt;route domain id&gt;&quot;,&quot;arp&quot;:&quot;enabled&quot;,&quot;connectionLimit&quot;:0,&quot;enabled&quot;:true,&quot;inheritedTrafficGroup&quot;:&quot;false&quot;,&quot;ipIdleTimeout&quot;:&quot;indefinite&quot;,&quot;tcpIdleTimeout&quot;:&quot;indefinite&quot;,&quot;trafficGroup&quot;:&quot;/Common/traffic-group-1&quot;,&quot;trafficGroupReference&quot;:{&quot;link&quot;:&quot;https://localhost/mgmt/tm/cm/traffic-group/~Common~traffic-group-1?ver=&lt;BIG-IP version&gt;&quot;},&quot;udpIdleTimeout&quot;:&quot;indefinite&quot;,&quot;unit&quot;:1}&#39;</span></div>
+
+<ul><li>
+	<p>Transfer the content of the above <strong>Text</strong> into a more readable format, such as JSON:</p>
+	</li></ul>
+
+<p style="margin-left: 40px;"><span class="example2">{<br>    &quot;kind&quot;: &quot;tm:ltm:snat-translation:snat-translationstate&quot;,<br>    &quot;name&quot;: &quot;snat-traffic-group-1-&lt;snat ip id&gt;&quot;,<br>    &quot;partition&quot;: &quot;&lt;provider name&gt;_&lt;tenant id&gt;&quot;,<br>    &quot;fullPath&quot;: &quot;/&lt;provider name&gt;_&lt;tenant id&gt;/snat-traffic-group-1-&lt;snat ip id&gt;&quot;,<br>    &quot;generation&quot;: &lt;generation id&gt;,<br>    &quot;selfLink&quot;: &quot;https://localhost/mgmt/tm/ltm/snat-translation/~&lt;provider name&gt;_&lt;tenant id&gt;~snat-traffic-group-1-&lt;snat ip id&gt;?ver=&lt;BIG-IP version&gt;&quot;,<br>    &quot;<strong>address&quot;: &quot;&lt;snat ip&gt;%&lt;route domain id&gt;</strong>&quot;,<br>    &quot;arp&quot;: &quot;enabled&quot;,<br>    &quot;connectionLimit&quot;: 0,<br>    &quot;enabled&quot;: true,<br>    &quot;inheritedTrafficGroup&quot;: &quot;false&quot;,<br>    &quot;ipIdleTimeout&quot;: &quot;indefinite&quot;,<br>    &quot;tcpIdleTimeout&quot;: &quot;indefinite&quot;,<br>    &quot;trafficGroup&quot;: &quot;/Common/traffic-group-1&quot;,<br>    &quot;trafficGroupReference&quot;: {<br>        &quot;link&quot;: &quot;https://localhost/mgmt/tm/cm/traffic-group/~Common~traffic-group-1?ver=&lt;BIG-IP version&gt;&quot;<br>    },<br>    &quot;udpIdleTimeout&quot;: &quot;indefinite&quot;,<br>    &quot;unit&quot;: 1<br>}</span></p>
+
+<ul><li>
+	<p>The <strong>&lt;snat ip&gt;%&lt;route domain id&gt;</strong> in the JSON body will be the same for the agent log of <strong>Provider01</strong> and <strong>Provider02</strong>.</p>
+	</li></ul>
+</article>
+</body>
+</html>

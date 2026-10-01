@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K26651270: Configuring the BIG-IP FPS system to send FPS alerts over HTTPS to a remote logging node</title>
+<meta name="description" content="Knowledge: Configuring the BIG-IP FPS system to send FPS alerts over HTTPS to a remote logging node — You require the BIG-IP Fraud Protection Service (FPS) module to send FPS alerts to a remote logging node by way of HTTPS.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K26651270">
+</head>
+<body>
+<header>
+<h1>K26651270: Configuring the BIG-IP FPS system to send FPS alerts over HTTPS to a remote logging node</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2016-09-22</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 13.1.0, 13.0.1, 13.0.0, 12.1.3, 12.1.2, 12.1.0, 12.0.0, 12.1.1</li><li>BIG-IP FPS: 13.0.1, 13.0.0, 13.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K26651270">https://my.f5.com/manage/s/article/K26651270</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>You should consider using this procedure under the following condition:</p>
+
+<ul><li>You require the BIG-IP Fraud Protection Service (FPS) module to send FPS alerts to a remote logging node by way of HTTPS.</li></ul>
+<h3>Description</h3><p>In BIG-IP 12.0.0 and later, you can configure the BIG-IP FPS module to send FPS alerts to a remote logging node using HTTPS as a communication channel. This method is not supported in versions prior to BIG-IP FPS 12.0.0.</p>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisites to use this procedure:</p>
+
+<ul><li>Have a BIG-IP system licensed and provisioned with an FPS module.</li><li>Have a remote logging node that supports HTTPS for receiving logs.</li><li>Have administrative access to the TMOS Shell (<strong>tmsh</strong>).</li><li>Have an IP address for the dummy virtual server that is used for HTTPS communications.</li></ul>
+
+<p><span class="sectiontitle">Procedures</span></p>
+
+<p>To configure the BIG-IP FPS to send FPS alerts to a remote logging node by way of HTTPS, you must perform the following procedures:</p>
+
+<ul><li><a href="#proc1">Configuring the remote logging node pool</a></li><li><a href="#proc2">Configuring the log destination and publisher</a></li><li><a href="#proc3">Configuring the FPS profile</a></li><li><a href="#proc4">Configuring the iRule to disable SSL for non-alert-path traffic</a></li><li><a href="#proc5">Configuring the FPS pool and virtual server</a></li></ul>
+
+<p><span class="subsectiontitle"><a id="proc1" name="proc1"></a>Configuring the remote logging node pool</span></p>
+
+<p>To use the remote logging node as the <strong>Alert Pool</strong> for an FPS profile, you must configure it in a pool. To do so, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to <strong>tmsh</strong> by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>Create a pool, and add the remote logging node to the pool using the following command syntax:
+	<p><span class="code">create ltm pool &lt;name&gt; members add { &lt;remote logging node IP&gt;:443 } </span></p>
+
+	<p>For example, you would enter the following command to add remote logging node <strong>192.168.1.196</strong> to the pool <strong>alert_pool</strong>:</p>
+
+	<p><span class="example2">create ltm pool alert_pool members add { 192.168.1.196:443 }</span></p>
+	</li><li>Save the changes by typing the following command:
+	<p><span class="code">save sys config</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="proc2" name="proc2"></a>Configuring the log destination and publisher</span></p>
+
+<p>To use the remote logging node as the Log Publisher for the FPS profile, you must first create a dummy virtual server (for HTTPS communications), then a dummy node, as well as a dummy pool, before using them for the log destination and log publisher. To do so, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to <strong>tmsh</strong> by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>Create the dummy virtual server, and use the remote logging node pool from the previous procedure as its pool, by using the following command syntax:
+	<p><span class="code">create ltm virtual &lt;name&gt; { destination &lt;IP address&gt;:80 profiles add { &lt;server SSL profile name&gt; {context serverside} tcp {} } snat automap pool &lt;remote logging node pool name&gt; }</span></p>
+
+	<p>For example, you would type the following command to create the dummy virtual server <strong>alert_pool_vs</strong> with IP address <strong>172.16.33.50,</strong> as well as server SSL profile <strong>serverssl,</strong> and add the pool <strong>alert_pool,</strong> created in the previous procedure:</p>
+
+	<p><span class="example2">create ltm virtual alert_pool_vs { destination 172.16.33.50:80 profiles add { serverssl {context serverside} tcp {} } snat automap pool alert_pool }</span></p>
+	</li><li>Create the dummy node using the dummy virtual server address, by using the following command syntax:
+	<p><span class="code">create ltm node &lt;name&gt; { address &lt;dummy vs IP address&gt; description &lt;description&gt; }</span></p>
+
+	<p>For example, you would type the following command to create the dummy node <strong>vs_node</strong> using the dummy virtual server address <strong>172.16.33.50</strong> from the previous example:</p>
+
+	<p><span class="example2">create ltm node vs_node { address 172.16.33.50 description “dummy virtual server node” }</span></p>
+	</li><li>Create the dummy pool using the dummy node that you created in the previous step, by using the following command syntax:
+	<p><span class="code">create ltm pool &lt;name&gt; { members add { &lt;node name&gt;:http } }</span></p>
+
+	<p>For example, you would type the following command to create the dummy pool <strong>alert_pool_thru_vs</strong> using the dummy node <strong>vs_node</strong> from the previous example:</p>
+
+	<p><span class="example2">create ltm pool alert_pool_thru_vs { members add { vs_node:http } }</span></p>
+	</li><li>Create the log destination using the dummy pool that was created in the previous step by using the following command syntax:
+	<p><span class="code">create sys log-config destination remote-high-speed-log &lt;log destination name&gt; { pool-name &lt;pool name&gt; protocol tcp } </span></p>
+
+	<p>For example, you would type the following command to create log destination <strong>alert_server</strong> using the dummy pool <strong>alert_pool_thru_vs</strong> from the previous example:</p>
+
+	<p><span class="example2">create sys log-config destination remote-high-speed-log alert_server { pool-name alert_pool_thru_vs protocol tcp }</span></p>
+	</li><li>Create the log publisher using the log destination that you created in the previous step using the following command syntax:
+	<p><span class="code">create sys log-config publisher &lt;log publisher name&gt; { destinations replace-all-with { &lt;log destination name&gt; } } </span></p>
+
+	<p>For example, to create log publisher <strong>alert_publisher</strong> using log destination <strong>alert_server</strong> from the previous step, type the following command:</p>
+
+	<p><span class="example2">create sys log-config publisher alert_publisher { destinations replace-all-with { alert_server } }</span></p>
+	</li><li>Save the changes by typing the following command:
+	<p><span class="code">save sys config</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="proc3" name="proc3"></a>Configuring the FPS profile</span></p>
+
+<p>You can configure the FPS profile to use the remote logging node as its <strong>Alert Pool</strong> and <strong>Log Publisher</strong> by performing the following procedure.</p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to <strong>tmsh</strong> by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>Create an FPS profile and configure the <strong>Alert Pool </strong>and <strong>Log Publisher</strong> settings to use the objects you created in the previous procedures, by using the following command syntax:
+	<p><span class="code">create security anti-fraud profile &lt;name&gt; alert-publisher &lt;log publisher name&gt; alert-pool &lt;pool name&gt;</span></p>
+
+	<p>For example, you would type the following command to create the FPS profile <strong>demo_bank_prof,</strong> and configure the <strong>Alert Pool</strong> and <strong>Log Publisher</strong> settings to use <strong>alert_pool</strong> and <strong>alert_publisher</strong> respectively:</p>
+
+	<p><span class="example2">create security anti-fraud profile demo_bank_prof alert-publisher alert_publisher alert-pool alert_pool</span></p>
+	</li><li>Configure the rest of the settings in the FPS profile, as needed</li><li>Ensure that the FPS alerts to the <strong>Alert Pool</strong> remains HTTPS, by typing the following command:
+	<p><span class="code">modify sys db antifraud.disableserversidessl.alert value false</span></p>
+	</li><li>Save the changes by typing the following command:
+	<p><span class="code">save sys config</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="proc4" name="proc4"></a>Configuring the iRule to disable SSL for non-alert-path traffic</span></p>
+
+<p>You must also create an iRule to disable SSL for traffic that is not destined to the alert path. To do so, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to <strong>tmsh </strong>by typing the following command:
+	<p><span class="code">tmsh</span></p></li><li>Create the iRule by using the following command syntax:
+	<p><span class="code">create ltm rule &lt;iRule name&gt; </span></p>
+
+	<p>For example, you would type the following command to create the iRule <strong>/Common/sol26651270_ssl_disable:</strong></p>
+
+	<p><span class="example2">create ltm rule /Common/sol26651270_ssl_disable</span></p>
+	</li><li>The previous step invokes a <strong>vi</strong> editor; type the following iRule syntax:
+	<p><span class="code">when HTTP_REQUEST {<br>	        if { [HTTP::path] ne &quot;stats&quot; } {<br>	            if { [catch { SSL::disable serverside } ] } {<br>	            }<br>	        }<br>	}</span></p>
+	</li><li>When you are done with the iRule syntax, exit the <strong>vi</strong> editor by typing the following key sequence:
+	<p><span class="code">:wq!</span></p>
+	</li><li>When <strong>tmsh</strong> prompts you to save the changes, type<strong> y</strong>.
+	<p>The system saves the changes.</p>
+	</li></ol>
+
+<p><span class="subsectiontitle"><a id="proc5" name="proc5"></a>Configuring the FPS pool and virtual server</span></p>
+
+<p>You can now create the FPS pool, as well as the FPS virtual server, with settings applicable to your environment. You must also associate the FPS profile and iRule that you created in the previous procedures, to the FPS virtual server. For more information about creating the pool and virtual server, refer to the <strong>About Pools</strong> and <strong>About Virtual Servers </strong>sections, respectively, in the <em><strong>BIG-IP Local Traffic Management: Basics </strong></em>guide.</p>
+
+<p><span class="note"><strong>Note</strong>: For information about how to locate F5 product guides, refer to <a href="https://my.f5.com/manage/s/article/K12453464" target="_blank">K12453464: Finding product documentation on AskF5</a>.</span></p>
+</article>
+</body>
+</html>

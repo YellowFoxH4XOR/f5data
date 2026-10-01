@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K35454259: Schedule a UCS archive backup with AWX or Ansible Tower</title>
+<meta name="description" content="Knowledge: Schedule a UCS archive backup with AWX or Ansible Tower — A user configuration set (UCS) is a backup file that contains BIG-IP configuration data that can be used to fully restore a BIG-IP system. You can use the third-party tools, AWX or Ansible Automation…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K35454259">
+</head>
+<body>
+<header>
+<h1>K35454259: Schedule a UCS archive backup with AWX or Ansible Tower</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2022-07-01</dd>
+<dt>Updated</dt><dd>2025-04-02</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Automation and Orchestration</li><li>BIG-IP</li><li>F5 Modules for Ansible</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K35454259">https://my.f5.com/manage/s/article/K35454259</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Description</h3><p>A user configuration set (UCS) is a backup file that contains BIG-IP configuration data that can be used to fully restore a BIG-IP system. You can use the third-party tools, AWX or Ansible Automation Controller (formerly known as Ansible Tower), to automate UCS backups of the BIG-IP system. The following procedures guide you through the endeavor. AWX and Automation Controller provide a graphical user interface (GUI) and other features for using Ansible, including scheduling playbook runs.</p>
+
+<p><span class="note"><strong>Note</strong>: The content in this article is based on AWX, but should also apply to Ansible Automation Controller. AWX is the open source community project that serves as the upstream project for Automation Controller.</span></p>
+
+<p><span class="subsectiontitle">Example playbook</span></p>
+
+<p>The following example playbook uses the F5 Modules for Ansible (FMFA) <strong>bigip_ucs_fetch</strong> module to create a UCS archive on a target BIG-IP system.</p>
+
+<p><span class="note"><strong>Note</strong>: This example uses the <strong>bigip_ucs_fetch</strong> module from the imperative collection, f5networks.f5_modules (FMFAv1).</span></p>
+
+<p>The playbook includes the host name with the date and time in the UCS file name. In this example, the <strong>bigips</strong> group along with its <strong>bigip_username</strong> and <strong>bigip_password</strong> variables are configured in an AWX inventory configuration object. The <strong>bigip_ucs_fetch</strong> module downloads the UCS file to the AWX control machine.</p>
+
+<p>Depending on your AWX installation you will likely need to customize the pod specification for the Instance Group to add <strong>volumes</strong> and <strong>volumeMounts</strong> to the ephemeral AWX execution environment pod. This step enables you to mount a directory from the AWX node to the execution environment pod, so you can save the UCS file. Otherwise, the file will be deleted when the pod is removed at the end of the job. If you don&#39;t have this type of installation, you can find other options for durable storage in the AWX environment in <a href="https://clouddocs.f5.com/products/orchestration/ansible/devel/usage/module-usage-with-tower.html" target="_self">Module usage with Tower</a> on CloudDocs.</p>
+
+<p>Alternatively, you can create another task with the <strong>command</strong> module to use <strong>scp</strong> to copy the UCS file to a secure remote system, and include <strong>only_create_file: yes </strong>in the <strong>bigip_ucs_fetch</strong> module to prevent the Ansible control machine from unnecessarily downloading the file to itself.</p>
+
+<p><span class="example2">---<br>- name: Fetch BIG-IP UCS<br>  hosts: bigips<br>  gather_facts: False<br>  vars:<br>    provider:<br>      password: &quot;{{ bigip_password }}&quot;<br>      server: &quot;{{ ansible_host }}&quot;<br>      user: &quot;{{ bigip_username }}&quot;<br>      validate_certs: False<br><br>  tasks:<br>    - name: get current time on localhost<br>      command: date &quot;+%H%M%S-%m%d%y&quot;<br>      register: date<br>      delegate_to: localhost<br>      run_once: True<br>     <br>    - name: set filename var<br>      set_fact:<br>        ucs: &quot;{{ inventory_hostname + &#39;-&#39; + date.stdout +  &#39;-backup.ucs&#39; }}&quot;<br><br>    - name: Download a new UCS<br>      bigip_ucs_fetch:<br>        src: &quot;{{ ucs }}&quot;<br>        dest: &quot;{{ &#39;/tmp/ucs/&#39; + ucs }}&quot;<br>        provider: &quot;{{ provider }}&quot;<br>      delegate_to: localhost</span><br> </p>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisites to use this procedure:</p>
+
+<ul><li>You are familiar with using Ansible and AWX.</li><li>You installed BIG-IP 13.x or later on the devices in the environment.</li><li>You configured the AWX installation to start creating a job template. For more information, refer to the <a href="https://docs.ansible.com/automation-controller/latest/html/userguide/index.html" target="_self">Automation Controller User Guide</a>.
+	<p><span class="note"><strong>Note</strong>: This link takes you to a resource outside of <a class="createlink" href="https://docs.f5net.com/pages/createpage.action?spaceKey=GSASKF5&amp;title=AskF5&amp;linkCreation=true&amp;fromPageId=8194137" target="_blank">AskF5</a>. The third party could remove the document without our knowledge.</span></p>
+	</li><li>You have an FMFA collection installed in the AWX environment. For more information, refer to <a href="https://my.f5.com/manage/s/article/K10473506" target="_blank">K10473506: Using F5 Modules for Ansible collections with AWX or Ansible Tower</a>.</li></ul>
+
+<p><span class="sectiontitle">Procedures</span></p>
+
+<p><span class="subsectiontitle">Create a job template to run the UCS archive backup playbook</span></p>
+
+<p>Before you can schedule a playbook run you must create a job template.</p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the AWX user interface.</li><li>Go to <strong>Resources</strong> &gt; <strong>Templates</strong>.</li><li>Select <strong>Add</strong> and <strong>Add job template</strong>.</li><li>Add the <strong>Name</strong> and <strong>Job Type</strong>.</li><li>For <strong>Inventory</strong> select the one that contains your BIG-IP systems that you want to back up.</li><li>For <strong>Project</strong> select the project with the FMFA collections installed.</li><li>For <strong>Playbook</strong>, choose your playbook that contains the <strong>bigip_ucs_fetch</strong> module and targets a host or group of BIG-IP systems configured on AWX/Automation controller</li><li>Configure <strong>Credentials</strong> with the credential configuration object that uses the SSH key or the username and password for the BIG-IP systems.
+	<p>For more information about setting up SSH keys, refer to <a href="https://my.f5.com/manage/s/article/K13454" target="_self">K13454: Configuring SSH public key authentication on BIG-IP systems (11.x - 15.x)</a>.</p>
+	</li><li>Configure other settings as necessary.</li><li>Select <strong>Save</strong>.</li><li>(Optional) Verify the job run executes successfully by selecting <strong>Launch</strong>.</li></ol>
+
+<p><span class="subsectiontitle">Create a schedule to run the job template</span></p>
+
+<p>Create a schedule configuration in the job template to begin recurring UCS backups on your target BIG-IP systems.</p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>While logged in to the AWX instance, go to <strong>Resources</strong> &gt; <strong>Templates</strong> and open the job template you created in the previous procedure.</li><li>Select the <strong>Schedules</strong> tab.</li><li>Select <strong>Add</strong>.</li><li>Add a <strong>Name</strong>, choose a <strong>Start date/time</strong> and <strong>Local time zone</strong>.</li><li>Select a <strong>Run frequency</strong> option.</li><li>In the <strong>Frequency details</strong> section, select specific recurrence options. For example select the days of the week to run the job.</li><li>In the <strong>Frequency details</strong> section, select when and if the schedule should end.</li><li>Select <strong>Save</strong>.</li><li>Go to <strong>Views</strong> &gt; <strong>Schedules</strong> to view all configured schedules.</li></ol>
+</article>
+</body>
+</html>

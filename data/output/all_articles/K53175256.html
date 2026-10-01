@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K53175256: Tripo storage records grow rapidly when server session peer is not responding or down</title>
+<meta name="description" content="Support Solution: Tripo storage records grow rapidly when server session peer is not responding or down — SDC Session Management is enabled and includes at least one session binding rule using cache action. In an event where server session peer that is selected to handle the initial session request is…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K53175256">
+</head>
+<body>
+<header>
+<h1>K53175256: Tripo storage records grow rapidly when server session peer is not responding or down</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-08-23</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Traffix SDC: 5.2.X, 5.1.X, 5.2.0, 5.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K53175256">https://my.f5.com/manage/s/article/K53175256</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br><br>SDC Session Management is enabled and includes at least one session binding rule using cache action. In an event where server session peer that is selected to handle the initial session request is either down or does not response within a timeout threshold, Tripo storage will be filled with invalid session record which does not include a success answer of session peer.</p>
+
+<ul><li>Tripo Session Repository Entries graph may observe a rapid growth in entries</li><li>Error message as follows appears:
+	<ul><li><span class="example2">WARN  [11332] External storage server error: Key:[remotepeer.example.com;1234;5678] OpCode:op_put Status:st_err_general Error message is:400  Table Full. [Tripo-EpollEventLoop-thread 4_2_23] [AsyncStorageProvider.answerReceived()]</span></li></ul>
+	</li></ul>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>SDC Session Management</li><li>Remote server session peer</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Tripo storage will be filled with invalid session record which does not include a success answer of session peer.<br>Invalid session record used up the Tripo storage space and reduce the available space for storing valid session record.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>SDC setup environment that enable session management and includes at least one session binding rule using cache action need to include this script as part of its deployment:</p>
+
+<ol><li><strong>Lookup any routing rule that handles Diameter session traffic such as Gx, Gy added those lines under Check Error In Answer:</strong></li></ol>
+
+<pre>
+<span class="example2">def reqType = answer.getValue(&quot;CC-Request-Type&quot;)
+def resultCode = answer.getValue(&quot;Result-Code&quot;);
+if (resultCode &gt;= 3000 &amp;&amp; reqType ==1 ) {
+    session.release();
+}
+return null;</span></pre>
+
+<ol start="2"><li><strong>Added lines under Handle Server Error:</strong></li></ol>
+
+<pre>
+<span class="example2">def reqType = requestFromClient.getValue(&quot;CC-Request-Type&quot;);
+if (event == RemoteNodeEvent.CANNOT_ROUTE) {
+    def answer = requestFromClient.createAnswer(3002);//DIAMETER_UNABLE_TO_DELIVER
+    answer.setError(true);
+    if (reqType == 1) {
+        session.setPersistSessionData(false);
+        session.setShouldReplicate(false);
+        }
+    return answer;
+}
+if (event == RemoteNodeEvent.CHANNEL_DISCONNECTED) {
+    def answer = requestFromClient.createAnswer(3002);
+    answer.setError(true);
+    if (reqType == 1){
+        session.release();
+        }
+    return answer;
+}
+if (event == RemoteNodeEvent.TIMEOUT) {
+    def answer = requestFromClient.createAnswer(3004);//TOO_BUSY
+    answer.setError(true);
+    if (reqType == 1) {
+        session.release();
+        }
+    return answer;
+}
+return answerFromServer;</span></pre>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

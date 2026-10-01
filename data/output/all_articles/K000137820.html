@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000137820: Usability Enhancement for APM users behind Wide-IP DNS (GTM)</title>
+<meta name="description" content="Support Solution: Usability Enhancement for APM users behind Wide-IP DNS (GTM) — APM can be configured behind Wide Area DNS (Wide-IP GTM). See Related Content. This functions by having the first connection via the Wide-IP FQDN processed as a redirect to the narrow-IP of that APM…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000137820">
+</head>
+<body>
+<header>
+<h1>K000137820: Usability Enhancement for APM users behind Wide-IP DNS (GTM)</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-12-07</dd>
+<dt>Updated</dt><dd>2025-10-01</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.X.X, 16.X.X, 15.X.X, 14.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000137820">https://my.f5.com/manage/s/article/K000137820</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+
+<p>APM can be configured behind Wide Area DNS (Wide-IP GTM). See Related Content. This functions by having the first connection via the Wide-IP FQDN processed as a redirect to the narrow-IP of that APM host. This works but results in the following usability issues.</p>
+
+<ul><li>After the Wide to narrow redirection, the browser can be bookmarked at the narrow-ip.</li><li>After an APM session is logged out or times out, the login option selects the narrow-ip again.</li></ul>
+
+<p>This reduces the utility of having a Wide-IP system.</p>
+
+<h2>Cause</h2>
+
+<p>This is an inevitable consequence of APM and Wide-IP compatibility.</p>
+
+<h2>Recommendation</h2>
+Set an iRule on the APM Virtual Server. It disables events on that TCP flow to prevent APM from activating anyway.<br>This is cleared by explicitly returning &quot;connection close&quot;.<br>This also performs the redirect from Wide to Narrow as specified by the guide.<br> 
+<pre class="ckeditor_codeblock">
+when RULE_INIT {
+ set static::wide_fqdn  &quot;wide.example.com&quot;
+ set static::narrow_fqdn  &quot;apm1.example.com&quot;
+ set static::root_domain &quot;example.com&quot;
+ 
+ set static::marker_cookie [format &quot;%s=%s; path=/; domain=%s&quot; wide_marker yes $static::root_domain]
+ 
+ # set to 0 to disable logging
+ set static::wide_debug 1
+}
+
+
+when HTTP_REQUEST  {
+    if { [HTTP::has_responded] } { return }
+
+# Send Logout and Disconnect back to wide_fqdn
+
+    if { [HTTP::uri] ne &quot;/&quot; } {return}
+    if { [HTTP::method] ne &quot;GET&quot; } { return }
+
+    if  { ([HTTP::header referer] contains &quot;hangup&quot;) or ([HTTP::header referer] contains &quot;/my.policy&quot;) } {
+
+      HTTP::respond 302 Location &quot;https://$static::wide_fqdn&quot; Connection close
+      if {$static::wide_debug} { log -noname  local0. &quot;Hangup or Timeout, redirecting to Wide.&quot; }
+      event disable all
+      return
+    }
+
+# Narrow Persistence, as required by Guide.
+
+    if { [HTTP::host] eq $static::wide_fqdn } {
+      if {$static::wide_debug} { log -noname  local0. &quot;Wide, redirecting to Narrow, Setting Cookie.&quot; }
+      HTTP::respond 302 Location &quot;https://$static::narrow_fqdn&quot; &quot;Set-Cookie&quot; $static::marker_cookie Connection close
+      event disable all
+      return
+    }
+
+# Direct to Narrow (Bookmark) Detection
+
+    if { [HTTP::cookie exists &quot;wide_marker&quot;] } {
+ #      log -noname  local0. &quot;Narrow, has cookie, Normal, ignore.&quot;
+       return } 
+    
+      if {$static::wide_debug} { log -noname  local0. &quot;Narrow, no cookie, (bookmark) redirecting to Wide.&quot; }
+      HTTP::respond 302 Location &quot;https://$static::wide_fqdn&quot; Connection close
+      event disable all
+}</pre>
+
+<h2>Additional Information</h2>
+May not work with HTTP/2 or HTTP/3
+</article>
+</body>
+</html>

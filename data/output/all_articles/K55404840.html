@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K55404840: pkcs11d is down after CloudHSM client installation</title>
+<meta name="description" content="Knowledge: pkcs11d is down after CloudHSM client installation — After successfully installing the AWS CloudHSM client on BIG-IP, pkcs11d fails to start.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K55404840">
+</head>
+<body>
+<header>
+<h1>K55404840: pkcs11d is down after CloudHSM client installation</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2026-06-17</dd>
+<dt>Updated</dt><dd>2026-06-17</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K55404840">https://my.f5.com/manage/s/article/K55404840</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>After successfully installing the AWS CloudHSM client on BIG-IP, pkcs11d fails to start.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP (all platforms) TMOS v14-v17</li><li>AWS CloudHSM integration</li><li>CloudHSM client installed</li></ul>
+<h2>Symptoms</h2>
+<ul><li>pkcs11d does not come up; <code>tmsh show sys service pkcs11d</code> shows:
+<pre>pkcs11d      down, initializing ..</pre>
+</li><li>cloudhsm-client service shows active (running), but detailed logs contain a &quot;No preferred server found&quot; error:
+<pre>[admin@&lt;device-hostname&gt;:Active:Standalone] ~ # service cloudhsm-client status -l
+Redirecting to /bin/systemctl status -l cloudhsm-client.service
+* cloudhsm-client.service - AWS CloudHsm Client daemon
+   Loaded: loaded (/usr/lib/systemd/system/cloudhsm-client.service; enabled; vendor preset: disabled)
+   Active: active (running) since Thu 2020-05-28 08:58:34 UTC; 1 weeks 0 days ago
+...
+Jun 04 12:53:49 &lt;hostname&gt; cloudhsm_client[665]: time: &lt;time&gt; liquidSecurity ERR: daemon_app_readcb: No preferred server found
+Jun 04 12:53:49 &lt;hostname&gt; cloudhsm_client[665]: time: &lt;time&gt; liquidSecurity ERR: daemon_app_readcb: No preferred server found</pre>
+</li><li>A tcpdump capture on port 2223 shows a successful TLS handshake followed by an Encrypted Alert sent from BIG-IP to the HSM IP address.</li><li>/var/log/ltm log is populated with repeated errors:
+<pre>May 22 04:16:58 hostname err pkcs11d_test_suite[22607]: 01680048:3: C_Initialize: pkcs11_rv=0x00000005, CKR_GENERAL_ERROR</pre>
+</li></ul>
+<h2>Cause</h2>
+<p>A required step in the AWS CloudHSM client configuration was missed: the issuing certificate customerCA.crt was not copied to the /opt/cloudhsm/etc/ directory on the BIG-IP system.</p>
+<p>Without this certificate, the CloudHSM client cannot complete mutual TLS authentication with the HSM cluster, causing the TLS alert and preventing pkcs11d from initializing.</p>
+<h2>Recommended Actions</h2>
+<ol><li><strong>Verify network connectivity</strong> between BIG-IP and the HSM — confirm routing, ARP, and reachability on port 2223.</li><li><strong>Follow the CloudHSM installation guide closely</strong>, ensuring no steps are skipped.</li><li><strong>Verify required certificates are present</strong> in /opt/cloudhsm/etc/:
+<pre>ls /opt/cloudhsm/etc/</pre>
+Confirm both of the following files exist:
+<ul><li><code>client.crt</code></li><li><code>customerCA.crt</code></li></ul>
+</li><li><strong>If customerCA.crt is missing</strong>, copy the issuing certificate to /opt/cloudhsm/etc/ as per the AWS CloudHSM <a target="_blank" rel="noopener noreferrer">Edit Client Configuration</a> guide, then restart the CloudHSM client and verify pkcs11d comes up:
+<pre>tmsh show sys service pkcs11d</pre>
+</li></ol>
+<div class="note"><strong>Note:</strong> After copying customerCA.crt to /opt/cloudhsm/etc/, pkcs11d should start successfully and HSM key generation and use in SSL profiles should function normally.</div>
+<h2>Additional Information</h2>
+<ul><li><a href="https://techdocs.f5.com/en-us/bigip-16-1-0/big-ip-system-and-net-hsm-implementation.html" target="_blank" rel="noopener noreferrer"> BIG-IP System and Net HSM Implementation (16.1.0) </a></li><li><a href="https://docs.aws.amazon.com/cloudhsm/latest/userguide/install-and-configure-client-linux.html#edit-client-configuration" target="_blank" rel="noopener noreferrer"> AWS CloudHSM — Edit Client Configuration </a></li></ul>
+</article>
+</body>
+</html>

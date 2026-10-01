@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K15468995: DNS Express support for large DNS zones</title>
+<meta name="description" content="Knowledge: DNS Express support for large DNS zones — This article discusses the support for large DNS zones in DNS Express.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K15468995">
+</head>
+<body>
+<header>
+<h1>K15468995: DNS Express support for large DNS zones</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2018-08-10</dd>
+<dt>Updated</dt><dd>2025-04-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 14.0.0, 13.1.1, 12.1.3, 13.1.0</li><li>BIG-IP DNS: 13.1.1, 13.1.0, 12.1.3, 14.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K15468995">https://my.f5.com/manage/s/article/K15468995</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>This article discusses the support for large DNS zones in DNS Express.</p>
+<h3>Description</h3><p>DNS Express is a feature that allows the BIG-IP system to perform the function of a high-speed authoritative DNS server and answer DNS queries for a DNS zone as well as respond to zone transfer requests from specified DNS clients on behalf of an authoritative DNS server.</p>
+
+<p>Beginning in BIG-IP 14.0.0, 13.1.0.2, and 12.1.3.1, the DNS Express supports large DNS zones comprising several hundred thousand to several million records (depending on the underlying hardware). The support for large DNS zones is not enabled, by default, and requires tuning a number of related database variables. The following table provides a list of the database variables related to the support for large DNS zones.</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1"><tbody><tr><td colspan="1" rowspan="1">Database variable name and parameter</td><td colspan="1" rowspan="1">Default value</td><td colspan="1" rowspan="1">Description</td></tr><tr><td colspan="1" rowspan="1"><strong>dnsexpress.hugepages &lt;value&gt;</strong></td><td colspan="1" rowspan="1">0</td><td colspan="1" rowspan="1">When the &lt;value&gt; is non-zero, DNS Express stores the zone data in huge memory pages of 2MB each instead of regular memory page sizes. The BIG-IP system attempts to reserve the configured amount of memory (&lt;value&gt; x 2MB) for the DNS Express zone data. The memory specified here is excluded from the memory allocated for the Traffic Management Microkernel (TMM).
+			<p><span class="note"><strong>Note</strong>: You must restart the BIG-IP system for changes to this database variable to take effect. F5 recommends performing the change during a scheduled maintenance window appropriate for your environment.</span></p>
+			When the &lt;value&gt; is set to zero, DNS Express reverts back to the default state and stores the zone data in regular memory pages (typically 4KB).</td></tr><tr><td colspan="1" rowspan="1"><strong>dnsexpress.persisthugepages &lt;true | false&gt;</strong></td><td colspan="1" rowspan="1">false</td><td colspan="1" rowspan="1">When this database variable is set to true, the BIG-IP system saves the zone data in memory to <strong>/shared/zxfrd</strong> directory to persist the data across restarts. This allows DNS Express to load the data from the saved files into memory whenever a restart occurs. The save is scheduled for the time in seconds set in the database variable <strong>dnsexpress.dbwritedelay</strong> after any successful Authoritative Transfer (AXFR) or Incremental Zone Transfer (IXFR) that results in a change to the zone data. The <strong>dnsexpress.dbwritedelay</strong> database variable controls the delay in seconds between the time <strong>zxfrd</strong> updates its internal database and the time <strong>zxfrd</strong> creates an updated zone database for TMM to serve.
+			<p>When this database variable is set to false, the DNS Express does not save the zone data in memory to the filesystem and needs to request a zone transfer from the authoritative DNS server whenever a restart occurs.</p>
+			</td></tr><tr><td colspan="1" rowspan="1"><strong>dnsexpress.notifyport &lt;value&gt;</strong></td><td colspan="1" rowspan="1">0</td><td colspan="1" rowspan="1">When the &lt;value&gt; is set to non-zero, the <strong>zxfrd</strong> process listens directly on the configured database (UDP) port on all self IPs and management address. This eliminates the need to wait for TMM to forward the DNS Notify message from the authoritative DNS server to DNS Express and may help to avoid potential non-delivery of the DNS Notify message (due to it being a UDP packet) on a heavily loaded system. However, configuring this database variable means that several checks performed by TMM will be bypassed. This includes but not limited to the following:
+			<ul><li>The <strong>zxfrd</strong> process does not verify the TSIG entry in the DNS Notify message nor does it use the TSIG entry in its response.</li><li>Any rate limiting configured for the DNS Notify messages is not enforced.</li><li>The <strong>zxfrd</strong> process does not verify the originating IP address of the DNS Notify message against the configured allow list for certain versions. For more information on this, refer to <a href="https://my.f5.com/manage/s/article/ K45435121" target="_blank">K45435121: DNS Express vulnerability CVE-2018-5538</a>.</li></ul>
+
+			<p><span class="note"><strong>Note</strong>: You should always ensure that the configured UDP port is not in use by any other processes. </span></p>
+			When the &lt;value&gt; is set to zero, the DNS Notify messages is processed by the configured DNS listener and TMM then forwards the messages to the <strong>zxfrd</strong> process using the <strong>mcpd</strong> process to perform the AXFR/IXFR.</td></tr><tr><td colspan="1" rowspan="1"><strong>dnsexpress.xfrnotifydelay &lt;value&gt;</strong></td><td colspan="1" rowspan="1">5</td><td colspan="1" rowspan="1">This DB variable controls the delay in seconds between the time the <strong>zxfrd</strong> process receives a DNS Notify message from the authoritative DNS server and the time it schedules an AXFR/IXFR.
+			<p><span class="note"><strong>Note</strong>: This does not mean the zone transfer occurs immediately after this delay as the start of the zone transfer also depends on the load on the BIG-IP system, the authoritative DNS server and the network between them; as well as the size of the zone transfer.</span></p>
+			</td></tr><tr><td colspan="1" rowspan="1"><strong>dnsexpress.rrperzonestats &lt;true | false&gt;</strong></td><td colspan="1" rowspan="1">true</td><td colspan="1" rowspan="1">When this database variable is set to false, the BIG-IP system does not update the <strong>RR per zone</strong> statistics. This may help to improve performance on a loaded system.</td></tr></tbody></table>
+
+<p><span class="sectiontitle">Recommendations</span></p>
+
+<p>When you configure support for a large DNS zone in DNS Express, F5 recommends that you start with about two and a half times the memory that the authoritative DNS server uses that loads the large DNS zones and adjust, as necessary, for your application environment. For example, if your authoritative DNS server uses about 10GB of memory to load the large DNS zone data, you may want to start by configuring 25GB for the <strong>dnsexpress.hugepages</strong> database variable. This means setting the value of <strong>dnsexpress.hugepages</strong> database variable to <strong>12800</strong> (2 MB of pages gives about 25 GB).</p>
+
+<p>Depending on the type of authoritative DNS server, you should be able to locate the memory usage of the DNS process from the operating system’s tasks/activity report. For example, you can find the memory usage of BIND on a Linux server by locating the <strong>VIRT</strong> column from the output of the <strong>top</strong> utility. For detailed instructions about locating the memory usage of your authoritative DNS server, refer to the documentation from your DNS server vendor.</p>
+
+<p><span class="subsectiontitle">Modifying a database variable</span></p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: F5 recommends that you test changes in an appropriate environment before scheduling a maintenance window to effect the changes in your production environment.</span></p>
+
+<ol><li>Log in to the TMOS Shell (<strong>tmsh</strong>).</li><li>To modify a database variable, use the following command syntax:
+	<p><span class="code">modify sys db &lt;DB variable name&gt; value &lt;value&gt;</span></p>
+
+	<p>For example, if you want to modify the <strong>dnsexpress.hugepages</strong> database variable to the value of <strong>12800</strong>, type the following command:</p>
+
+	<p><span class="example2">modify sys db dnsexpress.hugepages value 12800</span></p>
+	</li><li>Save the changes by typing the following command:
+	<p><span class="code">save sys config</span></p>
+	</li></ol>
+</article>
+</body>
+</html>

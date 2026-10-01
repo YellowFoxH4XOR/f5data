@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000152586: The HTTP profile cause Citrix ICA connection fail</title>
+<meta name="description" content="Support Solution: The HTTP profile cause Citrix ICA connection fail — Enabling the HTTP profile on a BIG-IP LTM virtual server that handles both HTTP and Citrix ICA (Independent Computing Architecture) traffic can cause Citrix VDI (Virtual Desktop Infrastructure)…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000152586">
+</head>
+<body>
+<header>
+<h1>K000152586: The HTTP profile cause Citrix ICA connection fail</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-07-16</dd>
+<dt>Updated</dt><dd>2025-07-16</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.0.0, 16.0.X, 16.0.1, 16.X.X, 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000152586">https://my.f5.com/manage/s/article/K000152586</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Enabling the HTTP profile on a BIG-IP LTM virtual server that handles both HTTP and Citrix ICA (Independent Computing Architecture) traffic can cause Citrix VDI (Virtual Desktop Infrastructure) connections to fail. This is because Citrix ICA traffic is not HTTP-based, and the HTTP profile interferes with its processing. Users can access the Citrix portal and download ICA files with the HTTP profile enabled, but VDI connections initiated via ICA fail unless the HTTP profile is removed. The issue can be resolved by dynamically enabling or disabling the HTTP profile based on the detected protocol within the TLS session.</p>
+<h2>Environment</h2>
+<ul><li>Virtual server</li><li>Client SSL profile</li><li>HTTP profile</li></ul>
+<h2>Cause</h2>
+<p>Citrix ICA traffic is not HTTP over TLS. When the HTTP profile is always enabled, the BIG-IP system attempts to parse ICA traffic as HTTP, resulting in failed VDI connections. Disabling the HTTP profile for non-HTTP traffic (such as ICA) is necessary to allow proper Citrix VDI operation.</p>
+<h2>Recommended Actions</h2>
+<ol><li>Create the iRule to enable HTTP profile dynamically. The example iRule:</li></ol>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when CLIENTSSL_HANDSHAKE {
+    SSL::collect 4
+    HTTP::disable
+}
+when CLIENTSSL_DATA {
+    if { ([SSL::payload 4] equals &quot;GET &quot;) or ([SSL::payload 4] equals &quot;POST&quot;) or ([SSL::payload 4] equals &quot;HEAD&quot;) or ([SSL::payload 4] equals &quot;PUT &quot;) or ([SSL::payload 4] equals &quot;DELE&quot;) or ([SSL::payload 4] equals &quot;PATC&quot;) or ([SSL::payload 4] equals &quot;OPTI&quot;) or ([SSL::payload 4] equals &quot;TRAC&quot;) or ([SSL::payload 4] equals &quot;CONN&quot;) } {
+        HTTP::enable
+    } else {
+        HTTP::disable
+    }
+    SSL::release
+}</code></pre>
+<ol start="2"><li>Follow the article below, apply the iRule to the virtual server. </li></ol>
+<p style="padding-left: 40px;"><a href="https://my.f5.com/manage/s/article/K50565834" target="_self">K50565834: How to add an iRule to a virtual server</a></p>
+<h2>Additional Information</h2>
+<p>In the TCP connection for the VDI, the client will send 4 bytes to the server, then waiting for the response. The decrypted data is:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">00000000 05 02 00 80 ....</span></p>
+<p>So the workaround is, collect the TLS data, check the 4 bytes, and enable the HTTP profile if match the correct HTTP method.</p>
+</article>
+</body>
+</html>

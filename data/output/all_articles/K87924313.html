@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K87924313: BIG-IQ Service Catalog Templates to be deprecated</title>
+<meta name="description" content="Knowledge: BIG-IQ Service Catalog Templates to be deprecated — The BIG-IQ Service Catalog Templates feature, while still functional in BIG-IQ 8.0.0, is planned to be deprecated in a future BIG-IQ release. F5 recommends that you use the F5 Application Services 3…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K87924313">
+</head>
+<body>
+<header>
+<h1>K87924313: BIG-IQ Service Catalog Templates to be deprecated</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2021-02-24</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li><li>BIG-IQ Centralized Management: 8.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K87924313">https://my.f5.com/manage/s/article/K87924313</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>The BIG-IQ Service Catalog Templates feature, while still functional in BIG-IQ 8.0.0, is planned to be deprecated in a future BIG-IQ release. F5 recommends that you use the F5 Application Services 3 (AS3) application template for deploying new applications.</p>
+<h3>Description</h3><p>Both Service Catalog Templates and AS3 Templates are BIG-IQ-supported application templates that allow users to templatize and deploy applications through the BIG-IQ user interface. However, F5 is no longer enhancing the Service Catalog Templates as they are entering the deprecation phase.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p><span class="subsectiontitle">New Application Services</span></p>
+
+<p>When you create new application services with the BIG-IQ system, F5 recommends that you use the BIG-IQ AS3 templates. For information about deploying applications with BIG-IQ AS3, refer to the <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/big-iq.html" target="_self">Using AS3 with BIG-IQ</a> section of the AS3 User Guide on F5 CloudDocs.</p>
+
+<p><span class="note"><strong>Note</strong>: To onboard BIG-IP Virtual Editions (VE), F5 recommends that you use BIG-IQ Declarative Onboarding (DO). For more information, refer to the <a href="https://clouddocs.f5.com/products/extensions/f5-declarative-onboarding/latest/do-on-bigiq.html" target="_self">Using DO on BIG-IQ</a> section of the F5 DO documentation on F5 CloudDocs.</span></p>
+
+<p><span class="subsectiontitle">Existing Application Services</span></p>
+
+<p>If you have an existing application deployed with a BIG-IQ Service Catalog Template, you can convert it to a Legacy Application Service by deleting the Service Catalog Application Service on the BIG-IQ system using the AS3 force-delete API and create a Legacy Application Service with the existing objects on the target BIG-IP device. To do so, perform the following procedure:</p>
+
+<p><span class="note"><strong>Note</strong>: For information about the BIG-IQ legacy application service, refer to <a href="https://my.f5.com/manage/s/article/K02142132" target="_self">K02142132: Requirements and recommendations for creating a BIG-IQ application service with existing device configurations</a>.</span></p>
+
+<p><span class="impact"><strong>Impact of procedure:</strong> This procedure forces the delete of the service catalog application from only the BIG-IQ system. The related objects from the BIG-IP system are not removed. F5 recommends that you use this procedure only for certain recovery cases that require the forced removal of an application from only the BIG-IQ system.</span></p>
+
+<ol><li>Log in to the BIG-IQ command line.</li><li>Create the <strong>/home/admin/f5_remove_app_tags.py</strong> file using a text editor of your choice.
+	<p>For example, if you are using the <strong>vi </strong>text editor, enter the following command:</p>
+
+	<p><span class="example2">vi /home/admin/f5_remove_app_tags.py</span></p>
+	</li><li>Enter the following code in the text editor:
+	<p><span class="code">#!/usr/bin/env python<br>	<br>	import requests<br>	import json<br>	import argparse<br>	<br>	class Cleanup:<br>	    def get_arguments(self):<br>	        parser = argparse.ArgumentParser(description=&#39;Remove Tags from Config tab in BIG-IQ.&#39;)<br>	        parser.add_argument(&quot;--configSetName&quot;, type=str, help=&quot;The Application Service ConfigSet name.&quot;)<br>	<br>	        return parser.parse_args()<br>	<br>	<br>	    def delete_tags(self, configSetName):<br>	        url = &#39;http://localhost:8100/shared/index/config?$filter=tags/value%20eq%20%27&#39; + str(configSetName) + &#39;%27+and+kind+ne+%27cm:global:tasks:snapshot-config:snapshottaskstate%27&amp;$select=kind,selfLink&amp;$orderby=kind&#39;<br>	        response = requests.get(url)<br>	        jData = json.loads(response.content)<br>	<br>	        if(response.ok):<br>	            print(&quot;The response contains {0} properties&quot;.format(len(jData[&#39;items&#39;])))<br>	            print(&quot;\n&quot;)<br>	            for item in jData[&#39;items&#39;]:<br>	                itemUri = item[&#39;selfLink&#39;].replace(&#39;https://localhost/mgmt&#39;, &#39;http://localhost:8100&#39;)<br>	                itemResponse = requests.get(itemUri, auth=(&#39;admin&#39;, &#39;&#39;))<br>	                itemData = json.loads(itemResponse.content)<br>	                print(item[&#39;selfLink&#39;])<br>	                tags = itemData[&#39;tags&#39;]<br>	                for i in xrange(len(tags)):<br>	                    if tags[i][&quot;name&quot;] == &quot;BIGIQ_configSetName&quot;:<br>	                        tags.pop(i)<br>	                        break<br>	<br>	                for i in xrange(len(tags)):<br>	                    if tags[i][&quot;name&quot;] == &quot;BIGIQ_templateResourceName&quot;:<br>	                        tags.pop(i)<br>	                        break<br>	<br>	                itemData[&#39;generation&#39;] = 0<br>	                itemData[&#39;lastUpdateMicros&#39;] = 0<br>	                data = {&quot;tags&quot;:tags}<br>	                patchRequest = requests.patch(itemUri, data=json.dumps(data), auth=(&#39;admin&#39;, &#39;&#39;))<br>	                print(patchRequest)<br>	<br>	        else:<br>	<br>	            response.raise_for_status()<br>	<br>	<br>	    def main(self):<br>	        args = self.get_arguments()<br>	        print(args)<br>	        self.delete_tags(args.configSetName)<br>	<br>	if __name__ == &quot;__main__&quot;:<br>	<br>	    cleanup = Cleanup()<br>	    cleanup.main()</span></p>
+	</li><li>Save the changes and exit the editor.</li><li>To force-delete the service catalog application service, use the following command syntax:
+	<p><span class="code">restcurl -X POST /cm/global/tasks/force-delete -d &#39;{&quot;configSetName&quot;: &quot;&lt;application_name&gt;&quot;}&#39;</span></p>
+
+	<p>For example, the following command deletes the service catalog application named <strong>example_app</strong>:</p>
+
+	<p><span class="example2">restcurl -X POST /cm/global/tasks/force-delete -d &#39;{&quot;configSetName&quot;: &quot;example_app&quot;}&#39;</span></p>
+
+	<p><span class="note"><strong>Note</strong>: You can check the force-delete task status with the task ID in the API response using the following command syntax:</span></p>
+
+	<p><span class="code"><span class="note">restcurl /cm/global/tasks/force-delete/&lt;task_ID&gt;</span></span></p>
+	</li><li>To remove the tags on the objects deployed with a service catalog template using the previously created python script, enter the following commands:
+	<p><span class="code">cd /home/admin/<br>	chmod +x f5_remove_app_tags.py<br>	./f5_remove_app_tags.py --configSetName &lt;application_name&gt;</span></p>
+
+	<p>For example, the following commands remove the tags associated with the application named <strong>example_app</strong>:</p>
+
+	<p><span class="example2">cd /home/admin/<br>	chmod +x f5_remove_app_tags.py<br>	./f5_remove_app_tags.py --configSetName example_app</span></p>
+	</li><li>Log in to the BIG-IQ user interface.</li><li>Go to <strong>Devices</strong> &gt; <strong>BIG-IP DEVICES</strong>.</li><li>Select the box for the BIG-IP devices that were previously associated with the service catalog application.</li><li>Select <strong>More</strong>.</li><li>Select <strong>Re-discovery and Re-import</strong>.</li><li>For <strong>Name</strong>, enter a name you would like to use for this task.</li><li>Select <strong>Create</strong>.</li><li>To create a legacy application service, go to <strong>Applications </strong>&gt; <strong>APPLICATIONS</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Application Name</strong>, enter a name you would like to use for the application.</li><li>For <strong>Application Service Method</strong>, select <strong>Using Existing Device Configuration</strong>.</li><li>For <strong>Application Service Name</strong>, enter a name you would like to use for the application service.</li><li>For <strong>BIG-IP</strong>, select the device that was previously re-imported.</li><li>For <strong>Application Service Type</strong>, select the appropriate service type.</li><li>For <strong>Virtual Servers</strong>, select and move the virtual servers you would like to include in the application service.</li><li>Select <strong>Create</strong>.</li></ol>
+</article>
+</body>
+</html>

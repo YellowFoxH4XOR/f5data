@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K78444772: Script task stuck on &#x27;&#x27;Running&#x27;&#x27; status</title>
+<meta name="description" content="Support Solution: Script task stuck on &#x27;&#x27;Running&#x27;&#x27; status — When deploying a script task from the BIG-IP towards managed BIG-IP device(s), the task status on Script Log appears to be stuck in Running state even after the timeout (default 600s) has elapsed.…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K78444772">
+</head>
+<body>
+<header>
+<h1>K78444772: Script task stuck on &#x27;&#x27;Running&#x27;&#x27; status</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-11-03</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li><li>BIG-IQ Centralized Management: 8.X.X, 7.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K78444772">https://my.f5.com/manage/s/article/K78444772</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>When deploying a script task from the BIG-IP towards managed BIG-IP device(s), the task status on Script Log appears to be stuck in <em>Running</em> state even after the timeout (default 600s) has elapsed. Cancelling the script run does not help either at which point the status will be stuck in <em>Cancel Requested</em>. From this state, BIG-IQ will not advance to the next steps in the script task execution.<br><br>This occurs when BIG-IQ encounters an event or a response from the BIG-IP which the BIG-IQ is unable to handle correctly. Some of the errors you might see from BIG-IQ restjavad logs are similar to the following which result in <em><strong>Format specifier</strong> </em>exception on the BIG-IQ.<br> </p>
+<strong>Scenario 1</strong>: Here we see that for task ID <span class="ask-article-image"><em>6af1509e-6545-4d1b-86ba-3649a0bcffe0</em>, </span>BIG-IP responded with a 404.
+
+<p><span class="example2">[WARN][26 Oct 2022 14:59:43 PDT][/shared/user-script-execution/<strong>6af1509e-6545-4d1b-86ba-3649a0bcffe0</strong>/worker UserScriptTaskWorker] Failed to run script on bigip1: https://10.1.1.1:443/mgmt/shared/tmsh-shell?em_server_ip=166.8.32.109&amp;em_server_auth_token=Veg4v1[...] , <strong>java.net.ProtocolException: status:404, body:&lt;html...&gt;</strong><br>...<br>[WARN][26 Oct 2022 14:59:43 PDT][ RestOperation] failure handler for POST https://10.1.1.1:443/mgmt/shared/tmsh-shell?em_server_ip=166.8.32.109&amp;em_server_auth_token=Veg4v1[...] <strong>404 threw unexpectedly: java.util.MissingFormatArgumentException: Format specifier &#39;%s&#39;</strong></span><br><br><br><strong>Scenario 2</strong>: Here we see that for task ID <em>13437309-83a1-4167-a1d1-a14eabdb5127</em>, BIG-IP closed the connection.<br><br><span class="example2">[WARN][25 Oct 2022 19:08:46 PDT][/shared/user-script-execution/<strong>13437309-83a1-4167-a1d1-a14eabdb5127</strong>/worker UserScriptTaskWorker] Failed to run script on bigip1: https://10.1.1.1:443/mgmt/shared/tmsh-shell?em_server_ip=166.8.32.10&amp;em_server_auth_token=WA1zTf[...] , <strong>org.apache.http.ConnectionClosedException: Connection closed</strong><br>...<br>[WARN][25 Oct 2022 19:08:46 PDT][ RestOperation] failure handler for POST https://10.1.1.1:443/mgmt/shared/tmsh-shell?em_server_ip=166.8.32.10&amp;em_server_auth_token=WA1zTf[...] <strong>500 threw unexpectedly: java.util.MissingFormatArgumentException: Format specifier &#39;%s&#39;</strong></span><br><br><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IQ</li><li>BIG-IP</li><li>Bash script being pushed to BIG-IP via BIG-IQ&#39;s Script Management UI.</li></ul>
+
+<p><span class="sectiontitle">Cause</span><br>This is due to bug ID 1182177 where BIG-IQ is unable to handle failure scenarios.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span><br>Once the BIG-IQ encounters this stuck state, it will never advance to the next script task.<br><br>If the script deployment task is being deployed for a batch of BIG-IPs, a failure in one &quot;bad&quot; BIG-IP will result in the entire batch being stuck. An administrator may need to identity the &quot;bad&quot; BIG-IP(s) by checking the restjavad logs for events containing the string &quot;<em>Failed to run script on</em>&quot; using the command:<br><br><span class="code">  egrep &quot;UserScriptTaskWorker.*Failed to run script on&quot; /var/log/restjavad\.* | awk &#39;{print $12}&#39; | sort | uniq</span><br><br>The identified &quot;bad&quot; BIG-IP should not be included in future script deployment tasks until the underlying issue for the failure on the &quot;bad&quot; BIG-IP has been resolved.<br><br>If the BIG-IQ administrator would like to get rid of the spinning wheel next to the stuck task in the BIG-IQ Script Log UI, the procedure would be:</p>
+
+<div>
+<ol><li>Get the ID of the stuck task using Bash CLI command:<br>	<br>	<span class="code">restcurl shared/user-script-execution?\$filter=status%20ne%20%27FINISHED%27\&amp;\$select=name,status,id</span><br>	<br>	From the output, similar to the following, identify the stuck task and note down the value for its task <em>&quot;id&quot;</em>.<br>	<br>	<span class="example2">{<br>	  &quot;totalItems&quot;: 2,<br>	  &quot;items&quot;: [<br>	    {<br>	      &quot;name&quot;: &quot;Echo Test 5&quot;,<br>	      &quot;status&quot;: &quot;STARTED&quot;,<br>	      &quot;id&quot;: &quot;3282a130-885f-47e3-9b94-ad6b4617f140&quot;<br>	    },<br>	    {<br>	      &quot;name&quot;: &quot;Echo Test 4&quot;,<br>	      &quot;status&quot;: &quot;CANCEL_REQUESTED&quot;,<br>	      &quot;id&quot;: &quot;6af1509e-6545-4d1b-86ba-3649a0bcffe0&quot;<br>	    }<br>	  ],<br>	  &quot;generation&quot;: 34,<br>	  &quot;kind&quot;: &quot;shared:user-script-execution:userscripttaskcollectionstate&quot;,<br>	  &quot;lastUpdateMicros&quot;: 1666825560191665,<br>	  &quot;selfLink&quot;: &quot;https://localhost/mgmt/shared/user-script-execution&quot;<br>	}</span><br>	 </li><li>Pull the details of the stuck script task and redirect the output to a file (ie. /tmp/payload.json). In the command below, replace {SCRIPT_TASK_ID} with actual task ID value noted in Step 1.<br>	<br>	<span class="code">restcurl /shared/user-script-execution/{SCRIPT_TASK_ID} &gt; /tmp/payload.json</span><br>	 </li><li>Edit the payload.json file and set all <strong><em>status</em></strong> with a value of <strong><em>&quot;FAILED&quot;</em></strong>. This should include those tasks under the <em>userScriptTaskStatuses</em>.<br>	 </li><li>Send a PATCH request to the script task  using the following command, replacing {SCRIPT_TASK_ID} with actual script task ID noted in Step 1:<br>	<br>	<span class="code">curl -X PATCH localhost:8100/shared/user-script-execution/{SCRIPT_TASK_ID} -H &quot;Content-Type: application/json&quot; -d @/tmp/payload.json</span><br>	 </li><li>  BIG-IQ Script Log in the UI should now indicate the parent task and node tasks as &quot;Failed&quot;. You may then delete the task via UI.<br>	 </li></ol>
+</div>
+
+<p><span class="sectiontitle">Additional Information</span><br>None.</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160400: How to redirect browser-based APM users to a custom BIG-IP Edge Client package using an iRule (hosted content solution)</title>
+<meta name="description" content="Support Solution: How to redirect browser-based APM users to a custom BIG-IP Edge Client package using an iRule (hosted content solution) — When Windows users access BIG-IP APM configured with endpoint checks through a web browser (without the full BIG-IP Edge Client pre-installed), the system automatically delivers a lightweight…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160400">
+</head>
+<body>
+<header>
+<h1>K000160400: How to redirect browser-based APM users to a custom BIG-IP Edge Client package using an iRule (hosted content solution)</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-03-19</dd>
+<dt>Updated</dt><dd>2026-03-19</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 21.X.X, 17.X.X, 16.X.X, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160400">https://my.f5.com/manage/s/article/K000160400</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When Windows users access BIG-IP APM configured with endpoint checks through a web browser (without the full BIG-IP Edge Client pre-installed), the system automatically delivers a lightweight installer called f5epi_setup.exe to handle endpoint inspection.</p>
+<p>This lightweight installer does not include the F5 Inspector Service by default. That service can be required by certain endpoint checks (such as antivirus last scan time retrieval) that need elevated privileges to function correctly.</p>
+<p>As a result, endpoint checks that depend on admin-level access — such as reading the Windows Defender last scan date — will fail with an WAAPI_ERROR_ACCESS_DENIED error, even when the user&#39;s machine is fully compliant.</p>
+<p>This article describes how to use an iRule combined with BIG-IP hosted content to transparently redirect browser-based users to a custom, pre-built BIG-IP Edge Client package that includes all required services, without requiring any action from the end user beyond a single &quot;Run as Administrator&quot; installation.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP APM</li><li>Windows clients accessing APM via a web browser (browser-based Network Access / webtop)</li><li>Access policy configured with Endpoint Inspection (for example, Antivirus check, Firewall check)</li><li>An endpoint check requiring F5 Inspector Service</li></ul>
+<h2>Cause</h2>
+<p>The f5epi_setup.exe installer that BIG-IP APM automatically delivers to browser-based users is a minimal Endpoint Inspector package. It does not include the F5 Inspector Service component.</p>
+<p>Certain OPSWAT SDK methods — such as GetLastScanTime for Windows Defender — are flagged as admin_required, meaning they can only be invoked by a process running with elevated privileges. Without the F5 Inspector Service installed and running as a Windows service (with the necessary elevated rights), these checks will fail with access denied errors.</p>
+<p>As documented in <a href="https://my.f5.com/manage/s/article/K000134812" target="_blank">K000134812: Browser based Network Access VPN users on Windows fail the AV check with &quot;Access Denied&quot;</a>, the recommended solution is to have users install a custom BIG-IP Edge Client package that includes the Inspector Service. The challenge is delivering this package seamlessly to browser-based users who would otherwise only receive f5epi_setup.exe.</p>
+<h2>Recommended Actions</h2>
+<p>The approach consists of two parts:</p>
+<ul><li>Part 1 — Build and host the custom package on BIG-IP</li><li>Part 2 — Use an iRule to transparently redirect users to the custom package</li></ul>
+<h3>Part 1 — Build and upload the custom BIG-IP Edge Client package</h3>
+<p>Step 1: Build the custom Windows client package</p>
+<ol><li>Navigate to Access &gt; Connectivity/VPN &gt; Connectivity &gt; Profiles</li><li>Select your connectivity profile</li><li>Click the dropdown arrow next to Customize Package and select Windows</li><li>In the Customize Windows Client Package dialog, ensure the following components are selected:
+<ul><li>Inspector Service (required for endpoint checks that need elevated privileges, such as AV last scan time, firewall state)</li><li>Component Installer Service (allows updating and installing client-side components for users without admin rights)</li><li>Endpoint Security (required for OPSWAT-based AV/FW checks)</li><li>Web Browser Add-ons for BIG-IP Edge Client (required for browser-based access, provides f5epi_setup.exe)</li></ul>
+</li><li>Click Download to save the package (for example, BIGIPEdgeClient.exe)</li></ol>
+<p>Step 2: Upload the package as BIG-IP hosted content</p>
+<ol><li>Navigate to Access &gt; Webtops &gt; Hosted Content &gt; Manage Files (path may vary by version)</li><li>Click Upload</li><li>Click Browse and select the BIGIPEdgeClient.exe file from Step 1.</li><li>Click OK</li><li>Note the public URI path where the file will be served (by default that will be /public/share/BIGIPEdgeClient.exe)</li><li>Navigate to Access &gt; Webtops &gt; Hosted Content &gt; Manage Access</li><li>Enable &#39;Retain Public Access&#39; next to the Access Profile that will be used for endpoint checks</li><li>Click OK</li></ol>
+<h3>Part 2 — Apply the iRule to redirect f5epi_setup.exe requests to the custom package</h3>
+<p>Attach the following iRule to the virtual server handling APM access. It intercepts the automatic download request for f5epi_setup.exe and silently redirects the browser to the custom hosted package instead:</p>
+<pre>when CLIENT_ACCEPTED {
+    ACCESS::restrict_irule_events disable
+}
+
+when HTTP_REQUEST {
+    if { [HTTP::has_responded] } { return }
+    if { [HTTP::uri] == &quot;/public/download/f5epi_setup.exe&quot; } {
+        HTTP::redirect &quot;/public/share/BIGIPEdgeClient.exe&quot;
+    }
+}
+  </pre>
+<p><span style="color: #15891f;"><strong><em>Notes</em></strong>:</span></p>
+<ul><li style="font-style: italic;color: #15891f;"><span style="color: #15891f;"><em>Replace /public/share/BIGIPEdgeClient.exe with the actual URI path where you uploaded the custom package in Part 1</em></span></li><li style="font-style: italic;color: #15891f;"><span style="color: #15891f;"><em>The ACCESS::restrict_irule_events disable command in the CLIENT_ACCEPTED event is required to allow the iRule to process HTTP events within an APM-protected virtual server</em></span></li><li style="font-style: italic;color: #15891f;"><span style="color: #15891f;"><em>The redirect is transparent to the end user — the browser will automatically follow it and download the correct package</em></span></li><li style="font-style: italic;color: #15891f;"><span style="color: #15891f;"><em>When connecting to the VS using a browser, end users will be prompted to download the Endpoint inspection client components as usual.</em></span></li><li style="font-style: italic;color: #15891f;"><span style="color: #15891f;"><em>Thanks to the iRule, the custom package will be downloaded. Users will then only have to right-click the downloaded file and select &#39;Run as administrator&#39;</em></span></li></ul>
+<h2>Verification</h2>
+<ol><li>Connect to the APM webtop from a Windows browser session (without the Edge Client pre-installed)</li><li>Confirm that the browser downloads the custom BIGIPEdgeClient.exe package instead of f5epi_setup.exe</li><li>Install the package with &#39;Run as administrator&#39;</li><li>Verify in Windows Services that &#39;F5 Inspector Service&#39; and &#39;F5 Networks Component Installer&#39; services are listed and running</li><li>Re-run the APM access policy and confirm that endpoint checks now pass</li></ol>
+<h2>Additional Information</h2>
+<ul><li>According to <a href="https://my.f5.com/manage/s/article/K000134812" target="_blank">K000134812</a>, the following Windows security products are known to require the Inspector Service for specific SDK methods:
+<ul><li>GetLastScanTime: Windows Defender, BitDefender, Acronis Cyber Protection Agent</li><li>GetRealTimeProtectionState: ESET File Security for Microsoft Windows Server</li><li>GetDefinitionState: FireEye Endpoint Agent</li><li>GetFirewallState: AVG Internet Security, AhnLab V3 Internet Security<a href="https://my.f5.com/manage/s/article/K84260240" target="_blank"></a></li></ul>
+</li></ul>
+</article>
+</body>
+</html>

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K36107562: Unable to generate a TTA due to an illegal peer name</title>
+<meta name="description" content="Support Solution: Unable to generate a TTA due to an illegal peer name — The debug logs shows &quot;No space left on device&quot; as the reason why TTA was not completed.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K36107562">
+</head>
+<body>
+<header>
+<h1>K36107562: Unable to generate a TTA due to an illegal peer name</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-05-09</dd>
+<dt>Updated</dt><dd>2024-10-01</dd>
+<dt>Applies to</dt><dd><ul><li>Traffix SDC: 5.2.X, 5.2.0, 5.1.X, 5.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K36107562">https://my.f5.com/manage/s/article/K36107562</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+<ul><li>The debug logs shows &quot;No space left on device&quot; as the reason why TTA was not completed.</li><li>Multiple lines in the last parts of the TTA debug shows &quot;No space left on device&quot;.</li></ul>
+<div style="margin-left: 40px;"><span class="code">mkdir: cannot create directory `tta-ng_5.1_&lt;date&gt;_&lt;node&gt;/os&#39;: No space left on device<br><span class="example2">gzip: stdout: No space left on device</span></span></div>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>SDC 5.x </li><li>TTA</li></ul>
+<p><span class="sectiontitle">Cause</span></p>
+<p>While the TTA script was working and collecting data on a folder where the peer configs are, using find_latest_version function of the script, it is not able to handle specific patterns used by a peer name and it resulting in the find path change as shown below. The repercussion is the effect of find command returning an unexpected large and long list of extra files to tar.<br><br>Note : This is an example and can be found in the TTA debug logs, the sample peer name here starts with &quot;z.&quot; and it cannot be handled by the TTA.<br><br><span class="code">290820-+ for file in &#39;$(find &quot;$DATA_BACKUP_DIR&quot; -name &quot;latestVersion.xml&quot;)&#39;<br>290821-++ grep fileName z. &lt;--- #Looking for the peer that starts with &quot;z.&quot;<br>290822-++ awk &#39;-F&gt;&#39; &#39;{print $2}&#39;<br>290823-++ awk &#39;-F&lt;&#39; &#39;{print $1}&#39;<br>290824:grep: z.: No such file or directory &lt;--- #Cannot find the peer<br>290825-+ local version=<br>290826-++ dirname b.<br>290827-+ local directory=./ &lt;--- #Path change<br>290828-++ find ./ -type f &lt;--- #Script is now finding in the wrong path<br>290829-+ for file2 in &#39;$(find $directory -type f)&#39;</span></p>
+<p>Since the find_latest_versions function of the script cannot handle the peer name &quot;z.&quot; it reverts to &quot;./&quot; instead of the recent peerconfig file, it will find and add a bunch of unexpected and unrequired files from &quot;./&quot; to the TTA directory by the use of the add_file function. The effect is a very large TTA file, with files that is actually not required or part of the TTA. This TTA file will then be TAR-ed which also requires at least an additional 50% (of the current TTA size) extra space for it to complete. This means /var/log/rsyslog should have an available space that is at least 150%-200% the size of the TTA file when its being collected. Hence, if the available space of /var/log/rsyslog is still considerably large compared to the size of the collected TTA (with the illegal peer name causing the TTA to bloat) the TTA collection would still work. However, if the available space of /var/log/rsyslog is low compared to the size of the collected TTA then the TTA will fail with debug logs showing &quot;No space left on device&quot;.</p>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<p>The illegal peer name should be deleted or updated to a valid one. </p>
+<p>If peer (with illegal name) is IN USE :</p>
+<ol><li>Login to GUI of the SDC site and check if a peer (with illegal name) is present. If there is one, proceed to create another peer with the same configuration as the peer (with illegal name) but with a different name and then add it to the same pool as the peer (with illegal name).</li><li>After the new peer is added and available, you can DELETE peer (with illegal name) from the POOL and then from the PEER list.</li><li>Log in to the SDC nodes and backup the folder (illegal peer name) by copying it to another directory or system.</li><li>After peer (with illegal name) is deleted from the /data/backup/sitename/node_configmgr/peerConfigurations directory, perform another TTA collection.</li></ol>
+<p>If peer (with illegal name) is NOT IN USE :</p>
+<ol><li>Login to GUI of the SDC site and check if a peer (with illegal name) is present.</li><li>If the peer is present in the SDC system GUI, you can DELETE the peer (with illegal name) from the POOL and then from the PEER list.</li><li>Log in to the SDC nodes and DELETE the peerConfigurations folder for the peer (with illegal name). No need to backup the folder (illegal peer name) if its not in use.</li><li>After peer (with illegal name) is deleted from the /data/backup/sitename/node_configmgr/peerConfigurations directory, perform another TTA collection.</li></ol>
+<p><span class="sectiontitle">Additional Information</span></p>
+<p>None.</p>
+</article>
+</body>
+</html>

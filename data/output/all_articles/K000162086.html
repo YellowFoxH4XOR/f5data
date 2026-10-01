@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162086: ASM Blocked Streaming API (SSE) Connections with Reset, Due to Incomplete Chunked Response</title>
+<meta name="description" content="Support Solution: ASM Blocked Streaming API (SSE) Connections with Reset, Due to Incomplete Chunked Response — When using BIG-IP ASM (Application Security Manager) in front of a streaming API endpoint that utilizes Server-Sent Events (SSE), with &#x27;Content-Type: text/event-stream&#x27;, connections may be reset by…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162086">
+</head>
+<body>
+<header>
+<h1>K000162086: ASM Blocked Streaming API (SSE) Connections with Reset, Due to Incomplete Chunked Response</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-07-06</dd>
+<dt>Updated</dt><dd>2026-09-30</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 17.0.0, 17.1.0, 17.0.X, 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162086">https://my.f5.com/manage/s/article/K000162086</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When using BIG-IP ASM (Application Security Manager) in front of a streaming API endpoint that utilizes <strong>Server-Sent Events (SSE)</strong>, with &#39;<strong>Content-Type: text/event-stream</strong>&#39;, connections may be reset by ASM with the message &quot;<strong>Incomplete chunked response</strong>&quot;. This occurs even though no ASM violations or blocking events are logged. The issue is observed when the backend server sends chunked HTTP responses <strong><span style="text-decoration: underline;">without</span></strong> the required terminating chunk (<strong>0\r\n\r\n</strong>), which is standard behavior for SSE streams designed to keep connections open for real-time data delivery.</p>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP ASM (Application Security Manager)</li><li>ASM policy in blocking mode attached to the affected virtual server</li><li>Streaming API endpoint using <strong>SSE (Content-Type: text/event-stream)</strong></li><li>Backend server sends chunked responses<strong> without a terminating chunk</strong></li><li>ASM <strong>response inspection features</strong> (e.g., Server Technologies, Attack Signatures in Response) may be enabled</li></ul>
+<h2>Cause</h2>
+<p>The incompatibility between BIG-IP ASM response inspection features and the SSE protocol. ASM expects a normal <strong>terminating chunk</strong> (<strong>0\r\n\r\n</strong>) in HTTP chunked responses to complete inspection, but SSE streams intentionally omit this to keep the connection open. This causes ASM to reset the connection, interrupting the stream. </p>
+<h2>Answer/Recommended Actions</h2>
+<p>To address this issue, consider the following options in order of lowest to highest risk:</p>
+<p><span style="color: #e74c3c;"><em><strong>Important:</strong> It&#39;s always recommended to perform this activity and test the results under a planned MW to avoid any unexpected service disruption.</em></span></p>
+<p> </p>
+<p><strong>1- Modify Backend Server Response Behavior (Lowest Risk):</strong></p>
+<p>Adjust the backend server to send the required HTTP chunked terminator (<strong>0\r\n\r\n</strong>) for streaming/SSE responses. This allows ASM to fully inspect and protect the traffic, maintaining all security features.</p>
+<p><span style="color: #2ecc71;"><em><strong>Note:</strong> This may not be feasible for SSE, as the protocol is designed to keep the connection open. As a side note, changing / replacing &#39;<strong>SSE&#39;</strong> to &#39;<strong>WSS</strong>&#39; would also revolve the Issue.</em></span></p>
+<p> </p>
+<p><strong>2- Use a Separate ASM Policy for Streaming API (Low Risk):</strong></p>
+<p>Create a dedicated ASM policy for the streaming/SSE endpoint with all <strong>response inspection features</strong> (such as Server Technologies, Attack Signatures in Response, Data Guard, etc.) disabled. Assign this policy only to the streaming API using a <strong>Local Traffic Policy</strong> or <strong>iRule</strong>.</p>
+<p>This approach keeps full protection for other URLs. Below is an Example iRule for your reference, you need to modify based on your desired SSE endpoint URL:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when HTTP_REQUEST {
+  if { [HTTP::uri] starts_with &quot;/your_streaming_api_path&quot; } {
+    ASM::policy &quot;/StreamingAPI-Policy&quot;
+  } else {
+    ASM::policy &quot;/Default-ASM-Policy&quot;
+  }
+}</code></pre>
+<p> </p>
+<p><strong>3- Disable ASM Response Inspection Features for All Traffic (Moderate Risk):</strong></p>
+<p>Globally disable <strong>response inspection features</strong> in the ASM policy. This increases the risk surface for all traffic. Below is the list of ASM&#39;s response inspection features which can lead to this conflict, as per <a href="https://my.f5.com/manage/s/article/K19905853" title="K19905853" target="_blank" rel="noopener noreferrer"><strong>K19905853</strong></a>:</p>
+<ul><li>Learn from Responses</li><li>Data Guard</li><li>Response Attack Signatures</li><li>Dynamic Parameter Extractions</li><li>Login Page Detection</li><li>Server Technologies</li><li>Dynamic Session ID in URL</li></ul>
+<p> </p>
+<p><strong>4- Use an iRule to Selectively Bypass ASM for Streaming/SSE API (Highest Risk):</strong></p>
+<p>Apply an iRule to the virtual server to disable ASM for requests matching the streaming/SSE API URL. Below is a sample iRule script for your reference, which you need to revise as desired in your scenario: </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>when HTTP_REQUEST {
+  if { [HTTP::uri] starts_with &quot;/your_streaming_api_path&quot; } {
+    ASM::disable
+  }
+}</code></pre>
+<p><span style="color: #e74c3c;"><em><strong>Important:</strong> This removes all WAF protection for the streaming API endpoint, and you need to be cautious using this option.</em></span><br><span style="color: #2ecc71;"><em><strong>Note:</strong> Disabling HTTP response buffering or applying an SSE profile at the LTM layer does not resolve this issue if <strong>ASM response inspection features</strong> are enabled, as ASM will still require full response buffering.</em></span></p>
+<h2>Additional Information</h2>
+<ul><li>This is expected behavior due to the design of ASM response inspection features and the SSE protocol.</li><li>Version 21.1.0 introduced SSE support for ASM/AWAF. </li><li>The recommended approach is to either adjust the backend to send the required terminator (if possible), disable response inspection features for the streaming endpoint, or bypass ASM for that endpoint.</li><li>Simply disabling HTTP buffering or using an SSE profile at the LTM layer will not resolve the issue if ASM response inspection is active.</li></ul>
+</article>
+</body>
+</html>

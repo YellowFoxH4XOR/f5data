@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000138333: AAA kerberos authentication fails with &quot;kvno x enctype aes128-cts/aes56-cts found in keytab but cannot decrypt ticket&quot;</title>
+<meta name="description" content="Support Solution: AAA kerberos authentication fails with &quot;kvno x enctype aes128-cts/aes56-cts found in keytab but cannot decrypt ticket&quot; — Dec 18 05:35:03 bigip1 debug apmd[9126]: 01490266:7: /Common/AP_kerberos:Common:0d3b1f18: modules/Authentication/Kerberos/KerberosAuthModule.cpp: &#x27;PrintGssErrorImpl()&#x27;: 177: 0d3b1f18 : GSS-API error…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000138333">
+</head>
+<body>
+<header>
+<h1>K000138333: AAA kerberos authentication fails with &quot;kvno x enctype aes128-cts/aes56-cts found in keytab but cannot decrypt ticket&quot;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-01-23</dd>
+<dt>Updated</dt><dd>2026-05-05</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.X.X, 16.X.X, 15.X.X, 14.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000138333">https://my.f5.com/manage/s/article/K000138333</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<p>When using AAA kerberos on BIG-IP APM, one of the tasks consists of creating a service account on Active Directory. You could configure such account so that it would handle multiple service principal name such as these for instance:</p>
+<p>HTTP/app1<strong>.</strong>example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM<br>HTTP/app2.example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM<br>HTTP/app3.example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM</p>
+<p>If AES encryption is selected, you may end up seeing such errors under /var/log/apm when accessing https<strong>:</strong>//app2<strong>.</strong>example<strong>.</strong>com:</p>
+<p><span class="example2">Dec 18 05:35:03 bigip1 debug apmd[9126]: 01490266:7: /Common/AP_kerberos:Common:0d3b1f18: modules/Authentication/Kerberos/KerberosAuthModule.cpp: &#39;PrintGssErrorImpl()&#39;: 177: 0d3b1f18 : GSS-API error gss_accept_sec_context: d0000 : Unspecified GSS failure. Minor code may provide more information<br>Dec 18 05:35:03 bigip1 debug apmd[9126]: 01490266:7: /Common/AP_kerberos:Common:0d3b1f18: modules/Authentication/Kerberos/KerberosAuthModule.cpp: &#39;PrintGssErrorImpl()&#39;: 177: 0d3b1f18 : GSS-API error gss_accept_sec_context: 186a8 : Request ticket server HTTP/app2.example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM kvno 4 enctype aes256-cts found in keytab but cannot decrypt ticket</span></p>
+<p>You might even find out that same test against https<strong>:</strong>//app1<strong>.</strong>example<strong>.</strong>com is successful.</p>
+<h2><strong>Environment</strong></h2>
+<ul><li>BIG-IP APM with kerberos AAA</li><li>Multiple SPN are configured within a single service account</li><li>AES encryption is selected</li></ul>
+<h2><strong>Cause</strong></h2>
+<p>In order to use multiple SPN within a given Active Directory service account, you must use several successive ktpass commands (each generated keytab will be re-injected into the next ktpass command using &#39;-in&#39; option).</p>
+<p>ktpass will use automatic salt (it can be viewed using &#39;+DumpSalt&#39; option) when using AES encryption.</p>
+<p>The salt value will be the complete principal name including the realm. So by default, from one ktpass command to another, the salt will change as the principal name will be different.</p>
+<p>Each time a keytab will be generated for a given service account but a different SPN, it will invalidate the previous keytab entries as the default salt will be different.</p>
+<p>Note: there is no such issue with RC4 as there is no salt involved.</p>
+<h2><strong>Recommended Actions</strong></h2>
+<ul><li>A separate service account could be configured for each given SPN for simplicity
+<p>or</p>
+</li><li>If a single service account is mandatory, the same salt must be used for each ktpass command when generating the incremental keytab file.</li></ul>
+<p>Example:</p>
+<p>Assume we have Active Directory service account &#39;service-account&#39; handling these 3 different SPNs and using AES256:</p>
+<p>HTTP/app1.example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM<br>HTTP/app2.example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM<br>HTTP/app3.example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM</p>
+<p>After running the 3 below commands, you will get a final keytab that will be valid for these 3 above SPNs:</p>
+<ol><li><span class="code">ktpass -princ HTTP/app1.example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM -mapuser service-account@EXAMPLE<strong>.</strong>COM -crypto AES256-SHA1 -ptype KRB5_NT_PRINCIPAL -pass F5Networks -out app1_aes256.keytab</span></li><li><span class="code">ktpass -princ HTTP/app2.example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM -mapuser service-account@EXAMPLE<strong>.</strong>COM -crypto AES256-SHA1 -ptype KRB5_NT_PRINCIPAL -pass F5Networks -in app1_aes256.keytab -rawsalt &quot;EXAMPLE.COMHTTPapp1.example<strong>.</strong>com&quot; -out app1_2_aes256.keytab -setupn</span></li><li><span class="code">ktpass -princ HTTP/app3.example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM -mapuser service-account@EXAMPLE<strong>.</strong>COM -crypto AES256-SHA1 -ptype KRB5_NT_PRINCIPAL -pass F5Networks -in app1_2_aes256.keytab -rawsalt &quot;EXAMPLE.COMHTTPapp1.example<strong>.</strong>com&quot; -out app1_2_3_aes256.keytab -setupn</span></li></ol>
+<p>The final keytab content will look like this:</p>
+<p><span class="example2">PS C:\keytabs&gt; ktpass /in app1_2_3_aes256.keytab</span></p>
+<p><span class="example2">Existing keytab:<br>Keytab version: 0x502<br>keysize 84 HTTP/app1.example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM ptype 1 (KRB5_NT_PRINCIPAL) vno 3 etype 0x12 (AES256-SHA1) keylength 32 (0x667e57c5e7c19dd274a2ef92698d4a9c043b9078de4b834a5a6c399b73cd947c)<br>keysize 84 HTTP/app2.example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM ptype 1 (KRB5_NT_PRINCIPAL) vno 4 etype 0x12 (AES256-SHA1) keylength 32 (0x667e57c5e7c19dd274a2ef92698d4a9c043b9078de4b834a5a6c399b73cd947c)<br>keysize 84 HTTP/app3.example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM ptype 1 (KRB5_NT_PRINCIPAL) vno 5 etype 0x12 (AES256-SHA1) keylength 32 (0x667e57c5e7c19dd274a2ef92698d4a9c043b9078de4b834a5a6c399b73cd947c)</span></p>
+<p>The service account will look like this after running these 3 commands:</p>
+<p><span class="example2">PS C:\keytabs&gt; Get-ADUser -Identity service-account -property msDS-KeyVersionNumber,ServicePrincipalName,KerberosEncryptionType</span></p>
+<p><span class="example2">DistinguishedName     : CN=service-account,CN=Users,DC=example,DC=com<br>Enabled               : True<br>GivenName             :<br>KerberosEncryptionType : {AES128, AES256}<br>msDS-KeyVersionNumber : 5<br>Name                  : service-account<br>ObjectClass           : user<br>ObjectGUID            : 342246b3-cd5b-494f-a988-cdc98c0bdeda<br>SamAccountName        : service-account<br>ServicePrincipalName  : {HTTP/app1.example<strong>.</strong>com, HTTP/app2.example<strong>.</strong>com, HTTP/app3.example<strong>.</strong>com}<br>SID                   : S-1-5-21-882427465-4011647165-2960366939-16634<br>Surname               :<br>UserPrincipalName     : HTTP/app1.example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM</span></p>
+<p>Notes:</p>
+<ul><li>the &#39;-setupn&#39; used in commands 2) and 3) will make sure the UserPrincipalName enforced in command 1) is kept, so resulting UserPrincipalName will be HTTP/app1<strong>.</strong>example<strong>.</strong>com in this example.</li><li>default salt from first command is &quot;EXAMPLE<strong>.</strong>COMHTTPapp1<strong>.</strong>example<strong>.</strong>com&quot;, hence why this is what must be enforced as salt in commands 2) and 3) using &#39;-rawsalt&#39; option.</li><li>if you prefer having the same kvno number for every keytab entry, previous commands can be adjusted as below:</li></ul>
+<p>Assuming msDS-KeyVersionNumber attribute of Active Directory service account &#39;service-account&#39; is 10 (as an example) before running the below commands:</p>
+<ol><li><span class="code">ktpass -princ HTTP/app1<strong>.</strong>example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM -mapuser service-account@EXAMPLE<strong>.</strong>COM -crypto AES256-SHA1 -ptype KRB5_NT_PRINCIPAL -pass F5Networks -kvno 13 -out app1_aes256.keytab</span></li><li><span class="code">ktpass -princ HTTP/app2<strong>.</strong>example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM -mapuser service-account@EXAMPLE<strong>.</strong>COM -crypto AES256-SHA1 -ptype KRB5_NT_PRINCIPAL -pass F5Networks -kvno 13 -in app1_aes256.keytab -rawsalt &quot;EXAMPLE<strong>.</strong>COMHTTPapp1<strong>.</strong>example<strong>.</strong>com&quot; -out app1_2_aes256.keytab -setupn</span></li><li><span class="code">ktpass -princ HTTP/app3<strong>.</strong>example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM -mapuser service-account@EXAMPLE<strong>.</strong>COM -crypto AES256-SHA1 -ptype KRB5_NT_PRINCIPAL -pass F5Networks -kvno 13 -in app1_2_aes256.keytab -rawsalt &quot;EXAMPLE<strong>.</strong>COMHTTPapp1<strong>.</strong>example<strong>.</strong>com&quot; -out app1_2_3_aes256.keytab -setupn</span></li></ol>
+<p>The final keytab content will look like this:</p>
+<p><span class="example2">PS C:\keytabs&gt; ktpass /in app1_2_3_aes256.keytab<br>Existing keytab:<br><br>Keytab version: 0x502<br>keysize 84 HTTP/app1<strong>.</strong>example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM ptype 1 (KRB5_NT_PRINCIPAL) vno 13 etype 0x12 (AES256-SHA1) keylength 32 (0x667e57c5e7c19dd274a2ef92698d4a9c043b9078de4b834a5a6c399b73cd947c)<br>keysize 84 HTTP/app2<strong>.</strong>example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM ptype 1 (KRB5_NT_PRINCIPAL) vno 13 etype 0x12 (AES256-SHA1) keylength 32 (0x667e57c5e7c19dd274a2ef92698d4a9c043b9078de4b834a5a6c399b73cd947c)<br>keysize 84 HTTP/app3<strong>.</strong>example<strong>.</strong>com@EXAMPLE<strong>.</strong>COM ptype 1 (KRB5_NT_PRINCIPAL) vno 13 etype 0x12 (AES256-SHA1) keylength 32 (0x667e57c5e7c19dd274a2ef92698d4a9c043b9078de4b834a5a6c399b73cd947c)</span></p>
+<p>Note:</p>
+<ul><li>each ktpass will increment the msDS-KeyVersionNumber value, so the forecasted final kvno will be 13 (10+1+1+1) after running 3 ktpass commands.</li></ul>
+<h2><strong>Additional Information</strong></h2>
+<p>In order to be able to use AES encryption, the Active Directory service account must be configured to allow it (cf <a href="https://my.f5.com/manage/s/article/K01716018" target="_blank">K01716018</a> or <a href="https://my.f5.com/manage/s/article/K73872229" target="_blank">K73872229</a> ).</p>
+<p>Enforcing it the Powershell way:</p>
+<p><span class="code">PS&gt; Set-ADUser -Identity service-account -KerberosEncryptionType &quot;AES128,AES256&quot;</span></p>
+</article>
+</body>
+</html>

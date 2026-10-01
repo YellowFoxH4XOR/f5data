@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K68919255: Creating Istio Object for Aspen Mesh fails with webhook validation error</title>
+<meta name="description" content="Support Solution: Creating Istio Object for Aspen Mesh fails with webhook validation error — Error from server (InternalError): error when creating &quot;service-entry.yaml&quot;: Internal error occurred: failed calling webhook &quot;validation.istio.io&quot;: Post…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K68919255">
+</head>
+<body>
+<header>
+<h1>K68919255: Creating Istio Object for Aspen Mesh fails with webhook validation error</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-09-27</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K68919255">https://my.f5.com/manage/s/article/K68919255</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>When trying to create a service mesh object like Service Entry, it fails with the following error message:</p>
+
+<p><span class="code">&gt; oc apply -f service-entry.yaml</span><br><span class="example2">Error from server (InternalError): error when creating &quot;service-entry.yaml&quot;: Internal error occurred: failed calling webhook &quot;validation.istio.io&quot;: Post &quot;https://istiod.istio-system.svc:443/validate?timeout=30s&quot;: x509: certificate signed by unknown authority (possibly because of &quot;crypto/rsa: verification error&quot; while trying to verify candidate authority certificate &quot;Root CA rsa&quot;)<br>This error can occur while creating any Istio object.</span></p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li><strong>Aspen Mesh</strong>: 1.9.x </li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Upon investigation, it was found that the Root Certificate was not matching for the validation webhook “istiod-istio-system&quot; and secret “cacerts”. You can use the following commands to verify the root certificate in both objects. </p>
+
+<p><span class="code">&gt; kubectl  get validatingwebhookconfiguration istiod-istio-system –o jsonpath=&#39;{.webhooks[0].clientConfig.caBundle}&#39; |  md5sum</span><br><span class="example2">f9ebddde0c379d47078ae20745dde5c9</span></p>
+
+<p><span class="code">&gt; kubectl  get secrets -n istio-system cacerts -o yaml -o jsonpath=&#39;{.data.root-cert\.pem}&#39; | md5sum</span><br><span class="example2">F9ebddde0c379d47078ae20745dde5c9</span></p>
+
+<p>If you want to check the certificate for their issuer and subject, you can use the following command:</p>
+
+<p><span class="code">&gt; kubectl get secrets -n istio-system cacerts -o yaml -o jsonpath=&#39;{.data.root-cert\.pem}&#39; | base64 -d | openssl x509 -noout -text</span></p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>Md5 hash returned the same value for both objects which means that these 2 objects have the same root CA. If it returns different values, we will need to delete the existing secret <strong>cacerts</strong> from istio-system namespace and Provisioning Existing Certificate Authority (CA) Certificates in Aspen Mesh. </p>
+
+<p><span class="code">&gt; kubectl delete secret -n istio-system  cacerts</span></p>
+
+<p><span class="code">&gt; kubectl create secret generic cacerts -n istio-system --from-file=&lt;ca-cert.pem&gt; \ --from-file=&lt;ca-key.pem&gt; --from-file=&lt;root-cert.pem&gt; \ --from-file=&lt;cert-chain.pem&gt;</span></p>
+
+<p>Once the root certificate is the same for both objects, service entry object deploys successfully.</p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>In case of not providing any existing certificate, Aspen Mesh will install a self-signed certificate for the clusters.</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K84508595: Different SSL protocols for different servers</title>
+<meta name="description" content="Support Solution: Different SSL protocols for different servers — Due to security reasons, you have to use strict ssl_protocols TLSv1.2; for the particular server, but ssl_protocols TLSv1 TLSv1.1 TLSv1.2; for the rest.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K84508595">
+</head>
+<body>
+<header>
+<h1>K84508595: Different SSL protocols for different servers</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2020-01-15</dd>
+<dt>Updated</dt><dd>2025-04-01</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Plus: R19, R18, R17, R16, R20, R14, R13, R15</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K84508595">https://my.f5.com/manage/s/article/K84508595</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Descripti<strong>o</strong>n</span></p>
+
+<ul><li>Due to security reasons, you have to use strict <strong>ssl_protocols TLSv1.2;</strong> for the particular server, but <strong>ssl_protocols TLSv1 TLSv1.1 TLSv1.2;</strong> for the rest.</li><li>No errors are reported, but all the servers are reachable over TLSv1, TLSv1.1 and TLSv1.2.</li></ul>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>NGINX Plus configured to perform SSL termination</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>There is a concept of a listening socket in NGINX and underlying operating system. All <strong>listen</strong> directives for the same IP:PORT pair refer to a single listening socket object.</p>
+
+<p>The <strong>ssl_protocols</strong> directive works for the listen socket instead of a particular virtual server. In turn, different server blocks always use the same set of SSL protocols.</p>
+
+<p>Thus, <strong>ssl_protocols</strong> takes effect only when defined for a default server (the very first in configuration or explicitly marked with <strong>default_server</strong> option) for a specific IP:PORT pair and affects all servers listening on the same socket.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>There are two possible approaches for implementing the desired behavior, each has its trade-off:</p>
+
+<ol><li>You can use another IP address or TCP port for the server that requires alternative set of SSL protocols:
+	<pre style="margin-left: 40px;">
+server {
+    listen 192.0.2.1:443 ssl;
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+    ...
+}
+
+server {
+    listen 192.0.2.2:443 ssl;
+    ssl_protocols TLSv1.2;
+    ...
+}
+
+server {
+    listen 192.0.2.2:4443 ssl;
+    ssl_protocols TLSv1.1 TLSv1.2;
+    ...
+}</pre>
+
+	<p><span class="note"><strong>Note</strong>: Usage of non-standard TCP ports may look confusing from clients&#39; perspective.</span></p>
+	</li><li>You can allow all protocols but restrict some of them after actual handshake happens with using of built-in <strong>$ssl_protocol</strong> variable:
+	<pre style="margin-left: 40px;">
+map $ssl_protocol $denied_protocol {
+    TLSv1.2  0;  # allowed
+    default  1;  # all the rest is denied
+}
+
+server {
+    listen 443 ssl default_server;
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+
+    # here a permissive list of protocols is allowed
+    ...
+}
+
+server {
+    listen 443 ssl;
+
+    # here only TLS 1.2 is allowed
+
+    if ($denied_protocol) {
+        return 444;  # drop the connection
+    }
+
+    ...
+}
+</pre>
+
+	<p><span class="note"><strong>Note</strong>: This way you always allow clients to perform a handshake with protocols from the permissive list, but then drop the connection if its SSL protocol is not allowed.</span></p>
+	</li></ol>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<ul><li><a href="http://nginx.org/en/docs/http/ngx_http_core_module.html#listen" target="_self">Documentation for <strong>listen</strong> directive</a></li><li><a href="http://nginx.org/en/docs/http/ngx_http_rewrite_module.html#return" target="_self">Documentation for <strong>return</strong> directive and non-standard 444 code</a></li><li><a href="http://nginx.org/en/docs/http/ngx_http_ssl_module.html#ssl_protocols" target="_self">Documentation for <strong>ssl_protocols</strong> directive</a></li></ul>
+</article>
+</body>
+</html>

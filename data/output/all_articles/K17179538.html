@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K17179538: Adding interface to a Multi-NIC VE causes Error: No Vlan association for STP Interface Member</title>
+<meta name="description" content="Support Solution: Adding interface to a Multi-NIC VE causes Error: No Vlan association for STP Interface Member — &quot;This BIG-IP system has encountered a configuration problem that may prevent the Configuration utility from functioning properly.&quot;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K17179538">
+</head>
+<body>
+<header>
+<h1>K17179538: Adding interface to a Multi-NIC VE causes Error: No Vlan association for STP Interface Member</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-04-07</dd>
+<dt>Updated</dt><dd>2026-06-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 13.0.0, 21.X.X, 17.X.X, 16.X.X, 15.X.X, 14.X.X, 13.X.X, 21.1.X, 21.1.0, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0, 13.1.X, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.X, 13.0.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K17179538">https://my.f5.com/manage/s/article/K17179538</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When attempting to load the configuration, you receive the following error message:</p>
+<ul><li>In the Web-UI:
+<ul><li>
+<pre>&quot;This BIG-IP system has encountered a configuration problem that may prevent the Configuration utility from functioning properly.&quot;</pre>
+</li></ul>
+</li><li>In /var/log/ltm:
+<ul><li>
+<pre>&quot;01070523:3: No Vlan association for STP Interface Member x.x Unexpected Error: Loading configuration process failed.&quot;</pre>
+</li></ul>
+</li></ul>
+<h2>Environment</h2>
+<ul><li>BIG-IP VE with multi NIC</li></ul>
+<h2>Cause</h2>
+<p>This error occurs when there is a presence of a STP (Spanning Tree Protocol) interface member configuration on a multi NIC VE. </p>
+<p>Per <a href="https://my.f5.com/manage/s/article/K61172462" target="_self">K61172462: Disabling or enabling the Spanning Tree Protocol for a trunk (11.x - 16.x)</a> &quot;STP is not supported on BIG-IP Virtual Edition (VE).&quot;. </p>
+<p>Despite STP being non-functional on VE, TMOS still writes net stp configuration into bigip_base.conf when interfaces are assigned to VLANs. This is because the STP configuration object is automatically created/maintained by mcpd as part of the standard TMOS configuration model — it&#39;s a side effect of the VLAN-to-interface association, not something a user explicitly configures. On physical hardware, this is meaningful; on VE, it&#39;s vestigial but harmless — unless the interface-to-VLAN relationship becomes inconsistent.</p>
+<p>Thus when this happens it can safely be removed to correct the situation.</p>
+<h2>Recommended Actions</h2>
+<p>Perform the following steps to resolve this issue:</p>
+<ol><li>Before editing /config/bigip_base.conf, make a backup file using the following command:<code>cp /config/bigip_base.conf /config/bigip_base.conf_backup</code></li><li>Use an editor such as nano/vi/vim to open the bigip_base.conf. </li><li>Hash out or delete the entire block in the bigip_base.conf file. For example:
+<pre class="ckeditor_codeblock"># net stp /Common/cist {<br>#    interfaces {
+#        1.1 {
+#            external-path-cost 200000
+#            internal-path-cost 200000
+#        }
+#        1.2 {
+#            external-path-cost 200000
+#            internal-path-cost 200000
+#        }
+#        1.3 {
+#            external-path-cost 200000
+#            internal-path-cost 200000
+#        }
+#        1.4 {
+#            external-path-cost 200000
+#            internal-path-cost 200000
+#        }
+#        1.5 {
+#            external-path-cost 200000
+#            internal-path-cost 200000
+#        }
+#        1.6 {
+#            external-path-cost 200000
+#            internal-path-cost 200000
+#        }
+#    }
+#    vlans {
+#        /Common/DMZ_4_VLAN
+#        /Common/DMZ_7_VLAN
+#        /Common/DMZ_8_VLAN
+#        /Common/HA
+#       /Common/internal
+#    }
+#}<br><br>NOTE: Path values can vary by interface speed.</pre>
+</li><li>Save the config file.</li><li>Verify the config file you modified using the command:
+<pre class="ckeditor_codeblock">tmsh load sys config verify</pre>
+</li><li>If no errors, load and save the configuration using the following commands:
+<pre class="ckeditor_codeblock">tmsh load sys config<br>tmsh save sys config</pre>
+</li></ol>
+<p>When the configuration is loading you may see the named daemon and others restart. This is expected.</p>
+<h2>Additional Information</h2>
+<p>This is related to <a href="https://cdn.f5.com/product/bugtracker/ID637827.html" target="_self">Bug ID 637827: VADC: after re-deploying a single-nic VM with multiple nics, a load can fail due to stp member 1.0</a></p>
+</article>
+</body>
+</html>

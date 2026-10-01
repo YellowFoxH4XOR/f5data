@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000129993: Using header information as input for rate limiting on KIC ingress resource</title>
+<meta name="description" content="Support Solution: Using header information as input for rate limiting on KIC ingress resource — If you are trying to use ingress resources to turn on and off rate-limiting depending on http headers that you send in, this solution will help you.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000129993">
+</head>
+<body>
+<header>
+<h1>K000129993: Using header information as input for rate limiting on KIC ingress resource</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-12-14</dd>
+<dt>Updated</dt><dd>2023-08-07</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Ingress Controller: 2.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000129993">https://my.f5.com/manage/s/article/K000129993</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Description</strong></h2>
+If you are trying to use ingress resources to turn on and off rate-limiting depending on http headers that you send in, this solution will help you.<br>While customizing the ingress template to add functionality for rate-limiting we have added the following code to our configMap.
+<pre class="ckeditor_codeblock">
+    {{- if eq (index $.Ingress.Annotations &quot;custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting&quot;) &quot;on&quot;}}
+    {{- $rate := index $.Ingress.Annotations &quot;custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting-rate&quot;}}
+    {{- $customHeader := index $.Ingress.Annotations &quot;custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting-custom-header&quot;}}
+    {{- if and (eq (index $.Ingress.Annotations &quot;custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting-criteria&quot;) &quot;client-id&quot;) (or (eq (index $.Ingress.Annotations &quot;custom<strong>.</strong>nginx<strong>.</strong>org/jwt-validation&quot;) &quot;on&quot;) (eq (index $.Ingress.Annotations &quot;custom<strong>.</strong>nginx<strong>.</strong>org/jwt-introspection&quot;) &quot;on&quot;))}}
+    limit_req_zone $jwt_client_id zone={{$.Ingress.Namespace}}-{{$<strong>.</strong>Ingress<strong>.</strong>Name}}:10m rate={{if $rate}}{{$rate}}{{else}}1r/s{{end}};
+    {{- else if eq (index $.Ingress.Annotations &quot;custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting-criteria&quot;) &quot;custom-http-header&quot;}}
+    map $http_{{if $customHeader}}{{$customHeader}}{{else}}test_header{{end}} $limit}} {
+    default &quot;&quot;;
+    &quot;~.+&quot; $binary_remote_addr;
+    }
+    limit_req_zone $limit zone={{$<strong>.</strong>Ingress<strong>.</strong>Namespace}}-{{$<strong>.</strong>Ingress<strong>.</strong>Name}}:10m rate={{if $rate}}{{$rate}}{{else}}1r/s{{end}};
+    {{- else}}
+    limit_req_zone $binary_remote_addr zone={{$<strong>.</strong>Ingress<strong>.</strong>Namespace}}-{{$<strong>.</strong>Ingress<strong>.</strong>Name}}:10m rate={{if $rate}}{{$rate}}{{else}}1r/s{{end}};
+    {{- end}}
+    {{- end}}</pre>
+Then we add annotations as below to our ingress resource manifest
+
+<pre class="ckeditor_codeblock">
+custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting: &quot;on&quot;
+custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting-burst: &quot;1&quot;
+custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting-criteria: custom-http-header
+custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting-custom-header: x_custom_header
+custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting-no: &quot;3&quot;
+custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting-rate: 1r/m
+</pre>
+Which results in the following changes in nginx.conf
+
+<pre class="ckeditor_codeblock">
+map $http_x_custom_header $limit {
+default &quot;&quot;;
+&quot;~.+&quot; $binary_remote_addr;
+}
+limit_req_zone $limit zone=default-cafe-ingress:10m rate=1r/m;
+</pre>
+But, if you create more than 1 ingress resource, this config will add more of the map declarations. One per instance of your ingress. This leads to unintended values for $limit variable in the limit_req_zone directive.<br> 
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Environment</strong></h2>
+
+<ul><li><font face="Arial, sans-serif"><span style="font-size: 14px;">NGINX Ingress Controller</span></font></li><li><font face="Arial, sans-serif"><span style="font-size: 14px;">rate-limit</span></font></li><li><font face="Arial, sans-serif"><span style="font-size: 14px;">Custom Ingress template</span></font></li></ul>
+
+<h2><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Cause</strong></h2>
+
+<p><span style="font-size: 10.5pt;font-family: Arial, sans-serif;">NGINX rules run all of the map statements first in order, then run the limit_req_zone statements once done. </span><br> </p>
+
+<h2><span style="font-size: 10.5pt;font-family: Arial, sans-serif;"> </span><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Recommended Actions</strong></h2>
+Replace the $limit with a variable that you send in with a header
+
+<pre class="ckeditor_codeblock">
+    {{- if eq (index $.Ingress.Annotations &quot;custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting&quot;) &quot;on&quot;}}
+    {{- $rate := index $.Ingress.Annotations &quot;custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting-rate&quot;}}
+    {{- $customHeader := index $.Ingress.Annotations &quot;custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting-custom-header&quot;}}
+    {{- if and (eq (index $.Ingress.Annotations &quot;custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting-criteria&quot;) &quot;client-id&quot;) (or (eq (index $.Ingress.Annotations &quot;custom<strong>.</strong>nginx<strong>.</strong>org/jwt-validation&quot;) &quot;on&quot;) (eq (index $.Ingress.Annotations &quot;custom<strong>.</strong>nginx<strong>.</strong>org/jwt-introspection&quot;) &quot;on&quot;))}}
+        limit_req_zone $jwt_client_id zone={{$<strong>.</strong>Ingress<strong>.</strong>Namespace}}-{{$<strong>.</strong>Ingress<strong>.</strong>Name}}:10m rate={{if $rate}}{{$rate}}{{else}}1r/s{{end}};
+    {{- else if eq (index $.Ingress.Annotations &quot;custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting-criteria&quot;) &quot;custom-http-header&quot;}}
+    {{- $customLimitName := index $.Ingress.Annotations &quot;custom<strong>.</strong>nginx<strong>.</strong>org/limit-name&quot;}}
+    map $http_{{if $customHeader}}{{$customHeader}}{{else}}test_header{{end}} ${{$customLimitName}} {
+    default &quot;&quot;;
+    &quot;~.+&quot; $binary_remote_addr;
+    }
+    limit_req_zone ${{$customLimitName}} zone={{$<strong>.</strong>Ingress<strong>.</strong>Namespace}}-{{$<strong>.</strong>Ingress<strong>.</strong>Name}}:10m rate={{if $rate}}{{$rate}}{{else}}1r/s{{end}};
+    {{- else}}
+    limit_req_zone $binary_remote_addr zone={{$<strong>.</strong>Ingress<strong>.</strong>Namespace}}-{{$<strong>.</strong>Ingress<strong>.</strong>Name}}:10m rate={{if $rate}}{{$rate}}{{else}}1r/s{{end}};
+    {{- end}}
+    {{- end}}
+</pre>
+Change the ingress yaml to include the new header, this cannot contain &#39;_&#39; or &#39;-&#39;
+
+<pre class="ckeditor_codeblock">
+  annotations:
+    custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting: &quot;on&quot;
+    custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting-burst: &quot;1&quot;
+    custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting-criteria: custom-http-header
+    custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting-custom-header: x_custom_header
+    custom<strong>.</strong>nginx<strong>.</strong>org/rate-limiting-rate: 1r/m
+    custom<strong>.</strong>nginx<strong>.</strong>org/limit-name: &quot;one&quot;
+</pre>
+
+<h2><br><strong style="font-size: 18pt;font-family: Arial, sans-serif;">Additional Information</strong></h2>
+
+<p><a href="https://nginx.org/en/docs/dev/development_guide.html#http_phases" target="_blank">Development guide (nginx.org)</a><br>There is a virtual server resource solution to this article located <a href="https://my.f5.com/manage/s/article/K000130247" target="_blank">here</a>  </p>
+</article>
+</body>
+</html>

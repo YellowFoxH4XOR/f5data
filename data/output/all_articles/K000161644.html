@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161644: APM: OCSP Auth agent: Failure status &#x27;Cert serial number 18446744073709551615 status is unknown&#x27;</title>
+<meta name="description" content="Support Solution: APM: OCSP Auth agent: Failure status &#x27;Cert serial number 18446744073709551615 status is unknown&#x27; — OCSP Auth agent: Failure status &#x27;Cert serial number 18446744073709551615 status is unknown&#x27;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161644">
+</head>
+<body>
+<header>
+<h1>K000161644: APM: OCSP Auth agent: Failure status &#x27;Cert serial number 18446744073709551615 status is unknown&#x27;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-09</dd>
+<dt>Updated</dt><dd>2026-06-09</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161644">https://my.f5.com/manage/s/article/K000161644</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When using a BIG-IP APM access policy that includes Client Certificate Inspection followed by an OCSP Auth agent, some connections intermittently fail with the following error, even though the same certificate succeeds on other attempts:</p>
+<ul><li><strong>Error message:</strong>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">OCSP Auth agent: Failure status &#39;Cert serial number 18446744073709551615 status is unknown&#39;</span></p>
+</li></ul>
+<p>Key observations:</p>
+<ul><li>APM logs show the correct certificate serial number at the Client Certificate Inspection stage for both successful and failed sessions.</li><li>Packet captures of OCSP requests sent from the BIG-IP confirm the correct certificate serial number is being used in the OCSP request — the corrupted serial does not appear in the wire traffic.</li><li>The OCSP responder itself returns a <strong>certStatus: unknown (2)</strong> response for the failing attempts, which is the direct source of the APM failure log entry.</li><li>Successful attempts return <strong>certStatus: good (0)</strong> from a different OCSP responder (identifiable by a different <strong>responderID</strong> / <strong>commonName</strong> in the response).</li></ul>
+<h2>Environment</h2>
+<ul><li><strong>Product:</strong> BIG-IP APM</li><li><strong>Version:</strong> 17.5.1</li><li><strong>APM Policy components:</strong>
+<ul><li>Client Certificate Inspection agent</li><li>OCSP Auth agent</li></ul>
+</li><li><strong>OCSP configuration:</strong>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">apm aaa ocsp /Common/test {</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">    ca-file /Common/test.crt</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">    chain false</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">    ignore-aia true</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">    url http://X.X.X.X:YYYY/test/ocsp</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">    verify false</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">    verify-cert false</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></p>
+</li><li>The OCSP URL (http://x.x.x.x:yyyy/test/ocsp) configured in the APM OCSP object points to a Virtual Server (VS) on another BIG-IP, which load-balances requests across multiple backend OCSP responders.</li><li>The backend OCSP responders behind the VS are not identical — they return different <strong>responderID</strong> values and different certificate statuses for the same certificate serial number.</li></ul>
+<h2>Cause</h2>
+<p>The root cause is not within BIG-IP APM itself. The intermittent failures are caused by the OCSP Virtual Server (acting as a load balancer for OCSP responders) routing requests to a backend OCSP responder that returns a <strong>certStatus: unknown</strong> response for the certificate in question.</p>
+<ul><li>Different backend OCSP responders behind the load-balancing VS have inconsistent certificate status data — one returns <strong>good</strong>, another returns <strong>unknown</strong> for the same certificate serial number.</li><li>The intermittent nature of the failures is explained by load balancing decisions directing some requests to the misbehaving OCSP responder.</li></ul>
+<h2>Answer/Recommended Actions</h2>
+<ol><li>Identify the inconsistent OCSP responder by examining the <strong>responderID</strong> field (specifically the <strong>commonName</strong>) in OCSP responses captured via packet capture:
+<ul><li>Failing responses will show a different <strong>commonName</strong> in the <strong>responderID</strong> than successful responses.</li><li>Compare the <strong>BasicOCSPResponse &gt; tbsResponseData &gt; responderID &gt; byName</strong> field across failing and successful OCSP responses.</li></ul>
+</li><li>Investigate the backend OCSP servers behind the load-balancing Virtual Server to determine why one or more responders are returning <strong>certStatus: unknown</strong> for valid certificates.</li><li>Verify certificate status consistency across all backend OCSP responders — ensure all responders have up-to-date and consistent certificate revocation data.</li><li>Review load balancing configuration on the OCSP Virtual Server to consider temporarily removing or isolating the misbehaving OCSP responder while the inconsistency is investigated.</li><li>Confirm resolution by re-running packet captures and verifying that all OCSP responses return <strong>certStatus: good (0)</strong> for valid client certificates.</li></ol>
+<h2>Additional Information</h2>
+<p>N/A</p>
+<ul></ul>
+</article>
+</body>
+</html>

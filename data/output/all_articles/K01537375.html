@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K01537375: Active Port Block SNMP Stats return incorrect values</title>
+<meta name="description" content="Support Solution: Active Port Block SNMP Stats return incorrect values — On Big-IP AFM devices, there is an SNMP MIB OID called ltmFwNatDynamicPoolStatPbaActivePortBlocks, that returns the stats of the number of Active Port Blocks. Active Port Blocks are using as part of…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K01537375">
+</head>
+<body>
+<header>
+<h1>K01537375: Active Port Block SNMP Stats return incorrect values</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-03-02</dd>
+<dt>Updated</dt><dd>2024-11-22</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP FPS: 14.0.0, 14.X.X, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1</li><li>BIG-IP AAM: 14.X.X, 14.1.X, 14.1.4, 14.1.3, 14.1.2, 14.1.5, 14.1.0, 14.0.X, 14.0.1, 14.0.0</li><li>BIG-IP AFM: 14.X.X, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0</li><li>BIG-IP Analytics: 14.X.X, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0</li><li>BIG-IP APM: 14.X.X, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0</li><li>BIG-IP ASM: 14.X.X, 14.1.X, 14.1.2, 14.1.0, 14.1.5, 14.1.4, 14.1.3, 14.0.X, 14.0.1, 14.0.0</li><li>BIG-IP PEM: 14.X.X, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0</li><li>BIG-IP Link Controller: 14.X.X, 14.1.X, 14.1.2, 14.1.0, 14.1.5, 14.1.4, 14.1.3, 14.0.X, 14.0.1, 14.0.0</li><li>BIG-IP LTM: 14.X.X, 14.1.X, 14.1.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.0.X, 14.0.1, 14.0.0</li><li>BIG-IP DNS: 14.X.X, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K01537375">https://my.f5.com/manage/s/article/K01537375</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>On Big-IP AFM devices, there is an SNMP MIB OID called<em> ltmFwNatDynamicPoolStatPbaActivePortBlocks</em>, that returns the stats of the number of Active Port Blocks. Active Port Blocks are using as part of AFM&#39;s source address translation mechanism when Port Block Allocation (PBA) is used  See <a href="https://my.f5.com/manage/s/article/K84221832" target="_self">K84221832: Understanding CGNAT port block allocation sizing and tools</a> for further details on PBA.<br><br>However due to the nature of the design, there is a scenario where the statistics returned by this SNMP OID can be incorrect in comparison to what is actually being processed by the Big-IP.</p>
+
+<p><br><span class="sectiontitle">Environment</span></p>
+
+<p>When all of the following conditions are met, the SNMP <em>ltmFwNatDynamicPoolStatPbaActivePortBlocks</em> MIB can be incorrect.</p>
+
+<ul><li>A bladed chassis with more than one blade.</li><li>AFM or CGNAT is provisioned and a source translation pool using PBA is configured</li><li>The Big-IP is standalone in regards to device service cluster.</li><li>Individual blades have been rebooted at different times.</li></ul>
+
+<p><br><span class="sectiontitle">Cause</span></p>
+
+<p>The PBA stats can become inconsistent after a blade reboot if not all blades are rebooted at the same time. The expectation is to use HA pair in order to sync the PBA session DB entries and make corrections in PBA entries during blade reboots.<br><br>Depending on which blade is rebooted and what kind of PBA session DB entries (created locally or remotely), the stats can go wrong (compared to lsndb list pba, which fetches data directly from session DB) in 2 ways:</p>
+
+<ol><li>Negative (Shown as huge 64 bit number due to the use of unsigned 64 bit counter)</li><li>Relatively small Positive numbers, but not in accordance with lsndb list commands.</li></ol>
+To check, run this command from the bash prompt on the BIG-IP:
+
+<p><span class="code"><span class="example2">snmpwalk -c &lt;SNMP Community Name&gt; localhost ltmFwNatDynamicPoolStat | grep ltmFwNatDynamicPoolStatPbaActivePortBlocks</span></span></p>
+and the output should be something similar to:
+
+<p><span class="example2">F5-BIGIP-LOCAL-MIB::ltmFwNatDynamicPoolStatPbaActivePortBlocks.&quot;/Common/F5-CGNAT-01-NAT_Pool&quot; = Counter64: 133117</span></p>
+<br>Then take the output of this command:<br><br><span class="code"><span class="example2">lsndb list pba</span></span><br><br>There should be a count of the total number of entries at the end of this output. Similar to the below.
+<p><span class="example2">15412 port block entries found</span></p>
+As you can see SNMP shows there are 133117 Active Port Blocks, but in reality there are only 15412 Active Port Blocks.
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>It is recommended if in a standalone AFM bladed environment to ensure all blades are rebooted at the same time using <em>clsh</em>.<br><br><br><strong>Additional Information</strong></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K55132463: Categorizing URLs for HTTP (non-encrypted) traffic for SSL Orchestrator</title>
+<meta name="description" content="Known Issue: Categorizing URLs for HTTP (non-encrypted) traffic for SSL Orchestrator — By default, the Category Lookup policy item in SSL Orchestrator does not categorize non-encrypted HTTP traffic. The Category Lookup policy item works with HTTPS using Server Name Indication (SNI) and…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K55132463">
+</head>
+<body>
+<header>
+<h1>K55132463: Categorizing URLs for HTTP (non-encrypted) traffic for SSL Orchestrator</h1>
+<dl>
+<dt>Type</dt><dd>Known Issue</dd>
+<dt>Published</dt><dd>2018-11-19</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>F5 App Protect</li><li>F5 SSL Orchestrator: 14.1.0, 14.0.0</li><li>BIG-IP APM: 14.0.0, 14.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K55132463">https://my.f5.com/manage/s/article/K55132463</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Known Issue</h3><p>By default, the Category Lookup policy item in SSL Orchestrator does not categorize non-encrypted HTTP traffic. The Category Lookup policy item works with HTTPS using Server Name Indication (SNI) and HTTP Connect using the header Hostname, but the Category Lookup policy item cannot match the URL database against an HTTP Host header.</p>
+
+<p><span class="sectiontitle">Impact</span></p>
+
+<p>The Category Lookup policy item does not apply to HTTPS traffic. HTTPS traffic is handled correctly.</p>
+<h3>Resolution</h3><p><span class="sectiontitle">Status</span></p>
+
+<p>F5 Product Development has assigned ID 740433 to this issue. F5 has confirmed that this issue exists in the products listed in the <strong>Applies to (see versions)</strong> box, located in the upper-right corner of this article. For information about releases, point releases, or hotfixes that resolve this issue, refer to the following table.</p>
+
+<table class="askf5table" border="1" cellpadding="1" cellspacing="1" style="width: 100%;"><tbody><tr><td colspan="1" rowspan="1">Type of fix</td><td colspan="1" rowspan="1">Fixes introduced in</td><td colspan="1" rowspan="1">Related articles</td></tr><tr><td colspan="1" rowspan="1">Release</td><td colspan="1" rowspan="1">14.1.0-5.1</td><td colspan="1" rowspan="1"><a href="https://my.f5.com/manage/s/article/K2200" target="_blank">K2200: Most recent versions of F5 software</a></td></tr><tr><td colspan="1" rowspan="1">Point release/hotfix</td><td colspan="1" rowspan="1">None</td><td colspan="1" rowspan="1">None</td></tr></tbody></table>
+
+<p><span class="sectiontitle">Workaround</span></p>
+
+<p>To work around this issue, you can disable strict updates, modify the per-request policy using the Visual Policy Editor to add an iRule to the policy and to mark the category during the initial TCP connection.</p>
+
+<p><span class="impact"><strong>Impact of workaround:</strong> When you change configuration of certain objects, the system re-deploys the various BIG-IP objects to match your new configuration. This re-deployment overwrites any existing BIG-IP objects without warning about existing changes. Before performing this procedure, you must first refer to the warnings and directions in the <strong>Disabling Strict Updates</strong> section of <a href="https://my.f5.com/manage/s/article/K00805840" target="_blank"> K00805840: SSL Orchestrator known issues and workarounds</a>.</span></p>
+
+<p>This workaround does not catch mid-connection URL changes, and any mid-connection changes continue to follow the policy defined by the original URL. Mid-connection changes that cause an issue for this should be rare.</p>
+
+<p>This issue occurs when all of the following conditions are met:</p>
+
+<ul><li>More than one server URL uses the same IP address.</li><li>The server URLs categorize differently within the URL Categorization policy item and you need to differentiate between the URLs for the policy decisions.</li><li>Servers use HTTP (not HTTPS).</li><li>A policy item connects immediately from one system to another without first requesting a different URL.</li><li>The client uses the same TCP connection for both BIG-IP systems.</li></ul>
+
+<p><span class="note"><strong>Note</strong>: The first condition is not uncommon. Conditions 2-4 are not common. Condition 5 is extremely uncommon and may indicate a problem with the client.</span></p>
+
+<p><span class="note"><strong>Note</strong>: If you add a new custom URL category, or if the URL category list changes, you need to update the data group.</span></p>
+
+<p>Before any traffic is processed, you need to create a data group of the URL categories.</p>
+
+<p><span class="subsectiontitle">Overview of the system process</span></p>
+
+<p>For each request, the BIG-IP system does the following:</p>
+
+<ul><li>Updates a variable with the hostname from the HTTP URI in the <strong>store_host_header</strong> iRule</li><li>In the per-request policy, branches HTTP traffic in using the <strong>Categorization</strong> macro</li><li>Runs the <strong>get_urlcat</strong> iRule on the traffic, matching the URI to the data group and updating a BIG-IP APM variable</li><li>Copies the BIG-IP APM variable into the variable that the URL branching information uses in the next macro</li></ul>
+
+<p><span class="subsectiontitle">Creating data groups</span></p>
+
+<ol><li>Log in to the BIG-IP system command line interface (CLI) using the root account.</li><li>Create a data group of URL categories based on the configuration of the system.
+	<p><span class="note"><strong>Note</strong>: To use this workaround with non-customized categories, you must have URL Filtering or Secure Web Gateway (SWG) licensed and configured. For more information, refer to <a href="https://my.f5.com/manage/s/article/K53612135" target="_blank">K53612135: Configuring SSL Orchestrator without licensing URL Filtering or SWG</a>.</span></p>
+	</li><li>To create the data group the first time, enter the following commands:
+	<p><span class="code">tmsh list sys url-db url-category |grep -E &#39;sys url-db url-category| cat-number&#39; |sed -e &#39;s/sys url-db url-category //g;s/\s\s\s\scat-number//g;s/ {//g&#39; |sed &quot;N;s/\n/ :=/&quot; |sed -e &#39;s/$/,/&#39; &gt; /var/tmp/urlcat.txt</span></p>
+
+	<p><span class="code">tmsh create /sys file data-group urlcat_file separator &quot;:=&quot; source-path file:/var/tmp/urlcat.txt type string</span></p>
+
+	<p><span class="code">tmsh create /ltm data-group external urlcat_dg external-file-name urlcat_file</span></p>
+	</li><li>To update the data group when the URL categories change, enter the following script commands:
+	<p><span class="code">tmsh list sys url-db url-category |grep -E &#39;sys url-db url-category| cat-number&#39; |sed -e &#39;s/sys url-db url-category //g;s/\s\s\s\scat-number//g;s/ {//g&#39; |sed &quot;N;s/\n/ :=/&quot; |sed -e &#39;s/$/,/&#39; &gt; /var/tmp/urlcat.txt</span></p>
+
+	<p><span class="code">tmsh modify /sys file data-group urlcat_file separator &quot;:=&quot; source-path file:/var/tmp/urlcat.txt</span></p>
+
+	<p><span class="code">tmsh modify /ltm data-group external urlcat_dg</span></p>
+	</li></ol>
+
+<p><span class="subsectiontitle">Copying and updating iRules</span></p>
+
+<ol><li>Install the SSL Orchestrator Extras library.
+	<p><span class="note"><strong>Note</strong>: For more information, refer to the <strong>Using the SSL Orchestrator Extras Library </strong> section in <a href="https://my.f5.com/manage/s/article/K00805840" target="_blank"> K00805840: SSL Orchestrator known issues and workarounds</a>.</span></p>
+	</li><li>Navigate to <strong>Local Traffic</strong>&gt; <strong>iRules</strong>.</li><li>Click <strong>Create</strong>.</li><li>For <strong>Name</strong>, type <strong>sslo_get_category</strong>.</li><li>In the Definition box, enter the following:
+	<p><span class="code">when ACCESS_PER_REQUEST_POLICY ITEM_EVENT { call /Common/sslo_extras::/get_urlcat }</span></p>
+	</li><li>Click <strong>Finished</strong>.</li><li>Open the iRule named <strong>sslo_&lt;system name&gt;-in_t</strong>.
+	<p><span class="note"><strong>Note</strong>: <strong>sslo_&lt;system name&gt; </strong>is your SSLO system name from the <strong>Deployment Settings</strong> page.</span></p>
+	</li><li>Copy the contents from the iRule <strong>Definition</strong> box.</li><li>Close the iRule and create a new iRule named <strong>&lt;sslo_system name&gt;-in_t-copy</strong>.</li><li>Paste the contents from the system iRule in the new iRule.</li><li>Find the <strong>when CLIENT_DATA</strong> section of the iRule and immediately after the <strong>set said [TCP::payload]</strong> item, and before the closing <strong>}</strong>, add the following:
+	<p><span class="code">## MOD: Call update host headers for http categorization</span><br>	call /Common/sslo_extras::/store_host_header $said<br>	## END MOD</p>
+	</li><li>Click <strong>Finished</strong>.</li></ol>
+
+<p><span class="subsectiontitle">Updating the BIG-IP APM per-request policy</span></p>
+
+<ol><li>Navigate to <strong>SSL Orchestrator</strong> &gt; <strong>Policies</strong> &gt; <strong>Access Per-Request Policies</strong>.</li><li>Find <strong>ssloP_&lt;chain name&gt;_prpTcp</strong>.
+	<p><span class="note"><strong>Note</strong>: You can filter by typing the policy name in the box and clicking <strong> Search</strong>.</span></p>
+	</li><li>Under <strong>Per-Request Policy</strong>, click the <strong>+</strong> icon next to <strong>Show All</strong>.</li><li>Click <strong>ssloP_&lt;chain name&gt;_prpTcp</strong>.
+	<p>The Visual Policy Editor opens.</p>
+	</li><li>Click the <strong>Categorization</strong> macro.</li><li>Click the <strong>L7 Protocol Lookup</strong> policy item and click the <strong>Branch Rules</strong> tab.</li><li>Click <strong>Add Branch Rule</strong> and for <strong>Name</strong> type <strong>HTTP</strong>.</li><li>For <strong>Expression</strong>, click <strong>change</strong> to edit.</li><li>Click <strong>Add Expression</strong>.</li><li>For <strong>Agent Sel</strong>, click <strong>L7 Protocol Lookup</strong>.</li><li>For <strong>Condition</strong>, click <strong>L7 Protocol</strong>.</li><li>For <strong>L7 Protocol Is</strong>, click <strong>HTTP</strong>.</li><li>Click <strong>Add Expression</strong>.</li><li>Click <strong>Finished</strong>.</li><li>On the <strong>Branch Rules</strong> tab, click the down arrow icon to move the new branch rule under the <strong>HTTP Connect</strong> branch rule.</li><li>Click <strong>Save</strong>.</li><li>In the <strong>Categorization</strong> macro, click the <strong>+</strong> icon on the <strong>HTTP</strong> branch.</li><li>Click the <strong>General Purpose</strong> tab, click <strong>iRule Event</strong>, and click <strong>Add Item</strong>.</li><li>For <strong>Name</strong>, type <strong>HTTP Data Collection</strong>.</li><li>For <strong>ID</strong> type <strong>sslo_get_category</strong>, and for <strong>Expect Data</strong> click <strong>Client Accepted</strong>, then click <strong>Save</strong>.</li><li>On the fallback branch after the new iRule event policy item, click the <strong>+</strong> icon.</li><li>On the <strong>Assignment</strong> tab, click <strong>Variable Assign</strong>, and then click <strong>Add Item</strong>.</li><li>For <strong>Name</strong> type <strong>HTTP Host Variable Assign</strong>, and then click <strong>Add new entry</strong>.</li><li>Click <strong>change</strong> to edit.</li><li>In the <strong>Custom Variable</strong> box, enter the following:
+	<p><span class="code">perflow.category_lookup.result.categories</span></p>
+	</li><li>In the <strong>Custom Expression</strong> box, enter the following:
+	<p><span class="code">return [mcget {perflow.scratchpad}]</span></p>
+	</li><li>Click <strong>Finished</strong> and then click <strong>Save</strong>.</li></ol>
+</article>
+</body>
+</html>

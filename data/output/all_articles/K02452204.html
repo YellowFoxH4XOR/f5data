@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K02452204: Log messages not sent to remote syslog server and not able to see syslog traffic in tcpdump</title>
+<meta name="description" content="Support Solution: Log messages not sent to remote syslog server and not able to see syslog traffic in tcpdump — You added a syslog server to the BIG-IP configuration. The syslog destination is a virtual server on the BIG-IP system which load balances to a pool of remote syslog servers. You&#x27;re not able to see…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K02452204">
+</head>
+<body>
+<header>
+<h1>K02452204: Log messages not sent to remote syslog server and not able to see syslog traffic in tcpdump</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-08-19</dd>
+<dt>Updated</dt><dd>2024-10-08</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.5, 16.1.4, 15.1.10, 15.1.9, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 13.X.X, 12.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 16.X.X, 12.1.X, 12.0.X, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.X.X, 14.X.X, 13.0.X, 12.1.3, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K02452204">https://my.f5.com/manage/s/article/K02452204</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+<p>You added a syslog server to the BIG-IP configuration. The syslog destination is a virtual server on the BIG-IP system which load balances to a pool of remote syslog servers. You&#39;re not able to see logs leaving the system and traffic is not seen at the syslog servers either.</p>
+<p>You tested with <strong>tcpdump</strong> using commands similar to the following:</p>
+<p><span class="example2">tcpdump -s0 -ni 0.0:nnnp -v -w /var/tmp/syslog_issue.pcap host 10.1.1.1<br>tcpdump -i eth0 -v -w /var/tmp/syslog_issue_mgmt.pcap host 10.1.1.1</span></p>
+<p>Both pcap files are empty after running for some time and you generated sample logs using a <strong>logger </strong>command similar to the following:</p>
+<p><span class="example2">logger -n 10.1.1.1 -p local0.error -P 514 &quot;Test message from the BIG-IP system&quot;</span></p>
+<p><span class="note"><strong>Note</strong>: The <strong>logger</strong> utility <strong>-n</strong> option is not available in BIG-IP 13.x and earlier.</span></p>
+<p><span class="sectiontitle">Environment</span></p>
+<ul><li>BIG-IP</li><li>Syslog destination is a virtual server on the BIG-IP system which load balances to a pool of syslog servers</li><li>
+<p>Multiple default routes, learnt via dynamic routing (or a gateway pool):</p>
+<span class="example2">----------------------------------------------------------<br>Net::Routes<br>Name         Destination  Type  NextHop       Origin<br>----------------------------------------------------------<br>default      default      gw    10.1.2.253  dynamic ecmp<br>default      default      gw    10.1.2.254  dynamic ecmp</span></li><li>No log filters in use</li></ul>
+<p><span class="sectiontitle">Cause</span></p>
+<p>With multiple <strong>equal-cost multipath</strong> routes, the following route will be injected into the kernel routing table:</p>
+<p><span class="example2">default via 127.1.1.253 dev tmm</span></p>
+<p>This exists to ensure that traffic from the Linux host (e.g. syslog) is load balanced correctly between the two default routes, using a hidden pool.</p>
+<p>You may see output similar to the following when using the <strong>ip route get</strong> command:</p>
+<p><span class="example2">[root@ltm-1:Active:In Sync] ~ # ip route get 10.1.1.1<br>10.1.1.1 via 127.1.1.253 dev tmm  src 127.1.1.254<br>    cache</span></p>
+<p>In this situation, the syslog traffic will be sourced from IP address <strong>127.1.1.254</strong>, accessing the virtual server via the <strong>tmm</strong> device. This means traffic will egress the system towards the syslog pool using this source IP, as well (assuming no source address translation is in use).</p>
+<p>Without special modifiers, traffic between TMM and the virtual server will not be visible in a tcpdump that is filtered on the virtual server IP address, for example when using the <strong>tcpdump</strong> command in the description of this article.</p>
+<p><span class="sectiontitle">Recommended Actions</span></p>
+<p>A<strong> tcpdump</strong> taken on the TMM interface using the <strong>h</strong> modifier (<strong>tmm:h</strong>) will allow you see to see traffic generated from the Linux host towards the virtual server. Similarly, capturing on <strong>0.0</strong> (or the egress VLAN) using the IP address or port (e.g. 514) of the pool member should capture the syslog traffic egressing the system towards the gateways.</p>
+<p>An example of an appropriate <strong>tcpdump </strong>command:</p>
+<p><span class="example2">tcpdump -s0 -ni tmm:h host 10.1.1.1 and port 514 -w /var/tmp/tmm_h_syslog.pcap</span></p>
+<p>Investigate what happens to this traffic once it reaches the gateway devices. It is possible the source 127.1.1.254 causes a problem for an intermediate device between the BIG-IP and syslog server. In this situation, configuring the virtual server with <strong>source address translation</strong> will help.</p>
+<p><span class="sectiontitle">Additional Information</span></p>
+<p>It is also possible to see a connection established between <strong>syslog-ng</strong> and the virtual server using the <strong>netstat </strong>or <strong>ss</strong> commands, for example:</p>
+<p><span class="example2">Netid  State      Recv-Q Send-Q Local Address:Port             Peer Address:Port<br>udp    ESTAB      0      0      127.1.1.254:55142              10.1.1.1:514                 users:((&quot;syslog-ng&quot;,pid=6452,fd=52))</span></p>
+</article>
+</body>
+</html>

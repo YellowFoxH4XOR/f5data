@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000135437: Clickhouse data growing causing disk pressure</title>
+<meta name="description" content="Support Solution: Clickhouse data growing causing disk pressure — Clickhouse data store is large and growing. The system is experiencing disk pressure as a result. Several pods are in crashloopbackoff.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000135437">
+</head>
+<body>
+<header>
+<h1>K000135437: Clickhouse data growing causing disk pressure</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-07-10</dd>
+<dt>Updated</dt><dd>2023-07-10</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Controller: 3.22.6</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000135437">https://my.f5.com/manage/s/article/K000135437</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p><span style="font-size: 14px;">Clickhouse data store is large and growing. The system is experiencing disk pressure as a result. Several pods are in crashloopbackoff.</span></p>
+
+<h2><strong>Environment</strong></h2>
+
+<p>NGINX Controller</p>
+
+<h2><strong>Cause</strong></h2>
+
+<p><span style="font-size: 14px;">Kubernetes db-rollup-jobs cronjob, responsible for reducing clickhouse data size (down sampling), gets scheduled for a future date. This can occur if NTP becomes disabled, unintentionally or otherwise, and the system time gets set to a future date. While waiting for the cronjob to run clickhouse data will continue to increase.</span></p>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>Ensure the system time is correct and NTP is running.<br>Stop NGINX Controller, delete and pause the db rollup jobs: </p>
+
+<pre class="ckeditor_codeblock">
+$ /opt/nginx-controller/helper.sh controller stop
+Turning controller off... done.
+$ kubectl delete pod --force -l app=db-rollup-job
+warning: --force is ignored because --grace-period is not 0.
+pod &quot;db-rollup-job-1681930500-snd47&quot; deleted
+pod &quot;db-rollup-job-1681930800-cfw8q&quot; deleted
+pod &quot;db-rollup-job-1681931100-prsbw&quot; deleted
+$ kubectl patch cronjobs db-rollup-job -p &#39;{&quot;spec&quot; : {&quot;suspend&quot; : true }}&#39;</pre>
+
+<p>Scale up clickhouse:</p>
+
+<pre class="ckeditor_codeblock">
+$ kubectl scale --replicas=1 statefulset clickhouse
+statefulset.apps/clickhouse scaled</pre>
+
+<p>Note: IF at this point clickhouse shows image pull backoff then load the controller image from the inline installer package into docker:</p>
+
+<pre class="ckeditor_codeblock">
+$ gunzip -c ./controller-installer/files/controller.img.gz | sudo docker load</pre>
+
+<p>Truncate all of the clickhouse data:</p>
+
+<pre class="ckeditor_codeblock">
+$ kubectl -n nginx-controller exec -it $(kubectl -n nginx-controller get pod -lapp=clickhouse -o name) -- bash -c &quot;HOME=/tmp clickhouse client -u writer --password \$CLICKHOUSE_PASS_writer -d controller -m&quot;
+ClickHouse client version 19.14.7.15 (official build).
+Connecting to database controller at localhost:9000 as user writer.
+Connected to ClickHouse server version 19.14.7 revision 54425.
+clickhouse-0.clickhouse.nginx-controller.svc.cluster.local :) TRUNCATE TABLE controller.metrics;
+TRUNCATE TABLE controller.metrics
+Ok.
+0 rows in set. Elapsed: 0.986 sec.</pre>
+
+<p>Note: IF the TRUNCATE query does not remove the data then remove it manually:</p>
+
+<ul><li>Detach table in clickhouse:
+	<pre class="ckeditor_codeblock">
+DETACH TABLE controller.metrics;</pre>
+	</li><li>Find path to clickhouse directory on system node:
+	<pre class="ckeditor_codeblock">
+$ kubectl describe pv clickhouse | grep Path: 
+Path: /opt/nginx-controller/clickhouse_data</pre>
+	</li><li>Remove metrics data from clickhouse directory on system node:
+	<pre class="ckeditor_codeblock">
+$ sudo rm -rf /opt/nginx-controller/clickhouse_data/data/controller/metrics</pre>
+	</li><li>Attach table in clickhouse:
+	<pre class="ckeditor_codeblock">
+ATTACH TABLE controller.metrics;</pre>
+	</li></ul>
+Scale down clickhouse:
+
+<pre class="ckeditor_codeblock">
+$ kubectl scale sts clickhouse --replicas=0 
+statefulset.apps/clickhouse scaled</pre>
+
+<p>Start Controller:</p>
+
+<pre class="ckeditor_codeblock">
+$ /opt/nginx-controller/helper.sh controller start 
+Turning controller on... done.
+</pre>
+
+<p>Note: IF pods show image pull backoff then load the Controller and installer images from the inline installer package into docker:</p>
+
+<pre class="ckeditor_codeblock">
+$ gunzip -c ./controller-installer/files/controller.img.gz | sudo docker load 
+$ gunzip -c ./controller-installer/files/installer.img.gz | sudo docker load
+</pre>
+</article>
+</body>
+</html>

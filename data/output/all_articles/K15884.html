@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K15884: Overview of Node.js auto-chunking behavior on LineRate systems</title>
+<meta name="description" content="Knowledge: Overview of Node.js auto-chunking behavior on LineRate systems — The presence of the Content-Length header in the HTTP response from the real-server.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K15884">
+</head>
+<body>
+<header>
+<h1>K15884: Overview of Node.js auto-chunking behavior on LineRate systems</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2015-07-14</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>Legacy Products</li><li>LineRate: 2.6.1, 2.5.2, 2.5.1, 2.5.0, 2.4.3, 2.6.0, 2.4.1, 2.4.0, 2.4.2</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K15884">https://my.f5.com/manage/s/article/K15884</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3>
+
+<p>While handling real-server responses, the LineRate system preserves the transfer encoding that the real-server provides. The auto-chunking behavior is determined by the following:<br></p>
+<ul><li>The presence of the <b>Content-Length</b> header in the HTTP response from the real-server.</li><li>The way you alter the HTTP response before sending the response to the client.<br></li></ul>
+<h3>Description</h3>
+<p>If the real-server response contains a <b>Content-Length</b> header, the system passes the header through to the client, unchanged. This situation happens regardless of any changes that the LineRate scripting made to the HTTP response body. If the LineRate system manipulates the HTTP response from the real-server and removes the <b>Content-Length</b> header from the real-server response, then the auto-chunking feature applies the ??<b>Transfer-Encoding: chunked</b>? header to the response before the system sends the response to the client; the auto-chunking feature also applies the proper chunk encoding to the body. This information comes in to play when you use LineRate scripting to alter an HTTP response body that is served from a real-server, before sending the HTTP response body to the requesting client. </p>
+<p>For example, consider the following request-handler script:</p>
+<p class="note"><b>Note</b>: The following code is intended only as an example and may not be applicable to your configuration. Refer to the <a href="http://docs.lineratesystems.com/" target="_blank">Scripting Developer&#39;s Guide</a> for your version of LineRate LROS.</p>
+<p><span class="example2">    vs.on(&#39;request&#39;, function (servReq, servResp, cliReq) {<br>       console.log(&quot;request received for: &quot; + servReq.url);<br></span><span class="example2"></span></p>
+<p><span class="example2">      // immediately send request to back end real-server</span></p>
+<p><span class="example2">      servReq.bindHeaders(cliReq);<br>       servReq.fastPipe(cliReq);<br>       var alertstr = self.append_string;<br>       cliReq.on(&#39;response&#39;, function(response) {<br>           console.log(&quot;**HANDLING RESPONSE &quot; + servReq.url + &quot;**&quot;);</span></p>
+<p><span class="example2">          // send along response headers un-touched</span></p>
+<p><span class="example2">          response.bindHeaders(servResp);<br>           response.on(&#39;data&#39;, function(chunk) {</span></p>
+<p><span class="example2">            // get a chunk, send a chunk</span></p>
+<p><span class="example2">            servResp.write(chunk);<br>             console.log(&quot;  &quot; + servReq.url + &quot; got some response data&quot;);<br>           });<br>           response.on(&#39;error&#39;, function(blah) {<br>             console.log(&quot;#### &quot; + servReq.url + &quot; errored out: &quot;+ blah);<br>             servResp.end();<br>           });<br>           response.on(&#39;end&#39;, function(chunk) {<br>             console.log(&quot;  ## ENDING ##&quot;);</span></p>
+<p><span class="example2">            // add our additional content</span></p>
+<p><span class="example2">            servResp.end(alertstr);<br>           });<br>       });<br>     });<br>   });<br> }<br> <br> var appender = new ResponseAppender(&#39;<b>vs_test</b>&#39;, &#39;&lt;script&gt;alert(&quot;SURPRISE!&quot;)&lt;/script&gt;&#39;);</span></p>
+<p>The previous example would append <b>&lt;script&gt;alert (&quot;SURPRISE!&quot;)&lt;/script&gt;</b> to the HTTP response that the real-server sent. However, if the original HTTP response contained a <b>Content-Length</b> header, the client browser may not display that added content, since the actual message body would now be larger than the length reported by the <b>Content-Length</b> header.<br></p>
+
+<p><a name="recommendations"></a><span class="sectiontitle">Recommendations</span></p>
+
+<p>When using LineRate scripting to modify HTTP response data from real-servers, you should consider the following factors:<br></p>
+<p>If you want to preserve the non-chunked transfer encoding, then you need to alter your script in order to maintain the total byte count of the response body you want to send, and then ensure that the <b>Content-Length</b> header is assigned this value. However, if you are not concerned with the presence of a <b>Content-Length</b> header in the response to the client, then you can simply remove the <b>Content-Length</b> header, if present, and allow the auto-chunking behavior to manage the framing of the response body.</p>
+<p>You can remove the <b>Content-Length</b> header by using the <b>servResp.removeHeader()</b> object. Using the previous example, find the section with <b>response.bindHeaders(servResp);</b> and modify it to match the following:</p>
+<p class="note"><b>Note</b>: The following code is intended only as an example and may not be applicable to your configuration. Refer to the <a href="http://docs.lineratesystems.com/" target="_blank">Scripting Developer&#39;s Guide</a> for your version of LineRate LROS.</p>
+<p><span class="example2">          response.bindHeaders(servResp);<br>           servResp.removeHeader(&quot;Content-Length&quot;);</span></p>
+<p>All HTTP responses from real-servers will now have the <b>Content-Length</b> header stripped and replaced with the <b>Transfer-Encoding: chunked</b> header, which allows the page to properly display in the client browser.</p>
+</article>
+</body>
+</html>

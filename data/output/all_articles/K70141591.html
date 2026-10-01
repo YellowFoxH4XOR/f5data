@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K70141591: Bigd SSL monitor retransmission during  connection closure.</title>
+<meta name="description" content="Support Solution: Bigd SSL monitor retransmission during  connection closure. — In BIGIP versions with the fix for ID409340, you can observe retransmissions for BigD SSL monitor traffic during connection closure.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K70141591">
+</head>
+<body>
+<header>
+<h1>K70141591: Bigd SSL monitor retransmission during  connection closure.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-12-15</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K70141591">https://my.f5.com/manage/s/article/K70141591</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>In BIGIP versions with the fix for ID409340, you can observe retransmissions for BigD SSL monitor traffic during connection closure.<br>Most retransmissions are for TCP FIN.  <br> </p>
+
+<pre>
+See the example capture: 
+10.0.0.108 BigIP self-IP
+10.0.0.182 Pool member with https monitor
+ 
+</pre>
+
+<pre>
+  109 2021-10-24 18:07:21.177988   10.0.0.108 39562 10.0.0.182   443 TCP 185 860 2.973401 OUT s1/tmm0 : 39562 → 443 [SYN] Seq=688178795 Win=29200 Len=0 MSS=1460 SACK_PERM=1 TSval=3011268697 TSecr=0 WS=128
+  110 2021-10-24 18:07:21.178272   10.0.0.182 443 10.0.0.108   39562 TCP 185 860 0.000284 IN  s1/tmm0 : 443 → 39562 [SYN, ACK] Seq=779594802 Ack=688178796 Win=27960 Len=0 MSS=1410 SACK_PERM=1 TSval=3360981512 TSecr=3011268697 WS=128
+  111 2021-10-24 18:07:21.178817   10.0.0.108 39562 10.0.0.182   443 TCP 177 860 0.000545 OUT s1/tmm0 : 39562 → 443 [ACK] Seq=688178796 Ack=779594803 Win=29312 Len=0 TSval=3011268698 TSecr=3360981512
+  112 2021-10-24 18:07:21.178829   10.0.0.108 39562 10.0.0.182   443 TLSv1 498 860 0.000012 OUT s1/tmm0 : Client Hello
+  113 2021-10-24 18:07:21.179108   10.0.0.182 443 10.0.0.108   39562 TCP 177 860 0.000279 IN  s1/tmm0 : 443 → 39562 [ACK] Seq=779594803 Ack=688179117 Win=29056 Len=0 TSval=3360981512 TSecr=3011268698
+  114 2021-10-24 18:07:21.179647   10.0.0.182 443 10.0.0.108   39562 TLSv1.2 314 860 0.000539 IN  s1/tmm0 : Server Hello, Change Cipher Spec, Encrypted Handshake Message
+  115 2021-10-24 18:07:21.180188   10.0.0.108 39562 10.0.0.182   443 TCP 177 860 0.000541 OUT s1/tmm0 : 39562 → 443 [ACK] Seq=688179117 Ack=779594940 Win=30336 Len=0 TSval=3011268699 TSecr=3360981513
+  116 2021-10-24 18:07:21.180190   10.0.0.108 39562 10.0.0.182   443 TLSv1.2 228 860 0.000002 OUT s1/tmm0 : Change Cipher Spec, Encrypted Handshake Message
+  117 2021-10-24 18:07:21.180191   10.0.0.108 39562 10.0.0.182   443 TLSv1.2 215 860 0.000001 OUT s1/tmm0 : Application Data
+  118 2021-10-24 18:07:21.180470   10.0.0.182 443 10.0.0.108   39562 TCP 177 860 0.000279 IN  s1/tmm0 : 443 → 39562 [ACK] Seq=779594940 Ack=688179206 Win=29056 Len=0 TSval=3360981514 TSecr=3011268699
+  119 2021-10-24 18:07:21.180745   10.0.0.182 443 10.0.0.108   39562 TLSv1.2 1527 860 0.000275 IN  s1/tmm0 : Application Data
+
+## server sent last &quot;Application data&quot; Packet # 119 and &quot;Encrypted Alert&quot; packet 121 in 2 different packets. This is totally normal.
+ 
+  120 2021-10-24 18:07:21.181022   10.0.0.108 39562 10.0.0.182   443 TLSv1.2 208 860 0.000277 OUT s1/tmm0 : Encrypted Alert
+
+## BigIP sent &quot;Encrypted Alert&quot; to close the connection when not seeing &quot;Encrypted Alert&quot; from Server side. This is also correct.
+
+  121 2021-10-24 18:07:21.181029   10.0.0.182 443 10.0.0.108   39562 TLSv1.2 208 860 0.000007 IN  s1/tmm0 : Encrypted Alert
+  122 2021-10-24 18:07:21.181306   10.0.0.182 443 10.0.0.108   39562 TCP 177 860 0.000277 IN  s1/tmm0 : 443 → 39562 [FIN, ACK] Seq=779596321 Ack=688179237 Win=29056 Len=0 TSval=3360981515 TSecr=3011268700
+
+## The issue is BigIP ignored following &quot;Encrypted Alert&quot; packet#122 and TCP FIN packet#123 from server side.
+## Caused retransmission of TCP FIN packet#123 from Server side after 10ms. 
+  123 2021-10-24 18:07:21.197258   10.0.0.182 443 10.0.0.108   39562 TCP 177 860 0.015952 IN  s1/tmm0 : [TCP Retransmission] 443 → 39562 [FIN, ACK] Seq=779596321 Ack=688179237 Win=29056 Len=0 TSval=3360981531 TSecr=3011268700
+
+  124 2021-10-24 18:07:21.197537   10.0.0.108 39562 10.0.0.182   443 TCP 177 860 0.000279 OUT s1/tmm0 : 39562 → 443 [ACK] Seq=688179237 Ack=779596322 Win=33280 Len=0 TSval=3011268717 TSecr=3360981514
+
+  125 2021-10-24 18:07:22.271325   10.0.0.108 39562 10.0.0.182   443 TCP 177 860 1.073788 OUT s1/tmm0 : 39562 → 443 [FIN, ACK] Seq=688179237 Ack=779596322 Win=33280 Len=0 TSval=3011269791 TSecr=3360981514
+  126 2021-10-24 18:07:22.271612   10.0.0.182 443 10.0.0.108   39562 TCP 177 860 0.000287 IN  s1/tmm0 : 443 → 39562 [ACK] Seq=779596322 Ack=688179238 Win=29056 Len=0 TSval=3360982605 TSecr=3011269791</pre>
+
+<pre>
+<strong>Environment</strong></pre>
+
+<p>Relevant environmental factors specific to the topic</p>
+
+<ul><li>BigIP version with the fix for <a href="https://my.f5.com/manage/s/article/K63086108" target="_self">K63086108: Health monitor connections may remain in the open connection state after server side termination</a></li><li>BigD SSL monitors. ( e.g. https monitor.) are used.</li><li>Server sides / pool members send Application Data (eg. 200OK) and &quot;Encrypted Alert&quot; in different packets to close the connection immediately.</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>The reason is the fix of <a href="https://my.f5.com/manage/s/article/K63086108" target="_self">ID409340</a>.</p>
+
+<ol></ol>
+
+<pre>
+1. When BigIP processes &quot;Application Data&quot; and does not see &quot;Encrypted Alert&quot; at the same time, BigIP will send an Encrypted Alert to close the connection. ( Nothing wrong till now.)
+
+2. After BigIP sends an &quot;Encrypted Alert&quot;
+
+- Bigd will not wait for the alert from the other side. ( All the following packets from server side are ignored, including Alert and ACKs.. This is WRONG, <a href="https://cdn.f5.com/product/bugtracker/ID1059245.html" target="_blank">ID1059245</a> is filed.)
+- The second FIN is ACKed (Quick ack mode activated by upper protocol layer).
+- Bigd sends its own FIN after 1 second.
+
+3. This behavior is to prevent the case that Server side does NOT send &quot;Encrypted Alert&quot; and cause monitor connections hanging for a long time till an idle timeout.
+
+   While it causes retransmissions when Encrypted Alert was sent in an other packet.
+</pre>
+
+<p><span class="sectiontitle">Impact</span></p>
+
+<pre>
+Additional re-transmission is seen during connection closure. This has no major impact on the probe processing.
+</pre>
+
+<pre>
+This is not compatible with TLS 1.3 half-close. </pre>
+
+<pre>
+<span class="sectiontitle">Workaround</span>
+
+Consider switching to in-tmm monitors.
+More info about in-tmm monitor <a href="https://my.f5.com/manage/s/article/K11323537" target="_self">K11323537: Configuring In-TMM monitoring</a>
+</pre>
+</article>
+</body>
+</html>

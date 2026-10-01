@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K43193482: Configure BIG-IP APM Kerberos SSO for multiple KDCs for highest performance</title>
+<meta name="description" content="Knowledge: Configure BIG-IP APM Kerberos SSO for multiple KDCs for highest performance — You want to configure Kerberos SSO on the BIG-IP APM system so that the system can use multiple key distribution centers (KDCs) at the same time to provide scalability and better overall performances.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K43193482">
+</head>
+<body>
+<header>
+<h1>K43193482: Configure BIG-IP APM Kerberos SSO for multiple KDCs for highest performance</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2022-03-21</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 16.X.X, 11.2.1, 11.6.5, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 11.5.1, 11.5.0, 11.4.1, 11.4.0, 11.3.0, 11.2.0, 11.1.0, 11.0.0, 10.2.4, 10.2.3, 10.2.2, 10.2.1, 10.2.0, 10.1.0, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 16.1.3, 13.1.3, 16.1.2, 13.1.1, 16.1.1, 13.1.0, 16.1.0, 13.0.1, 16.0.1, 13.0.0, 16.0.0, 12.1.6, 15.1.8, 12.1.5, 15.1.7, 12.1.4, 15.1.6, 12.1.3, 15.1.5, 12.1.2, 15.1.4, 12.1.1, 15.1.3, 12.1.0, 15.1.2, 12.0.0, 15.1.1, 13.X.X, 12.X.X, 11.X.X, 10.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 11.6.X, 11.5.X, 11.4.X, 11.3.X, 11.2.X, 11.1.X, 11.0.X, 10.2.X, 10.1.X, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.X.X, 15.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K43193482">https://my.f5.com/manage/s/article/K43193482</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>You should consider using this procedure under the following condition:</p>
+
+<ul><li>You want to configure Kerberos SSO on the BIG-IP APM system so that the system can use multiple key distribution centers (KDCs) at the same time to provide scalability and better overall performances.</li></ul>
+<h3>Description</h3><p>By default, there are several ways to define which KDC servers a Kerberos SSO profile is going to use. The following lists all the current available options:</p>
+
+<ul><li>If a KDC entry (IP or FQDN) is provided in the Kerberos SSO profile then the profile uses this server.</li><li>If no KDC entry is provided in the Kerberos SSO profile, then there are few possibilities:
+	<ul><li>if there is a KDC entry in the appropriate realm defined in the <strong>/etc/krb5.conf</strong> file, then the profile uses that KDC server.</li><li>if there are multiple KDC entries in the appropriate realm defined in the <strong>/etc/krb5.conf</strong> file, then the profile only uses the first entry. It uses the second entry only when the first one becomes unavailable. The profile uses the third one (if any exists) only when the first two KDC servers become unavailable, and so on. This is similar to a high availability (HA) mode.</li><li>if there is no KDC entry in the appropriate realm defined in the <strong>/etc/krb5.conf</strong> file and <strong>dns_lookup_kdc</strong> is set to false, then no KDC servers is usable</li><li>if there is no KDC entry in the appropriate realm defined in the <strong>/etc/krb5.conf</strong> file and <strong>dns_lookup_kdc</strong> is set to true, then the BIG-IP system sends DNS SRV queries (<strong>_kerberos._udp/tcp.&lt;DOMAIN&gt;</strong>) to fetch the responsible KDCs for a given realm. The profile uses only the first KDC of the retrieved list. The profile uses the second entry (if any exists) only when the first one becomes unavailable. The profile uses the third one (if any exists) only when the first two KDC servers become unavailable, and so on. This is similar to HA mode.</li></ul>
+	</li></ul>
+
+<p>With all these options, only a single KDC at a time is involved, which can be limiting in large environments with high-authentication rate.</p>
+
+<p>In order to use multiple KDC servers at the same time, you can leverage intermediate Kerberos virtual servers that balance the load between selected servers from a pool.</p>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet the following prerequisite to use this procedure:</p>
+
+<ul><li>You have administrative access to the Configuration utility.</li><li>You have a Kerberos realm that contains multiple KDCs.</li><li>You are running a BIG-IP APM system that is configured to delegate to a Kerberos realm.</li><li>You have Advanced Shell (<strong>bash</strong>) access to the BIG-IP system.</li><li>You understand how to use a <strong>vi</strong> text editor.</li></ul>
+
+<p><span class="sectiontitle">Procedures</span></p>
+
+<p>The following procedures show you how to configure BIG-IP APM to get the best performances when using Kerberos SSO and you want to load balance to multiple KDC servers.</p>
+
+<p>Perform one of the following procedures depending on whether you have a single domain or multi domain in your environment:</p>
+
+<ul><li><a href="#single" target="_self">Single-domain scenario</a>
+
+	<ul><li><a href="#single1" target="_self">Create a Kerberos SSO profile</a></li><li><a href="#single2" target="_self">Create a node for each and every participating KDC</a></li><li><a href="#single3" target="_self">Create a pool to include the relevant KDC servers</a></li><li><a href="#single4" target="_self">Create a TCP virtual server listening on port 88</a></li><li><a href="#single5" target="_self">Create a UDP virtual server listening on port 88</a></li></ul>
+	</li><li><a href="#multi" target="_self">Multiple-domain scenario</a>
+	<ul><li><a href="#multi1" target="_self">Create a Kerberos SSO profile</a></li><li><a href="#multi2" target="_self">Configure /etc/krb5.conf</a></li><li><a href="#multi3" target="_self">Create a node for each and every participating KDC</a></li><li><a href="#multi4" target="_self">Create a pool per domain to include the relevant KDC servers</a></li><li><a href="#multi5" target="_self">Create a TCP virtual server listening on port 88 for each domain</a></li><li><a href="#multi6" target="_self">Create a UDP virtual server listening on port 88 for each domain</a></li></ul>
+	</li></ul>
+
+<p><span class="subsectiontitle"><a id="single" name="single"></a>Single-domain scenario</span></p>
+In this scenario, authenticated users are located within a single domain, <strong>domain.com</strong> which is handled by 2 domain controllers:
+
+<ul><li>dc1.domain.com: 10.0.0.1</li><li>dc2.domain.com: 10.0.0.2</li></ul>
+<span class="subsubsectiontitle"><a id="single1" name="single1"></a>Create a Kerberos SSO profile</span>
+
+<p>In this procedure, you create a Kerberos SSO profile using the following example configuration:</p>
+
+<div><span class="example2">apm sso kerberos /Common/SSO_KERBEROS {</span></div>
+
+<div><span class="example2">    account-name host/account.domain.com</span></div>
+
+<div><span class="example2">    account-password $M$dh$ijqYgSKdtZAuvsGQZwCVKdwxb/5DmFDAjiYxCHVWi1Y=</span></div>
+
+<div><span class="example2">    kdc 192.168.1.1</span></div>
+
+<div><span class="example2">    realm DOMAIN.COM</span></div>
+
+<div><span class="example2">}</span></div>
+
+<p>For this profile, the only difference from the usual configuration is that a fictitious IP address is used in the <strong>KDC </strong>field. That IP address is a virtual server IP address that will be created later in this procedure. </p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Go to <strong>Access </strong>&gt;<strong> Single Sign-On </strong>&gt;<strong> Kerberos</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong>, enter the name of the SSO profile. For example:
+	<p><span class="example2">SSO_KERBEROS</span></p>
+	</li><li>For <strong>Kerberos Realm</strong>, enter the name of the Kerberos realm. For example:
+	<p><span class="example2">DOMAIN.COM</span></p>
+	</li><li>For <strong>KDC</strong>, enter an IP address that will be a virtual server IP address. This is only known to the BIG-IP system so think of it as a fictitious IP. For example:
+	<p><span class="example2">192.168.1.1</span></p>
+	</li><li>For <strong>Account Name</strong>, enter the name of the delegation account created on your Active Directory. For example:
+	<p><span class="example2">host/account.domain.com</span></p>
+	</li><li>For <strong>Account Password</strong> and <strong>Confirm Account Password</strong>, enter the password of that delegation account.</li><li>Select <strong>Finished</strong>.</li></ol>
+<span class="subsubsectiontitle"><a id="single2" name="single2"></a>Create a node for each and every participating KDC</span>
+
+<p>In this procedure you create a node for each and every KDC that you want to use in the Kerberos SSO setup as follows:</p>
+
+<div><span class="example2">ltm node /Common/10.0.0.1 {</span></div>
+
+<div><span class="example2">    address 10.0.0.1</span></div>
+
+<div><span class="example2">}</span></div>
+
+<div><span class="example2">ltm node /Common/10.0.0.2 {</span></div>
+
+<div><span class="example2">    address 10.0.0.2</span></div>
+
+<div><span class="example2">}</span></div>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Go to <strong>Local Traffic </strong>&gt;<strong> Nodes </strong>&gt;<strong> Node List</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong>, enter the name of the KDC you want to add. For example:
+	<p><span class="example2">10.0.0.1</span></p>
+	</li><li>For <strong>Address</strong>, enter the IP address of the KDC you want to add. For example:
+	<p><span class="example2">10.0.0.1</span></p>
+	</li><li>Select <strong>Finished</strong>.</li><li>To add more KDC servers, repeat steps 3-6. In this example, add <strong>10.0.0.2</strong>.</li></ol>
+
+<p><span class="subsubsectiontitle"><a id="single3" name="single3"></a>Create a pool to include the relevant KDC servers</span></p>
+
+<p>In this procedure you create a pool in which you add each and every node representing the KDC servers to use in the Kerberos SSO setup as follows:</p>
+
+<div><span class="example2">ltm pool /Common/P_kdc_servers_domain_com {</span></div>
+
+<div><span class="example2">    members {</span></div>
+
+<div><span class="example2">        /Common/10.0.0.1:0 {</span></div>
+
+<div><span class="example2">            address 10.0.0.1</span></div>
+
+<div><span class="example2">        }</span></div>
+
+<div><span class="example2">        /Common/10.0.0.2:0 {</span></div>
+
+<div><span class="example2">            address 10.0.0.2</span></div>
+
+<div><span class="example2">        }</span></div>
+
+<div><span class="example2">    }</span></div>
+
+<div><span class="example2">}</span></div>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Go to <strong>Local Traffic </strong>&gt;<strong> Pools </strong>&gt;<strong> Pool List</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong>, enter the name of the pool you want to add. For example:
+	<p><span class="example2">P_kdc_servers_domain_com</span></p>
+	</li><li>Select an appropriate health monitor.</li><li>For <strong>New Members</strong>, select <strong>Node List</strong>.</li><li>For <strong>Address</strong>, select one of the nodes created in the previous procedure. For example:
+	<p><span class="example2">10.0.0.1</span></p>
+	</li><li>For <strong>Service Port</strong>, select <strong>Select</strong> and select <strong>* All Services</strong>.</li><li>Select <strong>Add</strong>.</li><li>Add every node that needs to be added to the pool. In this example, repeat steps 7-9 for <strong>10.0.0.2</strong>.</li><li>Select <strong>Finished</strong>.</li></ol>
+
+<p><span class="subsubsectiontitle"><a id="single4" name="single4"></a>Create a TCP virtual server listening on port 88</span></p>
+
+<p>In this procedure you create a Performance (Layer 4) TCP virtual server listening on the IP address used in the Kerberos SSO profile with the following example configuration:</p>
+
+<div><span class="example2">ltm virtual /Common/vs_kerberos_sso_tcp_domain_com {</span></div>
+
+<div><span class="example2">    destination /Common/192.168.1.1:88</span></div>
+
+<div><span class="example2">    ip-protocol tcp</span></div>
+
+<div><span class="example2">    mask 255.255.255.255</span></div>
+
+<div><span class="example2">    pool /Common/P_kdc_servers_domain_com</span></div>
+
+<div><span class="example2">    profiles {</span></div>
+
+<div><span class="example2">        /Common/fastL4 { }</span></div>
+
+<div><span class="example2">    }</span></div>
+
+<div><span class="example2">    source 0.0.0.0/0</span></div>
+
+<div><span class="example2">    source-address-translation {</span></div>
+
+<div><span class="example2">        type automap</span></div>
+
+<div><span class="example2">    }</span></div>
+
+<div><span class="example2">    translate-address enabled</span></div>
+
+<div><span class="example2">    translate-port enabled</span></div>
+
+<div><span class="example2">}</span></div>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Go to <strong>Local Traffic </strong>&gt;<strong> Virtual Servers</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong>, enter the name of the virtual server you want to add. For example:
+	<p><span class="example2">vs_kerberos_sso_tcp_domain_com</span></p>
+	</li><li>For <strong>Type</strong>, select <strong>Performance (Layer 4)</strong>.</li><li>For <strong>Destination Address/Mask</strong>, enter the IP address of the fictitious KDC IP used in the Kerberos SSO profile for domain <strong>domain.com</strong>. For example:
+	<p><span class="example2">192.168.1.1</span></p>
+	</li><li>For <strong>Service Port</strong>, enter <strong>88</strong>.</li><li>For <strong>Source Address Translation</strong>, select <strong>Auto Map</strong>.</li><li>For <strong>Default Pool</strong>, select the pool that you created previously. For example:
+	<p><span class="example2">P_kdc_servers_domain_com</span></p>
+	</li><li>Select <strong>Finished</strong>.</li></ol>
+
+<p><span class="subsubsectiontitle"><a id="single5" name="single5"></a>Create a UDP virtual server listening on port 88</span></p>
+
+<p>In this procedure you create a Performance (Layer 4) UDP virtual server listening on the IP address used in the Kerberos SSO profile, with the following example configuration:</p>
+
+<div><span class="example2">ltm virtual /Common/vs_kerberos_sso_udp_domain_com {</span></div>
+
+<div><span class="example2">    destination /Common/192.168.1.1:88</span></div>
+
+<div><span class="example2">    ip-protocol udp</span></div>
+
+<div><span class="example2">    mask 255.255.255.255</span></div>
+
+<div><span class="example2">    pool /Common/P_kdc_servers_domain_com</span></div>
+
+<div><span class="example2">    profiles {</span></div>
+
+<div><span class="example2">        /Common/fastL4 { }</span></div>
+
+<div><span class="example2">    }</span></div>
+
+<div><span class="example2">    source 0.0.0.0/0</span></div>
+
+<div><span class="example2">    source-address-translation {</span></div>
+
+<div><span class="example2">        type automap</span></div>
+
+<div><span class="example2">    }</span></div>
+
+<div><span class="example2">    translate-address enabled</span></div>
+
+<div><span class="example2">    translate-port enabled</span></div>
+
+<div><span class="example2">}</span></div>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Go to <strong>Local Traffic </strong>&gt;<strong> Virtual Servers</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong>, enter the name of the virtual server you want to add. For example:
+	<p><span class="example2">vs_kerberos_sso_udp_domain_com</span></p>
+	</li><li>For <strong>Type</strong>, select <strong>Performance (Layer 4)</strong>.</li><li>For <strong>Destination Address/Mask</strong>, enter the IP address of the fictitious KDC IP used in the Kerberos SSO profile for domain DOMAIN.COM For example:
+	<p><span class="example2">192.168.1.1</span></p>
+	</li><li>For <strong>Service Port</strong>, enter <strong>88</strong>.</li><li>For <strong>Protocol</strong>, select  <strong>UDP</strong>.</li><li>For <strong>Source Address Translation</strong>, select <strong>Auto Map</strong>.</li><li>For <strong>Default Pool</strong>, select the pool that you created previously. For example:
+	<p><span class="example2">P_kdc_servers_domain_com</span></p>
+	</li><li>Select <strong>Finished</strong>.</li></ol>
+
+<p><span class="subsectiontitle"><a id="multi" name="multi"></a>Multiple-domain scenario</span></p>
+
+<p>In a multiple-domain scenario, unauthenticated users are coming from two different domains, <strong>domain.com</strong> and <strong>otherdomain.com</strong>, which are handled by the same realm. Each of these domains are handled by different domain controllers:</p>
+
+<ul><li><strong>domain.com</strong>
+
+	<ul><li>dc1.domain.com: 10.0.0.1</li><li>dc2.domain.com: 10.0.0.2</li></ul>
+	</li><li><strong>otherdomain.com</strong>
+	<ul><li>dc1.otherdomain.com: 10.10.10.1</li><li>dc2.otherdomain.com: 10.10.10.2</li></ul>
+	</li></ul>
+
+<p>This scenario is similar to the previous one in terms of configuration. The main difference is that there is one fictitious IP per referenced domain. Also these fictitious IPs are referenced under <strong>/etc/krb5.conf</strong> instead of the Kerberos SSO profile.</p>
+
+<p><span class="subsubsectiontitle"><a id="multi1" name="multi1"></a>Create a Kerberos SSO profile</span></p>
+
+<p>In this procedure, you create the following Kerberos SSO profile:</p>
+
+<div><span class="example2">apm sso kerberos /Common/SSO_KERBEROS {</span></div>
+
+<div><span class="example2">    account-name host/account.domain.com</span></div>
+
+<div><span class="example2">    account-password xxxxxxxxxxKdtZAuvsGQZwCVKdwxb/5DmFDAjiyyyyyyy</span></div>
+
+<div><span class="example2">    realm DOMAIN.COM</span></div>
+
+<div><span class="example2">}</span></div>
+
+<p>For this profile, the only difference from the usual configuration is that no KDCs is mentioned. This makes BIG-IP APM system look at the <strong>/etc/krb5.conf</strong> file to search for KDCs.</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Go to <strong>Access </strong>&gt;<strong> Single Sign-On </strong>&gt;<strong> Kerberos</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong>, enter the name of the SSO profile. For example:
+	<p><span class="example2">SSO_KERBEROS</span></p>
+	</li><li>For <strong>Kerberos Realm</strong>, enter the name of the Kerberos realm. For example:
+	<p><span class="example2">DOMAIN.COM</span></p>
+	</li><li>For <strong>Account Name</strong>, enter the name of the delegation account created on your Active Directory. For example:
+	<p><span class="example2">host/account.domain.com</span></p>
+	</li><li>For <strong>Account Password</strong> and <strong>Confirm Account Password</strong>, enter the password of that delegation account.</li><li>Select <strong>Finished</strong>.</li></ol>
+
+<p><span class="subsubsectiontitle"><a id="multi2" name="multi2"></a>Configure /etc/krb5.conf</span></p>
+
+<p>For this procedure, the goal is to reference a fictitious IP address for each and every domain participating in the Kerberos SSO environment. You configure the <strong>/etc/krb5.conf</strong> file as follows:</p>
+
+<div><span class="example2">[libdefaults]</span></div>
+
+<div> </div>
+
+<div><span class="example2"> default_realm = EXAMPLE.COM</span></div>
+
+<div><span class="example2">#F5mod</span></div>
+
+<div><span class="example2"> dns_lookup_realm = true</span></div>
+
+<div><span class="example2"> dns_lookup_kdc = true</span></div>
+
+<div><span class="example2"> udp_preference_limit = 1</span></div>
+
+<div><span class="example2"> ticket_lifetime = 24h</span></div>
+
+<div><span class="example2"> renew_lifetime = 7d</span></div>
+
+<div><span class="example2"> forwardable = true</span></div>
+
+<div> </div>
+
+<div><span class="example2">[realms]</span></div>
+
+<div><span class="example2"> DOMAIN.COM = {</span></div>
+
+<div><span class="example2">   kdc = 192.168.1.1</span></div>
+
+<div><span class="example2"> }</span></div>
+
+<div><span class="example2"> OTHERDOMAIN.COM = {</span></div>
+
+<div><span class="example2">   kdc = 192.168.1.2</span></div>
+
+<div><span class="example2"> }</span></div>
+
+<div> </div>
+
+<div><span class="example2">[domain_realm]</span></div>
+
+<div><span class="example2">[...]</span></div>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: </span><span class="impact">Incorrectly editing the <strong>krb5.conf</strong> file may prevent the Kerberos daemon from loading and cause the Kerberos authentication to fail. This change does not synchronize across clusters.</span></p>
+
+<ol><li>Log in to the BIG-IP command line interface.</li><li>Create a backup of the <strong>/etc/krb5.conf </strong>file by entering the following command:
+	<p><span class="code">cp /etc/krb5.conf /etc/krb5.conf.multi</span></p>
+	</li><li>Using the <strong>vi</strong> text editor, open the <strong>/etc/krb5.conf</strong> file by entering the following command:
+	<p><span class="code">vi /etc/krb5.conf</span></p>
+	</li><li>Under the <strong>[realms]</strong> section, all participating domains must be defined. For each domain, the <strong>kdc </strong>entry must point to a virtual server IP address that are responsible for load-balancing the Kerberos requests to the KDC servers serving a given domain. The following example shows a working configuration to use both <strong>domain.com</strong> and <strong>otherdomain.com</strong>. In your example, you add <strong>192.168.1.1</strong> in the <strong>kdc </strong>entry for <strong>domain.com</strong> and 192.168.1.2 in the <strong>kdc</strong> entry for <strong>otherdomain.com</strong>. These two IP addresses represent the virtual server IP addresses for each domain that are created in the subsequent procedures:
+	<p><span class="example2">[realms]<br>	 DOMAIN.COM= {<br>	  kdc = 192.168.1.1<br>	 }</span></p>
+	<span class="example2"> OTHERDOMAIN.COM= {<br>	  kdc = 192.168.1.2<br>	 }</span></li><li>Save the file and exit <strong>vi </strong></li></ol>
+
+<p><span class="subsubsectiontitle"><a id="multi3" name="multi3"></a>Create a node for each and every participating KDC</span></p>
+
+<p>In this procedure you create a node for each and every KDC for each and every domain that you want to use in the Kerberos SSO setup with the following example:</p>
+
+<div><span class="example2">ltm node /Common/10.0.0.1 {</span></div>
+
+<div><span class="example2">    address 10.0.0.1</span></div>
+
+<div><span class="example2">}</span></div>
+
+<div><span class="example2">ltm node /Common/10.0.0.2 {</span></div>
+
+<div><span class="example2">    address 10.0.0.2</span></div>
+
+<div><span class="example2">}</span></div>
+
+<div><span class="example2">ltm node /Common/10.10.10.1 {</span></div>
+
+<div><span class="example2">    address 10.10.10.1</span></div>
+
+<div><span class="example2">}</span></div>
+
+<div><span class="example2">ltm node /Common/10.10.10.2 {</span></div>
+
+<div><span class="example2">    address 10.10.10.2</span></div>
+
+<div><span class="example2">}</span></div>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Go to <strong>Local Traffic </strong>&gt;<strong> Nodes </strong>&gt;<strong> Node List</strong>.</li><li>Select <strong>Create</strong></li><li>For <strong>Name</strong>, enter the name of the KDC you want to add. For example:
+	<p><span class="example2">10.0.0.1</span></p>
+	</li><li>For <strong>Address</strong>, enter the IP address of the KDC you want to add. For example:
+	<p><span class="example2">10.0.0.1</span></p>
+	</li><li>Select <strong>Finished</strong>.</li><li>Repeat steps 3-6 for the remaining nodes in <strong>domain.com</strong> and <strong>otherdomain.com</strong>. In this example, repeat the steps using <strong>10.0.0.2</strong>,<strong> 10.10.10.1</strong>,<strong> 10.10.10.2</strong>.</li></ol>
+
+<p><span class="subsubsectiontitle"><a id="multi4" name="multi4"></a>Create a pool per domain to include the relevant KDC servers</span></p>
+
+<p>In this procedure you create a pool for each and every domain in which you will add each and every node representing the KDC servers to use in the Kerberos SSO setup:</p>
+
+<div><span class="example2">ltm pool /Common/P_kdc_servers_domain_com {</span></div>
+
+<div><span class="example2">    members {</span></div>
+
+<div><span class="example2">        /Common/10.0.0.1:0 {</span></div>
+
+<div><span class="example2">            address 10.0.0.1</span></div>
+
+<div><span class="example2">        }</span></div>
+
+<div><span class="example2">        /Common/10.0.0.2:0 {</span></div>
+
+<div><span class="example2">            address 10.0.0.2</span></div>
+
+<div><span class="example2">        }</span></div>
+
+<div><span class="example2">    }</span></div>
+
+<div><span class="example2">}</span></div>
+
+<div><span class="example2">ltm pool /Common/P_kdc_servers_otherdomain_com {</span></div>
+
+<div><span class="example2">    members {</span></div>
+
+<div><span class="example2">        /Common/10.10.10.1:0 {</span></div>
+
+<div><span class="example2">            address 10.10.10.1</span></div>
+
+<div><span class="example2">        }</span></div>
+
+<div><span class="example2">        /Common/10.10.10.2:0 {</span></div>
+
+<div><span class="example2">            address 10.10.10.2</span></div>
+
+<div><span class="example2">        }</span></div>
+
+<div><span class="example2">    }</span></div>
+
+<div><span class="example2">}</span></div>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Go to <strong>Local Traffic </strong>&gt;<strong> Pools </strong>&gt;<strong> Pool List</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong>, enter the name of the pool you want to add. For example:
+	<p><span class="example2">P_kdc_servers_domain_com</span></p>
+	</li><li>For <strong>New Members</strong>, select <strong>Node List</strong>.</li><li>For <strong>Address</strong>, select one of the nodes that you just created. For example:
+	<p><span class="example2">10.0.0.1</span></p>
+	</li><li>For <strong>Service Port</strong>, select <strong>Select</strong> and pick <strong>* All Services</strong>. then select <strong>Add</strong>.</li><li>Repeat steps 6-7 for each and every node that needs to be added to the pool. In this example, you do so using <strong>10.0.0.2</strong>.</li><li>Select <strong>Finished</strong>.</li><li>Repeat step 3-9 to create another <strong>pool P_kdc_servers_otherdomain_com</strong> using nodes <strong>10.10.10.1</strong> and <strong>10.10.10.2</strong>.</li></ol>
+
+<p><span class="subsubsectiontitle"><a id="multi5" name="multi5"></a>Create a TCP virtual server listening on port 88 for each domain</span></p>
+
+<p>In this procedure you create a Performance (Layer 4) TCP virtual server listening on the IP address used in the Kerberos SSO profile as follows:</p>
+
+<div><span class="example2">ltm virtual /Common/vs_kerberos_sso_tcp_domain_com {</span></div>
+
+<div><span class="example2">    destination /Common/192.168.1.1:88</span></div>
+
+<div><span class="example2">    ip-protocol tcp</span></div>
+
+<div><span class="example2">    mask 255.255.255.255</span></div>
+
+<div><span class="example2">    pool /Common/P_kdc_servers_domain_com</span></div>
+
+<div><span class="example2">    profiles {</span></div>
+
+<div><span class="example2">        /Common/fastL4 { }</span></div>
+
+<div><span class="example2">    }</span></div>
+
+<div><span class="example2">    source 0.0.0.0/0</span></div>
+
+<div><span class="example2">    source-address-translation {</span></div>
+
+<div><span class="example2">        type automap</span></div>
+
+<div><span class="example2">    }</span></div>
+
+<div><span class="example2">    translate-address enabled</span></div>
+
+<div><span class="example2">    translate-port enabled</span></div>
+
+<div><span class="example2">}</span></div>
+
+<div><span class="example2">ltm virtual /Common/vs_kerberos_sso_tcp_anotherdomain_com {</span></div>
+
+<div><span class="example2">    destination /Common/192.168.1.2:88</span></div>
+
+<div><span class="example2">    ip-protocol tcp</span></div>
+
+<div><span class="example2">    mask 255.255.255.255</span></div>
+
+<div><span class="example2">    pool /Common/P_kdc_servers_anotherdomain_com</span></div>
+
+<div><span class="example2">    profiles {</span></div>
+
+<div><span class="example2">        /Common/fastL4 { }</span></div>
+
+<div><span class="example2">    }</span></div>
+
+<div><span class="example2">    source 0.0.0.0/0</span></div>
+
+<div><span class="example2">    source-address-translation {</span></div>
+
+<div><span class="example2">        type automap</span></div>
+
+<div><span class="example2">    }</span></div>
+
+<div><span class="example2">    translate-address enabled</span></div>
+
+<div><span class="example2">    translate-port enabled</span></div>
+
+<div><span class="example2">}</span><br><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></div>
+
+<ol><li>Log in to the Configuration utility.</li><li>Go to <strong>Local Traffic </strong>&gt;<strong> Virtual Servers</strong>.</li><li>Select <strong>Create</strong>.</li><li>For <strong>Name</strong>, enter the name of the virtual server you want to add. For example:
+	<p><span class="example2">vs_kerberos_sso_tcp_domain_com</span></p>
+	</li><li>For <strong>Type</strong>, select <strong>Performance (Layer 4)</strong>.</li><li>For <strong>Destination Address/Mask</strong>, enter the IP address of the fictitious KDC IP address used in the Kerberos SSO profile for domain <strong>domain.com</strong>. For example:
+	<p><span class="example2">192.168.1.1</span></p>
+	</li><li>For <strong>Service Port</strong>, enter <strong>88</strong>.</li><li>For <strong>Source Address Translation</strong>, select <strong>Auto Map</strong>.</li><li>For <strong>Default Pool</strong>, select the pool that you created previously. For example:
+	<p><span class="example2">P_kdc_servers_domain_com</span></p>
+	</li><li>Select <strong>Repeat</strong>.</li><li>Repeat steps 4. to 9. To create another virtual server <strong>vs_kerberos_sso_tcp_anotherdomain_com</strong> for domain <strong>anotherdomain.com</strong> using <strong>192.168.1.2</strong> and pool <strong>P_kdc_servers_anotherdomain_com.</strong></li><li>Select <strong>Finished.</strong></li></ol>
+
+<p><span class="subsubsectiontitle"><a id="multi6" name="multi6"></a>Create a UDP virtual server listening on port 88 for each domain</span></p>
+
+<p>In this procedure you create a Performance (Layer 4) UDP virtual server listening on the IP address used in the Kerberos SSO profile as follows:</p>
+
+<div><span class="example2">ltm virtual /Common/vs_kerberos_sso_udp_domain_com {</span></div>
+
+<div><span class="example2">    destination /Common/192.168.1.1:88</span></div>
+
+<div><span class="example2">    ip-protocol udp</span></div>
+
+<div><span class="example2">    mask 255.255.255.255</span></div>
+
+<div><span class="example2">    pool /Common/P_kdc_servers_domain_com</span></div>
+
+<div><span class="example2">    profiles {</span></div>
+
+<div><span class="example2">        /Common/fastL4 { }</span></div>
+
+<div><span class="example2">    }</span></div>
+
+<div><span class="example2">    source 0.0.0.0/0</span></div>
+
+<div><span class="example2">    source-address-translation {</span></div>
+
+<div><span class="example2">        type automap</span></div>
+
+<div><span class="example2">    }</span></div>
+
+<div><span class="example2">    translate-address enabled</span></div>
+
+<div><span class="example2">    translate-port enabled</span></div>
+
+<div><span class="example2">}</span></div>
+
+<div><span class="example2">ltm virtual /Common/vs_kerberos_sso_udp_anotherdomain_com {</span></div>
+
+<div><span class="example2">    destination /Common/192.168.1.2:88</span></div>
+
+<div><span class="example2">    ip-protocol udp</span></div>
+
+<div><span class="example2">    mask 255.255.255.255</span></div>
+
+<div><span class="example2">    pool /Common/P_kdc_servers_anotherdomain_com</span></div>
+
+<div><span class="example2">    profiles {</span></div>
+
+<div><span class="example2">        /Common/fastL4 { }</span></div>
+
+<div><span class="example2">    }</span></div>
+
+<div><span class="example2">    source 0.0.0.0/0</span></div>
+
+<div><span class="example2">    source-address-translation {</span></div>
+
+<div><span class="example2">        type automap</span></div>
+
+<div><span class="example2">    }</span></div>
+
+<div><span class="example2">    translate-address enabled</span></div>
+
+<div><span class="example2">    translate-port enabled</span></div>
+
+<div><span class="example2">}</span></div>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Go to <strong>Local Traffic </strong>&gt;<strong> Virtual Servers.</strong></li><li>Select <strong>Create.</strong></li><li>For <strong>Name</strong>, enter the name of the virtual server you want to add. For example:
+	<p><span class="example2">vs_kerberos_sso_udp_domain_com</span></p>
+	</li><li>For <strong>Type</strong>, select <strong>Performance (Layer 4)</strong>.</li><li>For <strong>Destination Address/Mask</strong>, enter the IP address of the fictitious KDC IP address used in the Kerberos SSO profile for domain <strong>domain.com</strong>. For example:
+	<p><span class="example2">192.168.1.1</span></p>
+	</li><li>For <strong>Service Port</strong>, enter <strong>88</strong>.</li><li>For <strong>Protocol</strong>, select  <strong>UDP</strong>.</li><li>For <strong>Source Address Translation</strong>, select <strong>Auto Map</strong>.</li><li>For <strong>Default Pool</strong>, select the pool that you created previously.  For example:
+	<p><span class="example2">P_kdc_servers_domain_com</span></p>
+	</li><li>Select <strong>Repeat</strong>.</li><li>Repeat steps 4-9 to create another virtual server <strong>vs_kerberos_sso_udp_anotherdomain_com</strong> for domain <strong>anotherdomain.com</strong> using <strong>192.168.1.2</strong> and pool <strong>P_kdc_servers_anotherdomain_com</strong>.</li><li>Select <strong>Finished</strong>.</li></ol>
+
+<div class="code">
+<div>
+<div> </div>
+</div>
+</div>
+<span class="sectiontitle">Additional configuration considerations</span>
+
+<p>Using the mentioned configuration with load-balancing mechanism will help deal with Kerberos SSO deployed in a large environment.</p>
+
+<p>In addition, consider the following additional configuration changes that will help achieve better performances:</p>
+
+<ul><li>Use a shared SPN instead of a different SPN per web server (that keeps the size of the Kerberos cache smaller).</li><li>Define the SPN value in the Kerberos SSO profile to prevent DNS lookups (which happen when <strong>SPN </strong>is empty), or configure the BIG-IP system hosts file to provide the SPN value for each and every web server IP address.</li><li>Consider that Kerberos UDP traffic can be totally removed by disabling the Kerberos UDP virtual servers (<strong>vs_kerberos_sso_udp_domain_com</strong> and <strong>_kerberos_sso_udp_anotherdomain_com</strong>).</li></ul>
+</article>
+</body>
+</html>

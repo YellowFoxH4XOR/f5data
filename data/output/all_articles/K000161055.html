@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161055: Istio-proxy isn&#x27;t coming up on app pod seeing LDS ACK ERROR</title>
+<meta name="description" content="Support Solution: Istio-proxy isn&#x27;t coming up on app pod seeing LDS ACK ERROR — In Aspen Mesh 1.14.x, application pods with injected istio-proxy sidecars may fail readiness or enter CrashLoopBackOff when an EnvoyFilter configures access log formats containing…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161055">
+</head>
+<body>
+<header>
+<h1>K000161055: Istio-proxy isn&#x27;t coming up on app pod seeing LDS ACK ERROR</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-21</dd>
+<dt>Updated</dt><dd>2026-06-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh: 1.18, 1.14, 1.21</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161055">https://my.f5.com/manage/s/article/K000161055</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>In Aspen Mesh 1.14.x, application pods with injected istio-proxy sidecars may fail readiness or enter CrashLoopBackOff when an EnvoyFilter configures access log formats containing %COMMON_DURATION(...)%. Sidecar and istiod logs can show LDS ACK errors such as: <em>&quot;<strong>Error adding/updating listener(s) ... Not supported field in StreamInfo: COMMON_DURATION</strong></em>&quot;. This can prevent Envoy listeners from loading and keep the sidecar from becoming ready.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>2026-04-27T21:41:43.338260Z  warn ads  ADS:LDS: ACK ERROR pod_name.namespace Internal:Error adding/updating listener(s) 0.0.0.0_15014: Not supported field in StreamInfo: COMMON_DURATION</code></pre>
+<h2>Environment</h2>
+<ul><li style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;"><span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;">Aspen Mesh 1.14.x</span></li><li style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;"><span style="font-family: -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, Helvetica, Arial, sans-serif, &#39;Apple Color Emoji&#39;, &#39;Segoe UI Emoji&#39;, &#39;Segoe UI Symbol&#39;;">Istio-proxy (Envoy) 1.22</span></li></ul>
+<h2>Cause</h2>
+<p>Unsupported Envoy access-log format configuration in customer EnvoyFilters used %COMMON_DURATION(...), but Aspen Mesh 1.14 ships Envoy 1.22 where that StreamInfo field is not available. As a result, Envoy rejected listener configuration with &quot;Not supported field in StreamInfo: COMMON_DURATION&quot;, causing the istio-proxy sidecar to fail readiness/startup.<br>So, %COMMON_DURATION(...)% is not available for the Envoy release you have installed on Aspen Mesh.<br>%COMMON_DURATION(...)% was introduced in Envoy 1.30 and is not supported by the Envoy 1.22 version used by Aspen Mesh 1.14.x</p>
+<h2>Answer/Recommended Actions</h2>
+<ul><li>Review failing istio-proxy logs for LDS rejection or ACK errors similar to:</li></ul>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ADS:LDS: ACK ERROR ... Internal:Error adding/updating listener(s) ... Not supported field in StreamInfo: COMMON_DURATION
+warning envoy config gRPC config for type.googleapis.com/envoy.config.listener.v3.Listener rejected: Error adding/updating listener(s) ... Not supported field in StreamInfo: COMMON_DURATION</code></pre>
+<ul><li>Identify EnvoyFilter resources that reference %COMMON_DURATION(...)%. For example:</li></ul>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>oc get envoyfilters.networking.istio.io --all-namespaces
+oc get gateways,virtualservices,destinationrules,envoyfilters --all-namespaces -o yaml | grep COMMON_DURATION
+oc get envoyfilters.networking.istio.io -n &lt;namespace&gt; -o yaml</code></pre>
+<ul><li>Confirm the deployed Aspen Mesh version and corresponding Envoy version. Aspen Mesh 1.14 uses Envoy 1.22, which does not support %COMMON_DURATION(...).</li><li>Back up the affected EnvoyFilter resources before making changes. For example:</li></ul>
+<p><code>oc get envoyfilters.networking.istio.io -n &lt;namespace&gt; &lt;envoyfilter-name&gt; -o yaml &gt; &lt;envoyfilter-name&gt;_backup.yaml</code></p>
+<ul><li>Remove %COMMON_DURATION(...)% from the access log format, or delete the affected EnvoyFilter if it is not required.</li><li>Restart the impacted pod or deployment after updating or deleting the EnvoyFilter, then verify the sidecar becomes ready and the application returns to service.</li><li>If multiple EnvoyFilters were recently added, review all access-log-related filters in the affected namespace for occurrences of %COMMON_DURATION(...)%.</li></ul>
+<h2>Additional Information</h2>
+<p>The issue is configuration-related rather than an Aspen Mesh product defect.</p>
+</article>
+</body>
+</html>

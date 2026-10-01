@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000136905: CPU and Memory tips when automating with REST, Ansible, AppViewX, AS3 and others</title>
+<meta name="description" content="Support Solution: CPU and Memory tips when automating with REST, Ansible, AppViewX, AS3 and others — It is possible to observe resource constraints on a BIG-IP system when it is being managed with automation tasks through either REST, Ansible, AS3, AppViewX or any other automation technologies. This…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000136905">
+</head>
+<body>
+<header>
+<h1>K000136905: CPU and Memory tips when automating with REST, Ansible, AppViewX, AS3 and others</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-09-19</dd>
+<dt>Updated</dt><dd>2026-03-24</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 13.0.0, 13.0.X, 13.0.1, 17.X.X, 16.X.X, 15.X.X, 13.X.X, 14.X.X, 17.1.X, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0, 13.1.X, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0</li><li>BIG-IP DNS: 17.X.X, 16.X.X, 15.X.X, 14.X.X, 13.X.X, 17.1.X, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0, 14.1.X, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.X, 14.0.1, 14.0.0, 13.1.X, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.X, 13.0.1, 13.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000136905">https://my.f5.com/manage/s/article/K000136905</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+
+<p>It is possible to observe resource constraints on a BIG-IP system when it is being managed with automation tasks through either REST, Ansible, AS3, AppViewX or any other automation technologies. This article covers the possible side effects of it and subsequent considerations that can be undertaken to address those issues.</p>
+
+<h2><strong>Environment</strong></h2>
+
+<p>Managing BIG-IP systems with automation tasks via REST, Ansible, AS3, AppViewX and other technologies. </p>
+
+<h2><strong>Cause</strong></h2>
+
+<ul><li><a href="#cpu">CPU utilization</a></li><li><a href="#memory">Memory utilization</a></li></ul>
+
+<p><a id="cpu" name="cpu"></a> <strong>CPU utilization</strong><br>One of the most common scenarios that can lead to icrd_child &amp; mcpd processes enduring high CPU utilization is when they&#39;re inundated by the sheer volume of the API calls that are directed towards the system. In checking the <strong>top -cb</strong> output, you can observe multiple instances of icrd_child process being spawned up by restjavad process (which is the parent process for icrd_child). When multiple instances of icrd_child process exists, that typically indicates that there is high load on the system that cannot be handled by a single icrd_child instance.<br><br>When an API call is issued to the device, the REST framework (restjavad process) spawns up icrd_child process which then subsequently sends a query to mcpd process in order to retrieve the dataset being requested (for e.g. retrieving GTM pool, WideIP, LTM pool or virtual server objects or performing modifications such as enabling/disabling any object&#39;s status). The mcpd process is single-threaded, which results in these API requests queued up as mcpd processes them one request at a time. This can drive up the CPU usage and can contribute to latency issue observed if enormous amount of API calls are issued to the device.<br><br>When restjavad process is busy, it can eventually lead to failures in processing multiple requests and the system returning a HTTP 400 Bad Request status code in response. Certain automation systems can automatically re-issue the request if a 400 Bad Request response is received and that can lead to exacerbating the situation furthermore.<br><br><a id="memory" name="memory"></a> <strong>Memory utilization</strong><br>It is quite possible to see memory constraints with restjavad process if there are enormous amount of API calls issued to the BIG-IP system. If restjavad process itself runs out of all of it&#39;s allocated memory, then it could result in restjavad process being restarted in a frequent manner. It could subsequently lead to the device control plane running out of memory and result in the Linux Kernel invoking the Out of Memory (OOM) killer process in order to reclaim some of the memory back, which could result in a more devastating impact on the system depending on which process is killed by the kernel. Lack of sufficient memory can increase spooling requirements and sometimes affect CPU as well.<br><br>There are options such as increasing allocation for control plane with the <strong>provision.extramb </strong>db variable along with increasing memory allocation for restjavad via <strong>provision.restjavad.extramb</strong> db variable but this may not be a long-term resolution. This is described within the following two articles:</p>
+
+<ul><li><a href="https://my.f5.com/manage/s/article/K26427018" target="_blank">K26427018: Overview of Management provisioning</a> </li><li><a href="https://my.f5.com/manage/s/article/K000092380" target="_blank">K000092380: Restjavad restarting after upgrade with restjavad.useextramb set to true</a></li></ul>
+
+<h2><strong>Recommended Actions</strong></h2>
+
+<p>The recommendation from F5 is to reduce the number of API calls that are issued to the device to prevent icrd_child instances and the single-threaded mcpd process to backup requests, which can lead to latency, drive up CPU utilization and potentially even cause requests to get timed out. To avoid hitting that scenario, reducing the volume of API calls being issued to the device either by increasing the interval time and ensuring the automation system has a proper grace period in-between requests or taking any other necessary measures would help alleviate the control plane pressure being witnessed.</p>
+
+<h2><strong>Additional Information</strong></h2>
+
+<p>It is worth noting that changes to the number of objects configured on the device can play a part in contributing to some of the concerns covered in this article. For example, the impact of repeated API calls, especially when it is issued at a certain interval, goes up when the number of queried object count increases. Multiple concurrent queries for hundreds or even thousands of objects can result in increased latency and resource consumption than when issuing these concurrent queries for tens of object each at a time. Scaling the queries with higher number of objects at a time can result in increased resource consumption and performance degradation. </p>
+</article>
+</body>
+</html>

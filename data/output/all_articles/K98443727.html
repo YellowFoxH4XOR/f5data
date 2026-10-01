@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K98443727: BIG-IP APM Issue with session accessing to a VS working with SAML SSO</title>
+<meta name="description" content="Support Solution: BIG-IP APM Issue with session accessing to a VS working with SAML SSO — You have a multi SSO domain profile. The issue appears when they start a new APM session accessing a VS working with SAML SSO. The authentication on this application works fine but if they open the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K98443727">
+</head>
+<body>
+<header>
+<h1>K98443727: BIG-IP APM Issue with session accessing to a VS working with SAML SSO</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-03-24</dd>
+<dt>Updated</dt><dd>2026-09-25</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 16.X.X, 14.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 15.X.X, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 14.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K98443727">https://my.f5.com/manage/s/article/K98443727</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span><br>You have a multi SSO domain profile. The issue appears when they start a new APM session accessing a VS working with SAML SSO. The authentication on this application works fine but if they open the intranet VS (it has a Form Login SSO) a blank page appears. </p>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>SAML IDP</li><li>BIG-IP APM  </li></ul>
+
+<p><span class="sectiontitle">Cause</span><br>The variable session.server.multidomain_landinguri is set incorrectly causing a series of rewrites.  </p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>If an iRule is needed, then likely you need to create/update a session variable whenever F5Networks-SSO-Resp?SSO_ORIG_URI=*** request is redirected by APM to the former requested URL.<br>Something like this:</p>
+
+<p>Note: This is given as an example. This should be tested before putting in production:</p>
+
+<pre>
+# START
+when HTTP_REQUEST {
+   set need_landing 0
+   if { [HTTP::has_responded] } { return }
+   if { [HTTP::uri] starts_with &quot;/F5Networks-SSO-Resp?SSO_ORIG_URI=&quot; } {
+      #log local0. &quot;URI internal= [HTTP::uri]&quot;
+      set need_landing 1
+   }
+}
+
+when HTTP_RESPONSE_RELEASE {
+   if { [info exists need_landing] &amp;&amp; $need_landing == 1 } {
+      if { [HTTP::status] == &quot;302&quot; &amp;&amp; [HTTP::header exists Location] } {
+         #log local0. &quot;Location: [HTTP::header Location]&quot;
+         set loc [HTTP::header Location]
+         set uri [regsub {https?://[^/]*/} $loc &quot;/&quot;]
+         #log local0. &quot;Location uri part: $uri&quot;
+         # we could modify this existing variable or pick a custom new one and then use it in form based sso profiles
+         ACCESS::session data set session.server.multidomain_landinguri $uri
+      }
+   }
+}
+# END</pre>
+
+<p>Similar iRule would need to be attached to any VS participating in the multidomain SSO configuration AND where form based SSO is making use of session.server.multidomain_landinguri.</p>
+
+<p><span class="sectiontitle">Additional Information</span><br> </p>
+</article>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000159818: High CPU utilization caused by Java. Keep seeing error messages &quot;[GC (Allocation Failure)&quot; in var/log/restjavad-gc.log</title>
+<meta name="description" content="Support Solution: High CPU utilization caused by Java. Keep seeing error messages &quot;[GC (Allocation Failure)&quot; in var/log/restjavad-gc.log — Elevated CPU usage (user space CPU consistently above 40-50%)">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000159818">
+</head>
+<body>
+<header>
+<h1>K000159818: High CPU utilization caused by Java. Keep seeing error messages &quot;[GC (Allocation Failure)&quot; in var/log/restjavad-gc.log</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-02-03</dd>
+<dt>Updated</dt><dd>2026-02-23</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.0.0, 16.0.X, 16.0.1, 16.X.X, 17.X.X, 21.X.X, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000159818">https://my.f5.com/manage/s/article/K000159818</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>High CPU utilization is observed on BIG-IP systems, primarily caused by the Java process (restjavad). The issue manifests with the following symptoms:</p>
+<ul><li>Elevated CPU usage (user space CPU consistently above 40-50%)</li><li>Java process is consuming excessive CPU resources, visible after issuing the top command<br>Example: <span style="font-family: &#39;courier new&#39;, courier, monospace;">root    18413  7461 153.5  3.5  3.2G  1.1G ?    S  Jan13 223:25:33.77 /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.212.b04-0.el6_10.x86_64/bin/java -Djava.util.logging.manager=com.f5.rest.common.RestLogMan<br></span><span style="color: #000000;">Note &#39;<span style="font-family: &#39;courier new&#39;, courier, monospace;">x86_64&#39; and &#39;RestLogMan&#39;. </span></span>tomcat Java command line is very similar but has <span style="font-family: &#39;courier new&#39;, courier, monospace;">&#39;i386&#39;</span></li><li>Frequent &quot;Full GC (Allocation Failure)&quot; messages</li><li>Java is unable to allocate sufficient memory for operations</li><li>System performance degradation</li></ul>
+<p>Error messages observed in restjavad-gc.log:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">[GC (Allocation Failure) 426637K-&gt;247532K(776064K), 0.XXXXXXX secs]</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">[Full GC (Allocation Failure) 594757K-&gt;163756K(776064K), X.XXXXXXX secs]</span></p>
+<h2>Environment</h2>
+<ul><li><strong>Product:</strong> BIG-IP LTM</li><li><strong>Version:</strong> 16.X.X, 17.X.X, 21.X.X </li></ul>
+<h2>Cause</h2>
+<p>It&#39;s worth checking that ID 1826505 isn&#39;t a cause before trying anything else.</p>
+<p>Insufficient memory allocation for Java processes (restjavad). The default memory settings are inadequate for the system&#39;s workload, causing frequent garbage collection cycles and high CPU utilization as Java struggles to allocate memory for operations. When the Java cannot allocate memory for new objects, it triggers garbage collection cycles to free memory, resulting in elevated CPU usage.<br>Note that garbage collection is a normal part of Java operation, and   &#39;<span style="font-family: &#39;courier new&#39;, courier, monospace;">GC (Allocation Failure)&#39;</span>even as frequently as every few seconds is usually not an issue, as the CPU use for this base level of GC is very light. Full GC is much heavier in CPU use and should happen much less frequently, usually at least a few hours separating Full GC runs. <br><br>Please note that while restjavad and tomcat are both processes that use a Java virtual machine, they are entirely separate.<br>Unless tomcat has issues there is no need to tamper with it when dealing with restjavad issues.<br><span style="font-family: &#39;courier new&#39;, courier, monospace;"> </span></p>
+<h2>Recommended Actions</h2>
+<p><span style="color: #c20025;"><span style="background-color: #f1f1f1;"><em><strong>Important</strong>: The following commands will restart restjavad and tomcat services, which may cause a failover event in HA configurations and temporary GUI inaccessibility. Modifying provision.extramb restarts TMM and is traffic-impacting. Perform these changes during a scheduled maintenance window.</em></span></span></p>
+<ol><li>Access the BIG-IP system via SSH and enter tmsh:<br><span style="background-color: #f1f1f1;">tmsh</span></li><li>Modify the database values to increase memory allocation:<br><span style="background-color: #f1f1f1;">modify /sys db provision.extramb value 2000</span><br><span style="background-color: #f1f1f1;">modify sys db provision.restjavad.extramb value 1000</span><span style="background-color: #f1f1f1;"><br><span style="background-color: #ffffff;">It&#39;s suggested to work upwards ~200MB at a time, so 600 would be a good choice if starting at default of 384.</span></span></li><li>Restart the restjavad service:<br><span style="background-color: #f1f1f1;">restart sys service restjavad</span><br><span style="background-color: #f1f1f1;"></span></li><li>Exit tmsh and switch to bash shell:<br><span style="background-color: #f1f1f1;">exit</span></li><li>Restart additional services from bash:<br><span style="background-color: #f1f1f1;">bigstart restart restjavad restnoded</span></li><li>Check restjavad startup message in /var/log/ltm. Monitor CPU utilization and garbage collection logs after the changes.</li><li>If CPU remains high, incrementally increase provision.restjavad.extramb by 200 at a time:
+<ul><li>Try 800 MB if 600 MB is insufficient</li><li>Try 1000 MB if 800 MB is insufficient</li><li>Restart services after each change</li></ul>
+</li></ol>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

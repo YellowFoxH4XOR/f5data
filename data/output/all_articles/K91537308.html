@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K91537308: Overview of the truncating rule when DNS response size is over 512 Bytes</title>
+<meta name="description" content="Support Solution: Overview of the truncating rule when DNS response size is over 512 Bytes — Messages carried by UDP are restricted to 512 bytes (not counting the IP or UDP headers). Longer messages are truncated and the TC bit is set in the header.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K91537308">
+</head>
+<body>
+<header>
+<h1>K91537308: Overview of the truncating rule when DNS response size is over 512 Bytes</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-09-14</dd>
+<dt>Updated</dt><dd>2023-10-23</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 17.X.X, 17.0.0, 17.0.X, 17.1.0, 17.1.X, 16.X.X, 15.X.X, 14.X.X, 13.X.X, 12.X.X, 16.1.X, 16.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.1, 16.0.0, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K91537308">https://my.f5.com/manage/s/article/K91537308</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description:</span></p>
+<span class="subsectiontitle">As described in RFC 1035:</span><br>Messages carried by UDP are restricted to 512 bytes (not counting the IP or UDP headers).  Longer messages are truncated and the TC bit is set in the header.
+<p><br><span class="subsectiontitle">And also in RFC 5966:</span></p>
+In the absence of EDNS0 (Extension Mechanisms for DNS 0), the normal behavior of any DNS server needing to send a UDP response that would exceed the 512-byte limit is for the server to truncate the response so that it fits within that limit and then set the TC flag in the response header. When the client receives such a response, it takes the TC flag as an indication that it should retry over TCP instead.<br><br>Right now the BIG-IP will check if the UDP message is larger than the expected value and follow some rules to chop off the sections at the end of the response, adjusts the length in the header, and sets the TC bit.
+<h2> </h2>
+
+<p><span class="sectiontitle">Environment:</span></p>
+
+<ul><li>DNS system</li><li>DNS cache or transparent cache is being used as a resolver</li></ul>
+
+<p><span class="sectiontitle">Cause: </span></p>
+
+<p><span class="subsectiontitle">Here&#39;s the scenario:</span></p>
+
+<ol><li>The DNS query from an LDNS (without EDNS0 option that claims UDP payload size) reaches the listener and matches the DNS cache resolver.</li><li>BIG-IP DNS system sends the query to other nameservers ( with EDNS0 option UDP payload size 4096 ).</li><li>The DNS response includes a CNAME RR.</li><li>BIG-IP DNS system sends the query of that CNAME to other nameservers ( with EDNS0 option UDP payload size 4096 ).</li><li>The DNS response can be larger than 512 Bytes.</li><li>BIG-IP DNS cache resolver will merge these 2 responses, check whether it&#39;s over 512 bytes, truncate the response if needed, and then send the modified response back to LDNS.</li></ol>
+
+<p><span class="subsectiontitle">Here are some of the truncating rules: </span></p>
+
+<ol><li>If the merged response is over 512 bytes, the response will be truncated.</li><li>The least additional RRs will be removed to make sure the whole response is less than 512 bytes, the TC flag will not be set.</li><li>If all of the additional RRs are removed already, but the whole response is still larger than 512 bytes, the least Authority RRs will be removed, TC flag will be set.</li><li>If all of the additional RRs and Authority RRs are all removed already, but the whole response is still larger than 512 bytes, all of the Answer RRs will be removed except for the CNAME RR(see the scenario described in the Cause Section), TC flag will be set.</li><li>When the TC flag is set, LDNS should establish a TCP connection with the listener to transfer the DNS response.</li></ol>
+
+<p><span class="sectiontitle">Recommended Actions:</span></p>
+None
+
+<p><span class="sectiontitle">Additional Information:</span></p>
+A DBkey variable is used to control the truncating behavior:
+
+<p><br><span class="subsectiontitle">dns.udptruncate:</span></p>
+
+<ul><li>Can be set to enabled (default) or disabled.  </li><li>When dns.udptruncate is enabled, UDP DNS responses are truncated if the response is larger than 512 bytes.</li><li>When dns.udptruncate is disabled, the message is not truncated, and the full message is received. If the client specifies a non-default size via EDNS, the message is truncated if the response is larger than the specified size regardless of the value of dns.udptruncate.</li></ul>
+
+<p><span class="impact">regarding the behavior of the cache which is resolver type and dns.udptruncate is disabled :</span></p>
+
+<ul><li><span class="impact">the DNS query sent by the cache will first use UDP.</span></li><li><span class="impact">No matter whether the DNS query includes the EDNS0 option UDP payload size, the DNS query sent by the cache ( from BIG-IP ) will not bring that option.</span></li><li><span class="impact">If the DNS response received by the cache is larger than 512 bytes, truncating will happen on the server-side, and a TCP connection is required to be established from the cache to the target nameserver to transfer the full response.</span></li><li><span class="impact">The cache will deliver the full message on the client-side with TC flag set to 0 even when the response is larger than 512 bytes.</span></li></ul>
+
+<div><span class="impact">regarding the behavior of the cache which is transparent type and dns.udptruncate is disabled:</span></div>
+
+<ul><li><span class="impact">If a server-side name server truncates the data before it gets to the BIG-IP, a transparent cache will cache and deliver the previously truncated data.</span></li><li><span class="impact">Since a transparent cache is not a resolver, the BIG-IP will not attempt the TCP reconnect to get the full answer.</span></li></ul>
+
+<p>To enable or disable this db key, you may use the below command:</p>
+<span class="code">tmsh modify sys db dns.udptruncate value &lt; enable | disable &gt;</span>
+
+<p>For example, to enable the db key:</p>
+<span class="code">tmsh modify sys db dns.udptruncate value enable</span>
+</article>
+</body>
+</html>

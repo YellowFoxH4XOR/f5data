@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K39959521: Configuring a virtual server using tmsh with multiple persistence profiles</title>
+<meta name="description" content="Knowledge: Configuring a virtual server using tmsh with multiple persistence profiles — When configuring a virtual server using the TMOS Shell (tmsh) you have the option of setting multiple persistence profiles.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K39959521">
+</head>
+<body>
+<header>
+<h1>K39959521: Configuring a virtual server using tmsh with multiple persistence profiles</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2017-11-13</dd>
+<dt>Updated</dt><dd>2025-04-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 13.0.0, 13.0.0, 12.1.0, 12.0.0, 11.6.1, 11.6.0, 11.5.4, 11.5.3, 11.5.2, 11.5.1, 11.5.0, 12.1.2, 11.4.0, 11.3.0, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 11.4.1, 12.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K39959521">https://my.f5.com/manage/s/article/K39959521</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>When configuring a virtual server using the TMOS Shell (<strong>tmsh</strong>) you have the option of setting multiple persistence profiles.</p>
+<h3>Description</h3><p>Using <strong>tmsh</strong>, you can configure a virtual server to use multiple persistence profiles, which is helpful in environments where you use a virtual server to process different services.</p>
+
+<p>You can configure a virtual server configured with multiple persistence profiles to use any of the persistence profiles as the default persistence profile of the virtual server by setting the <strong>default yes</strong> option (the default option is <strong>default no</strong>). By configuring a persistence profile as the default persistence profile for the virtual server, traffic processed by the virtual server will be persisted using that profile when no overriding option selects a non-default (<strong>default no</strong>) persistence profile. You can select a non-default persistence profile through a custom iRule.</p>
+
+<p><span class="note"><strong>Note</strong>: When you set all persistence profiles of a virtual server configuration to <strong>default no</strong> without using an iRule for persistence profile selection, or if the iRule does not set the persistence profile, no persistence is applied and the connection is load-balanced.</span></p>
+
+<p>The following <strong>any</strong> TCP protocol virtual server can process multiple different services and use Microsoft Remote Desktop (MSRDP) persistence for MSRDP traffic, Secure Sockets Layer (SSL) persistence for SSL traffic, and Source Address persistence for all remaining traffic.</p>
+
+<p><span class="example2">ltm virtual example_vs {<br>    destination 172.16.1.154:any<br>    ip-protocol tcp<br>    mask 255.255.255.255<br>    persist {<br>        example_msrdp {<br>            default no<br>        }<br>        <strong>example_srcaddr {<br>            default yes<br>        }</strong><br>        example_ssl {<br>            default no<br>        }<br>    }<br>    pool example_pool<br>    profiles {<br>        tcp-lan-optimized { }<br>    }<br>    rules {<br>        example_persist_select_rule<br>    }<br>    source 0.0.0.0/0<br>    translate-address enabled<br>    translate-port disabled<br>    vs-index 43<br>}</span></p>
+
+<p><span class="note"><strong>Note</strong>:<strong> </strong>The virtual server is configured with the <strong>example_srcaddr</strong> persistence profile<strong> </strong>set as the default (<strong>default yes</strong>).</span></p>
+
+<p>Example iRule where the iRule sets the persistence profile based on the virtual server port match:</p>
+
+<p><span class="example2">when CLIENT_ACCEPTED {<br>if { [TCP::local_port] == <strong>443</strong> }{<br><strong>persist ssl </strong><br>log local0. &quot;SSL selected: client: [IP::client_addr] &gt; virtual: [IP::local_addr]:[TCP::local_port].&quot;<br> }<br>elseif { [TCP::local_port] == <strong>3389</strong>}{<br><strong>persist msrdp</strong> <br>log local0. &quot;MSRDP selected: client: [IP::client_addr] &gt; virtual: [IP::local_addr]:[TCP::local_port]..&quot;<br> }<br>else {<br>log local0. &quot;iRule did not select persistence for client: [IP::client_addr] &gt; virtual: [IP::local_addr]:[TCP::local_port].&quot;<br>   }<br>}</span></p>
+
+<p><span class="note"><strong>Note:</strong> The iRule persistence profiles are selected with SSL and MSRDP, where the virtual server is configured with the <strong>example_ssl</strong>, <strong>example_msrdp</strong> and <strong>example_xrcaddr </strong>custom persistence profiles.</span></p>
+
+<p>In the example virtual server configuration, the <strong>example_srcaddr</strong> persistence profile is the persistence profile for all traffic that is not identified by the <strong>example_persist_select_rule </strong>iRule.<strong> </strong>The iRule checks for the virtual server connection request for TCP ports 443 and 3389. Connection request that are <strong>matched</strong> by the iRule will select the configured persistence profile based on the TCP port match.  It is important to note the iRule can only be configured to set a persistence profile choice using a system parent persistence profile name; in the example, iRule persistence profiles SSL<strong> </strong>and MSRDP are set. The iRule will not accept custom persistence profile names. When the iRule sets the persistence profile to a system persistence parent profile, the virtual server-configured child persistence profile based on the system parent persistence profile is used for persisting the connection request; the example uses the <strong>example_srcaddr</strong> and <strong>example_msrdp</strong> persistence profiles.</p>
+
+<p><span class="sectiontitle">Recommendations</span></p>
+
+<p>When a virtual server with multiple persistence profiles, you should consider the following factors:</p>
+
+<ul><li>You can configure a virtual server to use multiple persistence profiles, which is helpful when you use the virtual server to process different types of services in an environment that requires unique persistence for each service.</li><li>You add the persistence profiles to the virtual server configuration using the default setting<strong> default no</strong>, unless you specifically configure the persistence profile as <strong>default yes</strong>.</li><li>The virtual server protocol profiles must support the virtual server persistence profiles for inclusion in the virtual server configuration.</li><li>When all configured persistence profiles are set with <strong>default no</strong> and you do not use an iRule to set the persistence profile for a connection request, or the configured iRule does not set the persistence profile for the connection request, the connection request is load-balanced with no persistence applied.</li><li>When creating the persistence profile selection iRule, ensure that the iRule persist refers to the system parent persist profile name used by the child persistence profile of the virtual server configuration.</li></ul>
+</article>
+</body>
+</html>

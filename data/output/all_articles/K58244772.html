@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K58244772: Identify Duplicate and Expired SSL Certificates for BIG-IP DNS/GTM</title>
+<meta name="description" content="Support Solution: Identify Duplicate and Expired SSL Certificates for BIG-IP DNS/GTM — It can be challenging to manage TLS Certificates in a BIG-IP DNS environment. This allows you to remove expired TLS Certificates and eliminate duplicates.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K58244772">
+</head>
+<body>
+<header>
+<h1>K58244772: Identify Duplicate and Expired SSL Certificates for BIG-IP DNS/GTM</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2019-08-26</dd>
+<dt>Updated</dt><dd>2026-06-17</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP GTM: 11.X.X, 11.6.X, 11.5.X, 11.4.X, 11.3.X, 11.2.X, 11.1.X, 11.0.X, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 11.6.5, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.2, 11.5.1, 11.5.0, 11.4.1, 11.4.0, 11.3.0, 11.5.3</li><li>BIG-IP DNS: 14.X.X, 13.X.X, 12.X.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 15.X.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K58244772">https://my.f5.com/manage/s/article/K58244772</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><span class="sectiontitle">Description</span></h2>
+<p>It can be challenging to manage TLS Certificates in a BIG-IP DNS environment. This allows you to remove expired TLS Certificates and eliminate duplicates.</p>
+<h2><span class="sectiontitle">Environment</span></h2>
+<ul><li>BIG-IP DNS connected in an iQuery mesh</li><li>Duplicate Certificates in any of the following locations:
+<ul><li>/config/gtm/client.crt</li><li>/config/big3d/server.crt</li></ul>
+</li></ul>
+<h2><span class="sectiontitle">Cause</span></h2>
+<p>Each time the <strong>bigip_add</strong> or <strong>gtm_add</strong> script is executed, TLS Certificates are exchanged between the initiating BIG-IP and the remote BIG-IP. The certificates are appended to the existing certificate store, causing duplicate certificates.</p>
+<h2><span class="sectiontitle">Recommended Actions</span></h2>
+<p>Leverage openssl and bash scripting </p>
+<ol><li>
+<p>SSH to log into the Advanced Shell (bash) of the BIG-IP<br><br></p>
+</li><li>Create a backup of your existing certificate stores:
+<p><br><span class="code">cp /config/big3d/client.crt /config/big3d/client.crt.K58244772</span><br><span class="code">cp /config/gtm/server.crt /config/gtm/server.crt.K58244772</span></p>
+</li><li>Create the /var/tmp/splitcerts.sh using your favorite text editor such as <strong>VIM</strong>:<br><pre class="code" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>#!/bin/bash
+#
+# USAGE
+# splitcerts.sh 
+# For Example
+# /var/tmp/splitcerts.sh /config/httpd/conf/ssl.crt/server.crt
+# /var/tmp/splitcerts.sh /config/big3d/client.crt
+# /var/tmp/splitcerts.sh /config/gtm/server.crt
+ITERATION=0
+TMPDIR=/var/tmp/splitcerts
+mkdir -p ${TMPDIR}
+while read line
+do
+   # Write a new file if this is the start of a cert.
+   if [ &quot;x$line&quot; == &quot;x-----BEGIN CERTIFICATE-----&quot; ]
+   then
+      ITERATION=$(($ITERATION+1))
+      CERTFILE=&quot;${TMPDIR}/$(echo $1 | sed &#39;s/\//_/g&#39;).$ITERATION.crt&quot;
+      echo -e &quot;\nStarting to write: ${CERTFILE}&quot;
+      echo $line &gt; $CERTFILE
+   elif [ &quot;x$line&quot; == &quot;x&quot; ]
+   then
+      # Do not write blank lines.
+      continue
+   elif [ &quot;x$line&quot; == &quot;x-----END CERTIFICATE-----&quot; ]
+   then
+      # Write the end of the $CERTFILE
+      echo &quot;${line}&quot; &gt;&gt; $CERTFILE
+      # Then update the name to something sane.
+      FINAL_CERTFILE=${TMPDIR}/$(openssl x509 -in $CERTFILE -subject -noout -enddate | grep -o -P &#39;(CN=)(.*)|notAfter(.*)&#39; | cut -d&#39;=&#39; -f2 | sed -r &#39;s,[ /],_,g&#39; | cut -d&#39;_&#39; -f1,2,4,5 | sed &#39;:a;N;$!ba;s/\n/_/g&#39; | sed &#39;s/\/emailAddress//g&#39;).crt
+
+      # option 1: This adds the issuer to the filenames 
+      FINAL_CERTFILE=${TMPDIR}/$(openssl x509 -in $CERTFILE -subject -noout -enddate -issuer | grep -o -P &#39;(CN *= *)(.*)|notAfter(.*)&#39; | cut -d&#39;=&#39; -f2 | sed -r &#39;s,[ /],_,g&#39; | cut -d&#39;_&#39; -f1,2,4,5,6 | sed &#39;:a;N;$!ba;s/\n/_/g&#39; | sed &#39;s/\/emailAddress//g&#39;).crt 
+
+      # Comment out the above and uncomment one of the following if the above does not work 
+      # option 2: This is the older version. It doesn&#39;t work if &#39;CN=&#39; does not exactly match. 
+      # FINAL_CERTFILE=${TMPDIR}/$(openssl x509 -in $CERTFILE -subject -noout -enddate | grep -o -P &#39;(CN=)(.*)|notAfter(.*)&#39; | cut -d&#39;=&#39; -f2 | sed -r &#39;s,[ /],_,g&#39; | cut -d&#39;_&#39; -f1,2,4,5 | sed &#39;:a;N;$!ba;s/\n/_/g&#39; | sed &#39;s/\/emailAddress//g&#39;).crt
+
+      # option 3: This is the corrected version from the original which allows matching &#39;CN =&#39; with longer descriptions 
+      # FINAL_CERTFILE=${TMPDIR}/$(openssl x509 -in $CERTFILE -subject -noout -enddate | grep -o -P &#39;(CN *= *)(.*)|notAfter(.*)&#39; | cut -d&#39;=&#39; -f2 | sed -r &#39;s,[ /],_,g&#39; | cut -d&#39;_&#39; -f1,2,4,5 | sed &#39;:a;N;$!ba;s/\n/_/g&#39; | sed &#39;s/\/emailAddress//g&#39;).crt
+
+      mv $CERTFILE $FINAL_CERTFILE
+      echo &quot; ...moved to: $FINAL_CERTFILE&quot;
+   else
+      # Append cert contents to $CERTFILE
+      echo &quot;${line}&quot; &gt;&gt; $CERTFILE
+   fi
+done &lt; $1</code></pre>
+</li><li>Clean up the Trusted Server Certificate store: [BIG-IP DNS Only]
+<p><span class="code">bash /var/tmp/splitcerts.sh /config/gtm/server.crt</span></p>
+<ol><li>List all of the certificates:
+<p><span class="code">ls -l /var/tmp/splitcerts<br></span></p>
+</li><li>Remove any expired certs from the output directory (/var/tmp/splitcerts/...)<br><p>For Example:<br><span class="code">rm /var/tmp/splitcerts/localhost.localdomain_Jul__00:22:10_2024.crt</span></p>
+</li><li>Cat all of the desired certs back into the desired certificate store:<br><span class="code">cat /var/tmp/splitcerts/* &gt; /config/gtm/server.crt<br><br></span></li><li>Remove all of the temporary certificates:
+<p><span class="code">rm -f /var/tmp/splitcerts/*</span></p>
+</li></ol>
+</li><li>Clean up the Trusted Device Certificate store: [ALL BIG-IP DNS AND LTM DEVICES]
+<p><span class="code">bash /var/tmp/splitcerts.sh /config/big3d/client.crt</span></p>
+<ol><li>List all of the certificates:
+<p><span class="code">ls -l /var/tmp/splitcerts</span></p>
+</li><li>Remove any expired certs from the output directory (/var/tmp/splitcerts/...)
+<p>For Example:<br><span class="code">rm /var/tmp/splitcerts/localhost.localdomain_Jul__00:22:10_2024.crt</span></p>
+</li><li>Cat all of the desired certs back into the desired certificate store:
+<p><span class="code">cat /var/tmp/splitcerts/* &gt; /config/big3d/client.crt</span></p>
+</li><li>Remove all of the temporary certificates:
+<p><span class="code">rm -f /var/tmp/splitcerts/*</span></p>
+</li></ol>
+</li></ol>
+<h2><span class="sectiontitle">Additional Information</span></h2>
+<p>While this can be a very effective method to clean up your duplicate and expired TLS Certificates, you must take caution to test this functionality in a test/lab environment to fully under the repercussions of this script.</p>
+</article>
+</body>
+</html>

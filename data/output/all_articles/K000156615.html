@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000156615: Preventing Idle connection race conditions between F5 XC and upstream endpoints</title>
+<meta name="description" content="Support Solution: Preventing Idle connection race conditions between F5 XC and upstream endpoints — I want to understand which party endpoint, origin server, downstream, or upstream closes the connection in idle scenarios.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000156615">
+</head>
+<body>
+<header>
+<h1>K000156615: Preventing Idle connection race conditions between F5 XC and upstream endpoints</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-09-24</dd>
+<dt>Updated</dt><dd>2025-10-10</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Distributed Cloud Services</li><li>F5 Distributed Cloud</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000156615">https://my.f5.com/manage/s/article/K000156615</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2 id="h_01J9CNGRJMM3EYCDWP0ZD9SACZ">Description</h2>
+<p>I want to understand which party endpoint, origin server, downstream, or upstream closes the connection in idle scenarios.</p>
+<h2 id="h_01J9CNGRJMKG6FA590P51MMFTP">Environment</h2>
+<ul><li>F5® Distributed Cloud HTTP Load Balancer</li><li>F5 Distributed Cloud (XC)</li></ul>
+<h2 id="h_01J9CNGRJM647MWHHNNF6SKRRP">Answer/Recommended Actions</h2>
+<p>The HTTP idle timeout configured on the XC Origin Pool should be shorter than the idle timeout configured on the upstream endpoint. This ensures that XC, not the origin, is responsible for closing idle connections.</p>
+<p>If the <strong>origin</strong> closes an idle pooled connection at the same time XC attempts to reuse it for a new request, a race condition may occur.</p>
+<p><strong>Result:</strong><br>A failure due to an illegal TCP state transition, typically logged as:</p>
+<ul style="list-style-type: disc;"><li><code>upstream_reset_before_response_started{connection_termination} OR</code></li><li><code>connection_failure</code></li></ul>
+<p>This manifests as an HTTP 503 error to the client.</p>
+<h2 class="wysiwyg-text-align-justify" id="h_01J9CNGRJMT8XP6Z3K0YYK0KFR">Cause</h2>
+<p>In the diagram, the client sits downstream of the reverse proxy, which in turn sits downstream of the application server. For simplicity, the illustration mixes concepts from Layer 4 and Layer 7 of the OSI model.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000XEU1&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000SoyaL" alt="" width="662" height="358"></img></p>
+<p>The race condition occurs when the XC proxy attempts to reuse a keep-alive connection for Request 2 at the exact moment the application server’s idle timeout expires. The server closes the connection, sending a TCP segment with the <em>RST</em> flag.</p>
+<p>The core issue is that the proxy is unaware the upstream has already closed the connection. If the proxy’s idle timeout were configured shorter than the server’s, the proxy would proactively terminate idle connections first, preventing the race and avoiding attempts to reuse a stale connection.</p>
+<p>While conceptually simple with a diagram, this condition is notoriously hard to detect and troubleshoot, especially in environments where you don’t own or control all layers of the stack.</p>
+<h2 class="wysiwyg-text-align-justify" id="h_01J9CNGRJMAM9N9ZP9WGX3JB7R">Additional Information</h2>
+<p><strong>Example Scenario:</strong></p>
+<ul style="list-style-type: disc;"><li>XC proxy idle timeout: 100 seconds</li><li>Upstream server idle timeout: 10 seconds</li></ul>
+<ol><li>The XC proxy selects a pooled connection that has been idle for 9.99 seconds.</li><li>It begins writing a request to that connection.</li><li>Simultaneously, the upstream server closes the connection due to its 10 second idle timeout.</li><li>Instead of receiving an <em>ACK</em>, the reverse proxy receives a <em>FIN</em> while writing the request.</li><li>The XC proxy aborts and returns an HTTP 502 to the client.</li></ol>
+</article>
+</body>
+</html>

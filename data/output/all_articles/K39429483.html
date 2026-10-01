@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K39429483: Volumes for pod with sidecar in Aspen Mesh</title>
+<meta name="description" content="Support Solution: Volumes for pod with sidecar in Aspen Mesh — There are 2 different ways for injecting the sidecar into the application pod. When you add a istio-injection=enabled label on a namespace, any pod created in that namespace get a sidecar through the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K39429483">
+</head>
+<body>
+<header>
+<h1>K39429483: Volumes for pod with sidecar in Aspen Mesh</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2021-10-07</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>Aspen Mesh</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K39429483">https://my.f5.com/manage/s/article/K39429483</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+
+<p>There are 2 different ways for injecting the sidecar into the application pod. When you add a <strong>istio-injection=enabled</strong> label on a namespace, any pod created in that namespace get a sidecar through the injection webhook. </p>
+
+<p><span class="code">kubectl label ns default istio-injection=enabled –overwrite</span></p>
+
+<p>To manually add the sidecar, you can simply run:</p>
+
+<p><span class="code">istioctl kube-inject -f samples/sleep/sleep.yaml | kubectl apply -f -</span></p>
+
+<p>This will use the config and values from the istio-sidecar-injector configmap that is in the istio-system namespace. By default, there are 6 volumes that gets created in pod and is mounted on to the pod.</p>
+
+<ol><li>
+	<p>Istio-pod-info</p>
+
+	<p>This volume is projected DownwardAPIVolume which is used to expose the information about itself to running container in the pod. In the following example, it exposes labels, annotations, limits and requests for the CPU resource. For more information, please check <a href="https://kubernetes.io/docs/tasks/inject-data-application/downward-api-volume-expose-pod-information/" target="_self">this</a>.</p>
+
+	<p><span class="example2">- downwardAPI:<br>	      defaultMode: 420<br>	      items:<br>	      - fieldRef:<br>	          apiVersion: v1<br>	          fieldPath: metadata.labels<br>	        path: labels<br>	      - fieldRef:<br>	          apiVersion: v1<br>	          fieldPath: metadata.annotations<br>	        path: annotations<br>	      - path: cpu-limit<br>	        resourceFieldRef:<br>	          containerName: istio-proxy<br>	          divisor: 1m<br>	          resource: limits.cpu<br>	      - path: cpu-request<br>	        resourceFieldRef:<br>	          containerName: istio-proxy<br>	          divisor: 1m<br>	          resource: requests.cpu<br>	    name: istio-podinfo</span></p>
+	</li><li>
+	<p>Istio-token</p>
+
+	<p>This is a projected serviceAccountToken volume which has the token needed by the containers to access the istio CA. Path is where the token resides and has an expiration time. For more information please read <a href="https://kubernetes.io/docs/concepts/storage/volumes/#:~:text=When%20the%20TokenRequestProjection%20feature%20is%20enabled%2C%20you%20can%20inject%20the%20token%20for%20the%20current%20service%20account%20into%20a%20Pod%20at%20a%20specified%20path.%20For%20example%3A" target="_self">this</a>.</p>
+
+	<p><span class="example2">  - name: istio-token<br>	    projected:<br>	      defaultMode: 420<br>	      sources:<br>	      - serviceAccountToken:<br>	          audience: istio-ca<br>	          expirationSeconds: 43200<br>	          path: istio-token</span></p>
+	</li><li>
+	<p>istiod-ca-cert</p>
+
+	<p>Data stored in configmap can be reference in volume of type configmap. Here, it is referencing “istio-ca-root-cert&quot; which gets created every time a new namespace is created. It contains the root certificate in PEM format. For more information, read <a href="https://kubernetes.io/docs/concepts/storage/volumes/#configmap" target="_self">this</a>.</p>
+
+	<p><span class="example2">  - configMap:<br>	      defaultMode: 420<br>	      name: istio-ca-root-cert</span></p>
+	</li><li>
+	<p>&lt;pod-name&gt;-token</p>
+
+	<p>This is a service account token secret which has token and the CA cert which is base64 encoded. The token is used to identify the service account and to access API server.</p>
+
+	<p><span class="example2">- name: httpbin-token-qx2n2<br>	    secret:<br>	      defaultMode: 420<br>	      secretName: httpbin-token-qx2n2</span></p>
+	</li><li>
+	<p>Istio-Envoy</p>
+
+	<p>This is an empty directory volume which is of type “memory”. This volume is used for storing certs in memory. These certs are created via exchange between istio-agent and envoy in various discovery service modes. Please read <a href="https://github.com/istio/istio/tree/master/pkg/istio-agent" target="_self">this</a> for more information.</p>
+
+	<p><span class="example2">volumes:<br>	  - emptyDir:<br>	      medium: Memory<br>	      name: istio-envoy</span></p>
+	</li><li>
+	<p>Istio-data</p>
+
+	<p>This volume is used for all other activities beside above mentioned. One of the use cases is when you load a custom bootstrap file via configmap to your application deployment, it uses istio-data directory for that. Please read <a href="https://github.com/istio/istio/tree/master/samples/custom-bootstrap" target="_self">this</a> for more details.</p>
+
+	<p><span class="example2">  - emptyDir: {}<br>	    name: istio-data</span></p>
+	</li></ol>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>Aspen Mesh:  1.6.x, 1.9.x</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+N/A
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>None</p>
+
+<p><span class="sectiontitle">Additional Information</span></p>
+
+<p>Here is the Volumes mounts for the all the above volumes:</p>
+
+<p><span class="example2">volumeMounts:<br>    - mountPath: /var/run/secrets/istio<br>      name: istiod-ca-cert<br>    - mountPath: /var/lib/istio/data<br>      name: istio-data<br>    - mountPath: /etc/istio/proxy<br>      name: istio-envoy<br>    - mountPath: /var/run/secrets/tokens<br>      name: istio-token<br>    - mountPath: /etc/istio/pod<br>      name: istio-podinfo<br>    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount<br>      name: &lt;pod&gt;token-qx2n2<br>      readOnly: true</span></p>
+</article>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K13675: Overview of the stateless virtual server</title>
+<meta name="description" content="Knowledge: Overview of the stateless virtual server — A stateless virtual server provides improved User Datagram Protocol (UDP) performance over a standard virtual server in specific scenarios, but with limited feature support. This article discusses…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K13675">
+</head>
+<body>
+<header>
+<h1>K13675: Overview of the stateless virtual server</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2015-03-13</dd>
+<dt>Updated</dt><dd>2023-02-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 15.X.X, 13.X.X, 12.X.X, 11.5.X, 11.4.X, 11.3.X, 11.2.X, 11.1.X, 11.0.X, 15.1.X, 15.0.X, 14.1.X, 14.0.X, 13.1.X, 13.0.X, 12.1.X, 12.0.X, 11.6.X, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.1, 15.0.0, 14.1.5, 14.1.4, 14.1.3, 14.1.2, 14.1.0, 14.0.1, 14.0.0, 13.1.5, 13.1.4, 13.1.3, 13.1.1, 13.1.0, 13.0.1, 13.0.0, 12.1.6, 12.1.5, 12.1.4, 12.1.3, 12.1.2, 12.1.1, 12.1.0, 12.0.0, 11.6.5, 10.2.2, 11.6.4, 11.6.3, 11.6.2, 11.6.1, 11.6.0, 11.5.10, 11.5.9, 11.5.8, 11.5.7, 11.5.6, 11.5.5, 11.5.4, 11.5.3, 11.5.2, 11.5.1, 11.5.0, 11.4.1, 14.X.X, 11.3.0, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 10.2.4, 10.2.3, 11.4.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K13675">https://my.f5.com/manage/s/article/K13675</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>A stateless virtual server provides improved User Datagram Protocol (UDP) performance over a standard virtual server in specific scenarios, but with limited feature support. This article discusses some uses as well as the limitations of the stateless virtual server.</p><h3>Description</h3><p>A stateless virtual server accepts traffic that matches the virtual server address and load balances the packet to the pool members without attempting to match the packet to a pre-existing connection in the connection table. Any new connection entry is immediately removed from the connection table. This behavior addresses the requirements for one-way UDP traffic that needs to be processed at very high throughput levels. As such, a stateless virtual server is not suitable for processing traffic that requires stateful tracking, such as TCP traffic.</p>
+
+<p>The following examples are scenarios where a stateless virtual server can be useful:</p>
+
+<ul><li>When load balancing <strong>syslog</strong> traffic to a pool of syslog servers</li><li>When load balancing DNS queries to a pool of DNS servers that do not use the originating BIG-IP system as the gateway to return DNS responses to the clients
+	<p><span class="note"><strong>Note</strong>: For DNS servers that also use the originating BIG-IP system to return DNS responses to the clients, refer to the <a href="#bidirstateless">Load balancing bidirectional stateless UDP traffic</a> section, later in this article.</span></p>
+
+	<p><span class="warning"><strong>Important</strong>:<strong> </strong>When selecting the pool load balancing method, multiple load balancing options display. However, the BIG-IP system supports only Round Robin load balancing for stateless connections.</span></p>
+	</li></ul>
+
+<p>The stateless virtual server does not support the following features:</p>
+
+<ul><li>iRules</li><li>IP Fragmentation</li><li>Persistence</li><li>Connection mirroring</li><li>Rate shaping</li><li>Secure Network Address Translation (SNAT) automap</li><li>Port translation
+	<p><span class="note"><strong>Note</strong>: Some of these features that are not supported may still appear when configuring the stateless virtual server. For example, the <strong>Port Translation</strong> setting will not work as expected if enabled on the stateless virtual server.</span></p>
+	</li></ul>
+
+<p><span class="subsectiontitle">Load balancing bidirectional stateless UDP traffic</span></p>
+
+<p>If you require the BIG-IP system to handle the return traffic from the pool members back to the clients, you must create a separate stateless virtual server. Depending on your setup, you may need the stateless virtual server for the return traffic to use a network address with a SNAT pool that translates the source address of the outbound traffic back to the stateless virtual server that handles the incoming client traffic.</p>
+
+<p>For example, the following configuration stanzas describe the stateless virtual server <strong>myIngressStatelessvs</strong> that handles incoming client DNS requests, listening on <strong>30.30.30.234,</strong> and load balancing to the pool <strong>myDNSpool</strong> that comprises DNS servers <strong>20.20.20.155</strong> and <strong>20.20.20.156</strong>:</p>
+
+<p><span class="example2">ltm virtual myIngressStatelessvs {<br>destination 30.30.30.234:domain<br>ip-protocol udp<br>mask 255.255.255.255<br>pool myDNSpool<br>profiles {<br>udp { }<br>}<br>stateless<br>vlans {<br>external<br>}<br>vlans-enabled<br>}<br>ltm pool myDNSpool {<br>members {<br>20.20.20.155:domain {<br>address 20.20.20.155<br>}<br>20.20.20.156:domain {<br>address 20.20.20.156<br>}<br>}<br>}</span></p>
+
+<p>The following configuration stanzas describe the corresponding stateless network virtual server <strong>myEgressStatelessvs</strong> that sends traffic back through a gateway pool <strong>internal-gw</strong> with a gateway <strong>30.30.30.158</strong> using the SNAT pool <strong>myEgressSnat</strong> with the address <strong>30.30.30.234,</strong> which is the address of the originating stateless virtual server:</p>
+
+<p><span class="example2">ltm virtual myEgressStatelessvs {<br>destination 0.0.0.0:any<br>ip-protocol udp<br>mask any<br>pool internal-gw<br>profiles {<br>udp { }<br>}<br>snatpool myEgressSnat<br>stateless<br>translate-address disabled<br>translate-port disabled<br>vlans {<br>internal<br>}<br>vlans-enabled<br>}<br>ltm pool internal-gw {<br>members {<br>30.30.30.158:any {<br>address 30.30.30.158<br>session monitor-enabled<br>state up<br>}<br>}<br>}<br>ltm snatpool myEgressSnat {<br>members {<br>30.30.30.234<br>}<br>}</span></p>
+
+<p><span class="subsectiontitle">Creating a stateless virtual server</span></p>
+
+<p>You can create a stateless virtual server using either the Configuration utility or the TMOS Shell (<strong>tmsh</strong>). To do so, perform either of the following procedures:</p>
+
+<ul><li><a href="#usingui">Using the Configuration utility to create a stateless virtual server </a></li><li><a href="#usingtmsh">Using tmsh to create a stateless virtual server</a></li></ul>
+
+<p><span class="subsubsectiontitle">Using the Configuration utility to create a stateless virtual server</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Navigate to <strong>Local Traffic</strong> &gt; <strong>Virtual Servers</strong> &gt; <strong>Virtual Server List</strong>.</li><li>Click <strong>Create</strong>.</li><li>In the <strong>Type</strong> list, select <strong>Stateless</strong>.</li><li>In the <strong>Protocol</strong> list, select <strong>UDP</strong>.</li><li>In the <strong>Default Pool</strong> list, select the pool to use.</li><li>Fill in the remaining fields, as appropriate, for your environment.</li><li>Click <strong>Finished</strong>.</li></ol>
+
+<p><span class="subsubsectiontitle">Using tmsh to create a stateless virtual server</span></p>
+
+<ol><li>Log in to the TMOS Shell (<strong>tmsh</strong>) by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>To create the stateless virtual server, use the following command syntax:
+	<p><span class="code">create ltm virtual &lt;vs name&gt; stateless ip-protocol udp pool &lt;pool name&gt; destination &lt;IP:Port&gt;</span></p>
+
+	<p>For example, to create the stateless virtual server <strong>myIngressStatelessvs</strong> with IP address <strong>30.30.30.234,</strong> and port <strong>53</strong> using pool <strong>myDNSpool</strong>, you would type:</p>
+
+	<p><span class="example2">create ltm virtual myIngressStatelessvs stateless ip-protocol udp pool myDNSpool destination 30.30.30.234:53</span></p>
+	</li><li>Save the change by typing the following command:
+	<p><span class="code">save sys config</span></p>
+	</li></ol>
+
+<p><span class="sectiontitle">Recommendations</span></p>
+
+<p>None</p>
+</article>
+</body>
+</html>

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161599: SFP serial numbers displayed even no SFP inserted</title>
+<meta name="description" content="Support Solution: SFP serial numbers displayed even no SFP inserted — On an F5OS-A system, one or more portgroups continue to display SFP serial numbers and optic state information in CLI output even after the SFP modules have been physically removed from the cage.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161599">
+</head>
+<body>
+<header>
+<h1>K000161599: SFP serial numbers displayed even no SFP inserted</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-05</dd>
+<dt>Updated</dt><dd>2026-06-05</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS</li><li>F5OS-A: 1.8.X, 1.8.4, 1.8.3, 1.8.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161599">https://my.f5.com/manage/s/article/K000161599</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>On an F5OS-A system, one or more portgroups continue to display SFP serial numbers and optic state information in CLI output even after the SFP modules have been physically removed from the cage. <br>This results in a mismatch between the system-reported hardware status and the actual physical condition of the ports.</p>
+<p><strong>Symptoms include:</strong></p>
+<ul><li><span style="background-color: #f1f1f1;">show portgroups</span> CLI output still displays <span style="background-color: #f1f1f1;">vendor-serialnum</span> and <span style="background-color: #f1f1f1;">optic-state</span> for portgroups where no SFP module is physically installed</li><li>Affected portgroups show stale EEPROM data (serial number, optic state) from the last installed module</li><li>The issue may affect only a subset of portgroups or devices in the same environment, while others behave normally</li></ul>
+<h2>Environment</h2>
+<ul><li><strong>Platform:</strong> rSeries appliance</li><li><strong>Software:</strong> F5OS-A version 1.8.3</li><li><strong>Affected portgroups:</strong> Any portgroup from which an SFP module was physically removed</li><li><strong>SFP modules involved:</strong> OPT-0016 (or similar) SFP modules previously installed and removed</li><li><strong>Condition:</strong> The <span style="background-color: #f1f1f1;">optics-mgr</span> daemon was killed and restarted multiple times during or immediately after SFP removal events</li></ul>
+<h2>Cause</h2>
+<p>A race condition between the timing of the SFP physical removal and the operational state of the <span style="background-color: #f1f1f1;">optics-mgr</span> daemon.</p>
+<p>The normal SFP removal flow on F5OS-A is:</p>
+<ol><li><span style="background-color: #f1f1f1;">fpgamgr</span> detects the physical removal and fires an <span style="background-color: #f1f1f1;">&quot;Optic REMOVED&quot;</span> event</li><li><span style="background-color: #f1f1f1;">optics-mgr</span> receives the event and clears the cached EEPROM/serial data from the ConfD configuration database (CDB)</li><li><span style="background-color: #f1f1f1;">show portgroups</span> returns no data for that portgroup (empty cage = no output)</li></ol>
+<p>When <span style="background-color: #f1f1f1;">optics-mgr</span> is killed or restarted during or immediately after an SFP removal event, the <span style="background-color: #f1f1f1;">&quot;Optic REMOVED&quot;</span> notification from <span style="background-color: #f1f1f1;">fpgamgr</span> is lost in transit — <span style="background-color: #f1f1f1;">optics-mgr</span> is not running to receive it. As a result, the stale vendor serial number and optic state data from the last insertion is never cleared from the system database.</p>
+<p>Devices where the <span style="background-color: #f1f1f1;">optics-mgr</span> daemon remained stable during SFP removal are not affected.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>To clear the stale SFP serial number and optic state data, perform the following steps on each affected portgroup:</p>
+<ol><li>Re-insert the SFP module (e.g., OPT-0016) into the affected portgroup.</li><li>Monitor <span style="background-color: #f1f1f1;">platform.log</span> and wait for the system to log the <span style="background-color: #f1f1f1;">&quot;Optic inserted&quot;</span> event for that portgroup:</li></ol>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Optic inserted Portgroup=&quot;&lt;X&gt;&quot; PartNum=&quot;...&quot; Serial=&quot;...&quot;</span></p>
+<ol start="3"><li>Fully remove the SFP module from the portgroup.</li><li>Confirm that <span style="background-color: #f1f1f1;">&quot;Optic REMOVED&quot;</span> is logged in <span style="background-color: #f1f1f1;">platform.log</span> for that portgroup:</li></ol>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Optic REMOVED Portgroup=&quot;&lt;X&gt;&quot;</span></p>
+<ol start="5"><li>Verify that <span style="background-color: #f1f1f1;">show portgroups</span> no longer displays the SFP serial number or optic state for the affected portgroup (empty cage = no output).</li><li>Repeat steps 1–5 for each remaining affected portgroup.</li></ol>
+<p><span style="color: #c20025;"><span style="background-color: #f1f1f1;"><em><strong>Important</strong>: Ensure the <span style="background-color: #f1f1f1;">optics-mgr</span> daemon is running and stable before and during the SFP removal to prevent the &quot;Optic REMOVED&quot; event from being lost again.</em></span></span></p>
+<h2>Additional Information</h2>
+<ul><li>The <span style="background-color: #f1f1f1;">optics-mgr</span> daemon caches the last-known EEPROM data for each portgroup. It relies on receiving <span style="background-color: #f1f1f1;">&quot;Optic REMOVED&quot;</span> events from <span style="background-color: #f1f1f1;">fpgamgr</span> to clear this cached state. If the daemon is not running at the moment of removal, the event is lost and stale data persists.</li><li>This issue may affect only specific devices in an environment where multiple rSeries appliances are deployed. Devices on which <span style="background-color: #f1f1f1;">optics-mgr</span> was stable during SFP removal will not exhibit the stale data behavior.</li><li>A partially-withdrawn SFP module (latch released but not fully pulled out) can still maintain I2C/EEPROM contact and appear &quot;present&quot; to the system. Always fully extract the module until the <span style="background-color: #f1f1f1;">&quot;Optic REMOVED&quot;</span> event is confirmed in <span style="background-color: #f1f1f1;">platform.log</span>.</li><li>Live DDM reads on affected portgroups will return sentinel/floor values (e.g., RX power = -40.0 dBm, no temperature, no TX power) indicating no physical module is present, even though stale cached data remains visible in <span style="background-color: #f1f1f1;">show portgroups</span>.</li></ul>
+</article>
+</body>
+</html>

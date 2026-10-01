@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K35149319: Upgrading to 13.1.3.6 may fail, because it creates a Server SSL profile(s) with an invalid cipher string</title>
+<meta name="description" content="Support Solution: Upgrading to 13.1.3.6 may fail, because it creates a Server SSL profile(s) with an invalid cipher string — Upgrading to 13.1.3.6 may fail, because it creates a Server SSL profile(s) with an invalid cipher string">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K35149319">
+</head>
+<body>
+<header>
+<h1>K35149319: Upgrading to 13.1.3.6 may fail, because it creates a Server SSL profile(s) with an invalid cipher string</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-02-25</dd>
+<dt>Updated</dt><dd>2026-07-17</dd>
+<dt>Status</dt><dd>Legacy Content</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP Platforms</li><li>BIG-IP FPS: 13.1.3</li><li>BIG-IP AAM: 13.1.3</li><li>BIG-IP AFM: 13.1.3</li><li>BIG-IP Analytics: 13.1.3</li><li>BIG-IP APM: 13.1.3</li><li>BIG-IP ASM: 13.1.3</li><li>BIG-IP PEM: 13.1.3</li><li>BIG-IP Link Controller: 13.1.3</li><li>BIG-IP LTM: 13.1.3</li><li>BIG-IP DNS: 13.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K35149319">https://my.f5.com/manage/s/article/K35149319</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<p><span class="sectiontitle">Description</span></p>
+Upgrading to 13.1.3.6 may fail, because it creates a Server SSL profile(s) with an invalid cipher string<br>After an upgrade to BIG-IP 13.1.3.6 the configuration fails to load successfully and the status of the device is <strong>Disconnected</strong>. Access to the Configuration utility only functions for the administrator account.  <br><br>Log messages similar to the following are logged to <strong>/var/log/ltm</strong>:<br><span class="example2">err mcpd[9126]: 01070312:3: Invalid keyword &#39;kedh&#39; in ciphers list for profile /&lt;partition&gt;/&lt;serverssl profile name&gt;<br>err tmsh[12241]: 01420006:3: Loading configuration process failed.</span><br><br><span class="note"><strong>Note:</strong> You may also notice similar log messages for other partitions (when configured).</span>
+
+<p><span class="sectiontitle">Environment</span></p>
+
+<ul><li>BIG-IP</li><li>Upgrade to BIG-IP 13.1.3.6</li><li>SSL Server Profiles</li></ul>
+
+<p><span class="sectiontitle">Cause</span></p>
+
+<p>Bug ID <a href="https://cdn.f5.com/product/bugtracker/ID705730.html" target="_self">705730</a><br>During the upgrade process, the In-TMM monitoring feature, introduced in BIG-IP 13.1.0, converts the HTTPS monitor into a Server SSL profile, which uses stricter cipher string validation. If the HTTPS monitor from the previous version uses keywords that are incompatible with the Server SSL profile format, such as <strong>kEDH</strong>, which is included in the default cipher string, a validation error is generated when loading the configuration.</p>
+
+<p><span class="sectiontitle">Recommended Actions</span></p>
+
+<p>Upgrade to a fixed version listed in Bug ID 705730.<br><br>The actions or steps required to address the topic covered in the description.</p>
+
+<ol><li>You can review the following article in order to follow the <strong>Workaround Section</strong>: <a href="https://my.f5.com/manage/s/article/K82327396" target="_blank">K82327396: Upgrading to BIG-IP 13.1.0 or later creates a Server SSL profile with an invalid cipher string</a><br>	 </li><li>There may be an instance where you probably fixed the kEDH cipher in the configuration file, but this only resides in the /Common partition, and the Error will continue to show up, if there are other monitors applied to the bigip.conf files per partition, so the next workaround can help you determine if this is true: <br>	<span class="note"><strong>Note:</strong> This applies only if you have fixed the issue in the bigip.conf file for the /common partition and the error keeps showing up for monitors located in alternate partitions (when configured).</span><br>	 </li><li>Run the following script:<br>	<span class="code">for i in `find /config -name bigip.conf |grep -v diffVersions|grep -v \.bak|grep -v bigpipe`; do sed -i.K35149319 -s &#39;s/+kEDH/+EDH/g&#39; $i ; done</span><br>	 </li><li>To verify what changes have been made, run:<br>	<span class="code">for i in `find /config -name bigip.conf |grep -v diffVersions|grep -v \.bak|grep -v bigpipe`; do echo $i ; sdiff -s $i $i.K35149319 ; done</span><br>	<br>	You may see something similar to the following:<br>	<span class="example2">/config/bigip.conf<br>	    cipherlist DEFAULT:+SHA:+3DES:+EDH                        |     cipherlist DEFAULT:+SHA:+3DES:+kEDH<br>	/config/partitions/TEST000/bigip.conf<br>	    cipherlist DEFAULT:+SHA:+3DES:+EDH                        |     cipherlist DEFAULT:+SHA:+3DES:+kEDH</span><br>	 </li><li>You can load the configuration by running the following:<br>	<span class="code">tmsh load /sys config</span><br>	 </li><li>After you load  the configuration, you will most likely notice no issues on the CLI, but when you access the GUI, you may notice the following output on your banner:<br>	<br>	<span class="example2">This device is not operational because the loaded configuration contained errors or unlicensed objects. Please adjust the configuration and/or the license, and re-license the device.</span><br>	 </li><li>If the previous banner is present, you will need to run the workaround contained on the following article: <a href="https://my.f5.com/manage/s/article/K13223635" target="_blank">K13223635</a><a href="https://my.f5.com/manage/s/article/K13223635" target="_self">: Configuration not loading with banner error message &quot;This device is not operational because the loaded configuration contained errors or unlicensed objects. Please adjust the configuration and/or the license, and re-license the device.&quot;</a><br>	 </li><li>After a while the configuration should load successfully.</li></ol>
+
+<p><br><span class="sectiontitle">Additional Information</span></p>
+</article>
+</body>
+</html>

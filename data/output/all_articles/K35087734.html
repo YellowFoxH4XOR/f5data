@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K35087734: Configuring an IPsec IKEv1 tunnel between the BIG-IP system and an AWS VPC peer</title>
+<meta name="description" content="Knowledge: Configuring an IPsec IKEv1 tunnel between the BIG-IP system and an AWS VPC peer — You are configuring an IPsec Internet Key Exchange (IKE)v1 tunnel between a BIG-IP system and an Amazon Web Services (AWS) virtual private cloud (VPC).">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K35087734">
+</head>
+<body>
+<header>
+<h1>K35087734: Configuring an IPsec IKEv1 tunnel between the BIG-IP system and an AWS VPC peer</h1>
+<dl>
+<dt>Type</dt><dd>Knowledge</dd>
+<dt>Published</dt><dd>2017-08-30</dd>
+<dt>Updated</dt><dd>2025-02-06</dd>
+<dt>Applies to</dt><dd><ul><li>Public Cloud</li><li>BIG-IP</li><li>BIG-IP LTM: 12.1.2, 12.1.1, 12.1.0, 12.0.0, 11.6.1, 11.6.0, 11.5.4, 11.5.3, 11.5.2, 11.5.1, 13.0.0, 11.4.1, 11.4.0, 11.3.0, 11.2.1, 11.2.0, 11.1.0, 11.0.0, 11.5.0</li><li>Amazon Web Services</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K35087734">https://my.f5.com/manage/s/article/K35087734</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h3>Topic</h3><p>You should consider using this procedure under the following conditions:</p>
+
+<ul><li>You are configuring an IPsec Internet Key Exchange (IKE)v1 tunnel between a BIG-IP system and an Amazon Web Services (AWS) virtual private cloud (VPC).
+	<p><span class="note"><strong>Note</strong>: This article does not apply to scenarios in which the IPsec peer is within the AWS cloud.</span></p>
+
+	<p><span class="note"><strong>Note</strong>: The <strong>my-id-value</strong> and <strong>peers-id-value</strong> settings are mandatory configuration elements for IKEv2 tunnels. The symptoms described in this article do not apply to IKEv2 tunnels.</span></p>
+	</li><li>You experience intermittent IPsec IKEv1 tunneling problems between the BIG-IP system and an AWS VPC peer.</li><li>You experience similar tunneling problems when configuring an IPsec IKEv1 tunnel between the BIG-IP system and non-AWS VPC peers.</li></ul>
+<h3>Description</h3><p>To maintain reliable IPsec connectivity between a BIG-IP system and an AWS VPC gateway peer, you must configure the <strong>Presented ID Value</strong> (my-id-value) and the <strong>Verified ID Value</strong> (peers-id-value) options. These options are configuration elements of the IKE peer (ike-peer) configuration object. If you do not configure these elements, the tunnel may fail to establish or re-establish when the BIG-IP system is the responder.</p>
+
+<p>IPsec tunnel failures may exhibit the following symptoms:</p>
+
+<ul><li>The BIG-IP system establishes an Internet Security Association and Key Management Protocol Security Association (ISAKMP-SA) but not an IPSec Security Association (IPsec-SA). If this occurs, the system logs a message to the <strong>/var/log/racoon.log</strong> file which appears similar to the following:
+
+	<p><span class="example2">INFO: ISAKMP-SA established 127.0.0.1[500]-10.14.1.1[500] spi:1b190a4b52377457:d0feefec8ead6cca</span></p>
+
+	<p><span class="note"><strong>Note</strong>: The <strong>127.0.0.1</strong> address in the previous example indicates that the BIG-IP system is the responder.</span></p>
+	</li><li>If Dead Peer Detection (DPD) is enabled, as F5 recommends, the system quickly determines that the AWS peer is dead. When this occurs, the system logs a message to the <strong>/var/log/racoon.log </strong> file which appears similar to the following:
+	<p><span class="example2">INFO: DPD: remote (ISAKMP-SA spi=1b190a4b52377457:d0feefec8ead6cca) seems to be dead. (fail count:10)</span></p>
+	</li><li>The system deletes the ISAKMP-SA. If this occurs, the system logs a message to the <strong>/var/log/racoon.log </strong> file which appears similar to the following:
+	<p><span class="example2">INFO: ISAKMP-SA deleted 127.0.0.1[500]-10</span><span class="example2">.14.1.1[500] spi:1b790a4b52377457:d0feefec8ead6cca</span></p>
+	</li><li>During a period of failure, the AWS peer may send the BIG-IP system an ISAKMP <strong>PAYLOAD-MALFORMED</strong> notification. This message may not appear in the <strong>/var/log/racoon.log </strong>file because the <strong>racoon </strong> daemon acts as though the daemon is in the process of establishing an IPSec-SA with the peer and does not expect an unencrypted packet from the peer. As a result, the system may log an ambiguous message to the <strong>/var/log/racoon.log </strong> file which appears similar to the following:
+	<p><span class="example2">ERROR: none message must be encrypted</span></p>
+
+	<p>If this occurs, a packet capture with a <strong>UDP port 500</strong> filter may reveal an unencrypted ISAKMP packet with a <strong>PAYLOAD-MALFORMED </strong> notification message which appears similar to the following:</p>
+
+	<p><span class="example2">Internet Protocol Version 4, Src: 10.14.1.1, Dst: x.x.x.x<br>	User Datagram Protocol, Src Port: 500 (500), Dst Port: 500 (500)<br>	Internet Security Association and Key Management Protocol<br>	    Initiator SPI: 1b190a4b52377457<br>	    Responder SPI: d0feefec8ead6cca<br>	    Next payload: Notification (11)<br>	    Version: 1.0<br>	    Exchange type: Informational (5)<br>	    Flags: 0x00<br>	        .... ...0 = Encryption: Not encrypted<br>	        .... ..0. = Commit: No commit<br>	        .... .0.. = Authentication: No authentication<br>	    Message ID: 0x3df54941<br>	    Length: 40<br>	    Type Payload: Notification (11)<br>	        Next payload: NONE / No Next Payload  (0)<br>	        Payload length: 12<br>	        Domain of interpretation: ISAKMP (0)<br>	        Protocol ID: ISAKMP (1)<br>	        SPI Size: 0<br>	        Notify Message Type: PAYLOAD-MALFORMED (16)<br>	        Notification DATA: &lt;MISSING&gt;</span></p>
+	</li></ul>
+
+<p><span class="sectiontitle">Prerequisites</span></p>
+
+<p>You must meet one of the following prerequisites to use these procedures:</p>
+
+<ul><li>You have administrative access to the TMOS Shell (<strong>tmsh</strong>).</li><li>You have administrative access to the Configuration utility.</li></ul>
+
+<ul><li><a href="#proc1">Configuring the <strong>Presented ID Value </strong>(my-id-value) and <strong>Verified ID Value </strong> (peers-id-value) settings using <strong>tmsh</strong></a></li><li><a href="#proc2">Configuring the <strong>Presented ID Value</strong> (my-id-value) and <strong>Verified ID Value </strong> (peers-id-value) settings using the Configuration utility</a></li></ul>
+
+<p><a id="proc1" name="proc1"></a><span class="subsectiontitle">Configuring the Presented ID Value (my-id-value) and Verified ID Value (peers-id-value) settings using tmsh</span></p>
+
+<p>To specify the <strong>my-id-value</strong> and <strong>peers-id-value</strong> for an existing ike-peer configuration object, perform the following procedure:</p>
+
+<p><span class="note"><strong>Note</strong>: The <strong>my-id-value</strong> and <strong>peers-id-value</strong> values do not establish IP connectivity; however, the system presents and verifies them during the ISAKMP (phase1) negotiation.</span></p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system. However, F5 recommends testing any such changes during a maintenance window with consideration to the possible impact on your specific environment.</span></p>
+
+<ol><li>Log in to <strong>tmsh</strong> by typing the following command:
+
+	<p><span class="code">tmsh</span></p>
+	</li><li>Modify the ike-peer object configuration with the desired my-id-value and peers-id-value values using the following command syntax:
+	<p><span class="code">modify net ipsec ike-peer &lt;ike peer profile&gt; my-id-type address my-id-value &lt;x.x.x.x&gt; peers-id-type address peers-id-value &lt;y.y.y.y&gt;</span></p>
+
+	<p>In the previous command syntax example:</p>
+
+	<ul><li><strong>&lt;ike peer profile&gt;</strong> is the name of the ike-peer configuration object you want to modify.</li><li><strong>&lt;x.x.x.x&gt;</strong> is the IP address to present as the identity for the BIG-IP system.</li><li><strong>&lt;y.y.y.y&gt;</strong> is the IP address that the BIG-IP system receives and verifies for the remote peer.</li></ul>
+
+	<p>For example, to modify an ike-peer object named <strong>aws-peer</strong> with a my-id value of <strong>1.1.1.1 </strong>and a peers-id-value of <strong>2.2.2.2</strong>, type the following command:</p>
+
+	<p><span class="example2">modify net ipsec ike-peer aws-peer my-id-type address my-id-value 1.1.1.1 peers-id-type address peers-id-value 2.2.2.2</span></p>
+
+	<p><span class="warning"><strong>Important</strong>: As long as the configuration is the same on both peers, the ID values are arbitrary. F5 recommends that you configure the <strong>x.x.x.x </strong> address shown in the previous example so that it represents the IP address that the AWS peer uses as the remote address to BIG-IP system. If the BIG-IP system uses network address translation (NAT), use the IP address that the AWS peer uses as the source IP of the ISAKMP packets, not the IP address local to the BIG-IP system.</span></p>
+	</li><li>Save the configuration by typing the following command:
+	<p><span class="code">save /sys config</span></p>
+	</li></ol>
+
+<p><a id="proc2" name="proc2"></a><span class="subsectiontitle">Configuring the Presented ID Value (my-id-value) and Verified ID Value (peers-id-value) settings using the Configuration utility</span></p>
+
+<p>To specify the <strong>Presented ID Value</strong> and <strong>Verified ID Value</strong> for an existing ike-peer configuration object, perform the following procedure:</p>
+
+<p><span class="impact"><strong>Impact of procedure</strong>: Performing the following procedure should not have a negative impact on your system. However, F5 recommends testing any such changes during a maintenance window with consideration to the possible impact on your specific environment.</span></p>
+
+<ol><li>Log in to the Configuration utility.</li><li>Navigate to <strong>Network</strong> &gt; <strong>IPsec</strong> &gt; <strong>IKE Peers</strong>.</li><li>Click the name of the desired IPsec IKE peer.</li><li>Locate the <strong>Common Settings </strong>section.</li><li>Select <strong>Address</strong> from the <strong>Presented ID Type</strong> menu.</li><li>Select <strong>Override</strong> from the <strong>Presented ID</strong> menu.</li><li>In the <strong>Presented ID Value</strong> field, enter the IP address to present as the BIG-IP system identity. For example, <strong>1.1.1.1</strong>.</li><li>Select <strong>Address</strong> from the <strong>Verified ID Type</strong> menu.</li><li>Select <strong>Override</strong> from the <strong>Verified ID</strong> menu.</li><li>In the <strong>Verified ID Value</strong> field, enter the IP address for the remote peer that the BIG-IP system should expect to receive and verify. For example, <strong>2.2.2.2</strong>.</li><li>Click <strong>Update</strong> to save the configuration.
+	<p><span class="warning"><strong>Important</strong>: As long as the configuration is the same on both peers, the ID values are arbitrary. F5 recommends that you configure the <strong>x.x.x.x </strong> address shown in the previous example so that it represents the IP address that the AWS peer uses as the remote address to BIG-IP system. If the BIG-IP system uses NAT, use the IP address that the AWS peer uses as the source IP of the ISAKMP packets, not the IP address local to the BIG-IP system.</span></p>
+	</li></ol>
+</article>
+</body>
+</html>

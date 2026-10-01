@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000138803: HTTP connection reset is observed, F5RST Malformed HTTP error.</title>
+<meta name="description" content="Support Solution: HTTP connection reset is observed, F5RST Malformed HTTP error. — After upgrading the device to BIG-IP 17.1.1.1, 16.1.4.2, or 15.1.10.3 you observe an HTTP connection reset from the BIG-IP device.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000138803">
+</head>
+<body>
+<header>
+<h1>K000138803: HTTP connection reset is observed, F5RST Malformed HTTP error.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-03-04</dd>
+<dt>Updated</dt><dd>2025-09-05</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.1, 15.1.10, 16.1.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000138803">https://my.f5.com/manage/s/article/K000138803</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h1>Description</h1>
+<p>After upgrading the device to BIG-IP 17.1.1.1, 16.1.4.2, or 15.1.10.3 you observe an HTTP connection reset from the BIG-IP device.</p>
+<p><span style="background-color: var(--lwc-colorbackgroundalt, #fff);color: var(--slds-g-color-neutral-base-10, #181818);">This behavior is observed when the device receives a Non-RFC complaint request or response from a client or server. This is known as a malformed HTTP request/response.</span></p>
+<p>The issue is not observed when the software version is rolled back.</p>
+<h1>Environment</h1>
+<ul><li>An iRule with an <strong>HTTP::redirect</strong><em> </em>or an <strong>HTTP::respond</strong> command that redirects HTTP requests based on the content of the request.</li><li>An LTM policy that redirects HTTP requests based on the content of the request.</li><li>Upgrade to BIG-IP 17.1.1.1, 16.1.4.2, or 15.1.10.3.</li></ul>
+<h1>Cause</h1>
+<ul><li>The fix for <a href="https://cdn.f5.com/product/bugtracker/ID1354253.html" target="_blank">Bug ID 1354253</a> causes the BIG-IP to send a RST when receiving or processing a malformed HTTP request instead of the previous undesirable behavior. For more information refer to <a href="https://my.f5.com/manage/s/article/K000137322" target="_blank">K000137322: BIG-IP iRule or LTM policy may generate multiple HTTP redirect responses</a>.</li></ul>
+<h1>Recommended Actions</h1>
+<p>To understand the cause of HTTP connection reset from the device, you should perform the below given steps.</p>
+<ol><li>Take a packet capture for one of the affected virtual server through bash, the file be stored in <strong>/var/tmp</strong> folder.</li></ol>
+<pre class="language-markup"><code>tcpdump -nnvi 0.0:nnnp -s0 host &lt;VS IP address&gt; -w /var/tmp/Malformed_Request_Response.pcap</code></pre>
+<p><span style="color: rgb(39, 174, 96);"><strong>Note:</strong> If the VS processes HTTPS (encrypted) traffic, please take a decrypted packet capture using the below given articles.</span></p>
+<ol start="2"><li>Close any open browsers tabs on the system and generate traffic towards the affected VS to reproduce the issue.</li><li>Download the capture file from the device and analysis the same using Wireshark.</li><li>Look for resets or F5RST Malformed HTTP error packets</li></ol>
+<p>To narrow down the results - suggest to use the following filters:</p>
+<pre class="language-markup"><code>tcp.flags.reset==1
+f5ethtrailer.rstcausetxt == &quot;Malformed HTTP header error&quot;</code></pre>
+<ol start="5"><li>Examine the HTTP header for Malformed packet with respect to the RFC</li></ol>
+<p style="margin: 0in;font-family: Calibri;font-size: 11.0pt;"><span style="color: rgb(39, 174, 96);"><strong>Note: </strong>For more information, refer to the following document. The following link will take you to a resource outside of F5, and it is possible that the document may be removed without our knowledge:</span></p>
+<ul><li><a href="https://www.rfc-editor.org/info/rfc7230" target="_blank">RFC 7230</a></li></ul>
+<ol start="6"><li>Please refer the below given example, in which response received from the server is Non-RFC complaint.</li></ol>
+<pre class="language-markup"><code>HTTP/1.1 200 Strict-Transport-Security: max-age=0
+X-Frame-Options: SAMEORIGIN
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 1; mode=block
+Cache-Control: no-cache
+Expires: XXXXXXXXXXXXXX
+Pragma: no-cache
+Transfer-Encoding: chunked     &lt;======
+Content-Type: application/xxxx
+Transfer-Encoding: chunked     &lt;======
+Date: XXXXXXXXXXXXXXXXXXXX
+Keep-Alive: timeout=60
+Connection: keep-alive</code></pre>
+<p>In this response the HTTP response has 2 <strong>Transfer-Encoding: chunked </strong>headers. Two <strong>Transfer-Encoding: chunked </strong>headers is equivalent to <strong>Transfer-Encoding: chunked,chunked</strong>.</p>
+<p>This would indicate that the body was chunked 2 times which is not RFC compliant.</p>
+<h1>Additional Information</h1>
+<p>None</p>
+</article>
+</body>
+</html>

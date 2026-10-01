@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000152867: Dos vector can not be enabled if per-source detection/limit pps is less than 0.1% of the Dos vector rate threshold setting</title>
+<meta name="description" content="Support Solution: Dos vector can not be enabled if per-source detection/limit pps is less than 0.1% of the Dos vector rate threshold setting — Aug 2 14:55:52 &lt;Hostname&gt; err mcpd[8212]: 01071aa6:3: DOS DNS query data (ptr): Dos DNS query data bad actor can not be enabled if per-source detection/limit pps is less than 0.1% of the Dos vector…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000152867">
+</head>
+<body>
+<header>
+<h1>K000152867: Dos vector can not be enabled if per-source detection/limit pps is less than 0.1% of the Dos vector rate threshold setting</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-08-04</dd>
+<dt>Updated</dt><dd>2025-08-04</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP AFM: 15.0.0, 15.0.X, 15.0.1, 15.X.X, 16.X.X, 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.6, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000152867">https://my.f5.com/manage/s/article/K000152867</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When upgrading BIG-IP AFM systems with DoS profiles to newer versions (for example from v17.1.2.1 to 17.5.1), configuration load failures may occur with Error messages such as:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>Aug  2 14:55:52 &lt;Hostname&gt; err mcpd[8212]: 01071aa6:3: DOS DNS query data (ptr): Dos DNS query data bad actor can not be enabled if per-source detection/limit pps is less than 0.1% of the Dos vector (ptr) rate threshold setting for sub-profile (&lt;profile_name&gt;) of Dos profile (&lt;profile_path&gt;).
+Aug  2 14:55:53 &lt;Hostname&gt; err tmsh[11551]: 01420006:3: Loading configuration process failed.
+Aug  2 14:55:53 &lt;Hostname&gt; emerg load_config_files[11549]: &quot;/usr/bin/tmsh -n -g -a load sys config partitions all &quot; - failed. -- Loading schema version: 17.1.2.1
+Aug  2 14:55:54 &lt;Hostname&gt; err mcpd[8212]: 01070425:3: Full configuration load failed.</code></pre>
+<p> </p>
+<p>This occurs when &quot;<strong>per-source-ip-detection-pps</strong>&quot; and/or &quot;<strong>per-source-ip-limit-pps</strong>&quot; values for a DoS vector (e.g., DNS vector &quot;<strong>PTR</strong>&quot;) are set below 0.1% of the vector’s rate-limit.</p>
+<p>For example, when you run the command &quot;<strong>tmsh list /security dos profile all-properties</strong>&quot; to check the DoS vector values for any possible Inconsistency, you can see some unexpected values as below. Here, the &quot;<strong>per-source-ip-detection-pps</strong>&quot; and &quot;<strong>per-source-ip-limit-pps</strong>&quot; value was set to &quot;<strong>10</strong>&quot; PPS, while the &quot;<strong>rate-limit</strong>&quot; value was set to &quot;<strong>4294967295</strong>&quot; (<strong>Infinite</strong>), which leads to config load problem, due to wring ratio.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>...
+ ptr {
+ allow-advertisement disabled
+ app-service none
+ auto-blacklisting enabled
+ bad-actor enabled
+ blacklist-category /Common/denial_of_service
+ blacklist-detection-seconds 60
+ blacklist-duration 14400
+ packet-types none
+ per-source-ip-detection-pps 10 &lt;-------------------------- !!! [Must be modified]
+ per-source-ip-limit-pps 10 &lt;-------------------------- !!! [Must be modified]
+ rate-increase 200
+ rate-limit 4294967295 &lt;-------------------------- !!! [Infinite]
+ rate-threshold 4294967295
+}
+...</code></pre>
+<h2>Environment</h2>
+<ul><li>AFM Module</li><li>DoS Protection configured</li><li>Upgrade or Config load attempt</li></ul>
+<h2>Cause</h2>
+<p>The configuration fails to load because the &quot;<strong>per-source-ip-detection-pps</strong>&quot; and &quot;<strong>per-source-ip-limit-pps</strong>&quot; values for a DoS vector are set below the minimum allowed threshold, which is enforced as &quot;<strong>0.1%</strong>&quot; of the vector’s <strong>rate-limit</strong>. This restriction is by design to prevent excessive resource consumption and false positives in bad actor detection logic.</p>
+<p>If the <strong>rate-limit</strong> is set to &quot;<strong>Infinite</strong>&quot; (<strong>4294967295</strong>), any small per-source value will violate this ratio and trigger a config load failure.</p>
+<h2>Recommended Actions</h2>
+<p>To resolve this issue, you can follow either the below options, as a workaround:</p>
+<p><strong>1.</strong> If you already set any absolute value for &quot;<strong>rate-limit</strong>&quot; rather than &quot;<strong>Infinite</strong>&quot;, you need to manually Increase the threshold value of both &quot;<strong>per-source-ip-detection-pps</strong>&quot; and &quot;<strong>per-source-ip-limit-pps</strong>&quot; parameters to at least <strong>0.1%</strong> of the corresponding DOS vector&#39;s <strong>rate-limit</strong>.</p>
+<p><span style="color: #2ecc71;"><em><strong>Example:</strong> If rate-limit = 10000, minimum per-source value must be ≥10.</em></span></p>
+<p><strong>2.</strong> If the current value of &quot;<strong>rate-limit</strong>&quot; is set to &quot;<strong>Infinite</strong>&quot;, you need to manually set both the parameters (<strong>per-source-ip-detection-pps</strong>, <strong>per-source-ip-limit-pps</strong>) to &quot;<strong>4294967295</strong>&quot; (i.e., <strong>Infinite</strong>). This disables bad actor detection for that vector.</p>
+<h2>Additional Information</h2>
+<p>How To Apply Changes via Console (CLI):</p>
+<p><strong>1. </strong>Make a copy of &quot;<strong>/config/bigip.conf</strong>&quot; file, before applying any changes:<strong><br><span style="font-family: &#39;courier new&#39;, courier, monospace;"># cp /config/bigip.conf /config/bigip.conf.backup</span></strong></p>
+<p><strong>2.</strong> Edit &quot;<strong>/config/bigip.conf</strong>&quot; directly using a text editor like &quot;<strong>vi</strong>&quot;:<br><span style="font-family: &#39;courier new&#39;, courier, monospace;"># vi /config/bigip.conf</span></p>
+<p><strong>3.</strong> Adjust relevant lines under your affected DOS profile/vector, and press &quot;<strong>i</strong>&quot; on your keyboard to Enter the <strong>INSERT</strong> mode and apply the needed changes.</p>
+<p><strong>4.</strong> Once done, press <strong>ESC</strong> on your keyboard, and then press key sequence <strong>:qw</strong> for Saving the changes and Exit the &quot;<strong>vi</strong>&quot; Editor.</p>
+<p><strong>5.</strong> Verify the modified configuration and checking for any Error:<br><span style="font-family: &#39;courier new&#39;, courier, monospace;"># tmsh load sys config verify</span></p>
+<p><strong>6.</strong> If there was no Error, you can run the below command to load the config into the Memory:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"># tmsh load sys config</span></p>
+</article>
+</body>
+</html>

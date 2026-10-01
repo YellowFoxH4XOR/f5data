@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163193: Checking for ARP connectivity on the r2000/r4000 platforms and tenant(s).</title>
+<meta name="description" content="Support Solution: Checking for ARP connectivity on the r2000/r4000 platforms and tenant(s). — Due to the layers involved when tracking down potential ARP issues capturing ARP traffic may need to be done at multiple points. What you would run into with the r2000/r4000 series devices is that a…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163193">
+</head>
+<body>
+<header>
+<h1>K000163193: Checking for ARP connectivity on the r2000/r4000 platforms and tenant(s).</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-09-04</dd>
+<dt>Updated</dt><dd>2026-09-04</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163193">https://my.f5.com/manage/s/article/K000163193</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Due to the layers involved when tracking down potential ARP issues capturing ARP traffic may need to be done at multiple points. What you would run into with the r2000/r4000 series devices is that a packet capture is limited to broadcast traffic only. This limitation is extended further with ARP. In short: the r2000/r4000 host can capture broadcast ARP requests, but it cannot reliably capture the unicast ARP replies. </p>
+<p>This distinction matters because a device may issue a unicast ARP refresh request to the MAC address it already expects. F5 documents this behavior in <a href="https://my.f5.com/manage/s/article/K91095002" target="_blank" rel="noopener noreferrer">K91095002</a>, which describes targeted ARP requests as unicast. Such a request would not be visible in the r2000/r4000 host capture even though it is ARP traffic.</p>
+<h2>Cause</h2>
+<p>These limitations are due to the use of the Single Root I/O Virtualization (SR-IOV). <a href="https://clouddocs.f5.com/training/community/rseries-training/html/rseries_networking.html#port-profiles-r2000-and-r4000-only" target="_blank" rel="noopener noreferrer">Port Profiles (r2000 and r4000 only)</a></p>
+<p>Because the r2000/r4000 host capture is limited to <strong>broadcast traffic</strong>:</p>
+<ul><li>Normal broadcast ARP requests—Who has ...?—should be captured.</li><li>Gratuitous ARP requests should be captured.</li><li>A normal ARP reply is commonly sent unicast to the requester’s MAC and generally will <strong>not</strong> be captured by the F5OS host.</li><li>A targeted/unicast ARP request also will not be captured.</li></ul>
+<p>Therefore, the host-side command cannot provide a complete request/reply view of ordinary ARP exchange. This is a platform limitation, not a missing filter.</p>
+<p class="ql-indent-1" style="padding-left: 40px;">Note: The host interface counters may show unicast traffic even though the host tcpdump does not capture it</p>
+<h2>Answer/Recommended Actions</h2>
+<p>Before getting into the how-to it is important to understand the Port-Profile-dependent interface mapping. </p>
+<p>On these platforms, tcpdump is run from the F5OS-A host Linux Bash shell as root, not through the normal F5OS ConfD tcpdump command. Therefore, you do not select the F5OS interface name directly. You select its corresponding Linux interface name.</p>
+<p>A review of  <a href="https://my.f5.com/manage/s/article/K000132908" target="_blank" rel="noopener noreferrer">K000132908: [F5OS-A] running tcpdump in bash shell on rSeries r2000/4000</a> will cover this.</p>
+<p style="padding-left: 40px;">Note: A normal broadcast ARP “Who has” request should be captured on an r2000/r4000 host capture, because its Ethernet destination is normally the broadcast MAC ff:ff:ff:ff:ff:ff.</p>
+<p>Getting an ARP capture on an r2000/r4000 host:</p>
+<ol><li>Log in as root to F5OS host.</li><li>The capture should be able to run one of two ways...<code>tcpdump -ni sfp_x arp</code>or depending on the configured port profile it would look something like this:<code>tcpdump -ni &lt;port mapping&gt; arp<br>example:<br>tcpdump -ni x557_x arp</code>Note: Use the physical-interface mapping from <a href="https://my.f5.com/manage/s/article/K000132908" target="_blank" rel="noopener noreferrer">KB K000132908: F5OS-A tcpdump on r2000/r4000</a>.</li><li>To get a complete ARP exchange you will need to use more than one capture point. For example:
+<ol><li>BIG-IP tenant, from the tenant’s TMOS shell, on the relevant VLAN/interface. For example:<code>tcpdump -s0 -nni 0.0:nnn -w /var/tmp/tenant-arp.pcap arp</code></li><li>Upstream switch, SPAN/mirror port, or network TAP, which can observe both broadcast requests and unicast replies.</li><li>The ARP peer itself, such as the gateway or pool member.</li></ol>
+</li></ol>
+<p style="padding-left: 40px;">Note: Since the tenant has direct access to the dataplane interfaces, due to the use of SR-IOV on the r2000/r4000, it can see a complete exchange. If it reaches the tenant then it reached the F5OS host.</p>
+<p>Getting one on the tenant is pretty standard to what would be done on any BIG-IP.</p>
+<ol><li>From an SSH session using the bash shell the syntax would look something like this...<code>tcpdump -s0 -nni 0.0:nnn -w /var/tmp/r5600-tenant-arp.pcap arp</code></li></ol>
+<p style="padding-left: 40px;">Note: For troubleshooting traffic between two tenants or two appliances, start captures concurrently on the relevant F5OS hosts and tenants, reproduce the issue—for example, ping the peer or affected gateway—and run the capture for at least one minute.</p>
+<h2>Additional Information</h2>
+<p>At this time F5OS unified release version 2.x has not changed the way this functions on the r2000/r4000 platforms.</p>
+</article>
+</body>
+</html>

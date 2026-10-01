@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161309: BIG-IQ unable to delete application</title>
+<meta name="description" content="Support Solution: BIG-IQ unable to delete application — BIG-IQ was unable to delete an application from the Application tab, blocking the removal of services from a managed BIG-IP device. The deletion failed with the error: &quot;unable to retrieve config to…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161309">
+</head>
+<body>
+<header>
+<h1>K000161309: BIG-IQ unable to delete application</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-05-18</dd>
+<dt>Updated</dt><dd>2026-05-18</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li><li>BIG-IQ Centralized Management: 8.0.0, 8.X.X, 8.4.X, 8.4.1, 8.4.0, 8.3.X, 8.3.0, 8.2.X, 8.2.0, 8.1.X, 8.1.0, 8.0.X</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161309">https://my.f5.com/manage/s/article/K000161309</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>BIG-IQ was unable to delete an application from the Application tab, blocking the removal of services from a managed BIG-IP device. The deletion failed with the error: &quot;unable to retrieve config to delete.: Get document for key: cm/global/classic-configs/xxxxxxx-xxxx-xxxx-xxxx-xxxx12cexxxx returned nothing&quot;</p>
+<h2>Environment</h2>
+<p>- BIG-IQ version 8.4.1, platform: F5-BIQ-VE-S</p>
+<p>- Application visible in BIG-IQ GUI but could not be deleted via standard UI or force-delete REST API</p>
+<p>- Force-delete task failed at step `GET_CONFIG_REFERENCES_TO_DELETE` with the above error, indicating the application&#39;s configuration document could not be located in the BIG-IQ database</p>
+<p>- Issue consistent with a UUID/machineId mismatch in the BIG-IQ database (e.g., caused by a UCS restore on the managed BIG-IP)</p>
+<h2>Cause</h2>
+<p>A UUID/machineId mismatch in the BIG-IQ database caused the application&#39;s configuration document to be unreachable during deletion. When the force-delete task attempted to retrieve the configuration document using the stored key/xxxxxxx-xxxx-xxxx-xxxx-xxxx12cexxxx returned nothing</p>
+<h2>Answer/Recommended Actions</h2>
+<p>- Take a UCS backup of the BIG-IQ system before proceeding with any remediation steps.</p>
+<p>- Verify machineId mismatch on BIG-IQ CM:</p>
+<p> </p>
+<p>```</p>
+<p><code>restcurl cm/system/machineid-resolver | grep &quot;uuid\|machineId\|hostname&quot;</code></p>
+<p>```</p>
+<p>- If a mismatch is found, correct the device ID on the managed BIG-IP by editing `/config/f5-rest-device-id` with the correct UUID from Step 1, then restart restjavad:</p>
+<p>```</p>
+<p><code>tmsh restart sys service restjavad</code></p>
+<p>```</p>
+<p> </p>
+<p>- Re-discover and re-import LTM on BIG-IQ: navigate to **Devices &gt; BIG-IP Devices &gt; [affected BIG-IP] &gt; SERVICES &gt; Local Traffic (LTM) &gt; Re-discover &gt; Re-import**.</p>
+<p>- Retry the force-delete via REST API:</p>
+<p> </p>
+<p>```</p>
+<p><code>restcurl -X POST cm/global/tasks/force-delete -d/&lt;UUID&gt;`), it returned nothing because the document no longer existed at that path — likely due to a prior UCS restore on the managed BIG-IP that changed its machineId. The force &#39;{&quot;configSetName&quot;:&quot;&lt;&lt;Legacy Application Name&gt;&gt;&quot;}&#39;</code></p>
+<p>```</p>
+<p>- If the force-delete removes data but leaves a stale application index (application still visible in GUI), manually delete the residual index entry from the BIG-IQ database.</p>
+<p>- If the application is not a legacy type and deletion is blocked by remaining `appComponents`, list the application ID and delete each component before deleting the parent application object:</p>
+<p> </p>
+<p>```</p>
+<p><code>restcurl /cm/global/global-apps/ | jq &#39;.items[]|{name:.name,id:.id}&#39;</code></p>
+<p><code>restcurl /cm/global/global-apps/&lt;app-id&gt;</code></p>
+<p>```</p>
+<p>- After the blocking application is removed, proceed to remove BIG-IP device services via **Devices &gt; BIG-IP Devices**. If GUI-based removal fails, use the REST API approach documented in KB K01131523.</p>
+<h2>Additional Information</h2>
+<p>- KB K70894946: &quot;Unable to delete application on BIG-IQ&quot; — describes the known issue where a machineId change on a managed BIG-IP (e.g., after UCS restore) causes a UUID mismatch in the BIG-IQ database, resulting in force-delete failures with the &quot;returned nothing&quot; error.</p>
+<p>- KB K42354921: Referenced for removing BIG-IP device services after the blocking application is cleared.</p>
+<p>- KB K01131523: REST API approach for removing BIG-IP device services when GUI-based removal fails.</p>
+</article>
+</body>
+</html>

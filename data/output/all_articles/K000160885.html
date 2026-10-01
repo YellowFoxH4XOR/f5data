@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160885: After adding/deleting virtual server on LTM device object, other virtual servers on the same LTM device object changed its status from &quot;available/disabled&quot; to &quot;offline/disabled&quot;.</title>
+<meta name="description" content="Support Solution: After adding/deleting virtual server on LTM device object, other virtual servers on the same LTM device object changed its status from &quot;available/disabled&quot; to &quot;offline/disabled&quot;. — On DNS device, after modifying a virtual server configuration of LTM device object, other/unrelated virtual servers on the same LTM device object may change its status from &quot;available/disabled&quot; to…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160885">
+</head>
+<body>
+<header>
+<h1>K000160885: After adding/deleting virtual server on LTM device object, other virtual servers on the same LTM device object changed its status from &quot;available/disabled&quot; to &quot;offline/disabled&quot;.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-04-20</dd>
+<dt>Updated</dt><dd>2026-04-20</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 21.0.0, 17.5.1, 17.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160885">https://my.f5.com/manage/s/article/K000160885</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>On DNS device, after modifying a virtual server configuration of LTM device object, other/unrelated virtual servers on the same LTM device object may change its status from &quot;available/disabled&quot; to &quot;offline/disabled&quot; with an error &quot;no reply from big3d: timed out&quot;. This problem can happen under limited condition.</p>
+<p>Here is an example of how removing one virtual server from LTM device object affects other/remaining disabled virtual servers. On this example, LTM device object has three virtual servers &quot;vs1&quot;, &quot;vs2&quot;, and &quot;vs3&quot;. Two virtual servers &quot;vs1&quot; and &quot;vs2&quot; are manually disabled. And we are going to delete &quot;vs3&quot; from bigipLTM device object, which is monitored by DNS system through bigip type monitor. Note that here DNS system does not directly monitor LTM virtual servers by its own monitor. DNS system acquires virtual server status from remote big3d running on remote LTM device via iquery communication.</p>
+<p> </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>gtm server /Common/bigipltm {
+    datacenter /Common/MYDC
+    devices {
+        bigipltm {
+            addresses {
+                10.1.1.190 { }
+            }
+        }
+    }
+    monitor /Common/bigip
+    product bigip
+    virtual-servers {
+        vs1 {
+            destination 10.1.1.191:80
+            disabled
+        }
+        vs2 {
+            destination 10.1.1.192:80
+            disabled
+        }
+        vs3 {
+            destination 10.1.1.193:80
+        }
+    }
+}</code></pre>
+<p> </p>
+<p>Here is virtual server status before changing virtual server configuration of LTM device object. Two virtual servers &quot;vs1&quot; and &quot;vs2&quot; are shown as &quot;available/disabled&quot; and this is the expected status.</p>
+<p> </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>root@(bigipdns)(cfg-sync Standalone)(Active)(/Common)(tmos)# show gtm server bigipltm virtual-servers | grep -B 1 -A 8 &quot;Gtm::Virtual Server&quot;
+  -----------------------------------------
+  | Gtm::Virtual Server: vs1
+  -----------------------------------------
+  | Status
+  |   Availability : available
+  |   State        : disabled
+  |   Reason       :  Monitor /Common/bigip : UP: disabled directly
+  |   Destination  : 10.1.1.191:80
+  |   Up Time      : 5 days 16:24
+  |
+--
+  -----------------------------------------
+  | Gtm::Virtual Server: vs2
+  -----------------------------------------
+  | Status
+  |   Availability : available
+  |   State        : disabled
+  |   Reason       :  Monitor /Common/bigip : UP: disabled directly
+  |   Destination  : 10.1.1.192:80
+  |   Up Time      : 5 days 16:24
+  |
+--
+  -----------------------------------------
+  | Gtm::Virtual Server: vs3
+  -----------------------------------------
+  | Status
+  |   Availability : available
+  |   State        : enabled
+  |   Reason       :  Monitor /Common/bigip : UP
+  |   Destination  : 10.1.1.193:80
+  |   Up Time      : 5 days 16:24
+  |
+root@(bigipdns)(cfg-sync Standalone)(Active)(/Common)(tmos)#</code></pre>
+<p> </p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000hdUL&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000grh1p" alt="" width="1333" height="302" style="display: block;margin-left: auto;margin-right: auto;"></img></p>
+<p style="text-align: center;"><span style="color: #666666;">Figure: virtual server status before deleting &quot;vs3&quot;</span></p>
+<p> </p>
+<p>Starting from above condition, delete one virtual server &quot;vs3&quot; on LTM device object.</p>
+<p><span style="background-color: #f1f1f1;">root@(bigipdns)(cfg-sync Standalone)(Active)(/Common)(tmos)# modify gtm server bigipltm virtual-servers delete { vs3 }</span></p>
+<p> </p>
+<p>After delete &quot;vs3&quot;, other two virtual servers, &quot;vs1&quot; and &quot;vs2&quot;, change its status from &quot;available/disabled&quot; status to &quot;offline/disabled&quot; status. Error message &quot;no reply from big3d: timed out:&quot; is recorded despite there is no iQuery communication problem between DNS system and remote LTM system.</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Apr  6 14:11:26 bigipdns.local alert gtmd[21078]: 011ae0f2:1: Monitor instance /Common/bigip 10.1.1.192:80 UP --&gt; DOWN from /Common/bigipdns (no reply from big3d: timed out)</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">Apr  6 14:11:26 bigipdns.local alert gtmd[21078]: 011a6006:1: SNMP_TRAP: VS vs2 (ip:port=10.1.1.192:80) (Server /Common/bigipltm) state change green --&gt; red ( Monitor /Common/bigip : no reply from big3d: timed out: disabled directly)</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">Apr  6 14:11:46 bigipdns.local alert gtmd[21078]: 011ae0f2:1: Monitor instance /Common/bigip 10.1.1.191:80 UP --&gt; DOWN from /Common/bigipdns (no reply from big3d: timed out)</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">Apr  6 14:11:46 bigipdns.local alert gtmd[21078]: 011a6006:1: SNMP_TRAP: VS vs1 (ip:port=10.1.1.191:80) (Server /Common/bigipltm) state change green --&gt; red ( Monitor /Common/bigip : no reply from big3d: timed out: disabled directly)</span></p>
+<p> </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>root@(bigipdns)(cfg-sync Standalone)(Active)(/Common)(tmos)# show gtm server bigipltm virtual-servers | grep -B 1 -A 8 &quot;Gtm::Virtual Server&quot;
+  -----------------------------------------
+  | Gtm::Virtual Server: vs1
+  -----------------------------------------
+  | Status
+  |   Availability : offline
+  |   State        : disabled
+  |   Reason       :  Monitor /Common/bigip : no reply from big3d: timed out: disabled directly
+  |   Destination  : 10.1.1.191:80
+  |   Up Time      : 5 days 16:28
+  |
+--
+  -----------------------------------------
+  | Gtm::Virtual Server: vs2
+  -----------------------------------------
+  | Status
+  |   Availability : offline
+  |   State        : disabled
+  |   Reason       :  Monitor /Common/bigip : no reply from big3d: timed out: disabled directly
+  |   Destination  : 10.1.1.192:80
+  |   Up Time      : 5 days 16:28
+  |
+root@(bigipdns)(cfg-sync Standalone)(Active)(/Common)(tmos)#</code></pre>
+<p> </p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000hdUL&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000grhcv" alt="" width="1335" height="282" style="display: block;margin-left: auto;margin-right: auto;"></img></p>
+<p style="text-align: center;"><span style="color: #666666;">Figure: virtual server status after deleting &quot;vs3&quot;</span></p>
+<p> </p>
+<p>Once disabled virtual servers fell into &quot;offline/disabled&quot; status, these virtual servers stick at &quot;offline&quot; status even after re-enabling these disabled virtual servers later.</p>
+<p> </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>root@(bigipdns)(cfg-sync Standalone)(Active)(/Common)(tmos)# modify gtm server bigipltm virtual-servers modify { vs1 { enabled } vs2 { enabled } }
+root@(bigipdns)(cfg-sync Standalone)(Active)(/Common)(tmos)# show gtm server bigipltm virtual-servers | grep -B 1 -A 8 &quot;Gtm::Virtual Server&quot;
+  -----------------------------------------
+  | Gtm::Virtual Server: vs1
+  -----------------------------------------
+  | Status
+  |   Availability : offline
+  |   State        : enabled
+  |   Reason       :  Monitor /Common/bigip : no reply from big3d: timed out
+  |   Destination  : 10.1.1.191:80
+  |   Up Time      : 5 days 17:32
+  |
+--
+  -----------------------------------------
+  | Gtm::Virtual Server: vs2
+  -----------------------------------------
+  | Status
+  |   Availability : offline
+  |   State        : enabled
+  |   Reason       :  Monitor /Common/bigip : no reply from big3d: timed out
+  |   Destination  : 10.1.1.192:80
+  |   Up Time      : 5 days 17:32
+  |
+root@(bigipdns)(cfg-sync Standalone)(Active)(/Common)(tmos)#</code></pre>
+<p> </p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000hdUL&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000grfEZ" alt="" style="display: block;margin-left: auto;margin-right: auto;" width="1340" height="280"></img></p>
+<p style="text-align: center;"><span style="color: #666666;">Figure: virtual server status after re-enabled</span></p>
+<p> </p>
+<h2>Environment</h2>
+<p>All of the following conditions need to be met.</p>
+<p> </p>
+<ul><li>DNS system manages remote LTM device and its virtual servers.</li><li>DNS system acquires LTM virtual server monitor status from big3d running on remote LTM device via iQuery. </li><li>On DNS system, there are disabled virtual servers on LTM device object.</li><li>&quot;Monitor Disabled Object&quot; parameter under &quot;DNS &gt;&gt; Settings : GSLB : General&quot; is unchecked (default).</li><li>On DNS system, add/delete virtual server on LTM device object.</li></ul>
+<p> </p>
+<h2>Cause</h2>
+<p><span style="text-decoration: underline;"><a href="https://cdn.f5.com/product/bugtracker/ID2258929.html" target="_blank">Bug ID2258929</a></span>.</p>
+<p> </p>
+<h2>Answer/Recommended Actions</h2>
+<p>To rescue affected virtual servers, you can temporarily assign any monitor to virtual server objects and can remove it. After this change, affected virtual server will get back to &quot;available/disabled&quot; status.</p>
+<p><span style="background-color: #f1f1f1;"># tmsh modify gtm server bigipltm virtual-servers modify { vs1 { monitor gateway_icmp } vs2 { monitor gateway_icmp } }</span><br><span style="background-color: #f1f1f1;"># tmsh modify gtm server bigipltm virtual-servers modify { vs1 { monitor none } vs2 { monitor none } }</span><br><span style="background-color: #f1f1f1;"># tmsh save /sys config gtm-only</span></p>
+<p> </p>
+<p>Alternatively, to rescue affected virtual servers, you can just restart gtmd.</p>
+<p><span style="background-color: #f1f1f1;"># tmsh restart /sys service gtmd</span></p>
+<p><span style="color: #c20025;background-color: #f1f1f1;"><em><strong>Important</strong>: Restarting gtmd will briefly interrupt the established iQuery connections with remote DNS system or LTM system. Restarting gtmd can also affect GSLB name resolution shortly.</em></span></p>
+<p> </p>
+<p>To prevent this problem from recurring, change &quot;gtm global-settings general monitor-disabled-objects&quot; parameter to &quot;yes&quot; (default &quot;no&quot;). </p>
+<p><span style="background-color: #f1f1f1;"># tmsh modify gtm global-settings general monitor-disabled-objects yes</span><br><span style="background-color: #f1f1f1;"># tmsh save sys config gtm-only</span></p>
+<p> </p>
+<p>On GUI, you can find &quot;Monitor Disabled Object&quot; parameter under &quot;DNS &gt;&gt; Settings : GSLB : General&quot;.</p>
+<p><img src="https://f5.file.force.com/servlet/rtaImage?eid=ka0Po000000hdUL&amp;feoid=00N1T00000AOnlF&amp;refid=0EMPo00000grgdd" alt="" style="display: block;margin-left: auto;margin-right: auto;" width="633" height="357"></img></p>
+<p style="text-align: center;"><span style="color: #666666;">Figure: Monitor Disabled Object setting on GUI</span></p>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None.</p>
+<p> </p>
+</article>
+</body>
+</html>

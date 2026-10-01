@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000161624: HSL publisher naming convention in f5ingress causes iRule to fails in f5-tmm</title>
+<meta name="description" content="Support Solution: HSL publisher naming convention in f5ingress causes iRule to fails in f5-tmm — In BIG-IP Next CNF (Container Networking Functions) / SPK, iRules that use the HSL::open command to reference an HSL (High-Speed Logging) publisher by its configured name fail at runtime with a TCL…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000161624">
+</head>
+<body>
+<header>
+<h1>K000161624: HSL publisher naming convention in f5ingress causes iRule to fails in f5-tmm</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-06-08</dd>
+<dt>Updated</dt><dd>2026-06-08</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP Next</li><li>BIG-IP Next SPK</li><li>BIG-IP Next CGNAT CNF: 1.4.0</li><li>BIG-IP Next CNF</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000161624">https://my.f5.com/manage/s/article/K000161624</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>In BIG-IP Next CNF (Container Networking Functions) / SPK, iRules that use the <code>HSL::open</code> command to reference an HSL (High-Speed Logging) publisher by its configured name fail at runtime with a TCL error indicating the publisher is unavailable.</p>
+<h2>Symptoms</h2>
+<p>The following TCL error appears in the system logs:</p>
+<pre>01220001:3: &quot;ErrorMessage&quot;=&quot;&lt;iRule_name&gt; &lt;EVENT&gt; - publisher unavailable: &lt;publisher_name&gt; (line N)
+    invoked from within
+    \&quot;HSL::open -publisher \&quot;&lt;publisher_name&gt;\&quot;\&quot;&quot;
+</pre>
+<p>Example log entry:</p>
+<pre>&lt;131&gt;Jul  9 19:14:26 f5-tmm-c6c79df7-wg886 tmm1[24]: 01220001:3:
+&quot;ErrorMessage&quot;=&quot;select-snatpool &lt;CLIENT_ACCEPTED&gt; - publisher unavailable: publisher1 (line 5)
+    invoked from within
+    \&quot;HSL::open -publisher \&quot;publisher1\&quot;\&quot;&quot;
+</pre>
+<h2>Environment</h2>
+<ul><li><strong>Product:</strong> BIG-IP Next CNF / SPK (Modular BIG-IP)</li><li><strong>Component:</strong> f5ingress / f5-tmm</li><li><strong>Affected Version:</strong> SPK/CNF 1.4.0 / 2.0.0</li></ul>
+<h2>Cause</h2>
+<p>The <code>f5ingress</code> component automatically appends the suffix <strong><code>-hslpublisher</code></strong> to the HSL publisher name when translating the <code>F5BigLogHslpub</code> Kubernetes custom resource into the internal gRPC declaration sent to <code>f5-tmm</code>.</p>
+<p>For example, a publisher defined with <code>metadata.name: publisher1</code> is registered in <code>f5-tmm</code> as <code>publisher1-hslpublisher</code>, as visible in the gRPC message:</p>
+<pre>{
+  &quot;@type&quot;: &quot;declTmm.hsl_publisher&quot;,
+  &quot;id&quot;: &quot;default-publisher1-hsl-publisher&quot;,
+  &quot;name&quot;: &quot;publisher1-hslpublisher&quot;
+}
+</pre>
+<p>This behavior differs from Classic BIG-IP, where the publisher name used in <code>HSL::open</code> matches the configured object name exactly. iRules migrated from Classic BIG-IP or written following standard TMSH documentation will not include the <code>-hslpublisher</code> suffix and will therefore fail.</p>
+<h2>Impact</h2>
+<p>Any iRule using <code>HSL::open -publisher &quot;&lt;name&gt;&quot;</code> without the <code>-hslpublisher</code> suffix will fail to open the HSL queue. HSL logging will not function, and a TCL error will be logged for every connection that triggers the iRule event.</p>
+<h2>Workaround</h2>
+<p>Append <code>-hslpublisher</code> to the publisher name in all <code>HSL::open</code> calls within iRules deployed on BIG-IP Next CNF / SPK.</p>
+<p><strong>Incorrect (fails):</strong></p>
+<pre>when CLIENT_ACCEPTED {
+    set hsl [HSL::open -publisher &quot;publisher1&quot;]
+}
+</pre>
+<p><strong>Correct (works):</strong></p>
+<pre>when CLIENT_ACCEPTED {
+    set hsl [HSL::open -publisher &quot;publisher1-hslpublisher&quot;]
+}
+</pre>
+<p>The general naming convention is: <code>HSL::open -publisher &quot;&lt;F5BigLogHslpub_metadata_name&gt;-hslpublisher&quot;</code></p>
+<h2>Fix</h2>
+<p>No code fix is available. Bug ID 1980681 was resolved as <strong>WONTFIX</strong> because SPK/CNF 2.0.0 is no longer a supported release. The workaround above is the only available mitigation.</p>
+<h2>References</h2>
+<ul><li>Bug ID 1980681: [CNF/SPK] Change in HSL publisher naming convention in f5ingress causes iRule to fail in f5-tmm</li></ul>
+<p> </p>
+</article>
+</body>
+</html>
