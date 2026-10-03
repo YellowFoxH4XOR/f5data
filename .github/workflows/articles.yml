@@ -1,7 +1,8 @@
 name: Refresh F5 KB articles
 
 # Daily dump of every my.f5.com K-article (~37k) to data/output/all_articles/
-# plus the filename -> description index data/output/all_articles.json. No page
+# plus the description index, structured metadata, recent updates, and revision
+# history in data/output/. No page
 # rendering: article bodies come straight from the Coveo search API (see
 # f5scraper/articles.py), so a run is ~40 API calls and takes minutes. Chromium
 # is only needed for the one page load that captures the guest search token.
@@ -18,7 +19,7 @@ permissions:
 
 # Own group, NOT f5-scrape: GitHub keeps only one pending run per group, so a
 # third workflow queued there could cancel a waiting discover/scrape run. This
-# job only touches all_articles/ + all_articles.json, so it never conflicts
+# job only touches article data, so it never conflicts
 # with the other workflows' commits — the rebase-and-retry push below is enough.
 concurrency:
   group: f5-articles
@@ -60,6 +61,7 @@ jobs:
                   with open(p) as f: return json.load(f)
               except Exception: return {}
           idx = load("data/output/all_articles.json")
+          feed = load("data/output/article_updates.json")
           status = subprocess.run(
               ["git", "status", "--porcelain", "--untracked-files=all", "data/output/all_articles"],
               capture_output=True, text=True,
@@ -75,6 +77,8 @@ jobs:
               print(f"| New this run | {sum(1 for s in status if s.startswith('??'))} |")
               print(f"| Updated this run | {sum(1 for s in status if s.startswith(' M'))} |")
               print(f"| Removed this run | {sum(1 for s in status if s.startswith(' D'))} |")
+              print(f"| Published/updated in last 30 days | {feed.get('article_count', 0)} |")
+              print(f"| Observed changes in last 30 days | {feed.get('change_count', 0)} |")
               print("\n**By type:** " + ", ".join(f"{t} {n}" for t, n in types.most_common()))
           PY
 
@@ -85,7 +89,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/output/all_articles data/output/all_articles.json
+          git add data/output/all_articles data/output/all_articles.json data/output/article_metadata.json data/output/article_updates.json
+          if [ -d data/output/article_history ]; then git add data/output/article_history; fi
           if git diff --cached --quiet; then
             echo "No article changes this run." | tee -a "$GITHUB_STEP_SUMMARY"
           else

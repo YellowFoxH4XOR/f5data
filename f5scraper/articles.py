@@ -16,9 +16,12 @@ Output:
                                 URL) followed by F5's article body verbatim.
   all_articles.json           : {"{Knumber}.html": "short description"} for
                                 every file in all_articles/.
+  article_metadata.json / article_updates.json / article_history/ : structured
+                                metadata, recent activity, and revisions.
 
-The API pass is cheap, so there is no manifest/TTL gating: every run fetches
-everything and files are written only when their content changed. Deliberately
+The API pass is cheap, so there is no manifest/TTL gating: `articles` fetches
+everything; `updates` filters by source publication/update date. Files are
+written only when their content changed. Deliberately
 NOT recorded in manifest.json — vulns.py treats manifest keys as already-covered
 advisories, so recording every K-number here would suppress advisory discovery.
 """
@@ -31,13 +34,14 @@ import logging
 import re
 import time
 import urllib.error
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from .browser import ARTICLE_URL, ArticleSession
 from .cache import Cache
 from .discover import _POLITE_SLEEP, _capture_coveo_token, _coveo_search
+from .updates import ArticleHistory
 
 log = logging.getLogger("f5scraper.articles")
 
@@ -200,8 +204,14 @@ def _render(a: dict[str, Any], description: str) -> str:
     )
 
 
-def _search_page(auth: str, cursor: str | None, number: int) -> dict[str, Any]:
-    aq = f"{_KB_AQ} @rowid>{cursor}" if cursor else _KB_AQ
+def _search_page(auth: str, cursor: str | None, number: int, *, since: str | None = None) -> dict[str, Any]:
+    aq = _KB_AQ
+    if since:
+        date_query = since.replace("-", "/")
+        aq += (f" (@f5_updated_published_date>={date_query}"
+               f" OR @f5_original_published_date>={date_query})")
+    if cursor:
+        aq += f" @rowid>{cursor}"
     last_err: Exception | None = None
     for attempt in range(_MAX_ATTEMPTS):
         try:
@@ -218,22 +228,30 @@ def _search_page(auth: str, cursor: str | None, number: int) -> dict[str, Any]:
     raise RuntimeError(f"articles: Coveo API failed after {_MAX_ATTEMPTS} attempts: {last_err}")
 
 
-async def run(session: ArticleSession, output_dir: Path, *, limit: int | None = None) -> dict:
+async def run(
+    session: ArticleSession, output_dir: Path, *, limit: int | None = None,
+    recent_only: bool = False, days: int = 30,
+) -> dict:
     cache = Cache(output_dir)
     auth = await _capture_coveo_token(session)
+    history = ArticleHistory(cache)
+    history.bootstrap()
+    since = (datetime.now(timezone.utc).date() - timedelta(days=days)).isoformat() if recent_only else None
 
     index: dict[str, str] = {}
     seen: set[str] = set()
     changed = skipped = 0
     total: int | None = None
     cursor: str | None = None
+    missing_body = False
 
     while limit is None or len(seen) < limit:
         number = _PAGE_SIZE if limit is None else min(_PAGE_SIZE, limit - len(seen))
-        resp = _search_page(auth, cursor, number)
+        resp = _search_page(auth, cursor, number, since=since)
         if total is None:
             total = resp.get("totalCount", 0)
-            log.info("articles: %d K-articles in the Coveo index", total)
+            log.info("articles: %d K-articles%s in the Coveo index", total,
+                     f" published/updated since {since}" if since else "")
         results = resp.get("results", [])
         if not results:
             break
@@ -243,15 +261,25 @@ async def run(session: ArticleSession, output_dir: Path, *, limit: int | None = 
                 skipped += 1
                 log.warning("articles: no K-number for %r — skipped", result.get("title"))
                 continue
+            if not isinstance(a["body"], str) or not a["body"].strip():
+                skipped += 1
+                missing_body = True
+                log.warning("articles: missing HTML body for %s — keeping any existing copy", a["k"])
+                continue
             # An article re-indexed mid-run gets a new, higher rowid and shows
             # up a second time; the later copy is the fresher one, so let it win.
             name = f"{a['k']}.html"
             description = _description(a)
-            if cache.write_text(f"{ARTICLES_DIR}/{name}", _render(a, description)):
+            page = _render(a, description)
+            history.record(a, description, page)
+            if cache.write_text(f"{ARTICLES_DIR}/{name}", page):
                 changed += 1
             index[name] = description
             seen.add(name)
-        cursor = results[-1]["raw"]["rowid"]
+        next_cursor = str(results[-1]["raw"]["rowid"])
+        if cursor is not None and int(next_cursor) <= int(cursor):
+            raise RuntimeError("articles: Coveo rowid cursor did not advance")
+        cursor = next_cursor
         log.info("articles: %d fetched", len(seen))
         time.sleep(_POLITE_SLEEP)
 
@@ -261,15 +289,17 @@ async def run(session: ArticleSession, output_dir: Path, *, limit: int | None = 
     # index in place, keeping it in step with the files left on disk.
     pruned = 0
     previous: dict[str, str] = cache.read_json(INDEX_FILE) or {}
-    complete = limit is None and bool(total) and len(seen) + skipped >= total
+    complete = (not recent_only and not missing_body and limit is None
+                and bool(total) and len(seen) + skipped >= total)
     shrunk = len(seen) < _MIN_KEEP_RATIO * len(previous)
     if complete and not shrunk:
         for p in sorted((cache.dir / ARTICLES_DIR).glob("*.html")):
             if p.name not in seen:
+                history.remove(p.stem, p.read_text())
                 p.unlink()
                 pruned += 1
     else:
-        if limit is None:
+        if limit is None and not recent_only:
             log.warning(
                 "articles: fetched %d (Coveo total %s, previous index %d) — %s, not pruning",
                 len(seen), total, len(previous),
@@ -278,6 +308,8 @@ async def run(session: ArticleSession, output_dir: Path, *, limit: int | None = 
         index = {**previous, **index}
 
     cache.write_json(INDEX_FILE, index)
+    feed = history.save(days=days)
     log.info("articles: %d fetched, %d files written/updated, %d pruned, %d in index",
              len(seen), changed, pruned, len(index))
-    return {"articles": len(seen), "changed": changed, "pruned": pruned}
+    return {"articles": len(seen), "changed": changed, "pruned": pruned,
+            "recent_articles": feed["article_count"], "observed_changes": sum(history.counts.values())}
