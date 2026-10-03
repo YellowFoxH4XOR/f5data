@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163530: BIG-IP Management CAC/PIV Authentication: Full-Chain OCSP Validation Requires Responder Support for Intermediate CAs</title>
+<meta name="description" content="Support Solution: BIG-IP Management CAC/PIV Authentication: Full-Chain OCSP Validation Requires Responder Support for Intermediate CAs — BIG-IP management-plane HTTPD performs OCSP validation for the client certificate and each non-self-signed intermediate CA in the submitted CAC/PIV certificate chain. Authentication can fail when the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163530">
+</head>
+<body>
+<header>
+<h1>K000163530: BIG-IP Management CAC/PIV Authentication: Full-Chain OCSP Validation Requires Responder Support for Intermediate CAs</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-03</dd>
+<dt>Updated</dt><dd>2026-10-03</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163530">https://my.f5.com/manage/s/article/K000163530</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>BIG-IP management-plane HTTPD performs OCSP validation for the client certificate and each non-self-signed intermediate CA in the submitted CAC/PIV certificate chain. Authentication can fail when the OCSP responder validates the leaf certificate but cannot answer requests for one or more intermediate CAs.</p>
+<p>Typical errors include:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">AH01925: failed to verify the OCSP response OCSP_basic_verify:root ca not trusted</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">AH02039: Certificate Verification: Error (50): application verification failure</span></p>
+<p>An OCSP response of <span style="font-family: &#39;courier new&#39;, courier, monospace;">unauthorized (6)</span> can occur when the responder does not service the certificate identified in the request.</p>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP management-plane HTTPD.</li><li>Authentication method: <span style="background-color: #f1f1f1;">auth cert-ldap</span>.</li><li>Authentication use case: CAC/PIV certificate authentication for the management GUI and CLI.</li><li>Client certificate chain:
+<ul><li>Client leaf certificate.</li><li>One or more intermediate CA certificates.</li><li>Self-signed root CA.</li></ul>
+</li><li>OCSP validation enabled for the management client certificate.</li></ul>
+<h2>Cause</h2>
+<p>BIG-IP management HTTPD performs full-chain OCSP validation by design. It checks the leaf certificate and each intermediate CA certificate in the submitted chain; the self-signed root CA is excluded.</p>
+<p>A successful OCSP response for the leaf certificate does not prove that all intermediate CA certificates will pass validation. If the OCSP responder cannot provide status responses for the intermediate certificates, authentication fails even when the leaf certificate has a good revocation status.</p>
+<p>An OCSP request containing an intermediate CA serial number is not necessarily evidence that BIG-IP selected the wrong client certificate. It may represent a separate OCSP check for that intermediate certificate.</p>
+<h2>Recommended Actions</h2>
+<ol><li><strong>Review all OCSP requests in the transaction.</strong>
+<ul><li>Use a packet capture to identify the OCSP <span style="font-family: &#39;courier new&#39;, courier, monospace;">CertID</span> values, including the issuer name hash, issuer key hash, and serial number.</li></ul>
+</li><li><strong>Associate each <span style="font-family: &#39;courier new&#39;, courier, monospace;">CertID</span> with the correct certificate.</strong>
+<ul><li>Evaluate each request using the certificate’s direct issuer:</li><li>Client leaf certificate → immediate issuing CA.</li><li>Intermediate CA certificate → the CA that directly issued that intermediate.</li><li>Self-signed root CA → not checked through OCSP.</li></ul>
+</li><li><strong>Confirm responder coverage for the complete chain.</strong>
+<ul><li>The OCSP infrastructure must answer for the client leaf certificate and every non-self-signed intermediate CA certificate in the submitted chain.</li></ul>
+</li><li><strong>Validate the BIG-IP trust configuration.</strong>
+<ul><li>Confirm that the management HTTPD trust configuration contains the CA certificates required to validate both the client certificate chain and the OCSP response-signing chain. The management HTTPD trust configuration and the <span style="background-color: #f1f1f1;">auth cert-ldap</span> trust configuration are separate contexts and should not be assumed to serve the same purpose.</li></ul>
+</li><li><strong>Use a product fix for leaf-only OCSP checking when required.</strong>
+<ul><li>The management-plane HTTPD implementation described here does not provide a supported configuration option equivalent to Apache’s leaf-only OCSP mode. No <span style="background-color: #f1f1f1;">auth cert-ldap</span> certificate parameter forces management HTTPD to check only the client leaf certificate.</li></ul>
+</li><li><strong>Evaluate the security implications.</strong>
+<ul><li>Leaf-only checking prevents BIG-IP from checking the revocation status of intermediate CA certificates. This behavior should be evaluated against the organization’s certificate-policy requirements.</li></ul>
+</li><li><strong>Ensure the OCSP responder supports all required certificates.</strong>
+<ul><li>If changing the certificate architecture is not feasible, a product fix that provides supported leaf-only OCSP checking is required.</li></ul>
+</li></ol>
+<h2>Additional Information</h2>
+<ul><li>The configured certificate verification depth does not change full-chain OCSP behavior to leaf-only validation.</li><li>An OCSP signing certificate embedded in the response still requires a trusted responder CA chain.</li><li>Multiple OCSP requests may be generated for a single client authentication attempt.</li><li>The serial number and issuer hashes in each OCSP <span style="font-family: &#39;courier new&#39;, courier, monospace;">CertID</span> must be compared with the certificate and its direct issuer before determining whether the request is incorrect.</li><li>A fix is required to provide leaf-only OCSP validation where the responder cannot answer for intermediate CA certificates.</li></ul>
+</article>
+</body>
+</html>
