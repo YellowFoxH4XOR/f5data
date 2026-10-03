@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>STREAM_MATCHED</title><link rel="canonical" href="https://clouddocs.f5.com/api/irules/STREAM_MATCHED.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>STREAM_MATCHED</h1><p>programming_reference · See product applicability metadata</p><a href="https://clouddocs.f5.com/api/irules/STREAM_MATCHED.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!DOCTYPE html>
+
+<div class="section" id="stream-matched">
+<h1>STREAM_MATCHED</h1>
+<div class="section" id="description">
+<h2>Description</h2>
+<div class="line-block">
+<div class="line">Triggered when the stream profile matches some data-stream octets* to
+a match value (regular expresssion) specified in the Stream Profile or
+by an iRule using <a class="reference external" href="https://clouddocs.f5.com/api/irules/STREAM__expression.html">STREAM::expression</a>.</div>
+<div class="line">(<a href="https://clouddocs.f5.com/api/irules/STREAM_MATCHED.html#id1"><span class="problematic" id="id2">*</span></a>See <a class="reference external" href="https://clouddocs.f5.com/api/irules/STREAM__encoding.html">STREAM::encoding</a> for details on how
+data-stream octets are matched.)</div>
+<div class="line">This event may be used to examine the matched string (see
+<a class="reference external" href="https://clouddocs.f5.com/api/irules/STREAM__match.html">STREAM::match</a>) and optionally use
+<a class="reference external" href="https://clouddocs.f5.com/api/irules/STREAM__replace.html">STREAM::replace</a> to specify a replacement
+string or avoid replacing the matched data at all.</div>
+</div>
+</div>
+<div class="section" id="examples">
+<h2>Examples</h2>
+<div class="line-block">
+<div class="line">This example shows how you can use
+<a class="reference external" href="https://clouddocs.f5.com/api/irules/STREAM__match.html">STREAM::match</a> in the
+<a class="reference external" href="https://clouddocs.f5.com/api/irules/STREAM_MATCHED.html">STREAM_MATCHED</a> event to check if the matched
+string meets some condition that can’t easily be checked for using a
+regular expression in
+<a class="reference external" href="https://clouddocs.f5.com/api/irules/STREAM__expression.html">STREAM::expression</a>.</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>when HTTP_REQUEST {
+  # Disable the stream filter for all requests
+  STREAM::disable
+}
+
+when HTTP_RESPONSE {
+  # Check if response type is text
+  if {[HTTP::header value Content-Type] starts_with "text"} {
+
+    # Match an "http://imageserver-NNNN.example.com" URL (and replace
+    # it with nothing yet.  We'll figure out the replacement later)
+    STREAM::expression {=http://imageserver-[0-9]{1,4}\.example\.com==}
+
+    # Enable the stream filter for this response only
+    STREAM::enable
+  }
+}
+
+when STREAM_MATCHED {
+  # Check if the matched string meets some condition that can't easily be checked
+  # for using a single regex in STREAM::expression.  For example, regex's are not
+  # very good at arithmetic
+
+  # extract the imageserver number
+  regexp {http://imageserver-([0-9]+)[.]example[.]com} [STREAM::match] url server_nbr
+
+  # want to switch protocol to HTTPS only for newer imageservers, numbers over 379
+  if {$server_nbr &gt; 379} {
+    set url [string replace $url 0 3 "https"]
+  }
+
+  # now put the URL back into the data stream (otherwise it will be deleted by the
+  # empty replacement value we set with STREAM::expression)
+  STREAM::replace $url
+
+  log local0.info "[IP::client_addr]_[TCP::local_port]: matched [STREAM::match], replaced with: ${url}"
+}
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">Log output:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">Rule</span><span class="w"> </span>stream_expression_rule<span class="w"> </span><span class="o">&lt;</span>STREAM_MATCHED<span class="o">&gt;:</span><span class="w"> </span><span class="mf">10.0</span>.0.1_3413:<span class="w"> </span>matched:<span class="w"> </span>http:<span class="o">//</span>imageserver-99.example.com,<span class="w"> </span>replaced<span class="w"> </span>with:<span class="w"> </span>http:<span class="o">//</span>imageserver-99.example.com
+<span class="nv">Rule</span><span class="w"> </span>stream_expression_rule<span class="w"> </span><span class="o">&lt;</span>STREAM_MATCHED<span class="o">&gt;:</span><span class="w"> </span><span class="mf">10.0</span>.0.1_3413:<span class="w"> </span>matched:<span class="w"> </span>http:<span class="o">//</span>imageserver-425.example.com,<span class="w"> </span>replaced<span class="w"> </span>with:<span class="w"> </span>https:<span class="o">//</span>imageserver-425.example.com
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">This example just reads the stream match in the STREAM_MATCHED event
+and adds a persistence record.</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span># Look for a JSESSIONID cookie in response content and add a persistence record when it is found.
+# To use STREAM commands a Stream Profile must be attached to the virtual server.  Use /Common/stream.
+
+when HTTP_RESPONSE {
+  # Clear the jsessionid if it exists already on this TCP connection
+  if {[info exists jsessionid]} {
+    unset jsessionid
+  }
+
+  # Only look for the jsessionid in text responses
+  if {[HTTP::header value "Content-Type"] starts_with "text"} {
+    log local0.info "[IP::client_addr]_[TCP::client_port]: text response, enabling stream profile"
+
+    # match the JSESSIONID string and value
+    # We'll parse out the value in STREAM_MATCHED
+    # Assume the jsessionid is 1 to 100 alphameric characters
+    STREAM::expression {/Set-Cookie: [^\s]+;JSESSIONID=[A-Za-z0-9]{1,100}//}
+    STREAM::enable
+
+    # Enable the STREAM_MATCHED event as it could have been disabled if there was a prior
+    # response on this TCP connection
+    event STREAM_MATCHED enable
+
+  } else {
+    # Disable the stream filter as this wasn't a text response
+    log local0. "[IP::client_addr]_[TCP::client_port]: No Content-Type match, disabling stream filter"
+    STREAM::disable
+  }
+}
+
+when STREAM_MATCHED {
+  # Save the matched value (example: ;JSESSIONID=a9bh35uy)
+  regexp {Set-Cookie: [^\s]+;JSESSIONID=([A-Za-z0-9]{1,100})} [STREAM::match] junk jsessionid
+  log local0.info "[IP::client_addr]_[TCP::client_port]: Found JSESSIONID=${jsessionid}"
+
+  # Prevent deletion of matched data which will occur if we don't do something (because
+  # the stream expression replacement value is empty)
+  # (STREAM::replace with no argument means don't replace anything, just leave it alone)
+  STREAM::replace
+
+  # Not sure why, but the parser doesn't allow the persist command in some TMOS versions
+  # It works though, so hide the command from the parser
+  set persist_cmd "persist add uie ${jsessionid}"
+  log local0.info "[IP::client_addr]_[TCP::client_port]: Will persist on JSESSIONID (command '${persist_cmd}')"
+
+  eval $persist_cmd
+
+  # Assume the first match is the same as any other jsessionids, so stop checking for them
+  log local0.info "[IP::client_addr]_[TCP::client_port]: Added persistence record. No longer scanning this response for JSESSIONID"
+  event STREAM_MATCHED disable
+}
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">Log output:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>Rule persist_on_response_content_stream_rule &lt;HTTP_RESPONSE&gt;: 1.2.3.4_2418: text response, enabling stream profile
+Rule persist_on_response_content_stream_rule &lt;STREAM_MATCHED&gt;: 1.2.3.4_2418: Found JSESSIONID=a111111111111111111z
+Rule persist_on_response_content_stream_rule &lt;STREAM_MATCHED&gt;: 1.2.3.4_2418: Will persist on JSESSIONID (command 'persist add uie a111111111111111111z')
+Rule persist_on_response_content_stream_rule &lt;STREAM_MATCHED&gt;: 1.2.3.4_2418: Added persistence record. No longer scanning this response for JSESSIONID
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="related-information">
+<h2>Related Information</h2>
+<p><strong>Available Commands:</strong></p>
+<div class="listbykeyword docutils container">
+<ul class="simple">
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/clone.html">clone</a> - Causes the system to clone traffic to the
+specified pool or pool member regardless of monitor status.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/forward.html">forward</a> - Sets the connection to forward IP
+packets.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/IP__idle_timeout.html">IP::idle_timeout</a> - Returns or sets the
+idle timeout value.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/ip_ttl.html">ip_ttl</a> - Returns the TTL of the latest IP packet
+received.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/lasthop.html">lasthop</a> - Sets the lasthop of an IP connection.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/listen.html">listen</a> - Sets up a related ephemeral listener to
+allow an incoming related connection to be established.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/LSN__address.html">LSN::address</a> - Set or override translation
+address.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/LSN__disable.html">LSN::disable</a> - Disable LSN translation.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/LSN__inbound.html">LSN::inbound</a> - Disable inbound connections
+to translation address/port.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/LSN__persistence.html">LSN::persistence</a> - Set translation
+selection mode and persistence timeout.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/LSN__persistence-entry.html">LSN::persistence-entry</a> - Create
+or lookup translation address.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/LSN__pool.html">LSN::pool</a> - Specify LSN pool for current
+connection.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/LSN__port.html">LSN::port</a> - Set or override translation port.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/nexthop.html">nexthop</a> - Sets the nexthop of an IP connection.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/node.html">node</a> - Sends the packet directly to the identified
+server node.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/peer.html">peer</a> - Causes the specified iRule commands to be
+evaluated under the peer’s (opposite) context.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/persist.html">persist</a> - Causes the system to use the named
+persistence type to persist the connection.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/session.html">session</a> - Utilizes the persistence table to
+store arbitrary information based on the same keys as persistence.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/TCP__bandwidth.html">TCP::bandwidth</a> - Returns a bandwidth
+estimate for the peer.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/TCP__client_port.html">TCP::client_port</a> - Returns the remote
+TCP port/service number of the clientside TCP connection.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/TCP__close.html">TCP::close</a> - Closes the TCP connection.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/TCP__local_port.html">TCP::local_port</a> - Returns the local TCP
+port/service number of a TCP connection.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/TCP__mss.html">TCP::mss</a> - Returns the on-wire Maximum Segment
+Size (MSS) for a TCP connection.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/TCP__nagle.html">TCP::nagle</a> - Enables or disables the Nagle
+algorithm on the current TCP connection.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/TCP__notify.html">TCP::notify</a> - Causes the USER_REQUEST
+or USER_RESPONSE event to be raised.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/TCP__offset.html">TCP::offset</a> - Returns the number of bytes
+currently held in memory via <a class="reference external" href="TCP::collect">TCP::collect</a>.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/TCP__option.html">TCP::option</a> - Gets or sets the value of the
+specified option kind from the TCP header.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/TCP__payload.html">TCP::payload</a> - Returns or replaces TCP
+data content.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/TCP__release.html">TCP::release</a> - Releases and flushes
+collected data. and resumes processing.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/TCP__remote_port.html">TCP::remote_port</a> - Returns the remote
+TCP port/service number of a TCP connection.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/TCP__respond.html">TCP::respond</a> - Sends the specified data
+directly to the peer.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/TCP__rtt.html">TCP::rtt</a> - Returns the smoothed round-trip
+time estimate for a TCP connection.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/TCP__server_port.html">TCP::server_port</a> - Returns the remote
+TCP port/service number of the serverside TCP connection.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/TCP__unused_port.html">TCP::unused_port</a> - Returns an unused
+TCP port for the specified IP tuple.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/UDP__client_port.html">UDP::client_port</a> - Returns the UDP
+port/service number of a client system.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/UDP__drop.html">UDP::drop</a> - Drops the current UDP packet
+without removing the flow from the connection table</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/UDP__local_port.html">UDP::local_port</a> - Returns the local UDP
+port/service number.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/UDP__mss.html">UDP::mss</a> - Returns the on-wire Maximum Segment
+Size (MSS) for a UDP connection.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/UDP__payload.html">UDP::payload</a> - Returns the content or
+length of the current UDP payload.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/UDP__remote_port.html">UDP::remote_port</a> - Returns the remote
+UDP port/service number.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/UDP__respond.html">UDP::respond</a> - Sends data directly to a
+peer.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/UDP__server_port.html">UDP::server_port</a> - Returns the UDP
+port/service number of a server system.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/UDP__unused_port.html">UDP::unused_port</a> - Returns an unused
+UDP port for the specified IP tuple.</li>
+</ul>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+<div class="admonition warning">
+<p class="first admonition-title">Warning</p>
+<p class="last"><strong>The links to the sample code below are remnants of the old DevCentral wiki and will result in a 404 error. For best results, please copy the link text and search the codeshare directly on DevCentral.</strong></p>
+</div>
+<p><strong>Sample Code:</strong></p>
+<div class="listbykeyword docutils container">
+<ul class="simple">
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/CreditCardScrubberUsingStream.html">Credit Card Scrubber Using a Stream
+Profile</a>
+- This iRule illustrates how to scrub out Credit Card Numbers from
+HTTP traffic using a STREAM profile.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/Data-Leakage-Protection.html">Data Leakage
+Protection</a>
+- Scrub sensitive data from application responses</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/GomezInjection.html">Gomez
+Injection</a>
+- Auto injection of Gomez Networks Actual XF client side
+Javascript.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/GomezInjectionWithGroupId.html">Gomez Injection With Group
+Id</a>
+- Auto injection of Gomez Networks Actual XF client side
+Javascript.</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/GomezInjectionWithPageId.html">Gomez Injection With Page
+Id</a>
+- The following iRule will utilize the Stream profile to
+auto-inject the required client side Gomez Networks performance
+measurement JavaScript code</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/HTML-comment-scrubber.html">HTML comment scrubber using a stream
+profile</a>
+- Removes HTML comments from server responses</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/parse_username_from_http_requests_rule.html">Parse username from HTTP
+requests</a>
+- Parse the username from HTTP requests in the basic auth header
+and POST data</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/Persist_client_on_response_content_with_stream.html">Persist client on response content with
+stream</a>
+- Persist a client based on a string found in the response content
+using a stream profile</li>
+<li><a class="reference external" href="https://devcentral.f5.com/s/articles/proxypass-v10-v11">ProxyPass
+v10/v11</a>
+- iRule (for LTM v10/v11) to replace the functionality of Apache
+Webserver ProxyPass and ProxyPassReverse functions allowing for a
+different server and client view of your web application(s).</li>
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/Redirect-Trapper.html">Redirect
+Trapper</a>
+- iRule to trap server redirect response, follow the redirect on
+the BIG-IP and return the followed response to the client as a
+result of original request</li>
+</ul>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+<ul class="simple">
+<li>Introduced: BIGIP-9.2.0</li>
+</ul>
+<p><em>The BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor 
+or control community code contributions. We make no guarantees or warranties regarding the available code, 
+and it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any 
+code available in the BIG-IP API reference guides is solely at your own risk.</em></p>
+</div>
+</div>
+</article>
+</body></html>

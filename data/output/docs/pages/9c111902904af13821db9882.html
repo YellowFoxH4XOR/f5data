@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Various Procedures</title><link rel="canonical" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/ts_procedures.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>Various Procedures</h1><p>architecture · main</p><a href="https://clouddocs.f5.com/sslo-troubleshooting-guide/ts_procedures.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!DOCTYPE html>
+
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<!-- HTML Metadata for this page -->
+<meta content="F5 SSLO Various Procedures" name="description"/>
+<meta content="f5, sslo, various procedures" name="keywords"/>
+<meta content="Peter Mills" name="authors"/>
+<p><a name="VARIOUS"></a></p>
+<div class="section" id="various-procedures">
+<h1>Various Procedures</h1>
+<p>These procedures are helpful for troubleshooting.</p>
+<a name="view_dp_logs">
+<div class="section" id="review-data-plane-logs">
+<h2>Review Data Plane Logs</h2>
+<p>BIG-IP stores logs about data-plane events in two primary places. Review these logs to troublshoot.</p>
+<table border="1" class="docutils">
+<thead>
+<tr>
+<th>Location</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/var/log/ltm</code></td>
+<td>L1-L5 TLS, TCP, and general information</td>
+</tr>
+<tr>
+<td><code>/var/log/apm</code></td>
+<td>Security policy execution tracing and errors</td>
+</tr>
+</tbody>
+</table>
+<p>For SSL errors, additional SSL/TLS logging can be enabled by following the TMSH command listed in <a class="reference external" href="https://support.f5.com/csp/article/K15292">K15292: Troubleshooting SSL/TLS handshake failures</a>.</p>
+</div>
+<div class="section" id="use-the-echo-worker-to-poll-each-device">
+<h2>Use the Echo Worker to poll each device</h2>
+<p>This procedure is done as part of the HA Echo Verification check. Use the following command:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span>restcurl /shared/echo -d '{"content":"Echo Test"}' -u admin:admin
+</pre></div>
+</div>
+<p>Negative results indicate REST is not responding correctly.</p>
+<ul class="simple">
+<li><p>Examine the restnoded and restjavad logs:</p></li>
+</ul>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">tail</span><span class="w"> </span><span class="o">--</span><span class="n">lines</span><span class="o">=</span><span class="mi">0</span><span class="w"> </span><span class="o">-</span><span class="n">f</span><span class="w"> </span><span class="o">/</span><span class="n">var</span><span class="o">/</span><span class="n">log</span><span class="o">/</span><span class="n">rest</span><span class="o">*</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>Restart REST:</p></li>
+</ul>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">bigstart</span><span class="w"> </span><span class="n">restart</span><span class="w"> </span><span class="n">restjavad</span><span class="w"> </span><span class="n">restnoded</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>Reboot BIG-IP:</p></li>
+</ul>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">reboot</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="determine-how-a-block-was-configured">
+<h2>Determine how a block was configured</h2>
+<p>Instead of modifying a configuration, the REST configuration system produces a new block with an incremented <em>generation</em> value. This allows you to obtain the values of prior versions of blocks. You can find these in the block data from a qkview.</p>
+</div>
+<div class="section" id="extract-and-edit-a-block-on-a-local-device">
+<h2>Extract and edit a block on a local device</h2>
+<p>Ensure you have a recent backup of all devices before editing the block data.</p>
+<ol class="simple">
+<li><p>Extract all blocks -
+<code class="docutils literal notranslate"><span class="pre">restcurl</span> <span class="pre">-u</span> <span class="pre">admin:admin</span> <span class="pre">-X</span> <span class="pre">GET</span> <span class="pre">/shared/iapp/blocks</span> <span class="pre">&gt;</span> <span class="pre">blocks.json</span></code></p></li>
+<li><p>Identify the <strong>ID</strong> of the block you wish to edit. This command provides a list of names and IDs of all blocks -
+<code class="docutils literal notranslate"><span class="pre">cat</span> <span class="pre">blocks.json</span> <span class="pre">|</span> <span class="pre">jq</span> <span class="pre">'.items[]</span> <span class="pre">|</span>  <span class="pre">[</span> <span class="pre">.id,</span> <span class="pre">.name</span> <span class="pre">]</span>  <span class="pre">'</span></code></p></li>
+<li><p>Extract the block you wish to edit. In this example, it’s <strong>f5702f0b-99c9-4361-a07b-a5c0726c8fb4</strong> -
+<code class="docutils literal notranslate"><span class="pre">restcurl</span> <span class="pre">-u</span> <span class="pre">admin:admin</span> <span class="pre">-X</span> <span class="pre">GET</span> <span class="pre">/shared/iapp/blocks/f5702f0b-99c9-4361-a07b-a5c0726c8fb4</span> <span class="pre">&gt;</span> <span class="pre">block.json</span></code></p></li>
+<li><p>Edit the <code class="docutils literal notranslate"><span class="pre">block.json</span></code> file as appropriate.</p></li>
+<li><p>Patch the block with the new data -
+<code class="docutils literal notranslate"><span class="pre">restcurl</span> <span class="pre">-u</span> <span class="pre">admin:admin</span> <span class="pre">-X</span> <span class="pre">PATCH</span> <span class="pre">-d</span> <span class="pre">"$(cat</span> <span class="pre">block.json)"</span> <span class="pre">/shared/iapp/blocks/f5702f0b-99c9-4361-a07b-a5c0726c8fb4</span></code></p></li>
+</ol>
+</div>
+<div class="section" id="extract-block-s-from-qkview">
+<h2>Extract block(s) from qkview</h2>
+<p>BIG-IP qkviews contain all REST database information in a large JSON object. You can use <strong>jq</strong> to analyze it. You may also generate it from a device directly.</p>
+<ul>
+<li><p>Extract the JSON data to the current directory.</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">cd</span><span class="w"> </span><span class="o">/</span><span class="n">var</span><span class="o">/</span><span class="n">tmp</span><span class="p">;</span><span class="n">tar</span><span class="w"> </span><span class="o">--</span><span class="n">strip</span><span class="o">-</span><span class="n">components</span><span class="o">=</span><span class="mi">2</span><span class="w"> </span><span class="o">-</span><span class="n">zxvf</span><span class="w"> </span><span class="o">&lt;</span><span class="n">path_to_your_qkview</span><span class="o">&gt;</span><span class="w"> </span><span class="n">var</span><span class="o">/</span><span class="n">tmp</span><span class="o">/</span><span class="n">storage_text_dump</span><span class="p">.</span><span class="na">txt</span>
+</pre></div>
+</div>
+</li>
+<li><p>Filter non-SSLO non-transient block data from REST storage file and show it as a JSON array:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span>cat storage_text_dump.txt | jq ' . [] | select( .key != null) | select(.value != null ) | select(.key|contains("shared/iapp/blocks/"))  | .value |  select( .state != "TEMPLATE") | select( .name != null) | select( .name | contains("_TOPOLOGY_MODIFY_") | not ) | select( .name | contains("_SERVICE_CREATE_") | not ) | select( .name | contains("-MODIFY") | not ) | select( .name | endswith("-CREATE") | not ) |  {name:.name,id:.id,state:.state,lastUpdate: ((.lastUpdateMicros/1000000) | strftime("%c")),generation:.generation,configurationProcessorReference:.configurationProcessorReference.link} | . ' | jq --slurp .
+</pre></div>
+</div>
+</li>
+<li><p>Figure out the ID and dump the Input Properties (user provided config) of a block:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span>cat storage_text_dump.txt | jq ' . [] | select( .key != null) | select(.value != null ) | select(.key|contains("shared/iapp/blocks/"))  | .value |  select( .state != "TEMPLATE") | select( .name != null) | select( .name | contains("_TOPOLOGY_MODIFY_") | not ) | select( .name | contains("_SERVICE_CREATE_") | not ) | select( .name | contains("-MODIFY") | not ) | select( .name | endswith("-CREATE") | not ) | select( .id == "replace-with-your-ID" ) | .inputProperties '
+</pre></div>
+</div>
+</li>
+<li><p>With the ID, obtain the Data Properties (MCP objects related to this block):</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span>cat storage_text_dump.txt | jq ' . [] | select( .key != null) | select(.value != null ) | select(.key|contains("shared/iapp/blocks/"))  | .value |  select( .state != "TEMPLATE") | select( .name != null) | select( .name | contains("_TOPOLOGY_MODIFY_") | not ) | select( .name | contains("_SERVICE_CREATE_") | not ) | select( .name | contains("-MODIFY") | not ) | select( .name | endswith("-CREATE") | not ) | select( .id == "replace-with-your-ID" ) | .dataProperties '
+</pre></div>
+</div>
+</li>
+</ul>
+</div>
+<div class="section" id="determine-current-gossip-sync-state">
+<h2>Determine current gossip sync state</h2>
+<p>The gossip synchronization system can be queried for its status.</p>
+<div class="highlight-curl notranslate"><div class="highlight"><pre><span></span>restcurl 'shared/gossip?$select=gossipPeerDevices' -u admin:admin
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>Each device should have a unique uuid, deviceUri, and machineId.</p></li>
+<li><p>Each deviceURI should be reachable from each other device.</p></li>
+<li><p>The groupName should be <code class="docutils literal notranslate"><span class="pre">tm-shared-all-big-ips</span></code></p></li>
+<li><p>The state should be <strong>ACTIVE</strong> for both units to indicate Active gossip status</p></li>
+</ul>
+<p>Negative results indicate that the gossip REST synchronization system is not working correctly.</p>
+<p>The BIG-IP Failover State Worker monitors the MCP configuration to see whether the host is setup for failover and ensures that the Gossip Worker is configured to synchronize REST data between the BIG-IPs.  Below shows the current failover device-group and next polling time. Hence it can take a little time for changes to be reflected in the REST framework.</p>
+<div class="highlight-curl notranslate"><div class="highlight"><pre><span></span>restcurl /mgmt/tm/shared/bigip-failover-state -u admin:admin
+</pre></div>
+</div>
+<p>Remediation steps for incorrect gossip state:</p>
+<p>Reset device trust in CMI. Refer to solution article <a class="reference external" href="https://support.f5.com/csp/article/K42161405">K42161405</a> for further details.</p>
+<p>Clear the gossip cache
+0+ Use the HA Status</p>
+</div>
+<div class="section" id="verify-ha-peer-information">
+<h2>Verify HA peer information</h2>
+<p>Run the following on each device and carefully review the JSON output for errors (credentials req’d in 9.x+):</p>
+<div class="highlight-curl notranslate"><div class="highlight"><pre><span></span>restcurl '/mgmt/shared/iapp/f5-iappslx-ssl-orchestrator/ha-verification?getpeer=1' -u admin:admin
+</pre></div>
+</div>
+<p>The SSLO and Rest Framework version must match in both HA peers.
+The information should be reciprocal, so that each peer has information about the other.</p>
+</div>
+<div class="section" id="verify-application-id">
+<h2>Verify Application ID</h2>
+<p>Verify that the ID of the “f5-iappslx-ssl-orchestrator” application is the same on both HA devices. If they are not the same then undeploy, uninstall the RPM, and then install the matching RPM.</p>
+<p><code class="docutils literal notranslate"><span class="pre">curl</span> <span class="pre">-sku</span> <span class="pre">admin:admin</span> <span class="pre">https://localhost/mgmt/shared/iapp/global-installed-packages</span> <span class="pre">|</span> <span class="pre">jq</span></code></p>
+<p>Alternatively use the TMSH command</p>
+<p><code class="docutils literal notranslate"><span class="pre">tmsh</span> <span class="pre">list</span> <span class="pre">mgmt</span> <span class="pre">shared</span> <span class="pre">iapp</span> <span class="pre">installed-packages</span></code></p>
+</div>
+<div class="section" id="verify-correct-cmi-and-device-group-status">
+<h2>Verify correct CMI and device group status</h2>
+<p>CMI is the native sync-failover mechanism used by BIG-IP. It must work correctly and be in a consistent state for SSLO to work.</p>
+<ul class="simple">
+<li><p>Sync state must be <em>Changes Pending</em> or <em>In Sync</em>.</p></li>
+<li><p>Device Group must be in <em>sync-failover</em> mode.</p></li>
+<li><p>Manual synchronization mode must be used. Auto sync is not allowed.</p></li>
+<li><p>One standby device must be present in the group.</p></li>
+<li><p>Exactly one device must be <em>active</em>.</p></li>
+</ul>
+<p>Refer to solution article <a class="reference external" href="https://support.f5.com/csp/article/K13946">K13946</a> for further details.</p>
+</div>
+<div class="section" id="list-blocks-with-bad-state">
+<h2>List Blocks With Bad State</h2>
+<p>Use this command to list all of the SSLO blocks with bad state:</p>
+<div class="highlight-curl notranslate"><div class="highlight"><pre><span></span>restcurl "/mgmt/shared/iapp/blocks?\$filter=configurationProcessorReference/link%20eq%20'*f5-iappslx-ssl-orchestrator*'%20and%20state%20eq%20'BINDING'%20or%20state%20eq%20'ERROR'%20or%20state%20eq%20'BINDING'" -u admin:admin | jq ' .items[] | {id: .id, name: .name, state: .state }'
+</pre></div>
+</div>
+</div>
+<div class="section" id="delete-binding-and-error-blocks">
+<h2>Delete BINDING and ERROR blocks</h2>
+<p>Navigate to <strong>iApps &gt;&gt; Application Services &gt;&gt; Applications LX</strong>.</p>
+<table border="1" class="docutils">
+<thead>
+<tr>
+<th>Status</th>
+<th>Dot Colour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BOUND</td>
+<td>Green</td>
+</tr>
+<tr>
+<td>BINDING</td>
+<td>Circling</td>
+</tr>
+<tr>
+<td>ERROR</td>
+<td>Red</td>
+</tr>
+<tr>
+<td>UNBOUND</td>
+<td>Grey</td>
+</tr>
+<tr>
+<td>PENDING</td>
+<td>Grey and the app's name begins with "sslo_ob_</td>
+</tr>
+</tbody>
+</table>
+<p>Before a BINDING block can be deleted it must first be patched to ERROR state. All ERROR blocks should then be deleted.</p>
+<div class="highlight-curl notranslate"><div class="highlight"><pre><span></span>restcurl -X PATCH -d '{"state":"ERROR"}' /mgmt/shared/iapp/blocks/&lt;BLOCK ID GOES HERE&gt; -u admin:admin
+</pre></div>
+</div>
+</div>
+<div class="section" id="patch-an-existing-block">
+<h2>Patch an existing block</h2>
+<p>Use <em>restcurl</em> to <strong>fetch</strong>, then <strong>patch</strong> the block after making necessary edits to the data.</p>
+<ol>
+<li><p><code class="docutils literal notranslate"><span class="pre">restcurl</span> <span class="pre">-u</span> <span class="pre">admin:admin</span> <span class="pre">-X</span> <span class="pre">GET</span> <span class="pre">/shared/iapp/blocks</span> <span class="pre">&gt;</span> <span class="pre">blocks.json</span></code></p></li>
+<li><p>Find and isolate the problem block Edit the block data as appropriate.</p></li>
+<li><div class="highlight-restcurl notranslate"><div class="highlight"><pre><span></span>
+
+</pre></div>
+</div>
+</li>
+</ol>
+</div>
+<div class="section" id="list-all-sslo-related-mcp-objects">
+<h2>List all SSLO related MCP objects</h2>
+<p>BIG-IP’s iApp infrastructure adds an <em>applications service</em> attribute to all MCP objects that it creates. All of the attribute values begin with <em>sslo</em>. This command obtains a list:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">tmsh</span> <span class="nb">list</span> <span class="n">sys</span> <span class="n">application</span> <span class="n">service</span> <span class="n">recursive</span> <span class="n">sslo</span><span class="o">*</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="list-all-the-application-services">
+<h2>List all the application services</h2>
+<p>List all the application service objects.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">curl</span> <span class="o">-</span><span class="n">sk</span> <span class="o">-</span><span class="n">X</span> <span class="n">GET</span> <span class="s2">"https://localhost/mgmt/tm/sys/application/service"</span> <span class="o">-</span><span class="n">u</span> <span class="n">admin</span><span class="p">:</span><span class="n">admin</span> <span class="o">|</span> <span class="n">jq</span> <span class="o">-</span><span class="n">r</span> <span class="s1">'.items[].fullPath'</span> <span class="o">|</span> <span class="n">sed</span> <span class="s1">'s/\/Common\///g'</span> <span class="o">|</span> <span class="n">grep</span> <span class="o">^</span><span class="n">sslo</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="completely-remove-sslo">
+<h2>Completely remove SSLO</h2>
+<p>To remove SSLO configuration completely</p>
+<ul class="simple">
+<li><p>Stop the REST subsystem</p></li>
+</ul>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">bigstart</span><span class="w"> </span><span class="n">stop</span><span class="w"> </span><span class="n">restjavad</span><span class="w"> </span><span class="n">restnoded</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>Remove the SSLO MCP objects</p></li>
+</ul>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">tmsh</span><span class="w"> </span><span class="n">delete</span><span class="w"> </span><span class="n">sys</span><span class="w"> </span><span class="n">application</span><span class="w"> </span><span class="n">service</span><span class="w"> </span><span class="n">recursive</span><span class="w"> </span><span class="n">sslo</span><span class="o">*</span>
+</pre></div>
+</div>
+<blockquote>
+<div><p><strong><em>NOTE:</em></strong> You may have to manually remove conflicts by using a <a class="reference external" href="https://clouddocs.f5.com/cli/tmsh-reference/v15/modules/cli/cli_transaction.html">transaction</a>.</p>
+</div></blockquote>
+<ul class="simple">
+<li><p>Remove REST database (reconfigure BIG-IP HA afterwards)</p></li>
+</ul>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">clear</span><span class="o">-</span><span class="n">rest</span><span class="o">-</span><span class="n">storage</span><span class="w"> </span><span class="o">-</span><span class="n">l</span>
+</pre></div>
+</div>
+<p>The -l option deletes the restjavad log files as well as the stored state</p>
+<blockquote>
+<div><p><strong>NOTE</strong> Do not run <code class="docutils literal notranslate"><span class="pre">clear-rest-storage</span> <span class="pre">-d</span></code> in production because it will also load tmsh default configuration.
+In version 16.0 and above the rest deamons are automatically restarted.</p>
+</div></blockquote>
+<p><strong>IMPORTANT</strong> For version 9.0 and later, additional steps are required to remove the SSLO configuration. See this KB article: https://support.f5.com/csp/article/K48366323</p>
+<ul class="simple">
+<li><p>Restart the REST subsystem</p></li>
+</ul>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">bigstart</span><span class="w"> </span><span class="n">start</span><span class="w"> </span><span class="n">restjavad</span><span class="w"> </span><span class="n">restnoded</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="get-list-of-mcp-objects-associated-with-the-sslo-deployment">
+<h2>Get List of MCP objects associated with the SSLO Deployment</h2>
+<p>SSLO maintains a list of MCP object dependency in a <em>Dependency Graph</em> to avoid creating invalid configurations. To see the MCP objects associated with SSLO, click <strong>iApps &gt;&gt; Application Services &gt;&gt; Applications LX</strong>, then <strong>f5-ssl-orchestrator-dg-data</strong>.</p>
+<p>Click <strong>Show raw JSON</strong> near the bottom to see the data. Do not modify the dependency graph information.</p>
+</div>
+<div class="section" id="get-live-block-configuration">
+<h2>Get Live Block Configuration</h2>
+<p>This command queries the rest java block worker to obtain Name, ID, and State of all SSLO Blocks</p>
+<div class="highlight-curl notranslate"><div class="highlight"><pre><span></span>restcurl "/mgmt/shared/iapp/blocks?\$filter=configurationProcessorReference/link%20eq%20'*f5-iappslx-ssl-orchestrator*'%20and%20state%20ne%20'TEMPLATE'" -u admin:admin | jq ' .items[] | {id: .id, name: .name, state: .state }'
+</pre></div>
+</div>
+<p>This produces a list of blocks that you can view by selecting their name</p>
+<div class="highlight-curl notranslate"><div class="highlight"><pre><span></span>restcurl "/mgmt/shared/iapp/blocks?\$filter=configurationProcessorReference/link%20eq%20'*f5-iappslx-ssl-orchestrator*'%20and%20state%20ne%20'TEMPLATE'" -u admin:admin | jq ' .items[] | select(.name == "sslo_first_topo") '
+</pre></div>
+</div>
+<p>To pick out a particular block ID e.g. 09511971-b747-320a-a2d9-c8632b78ecb5</p>
+<div class="highlight-curl notranslate"><div class="highlight"><pre><span></span>restcurl -X GET /shared/iapp/blocks/09511971-b747-320a-a2d9-c8632b78ecb5 -u admin:admin | head
+</pre></div>
+</div>
+<p>To delete a block which may be necessary if a duplicate is found.</p>
+<div class="highlight-curl notranslate"><div class="highlight"><pre><span></span>restcurl -X DELETE /shared/iapp/blocks/ed2f5839-4148-4965-99e9-9ec9b3920ff3 -u admin:admin
+</pre></div>
+</div>
+<p>To see blocks in a bad state</p>
+<div class="highlight-curl notranslate"><div class="highlight"><pre><span></span>restcurl /mgmt/shared/iapp/blocks -u admin:admin | jq '.items[] | select(.state == "ERROR") | {id, name}'
+</pre></div>
+</div>
+</div>
+<div class="section" id="get-current-templates">
+<h2>Get Current Templates</h2>
+<p>The templates specify how the data is collected and stored into the SSLO configuration. They are included as part of the SSLO RPM package. You can view the currently installed templates using this command.</p>
+<div class="highlight-curl notranslate"><div class="highlight"><pre><span></span>restcurl "/mgmt/shared/iapp/blocks?\$filter=configurationProcessorReference/link%20eq%20'*f5-iappslx-ssl-orchestrator*'%20and%20state%20eq%20'TEMPLATE'" -u admin:admin | jq ' .items[] | {id: .id, name: .name, state: .state }'
+</pre></div>
+</div>
+</div>
+<div class="section" id="show-gossip-conflict-cache">
+<h2>Show Gossip Conflict Cache</h2>
+<p>Shows information about past update errors. This can be helpful for root cause analysis.</p>
+<div class="highlight-curl notranslate"><div class="highlight"><pre><span></span>restcurl shared/gossip-conflicts  -u admin:admin
+</pre></div>
+</div>
+</div>
+<div class="section" id="delete-gossip-conflict-cache">
+<h2>Delete Gossip conflict cache</h2>
+<p>Removes information about past update errors.</p>
+<div class="highlight-curl notranslate"><div class="highlight"><pre><span></span>restcurl -X DELETE shared/gossip-conflicts  -u admin:admin
+</pre></div>
+</div>
+</div>
+<div class="section" id="restart-rest-subsystem">
+<h2>Restart REST subsystem</h2>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">bigstart</span><span class="w"> </span><span class="n">restart</span><span class="w"> </span><span class="n">restjavad</span><span class="w"> </span><span class="n">restnoded</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id1">
+<h2>List Blocks With Bad State</h2>
+<p>Use this command to list all of the SSLO blocks with bad state:</p>
+<div class="highlight-curl notranslate"><div class="highlight"><pre><span></span>restcurl "/mgmt/shared/iapp/blocks?\$filter=configurationProcessorReference/link%20eq%20'*f5-iappslx-ssl-orchestrator*'%20and%20state%20eq%20'BINDING'%20or%20state%20eq%20'ERROR'%20or%20state%20eq%20'BINDING'" -u admin:admin | jq ' .items[] | {id: .id, name: .name, state: .state }'
+</pre></div>
+</div>
+</div>
+<div class="section" id="re-deploy-affected-topologies">
+<h2>Re-deploy affected topologies</h2>
+<ol class="simple">
+<li><p>Navigate to the SSLO menu and select the impacted topology.</p></li>
+<li><p>Click Save &amp; Next through each screen to ensure that the input properties are set correctly and SSLO creates the correct dependent topology objects.</p></li>
+<li><p>On the Summary screen, click <strong>Save Draft</strong>.</p></li>
+<li><p>Click <strong>Deploy</strong>.
+<strong>Note:</strong> If you seen</p></li>
+<li><p>Repeat for each topology that may be in a bad state or incorrectly deployed</p></li>
+<li><p>Perform CMI sync from the Active to the Standby unit.</p></li>
+</ol>
+</div>
+<div class="section" id="list-open-rest-database-files">
+<h2>List open REST database files</h2>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">lsof</span><span class="w"> </span><span class="o">-</span><span class="n">nw</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">grep</span><span class="w"> </span><span class="o">-</span><span class="n">i</span><span class="w"> </span><span class="n">lucene</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">grep</span><span class="w"> </span><span class="o">/</span><span class="n">var</span><span class="o">/</span><span class="n">config</span><span class="o">/</span><span class="n">rest</span><span class="o">/</span><span class="n">storage</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="provoking-deployment-errors">
+<h2>Provoking deployment errors</h2>
+<p>For lab use or testing, it may be useful to purposefully cause a deployment error. An easy way is to set the Interception Rule to an invalid network address. This will cause SSLO to try to configure an LTM virtual server with the bad address, causing an error from MCP. Such a change will break traffic.</p>
+<ol class="simple">
+<li><p>Navigate to <strong>SSL Orchestrator &gt;&gt; Configuration</strong>.</p></li>
+<li><p>Click <strong>Interception Rule</strong>.</p></li>
+<li><p>Click your interception rule (a 0.0.0.0 outbound used for example)</p></li>
+<li><p>Change <strong>Source Address</strong> from <code class="docutils literal notranslate"><span class="pre">0.0.0.0%0/0</span></code> to <code class="docutils literal notranslate"><span class="pre">0.0.0.1%0/0</span></code>, or something equivalent that is not valid.</p></li>
+<li><p>Click <strong>Save Draft</strong>.</p></li>
+<li><p>Click <strong>Deploy</strong>.</p></li>
+</ol>
+<p>Note the Configuration error at the top by clicking View Details:</p>
+<div class="highlight-log notranslate"><div class="highlight"><pre><span></span>[OrchestratorConfigProcessor] Deployment failed for Error: [HAAwareICRDeployProcessor] Error: transaction failed:01070348:3: Virtual Server /Common/sslo_myoutbound.app/sslo_myoutbound-in-t-4 destination 0.0.0.1 and netmask 0.0.0.0 are not valid.
+</pre></div>
+</div>
+<p>You can see that MCP produced this error by checking /var/log/ltm</p>
+<div class="highlight-log notranslate"><div class="highlight"><pre><span></span>err mcpd[8302]: 01070348:3: Virtual Server /Common/sslo_myoutbound.app/sslo_myoutbound-in-t-4 destination 0.0.0.1 and netmask 0.0.0.0 are not valid.
+</pre></div>
+</div>
+</div>
+<div class="section" id="mcp-force-reload">
+<h2>MCP Force Reload</h2>
+<p>For efficiency, BIG-IP generates a “compiled” or “binary” form of its configuration In some situations, the MCP runtime configuration becomes inconsistent and can cause problems. If you notice problems that seem strange or inconsistient with the configuration, you can <a class="reference external" href="https://support.f5.com/csp/article/K13030">force a reload</a>.</p>
+</div>
+</a></div>
+</div>
+<div class="row next-prev-btn-row">
+<div class="col-lg-12">
+<a accesskey="p" class="btn btn-primary left" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/troubleshooting.html" title="Fault Identification Chart"><i aria-hidden="true" class="fa fa-arrow-circle-left"></i> Previous</a>
+<a accesskey="n" class="btn btn-primary right" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/sslofix.html" title="About SSLOFIX">Next <i aria-hidden="true" class="fa fa-arrow-circle-right"></i></a>
+</div>
+</div>
+<!-- Qualtrics -->
+<div id="ZN_4N7PlIMqx2BMY6O">
+<!--DO NOT REMOVE-CONTENTS PLACED HERE-->
+</div>
+<!-- Qualtrics -->
+</article>
+</body></html>

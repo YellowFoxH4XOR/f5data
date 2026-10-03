@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ltm rule event STREAM MATCHED</title><link rel="canonical" href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_event_STREAM_MATCHED.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>ltm rule event STREAM MATCHED</h1><p>cli_reference · 17.0.0</p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_event_STREAM_MATCHED.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="ltm-rule-event-stream-matched">
+<span id="id1"></span><h1>ltm rule event STREAM MATCHED</h1>
+<html>
+<pre>
+iRule(1)						BIG-IP TMSH Manual						  iRule(1)
+
+STREAM_MATCHED
+       Triggered when a stream expression matches.
+
+DESCRIPTION
+       Triggered when a stream expression matches. This event can be used to skip or change the replacement target.
+
+Examples
+	## This example modifies the replacement string based so that only some
+	matches are rewritten. Replace any http:// instance with https:// only
+	if the original string is http://*example.com.
+
+	when HTTP_RESPONSE {
+
+	   # Disable the stream filter by default
+	   STREAM::disable
+
+	   # Check if response type is text
+	   if {[HTTP::header value Content-Type] contains "text"}{
+
+	      # Match any http:// instance and replace it with nothing
+	      STREAM::expression {&amp;http://.*?example\.com&amp;}
+
+	      # Enable the stream filter for this response only
+	      STREAM::enable
+	   }
+	}
+	when STREAM_MATCHED {
+	   log local0. "[IP::client_addr]:[TCP::local_port]: matched: [STREAM::match], replaced with: [string map {http:// https://} [STREAM::match]]"
+	   STREAM::replace "[string map {http:// https://} [STREAM::match]]"
+	}
+
+	Log output:
+	Rule stream_expression_rule : 10.0.0.1:3413: matched: http://test.example.com, replaced with: https://test.example.com
+	Rule stream_expression_rule : 10.0.0.1:3413: matched: http://example.com, replaced with: https://example.com
+
+	## This example just reads the stream match in the STREAM_MATCHED event and adds a persistence record.
+
+	# Look for the jsessionid string in response content and add a persistence record when it is found.
+	# Using STREAM:: commands requires a STREAM profile be added to the virtual server.  Use a blank profile.
+	# To force LTM to recalculate the Content-Length value, add a custom HTTP profile to the virtual server_addr
+	#  with Chunking set to Rechunk.
+	when HTTP_RESPONSE {
+
+	   # Clear the jsessionid if it exists already on this TCP connection
+	   if {[info exists jsessionid]}{
+	      unset jsessionid
+	   }
+
+	   # Only look for the jsessionid in text responses
+	   if {[HTTP::header value "Content-Type"] starts_with "text"}{
+
+	      log local0. "[IP::client_addr]:[TCP::client_port]: Matched text, enabling stream filter"
+
+	      # Because TCL doesn't support lookaheads, match the jsessionid string and value
+	      # We'll parse out the value in STREAM_MATCHED
+	      # Assume the jsessionid is 1 to 100 characters (terminated by a non-alphanumeric character).
+	      STREAM::expression ;jsessionid=[A-Za-z0-9]{1,100}
+	      STREAM::enable
+
+	      # Enable the STREAM_MATCHED event as it could have been disabled if there was a prior
+	      # response on this TCP connection
+	      event STREAM_MATCHED enable
+
+	   } else {
+
+	      # Disable the stream filter as this wasn't a text response
+	      log local0. "[IP::client_addr]:[TCP::client_port]: No Content-Type match, disabling stream filter"
+	      STREAM::disable
+	   }
+	}
+	when STREAM_MATCHED {
+
+	   # Save the matched value (example: ;jsessionid=ABCDEF)
+	   set jsessionid [STREAM::match]
+	   log local0. "[IP::client_addr]:[TCP::client_port]: Matched: $jsessionid"
+
+	   # STREAM::match shouldn't match a null string with the defined regex, but check anyhow
+	   if {[string length $jsessionid]}{
+
+	      # Get the jsessionid value (split ;jsessionid=ABCDEF on the equals sign)
+	      set jsessionid [getfield $jsessionid "=" 2]
+
+	      # Not sure why, but the parser doesn't allow the persist command.
+	      # It works though, so hide the command from the parser
+	      set persist_cmd "persist add uie $jsessionid"
+	      log local0. "[IP::client_addr]:[TCP::client_port]: Parsed: $jsessionid \$persist_cmd: $persist_cmd"
+
+	      eval $persist_cmd
+
+	      # Assume the first match is the same as any other jsessionids, so stop checking for them
+	      log local0. "[IP::client_addr]:[TCP::client_port]: Added persistence record. Exiting event for this response."
+	      event STREAM_MATCHED disable
+	   }
+	}
+
+	Log output:
+
+	Rule persist_on_response_content_stream_rule : 1.2.3.4:2418: Matched text, enabling stream filter
+	Rule persist_on_response_content_stream_rule : 1.2.3.4:2418: Matched: ;jsessionid=a111111111111111111z
+	Rule persist_on_response_content_stream_rule : 1.2.3.4:2418: Parsed: a111111111111111111z $persist_cmd: persist add uie a111111111111111111z
+	Rule persist_on_response_content_stream_rule : 1.2.3.4:2418: Added persistence record. Exiting event for this response.
+
+HINTS
+SEE ALSO
+CHANGE LOG
+       @BIGIP-9.2.0 --First introduced the event.
+
+BIG-IP							    2022-04-12							  iRule(1)
+</pre>
+</html>
+</div>
+</div>
+</article>
+</body></html>

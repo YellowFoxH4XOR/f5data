@@ -1,0 +1,150 @@
+{
+  "applies_to": [
+    {
+      "product": "F5 BIG-IP iRules API",
+      "versions": []
+    }
+  ],
+  "breadcrumbs": [],
+  "code_examples": [
+    {
+      "section": "Syntax",
+      "text": "HTTP::retry <request>\n\nv11.5+\nHTTP::retry [-reset] <request>\n"
+    },
+    {
+      "section": "Examples",
+      "text": "# Retry requests to the virtual server's default pool if the server responds with an error code (5xx status)\n\nwhen CLIENT_ACCEPTED {\n   # On each new TCP connection track that we have not retried a request yet\n   set retries 0\n\n   # Save the name of the virtual server default pool\n   set default_pool [LB::server pool]\n}\n\nwhen HTTP_REQUEST {\n   # We only want to retry GET requests to avoid having to collect POST payloads\n   # Only save the request headers if this is not a retried request\n   if { [HTTP::method] eq \"GET\" && $retries == 0 }{\n      set request_headers [HTTP::request]\n      log local0. \"Saving HTTP request headers: $request_headers\"\n   }\n}\n\nwhen LB_SELECTED {\n   # Select a new pool member from the VS default pool if we are retrying this request\n   if { $retries > 0 } {\n      LB::reselect pool $default_pool\n   }\n}\n\nwhen HTTP_RESPONSE {\n   # Check for server errors\n   if { [HTTP::status] starts_with \"5\" } {\n\n      # Server error, retry the request if we have not already retried more times than there are pool members\n      incr retries\n      log local0. \"5xx error caught: retry $retries out of [active_members $default_pool]\"\n\n      if { $retries < [active_members $default_pool] } {\n         # Retry this request\n         HTTP::retry $request_headers\n\n         # Exit this event from this iRule so we do not reset retries to 0\n         return\n      }\n   }\n   # If we are still in the rule we are not retrying this request\n   set retries 0\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "# Retry 404 responses once to a second pool\nwhen CLIENT_ACCEPTED {\n\n    # Track whether this is a retried request\n    set retried 0\n\n    # Save the name of the VS default pool\n    set default_pool [LB::server pool]\n\n    # Track whether we have the headers for this request\n    set request_headers \"\"\n}\n\nwhen HTTP_REQUEST {\n\n    # Select the VS default pool by default\n    pool $default_pool\n\n\n    # Check if this is a retried request\n    if {$retried == 0}{\n\n        # Only save request headers if it is a GET request\n        # We do not want to retry requests with payloads\n        if {[HTTP::method] eq \"GET\"}{\n\n            # Save the HTTP request headers\n            set request_headers [HTTP::request]\n            log local0. \"HTTP request: $request_headers\"\n\n        } else {\n\n            # Null the headers to make sure we only retry GETs\n            set request_headers \"\"\n        }\n    } else {\n        # Select the other pool for the retry\n        pool other_pool\n    }\n}\n\nwhen HTTP_RESPONSE {\n\n    # Check if we got a 404 from the default pool\n    if { [HTTP::status] == 404 && $request_headers ne \"\" && [LB::server pool] eq $default_pool } {\n\n        # Track that we are retrying this request\n        set retried 1\n        log local0. \"404 error caught from default pool. Retrying.\"\n\n        HTTP::retry $request_headers\n    } else {\n        # Track that we are retrying this request\n        set retried 0\n    }\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "# One can save a WAN round trip by following a redirect at the LTM and responding to the\n# original client request with the result of the redirect\nwhen HTTP_REQUEST {\n\n   # Save the host header value\n   set host [HTTP::host]\n}\nwhen HTTP_RESPONSE {\n\n   # Check if response is a redirect based on the status code\n   if { [HTTP::is_redirect] } {\n\n      # Now generate a GET request to the new location\n      HTTP::retry \"GET [HTTP::header location] HTTP/1.1\\r\\nHost: $host\\r\\n\\r\\n\"\n   }\n}\n"
+    }
+  ],
+  "content_hash": "7b0985ea0e432b6dc047e5addb6b1dd764c54374b6dda03e28c2a8a7ecd3782f",
+  "diagrams": [],
+  "documentation_version": null,
+  "headings": [
+    {
+      "anchor": "http-retry",
+      "level": 1,
+      "path": [],
+      "title": "HTTP::retry"
+    },
+    {
+      "anchor": "description",
+      "level": 2,
+      "path": [
+        "HTTP::retry"
+      ],
+      "title": "Description"
+    },
+    {
+      "anchor": "syntax",
+      "level": 2,
+      "path": [
+        "HTTP::retry"
+      ],
+      "title": "Syntax"
+    },
+    {
+      "anchor": "http-retry-request",
+      "level": 3,
+      "path": [
+        "HTTP::retry",
+        "Syntax"
+      ],
+      "title": "HTTP::retry <request>"
+    },
+    {
+      "anchor": "http-retry-reset",
+      "level": 3,
+      "path": [
+        "HTTP::retry",
+        "Syntax"
+      ],
+      "title": "HTTP::retry [-reset]"
+    },
+    {
+      "anchor": "examples",
+      "level": 2,
+      "path": [
+        "HTTP::retry"
+      ],
+      "title": "Examples"
+    },
+    {
+      "anchor": "related-information",
+      "level": 2,
+      "path": [
+        "HTTP::retry"
+      ],
+      "title": "Related Information"
+    }
+  ],
+  "id": "1ab77300e282edb109bdf911",
+  "images": [],
+  "kind": "programming_reference",
+  "links": [
+    {
+      "title": "HTTP::retry",
+      "url": "HTTP::retry"
+    },
+    {
+      "title": "HTTP_REQUEST",
+      "url": "https://clouddocs.f5.com/api/irules/HTTP_REQUEST.html"
+    },
+    {
+      "title": "HTTP_REQUEST",
+      "url": "https://clouddocs.f5.com/api/irules/HTTP_REQUEST.html"
+    },
+    {
+      "title": "HTTP::collect",
+      "url": "https://clouddocs.f5.com/api/irules/HTTP__collect.html"
+    },
+    {
+      "title": "HTTP::request",
+      "url": "https://clouddocs.f5.com/api/irules/HTTP__request.html"
+    },
+    {
+      "title": "HTTP_REQUEST_DATA",
+      "url": "https://clouddocs.f5.com/api/irules/HTTP_REQUEST_DATA.html"
+    },
+    {
+      "title": "HTTP::retry",
+      "url": "HTTP::retry"
+    },
+    {
+      "title": "HTTP::retry",
+      "url": "HTTP::retry"
+    },
+    {
+      "title": "HTTP_RESPONSE",
+      "url": "https://clouddocs.f5.com/api/irules/HTTP_RESPONSE.html"
+    },
+    {
+      "title": "HTTP_RESPONSE_DATA",
+      "url": "https://clouddocs.f5.com/api/irules/HTTP_RESPONSE_DATA.html"
+    },
+    {
+      "title": "HTTP method\nconversion",
+      "url": "https://devcentral.f5.com/s/articles/http-method-conversion"
+    },
+    {
+      "title": "Conditioning iRule Logic on External Information - #01 -\nHTTP::retry",
+      "url": "https://devcentral.f5.com/Default.aspx?tabid=63&articleType=ArticleView&articleId=105"
+    }
+  ],
+  "publisher_product_labels": [
+    "F5 BIG-IP iRules API"
+  ],
+  "source": "irules",
+  "text": "HTTP::retry\nDescription\nRe-sends a request to a server. Can be either the same or a different\nrequest, to the same or a different server.\nTo replay the same request, save the request to a variable in the\nHTTP_REQUEST\nevent, then use it with this\ncommand.\nA different request may alternatively be specified. The request\nstring must be well-formed and complete, including all required\nheaders.\nThe request generated by this command triggers\nHTTP_REQUEST\nand all subsequent client-side\nevents.\nNote: If you want to retry a request with a payload, you should use\nHTTP::collect\nto collect the payload and then\nappend the payload to the request headers retrieved using\nHTTP::request\nin\nHTTP_REQUEST_DATA\n.\nSyntax\nHTTP\n::\nretry\n<\nrequest\n>\nv11.5\n+\nHTTP\n::\nretry\n[\n-reset\n]\n<\nrequest\n>\nHTTP::retry\n<request>\nResends a request to a server. The request header must be well-formed\nand complete.\nHTTP::retry\n[-reset]\nResends a request to a server and resets serverside connection\ninstead of sinking the data.\nExamples\n# Retry requests to the virtual server's default pool if the server responds with an error code (5xx status)\nwhen\nCLIENT_ACCEPTED\n{\n# On each new TCP connection track that we have not retried a request yet\nset\nretries\n0\n# Save the name of the virtual server default pool\nset\ndefault_pool\n[\nLB\n::\nserver\npool\n]\n}\nwhen\nHTTP_REQUEST\n{\n# We only want to retry GET requests to avoid having to collect POST payloads\n# Only save the request headers if this is not a retried request\nif\n{\n[\nHTTP\n::\nmethod\n]\neq\n\"GET\"\n&&\n$retries\n==\n0\n}{\nset\nrequest_headers\n[\nHTTP\n::\nrequest\n]\nlog\nlocal0.\n\"Saving HTTP request headers: $request_headers\"\n}\n}\nwhen\nLB_SELECTED\n{\n# Select a new pool member from the VS default pool if we are retrying this request\nif\n{\n$retries\n>\n0\n}\n{\nLB\n::\nreselect\npool\n$default_pool\n}\n}\nwhen\nHTTP_RESPONSE\n{\n# Check for server errors\nif\n{\n[\nHTTP\n::\nstatus\n]\nstarts_with\n\"5\"\n}\n{\n# Server error, retry the request if we have not already retried more times than there are pool members\nincr\nretries\nlog\nlocal0.\n\"5xx error caught: retry $retries out of [active_members $default_pool]\"\nif\n{\n$retries\n<\n[\nactive_members\n$default_pool\n]\n}\n{\n# Retry this request\nHTTP\n::\nretry\n$request_headers\n# Exit this event from this iRule so we do not reset retries to 0\nreturn\n}\n}\n# If we are still in the rule we are not retrying this request\nset\nretries\n0\n}\n# Retry 404 responses once to a second pool\nwhen\nCLIENT_ACCEPTED\n{\n# Track whether this is a retried request\nset\nretried\n0\n# Save the name of the VS default pool\nset\ndefault_pool\n[\nLB\n::\nserver\npool\n]\n# Track whether we have the headers for this request\nset\nrequest_headers\n\"\"\n}\nwhen\nHTTP_REQUEST\n{\n# Select the VS default pool by default\npool\n$default_pool\n# Check if this is a retried request\nif\n{\n$retried\n==\n0\n}{\n# Only save request headers if it is a GET request\n# We do not want to retry requests with payloads\nif\n{[\nHTTP\n::\nmethod\n]\neq\n\"GET\"\n}{\n# Save the HTTP request headers\nset\nrequest_headers\n[\nHTTP\n::\nrequest\n]\nlog\nlocal0.\n\"HTTP request: $request_headers\"\n}\nelse\n{\n# Null the headers to make sure we only retry GETs\nset\nrequest_headers\n\"\"\n}\n}\nelse\n{\n# Select the other pool for the retry\npool\nother_pool\n}\n}\nwhen\nHTTP_RESPONSE\n{\n# Check if we got a 404 from the default pool\nif\n{\n[\nHTTP\n::\nstatus\n]\n==\n404\n&&\n$request_headers\nne\n\"\"\n&&\n[\nLB\n::\nserver\npool\n]\neq\n$default_pool\n}\n{\n# Track that we are retrying this request\nset\nretried\n1\nlog\nlocal0.\n\"404 error caught from default pool. Retrying.\"\nHTTP\n::\nretry\n$request_headers\n}\nelse\n{\n# Track that we are retrying this request\nset\nretried\n0\n}\n}\n# One can save a WAN round trip by following a redirect at the LTM and responding to the\n# original client request with the result of the redirect\nwhen\nHTTP_REQUEST\n{\n# Save the host header value\nset\nhost\n[\nHTTP\n::\nhost\n]\n}\nwhen\nHTTP_RESPONSE\n{\n# Check if response is a redirect based on the status code\nif\n{\n[\nHTTP\n::\nis_redirect\n]\n}\n{\n# Now generate a GET request to the new location\nHTTP\n::\nretry\n\"GET [HTTP::header location] HTTP/1.1\\r\\nHost: $host\\r\\n\\r\\n\"\n}\n}\nRelated Information\nValid Events:\nHTTP_RESPONSE\n,\nHTTP_RESPONSE_DATA\nWarning\nThe links to the sample code below are remnants of the old DevCentral wiki and will result in a 404 error. For best results, please copy the link text and search the codeshare directly on DevCentral.\nSample Code:\nHTTP method\nconversion\n- This is one way that allows you to convert HTTP method from GET\nto POST or …\nConditioning iRule Logic on External Information - #01 -\nHTTP::retry\nIntroduced: BIGIP-9.2.0\nThe BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor \nor control community code contributions. We make no guarantees or warranties regarding the available code, \nand it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any \ncode available in the BIG-IP API reference guides is solely at your own risk.",
+  "title": "HTTP::retry",
+  "updated": "2026-07-13 12:27:40",
+  "url": "https://clouddocs.f5.com/api/irules/HTTP__retry.html",
+  "url_version": null
+}

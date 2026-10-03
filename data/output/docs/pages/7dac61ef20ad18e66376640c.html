@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ltm rule command AUTH abort</title><link rel="canonical" href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_AUTH_abort.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>ltm rule command AUTH abort</h1><p>cli_reference · 17.0.0</p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_AUTH_abort.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="ltm-rule-command-auth-abort">
+<span id="id1"></span><h1>ltm rule command AUTH abort</h1>
+<html>
+<pre>
+iRule(1)						BIG-IP TMSH Manual						  iRule(1)
+
+AUTH::abort
+       Cancels any outstanding auth operations in this authentication session.
+
+SYNOPSIS
+       AUTH::abort AUTH_ID
+
+DESCRIPTION
+       Cancels any outstanding auth operations in this authentication session, and generates an AUTH_FAILURE event if there was an
+       outstanding authentication query in progress. This command invalidates the specified authentication session ID, which
+       should be discarded upon calling this command.
+
+       AUTH::abort authid
+
+	    * Cancels any outstanding auth operations in this authentication
+	      session, and generates an AUTH_FAILURE event if there was an
+	      outstanding authentication query in progress. This command
+	      invalidates the specified authentication session authentication ID,
+	      which should be discarded upon calling this command.
+
+RETURN VALUE
+VALID DURING
+       HTTP_REQUEST, HTTP_REQUEST_DATA
+
+EXAMPLES
+	This rule demonstrates one possible implementation of a 2-out-of-3
+	authentication scheme. 3 auth servers are contacted simultaneously. The
+	connection is permitted to proceed as soon as 2 servers report success.
+
+	when CLIENT_ACCEPTED {
+	    set auth_http_successes 0
+	    set auth_http_sufficient_successes 2
+	}
+	when HTTP_REQUEST {
+	    if {$auth_http_successes &gt;= $auth_http_sufficient_successes} {
+		return
+	    }
+
+	    set auth_sid [AUTH::start pam default_ldap]
+	    set auth_http_sids(ldap) $auth_sid
+	    AUTH::username_credential $auth_sid [HTTP::username]
+	    AUTH::password_credential $auth_sid [HTTP::password]
+	    AUTH::authenticate $auth_sid
+
+	    set auth_sid [AUTH::start pam default_radius]
+	    set auth_http_sids(radius) $auth_sid
+	    AUTH::username_credential $auth_sid [HTTP::username]
+	    AUTH::password_credential $auth_sid [HTTP::password]
+	    AUTH::authenticate $auth_sid
+
+	    set auth_sid [AUTH::start pam default_tacacs]
+	    set auth_http_sids(tacacs) $auth_sid
+	    AUTH::username_credential $auth_sid [HTTP::username]
+	    AUTH::password_credential $auth_sid [HTTP::password]
+	    AUTH::authenticate $auth_sid
+
+	    HTTP::collect
+	    set auth_http_collect_count 3
+	}
+	when AUTH_RESULT {
+	    if {[array size auth_http_sids] == 0} {
+		return
+	    }
+	    set auth_sid [AUTH::last_event_session_id]
+	    if {[AUTH::status] == 0} {
+		incr auth_http_successes
+		if {$auth_http_successes &gt;= $auth_http_sufficient_successes} {
+		    foreach {type sid} [array get auth_http_sids] {
+			unset auth_http_sids($type)
+			if {$sid != -1} {
+			    AUTH::abort $sid
+			}
+		    }
+		    set auth_http_collect_count 0
+		    HTTP::release
+		    return
+		}
+	    }
+	    foreach {type sid} [array get auth_http_sids] {
+		if {$sid == $auth_sid} {
+		    unset auth_http_sids($type)
+		    AUTH::abort $sid
+		    incr auth_http_collect_count -1
+		    if {$auth_http_collect_count == 0} {
+			HTTP::respond 401
+		    }
+		    break
+		}
+	    }
+	}
+
+HINTS
+SEE ALSO
+CHANGE LOG
+       @BIGIP-9.0.0 --First introduced the command.
+
+BIG-IP							    2022-04-12							  iRule(1)
+</pre>
+</html>
+</div>
+</div>
+</article>
+</body></html>

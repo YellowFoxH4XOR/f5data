@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>LDAP Query From An iRule and/or Use APM With Non-HTTP Services</title><link rel="canonical" href="https://clouddocs.f5.com/api/irules/Query-LDAP-From-An-iRule-And-Or-Use-APM-With-Non-HTTP-Services.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>LDAP Query From An iRule and/or Use APM With Non-HTTP Services</h1><p>programming_reference · See product applicability metadata</p><a href="https://clouddocs.f5.com/api/irules/Query-LDAP-From-An-iRule-And-Or-Use-APM-With-Non-HTTP-Services.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!DOCTYPE html>
+
+<div class="section" id="ldap-query-from-an-irule-and-or-use-apm-with-non-http-services">
+<h1>LDAP Query From An iRule and/or Use APM With Non-HTTP Services</h1>
+<div class="section" id="contributed-by-mark-seecof">
+<h2>Contributed by: Mark Seecof</h2>
+<div class="section" id="introduction">
+<h3>Introduction</h3>
+<div class="line-block">
+<div class="line">For years LTM administrators asked for a way to make LDAP queries
+(other than Simple Bind authentication) from an iRule. You could
+almost do it with the ACA module but not quite.</div>
+<div class="line">Then f5 shipped APM. It is easy to run an LDAP query from an APM
+policy. It is also easy to apply an APM Profile to a private virtual
+server just so you can invoke APM from an iRule on some other virtual
+server.</div>
+<div class="line">(Often you cannot attach an APM policy to your primary virtual server
+because APM insists upon sending HTTP redirects to clients– which
+does not work with non-HTTP clients, and often confuses non-browser
+(e.g., web services) HTTP clients.)</div>
+</div>
+<div class="box docutils container">
+<p>The APM</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>ACCESS::policy evaluate
+</pre></div>
+</div>
+<p>iRule function added in TMOS v11.4.0 makes the private-virtual-server
+technique described here obsolescent. See <a class="reference external" href="https://clouddocs.f5.com/api/irules/ACCESS__policy.html">ACCESS::policy
+evaluate</a> for details.</p>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">Before f5 added the SIDEBAND functions to iRules in LTM version 11.0,
+it was rather tedious to call APM (or any other alternate service)
+from an iRule. Now it is pretty easy.</div>
+</div>
+</div>
+<div class="section" id="example-query-ldap-from-an-irule">
+<h3>Example: Query LDAP from an iRule</h3>
+<div class="line-block">
+<div class="line">Let’s look at an example. Suppose you have a virtual server for the
+non-HTTP service IMAP (RFC 3501). Suppose further that your
+organization issues device-specific IMAP passwords to users with
+mobile mail clients which differ from their normal passwords in your
+LDAP directory (only the IMAP servers recognize the special
+passwords).</div>
+<div class="line">Finally, suppose you wish to route each IMAP client connection to one
+IMAP server or another depending on the value of an LDAP attribute
+‘imap-server’ on the user’s LDAP Person object.</div>
+<div class="line">You can capture a username easily enough from the IMAP LOGIN command.
+You just need to run an LDAP query to retrieve the user’s
+‘imap-server’ attribute value. You cannot use the AUTH iRule functions
+from ACA because you don’t have the user’s LDAP password (the LOGIN
+command contains only the device-specific mail password).</div>
+<div class="line">You may use APM to run your LDAP query:</div>
+<div class="line">1. Create a virtual server to which you can attach an APM profile. Put
+it on some non-routeable IP address like 198.51.100.1 (you will only
+access it by virtual-server name) at port 80, and apply the default
+HTTP Profile. For example, your virtual server might be named
+“/vs-APM-LDAP”.</div>
+<div class="line">2. Create an APM LDAP AAA Server object and point it at your LDAP
+server.</div>
+<div class="line">3. Create an APM Access Profile and a corresponding Access Policy. You
+can leave all the Access Profile settings at their defaults.</div>
+<div class="line">4. To the Access Policy add a single LDAP Query item and configure it
+to invoke your LDAP AAA Server. Set the SearchDN appropriately (e.g.,
+dc=example,dc=com) and request the ‘imap-server’ attribute. Set the
+SearchFilter to</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>(uid=%{session.ximap.username})
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">. Delete useless “group 100” branch rule and leave the Default branch
+connected to the “Deny” terminal.</div>
+<div class="line">5. Create the following iRule named “ir-APM-LDAP”:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>when HTTP_REQUEST {
+ set username ""
+ if {[HTTP::path] starts_with "/lookup/"} {
+  regexp {/([^/]+)$} [HTTP::path] junk x
+  set username [URI::decode $x]
+ }
+}
+
+when ACCESS_SESSION_STARTED {
+ if {$username ne ""} {
+  ACCESS::session data set session.ximap.username $username
+ }
+}
+
+when ACCESS_POLICY_COMPLETED {
+ set reply "NOT_FOUND"
+ if {[ACCESS::session data get session.ldap.last.queryresult] == 1} {
+  set reply [ACCESS::session data get session.ldap.last.attr.imap-server]
+ }
+ ACCESS::respond 200 content $reply Content-Type "text/plain" Connection close
+}
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">The ir-APM-LDAP iRule extracts a target username from the path string
+of an HTTP request and puts it into an APM session variable where the
+LDAP Query Item can get at it. Then the same iRule formats the data
+retrieved by the LDAP Query Item into a very simple HTTP response.</div>
+<div class="line">6. Apply your APM Profile to the virtual server /vs-APM-LDAP and also
+attach the iRule ir-APM-LDAP to that virtual server.</div>
+<div class="line">7. Load the <a class="reference external" href="https://clouddocs.f5.com/api/irules/HTTP-Super-SIDEBAND-Requestor-Client-Handles-Redirects-Cookies-Chunked-Transfer-APM-Access-etc.html">HTTP Super SIDEBAND
+Requestor</a>
+iRule /Common/HSSR on your BIG-IP.</div>
+<div class="line">8. Create another iRule named “ir-IMAP-LDAP-picker”. This iRule will
+process connections from clients to your IMAP virtual server. (For
+brevity I omit discussion of TLS.)</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>when CLIENT_ACCEPTED {
+ TCP::respond "* OK IMAP4rev1 server ready"
+ TCP::collect
+}
+
+when CLIENT_DATA {
+ set username ""
+ regexp {^[^ ]+ LOGIN ([^ ]+)} [TCP::payload] junk username
+
+ #invoke iRule proc http_req to talk to APM over SIDEBAND
+
+ set status [call /Common/HSSR::http_req -virt "/vs-APM-LDAP" \
+                 -uri "http://apm-ldap/lookup/[URI::encode $username]" \
+                 -tag "IMAP" -key $username -rbody rbody]
+
+ if {($status == 200) &amp;&amp; ($rbody ne "NOT_FOUND")} {
+  node $rbody
+  TCP::release
+  return
+ }
+ #otherwise
+ TCP::respond "* BYE No server for user ${username}"
+ TCP::close
+}
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">8. The way this all works is: first the IMAP client connects to the
+IMAP virtual server. The iRule ir-IMAP-LDAP-Picker greets the IMAP
+client, implicitly requesting an IMAP LOGIN command. The iRule
+extracts the username from the LOGIN command and uses HSSR::http_req
+to query virtual server /vs-APM-LDAP with the username in the HTTP
+path. The iRule ir-APM-LDAP extracts the username from the path and
+holds it briefly in an iRule variable. APM will send an HTTP redirect
+to /my.policy (which the HTTP Super SIDEBAND Requestor will follow),
+then issue event ACCESS_SESSION_STARTED enabling ir-APM-LDAP to copy
+the username into APM session variable %{session.ximap.username}. The
+only Item in the APM Policy is an LDAP Query, which will retrieve the
+value of the ‘imap-server’ attribute associated with username. The APM
+Policy will “Deny” access then issue the event
+ACCESS_POLICY_COMPLETED, giving ir-APM-LDAP a chance to return the
+value of ‘imap-server’ in a terse HTTP reply. When ir-IMAP-LDAP-Picker
+gets that reply, it will send the IMAP connection to the proper
+server, or inform the IMAP client that no server is available.</div>
+</div>
+</div>
+<div class="section" id="use-apm-policy-with-non-http-services">
+<h3>Use APM Policy With Non-HTTP Services</h3>
+<div class="line-block">
+<div class="line">As illustrated in the last example, set up a private virtual server to
+host your APM Profile and Policy. From an iRule on your primary
+virtual server, pass user identity, credentials, and so-forth to APM
+over a SIDEBAND connection. You can generally avoid using interactive
+APM Policy Items like Logon Page if you collect credentials using the
+mechanisms of your non-HTTP service and stuff them into APM session
+variables. You can return APM results via SIDEBAND or by sharing
+values in the LTM cache ([<a class="reference external" href="https://clouddocs.f5.com/api/irules/table.html">table</a>] command), though
+<a class="reference external" href="https://clouddocs.f5.com/api/irules/table.html">table</a> only works on TMOS 11.4+ if all your virtual
+servers are in the same traffic-group.</div>
+<div class="line">.</div>
+</div>
+<p><em>The BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor 
+or control community code contributions. We make no guarantees or warranties regarding the available code, 
+and it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any 
+code available in the BIG-IP API reference guides is solely at your own risk.</em></p>
+</div>
+</div>
+</div>
+</article>
+</body></html>

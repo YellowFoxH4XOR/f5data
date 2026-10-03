@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>About SSLOFIX</title><link rel="canonical" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/sslofix.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>About SSLOFIX</h1><p>architecture · main</p><a href="https://clouddocs.f5.com/sslo-troubleshooting-guide/sslofix.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!DOCTYPE html>
+
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<!-- HTML Metadata for this page -->
+<meta content="F5 SSLO SSLOFIX" name="description"/>
+<meta content="f5, sslo, sslofix" name="keywords"/>
+<meta content="Peter Mills" name="authors"/>
+<div class="section" id="about-sslofix">
+<h1>About SSLOFIX</h1>
+<div class="section" id="introduction">
+<h2>Introduction</h2>
+<p>SSLOFIX is an F5-developed tool that can be used to diagnose and repair control-plane problems with BIG-IP and SSL Orchestrator deployments. This document is for BIG-IP administrators and describes how to correctly use it.</p>
+<blockquote>
+<div><p><strong>NOTE:</strong></p>
+<ul class="simple">
+<li><p>Never run SSLOFIX on a BIG-IP that does not have the latest configuration.</p></li>
+<li><p>Run SSLOFIX on the same BIG-IP that is used for SSLO administration.</p></li>
+<li><p>Try first to complete a manual <a class="reference external" href="https://support.f5.com/csp/article/K13920">CMI sync</a> which results in an <strong>In Sync</strong> ConfigSync state.</p></li>
+<li><p>Always make a <a class="reference external" href="https://support.f5.com/csp/article/K13132">UCS backup</a> of all BIG-IPs before using SSOLFIX.</p></li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="download">
+<h2>Download</h2>
+<ul class="simple">
+<li><p><a class="reference external" href="https://raw.githubusercontent.com/f5devcentral/sslo-script-tools/main/sslofix/sslofix">sslofix</a> - [v1.0.10] - sha256 <code class="docutils literal notranslate"><span class="pre">c66049b05322403092edf90b84dfc35ba7885899c3e698c8753f45c3612d07c3</span></code></p></li>
+</ul>
+<p>Download this file to your BIG-IP and validate the checksum matches using openssl:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>openssl dgst -sha256 sslofix
+</pre></div>
+</div>
+</div>
+<div class="section" id="history-of-sslofix">
+<h2>History of SSLOFIX</h2>
+<p>SSLO relies heavily on the iAppLX REST infrastructure to work correctly. F5 has found that BIG-IP’s iAppLX REST infrastructure can become stuck in an invalid state with some timing situations that are difficult to predict.</p>
+<p>Such synchronization problems can be exacerbated by low memory or large configurations. A utility called <code class="docutils literal notranslate"><span class="pre">ha-sync</span></code> was then developed to address these deficiencies by repairing problems with iAppLX REST infrastructure and synchronization but it was primarily targeted toward the repair of single devices within an HA group.</p>
+<p>Latterly SSLOFIX has been developed which is an enhanced replacement for ha-sync. It now includes a more comprehensive repair kit suitable for both for single and multiple boxes.</p>
+</div>
+<hr class="docutils"/>
+<div class="section" id="version-compatibility">
+<h2>Version Compatibility</h2>
+<p>SSLOFIX is compatible with all supported SSLO versions.</p>
+<p>REST configurations differ between BIG-IP and SSLO versions, so ensure that the current device configuration is made from the same version.</p>
+</div>
+<hr class="docutils"/>
+<div class="section" id="why-use-sslofix">
+<h2>Why use SSLOFIX?</h2>
+<p>Use this tool if the SSLO UI does not seem to be functioning correctly. For example, the UI may be locked with a large red error message, reports an HA error, or advises that configuration objects are missing</p>
+<p>Some possible GUI errors include but are not limited to:</p>
+<ul class="simple">
+<li><p>Blank Page</p></li>
+<li><p>Page Not Found</p></li>
+<li><p>The requested URL was not found on this server</p></li>
+<li><p>HA Verification Response Bad</p></li>
+<li><p>Invalid BIG-IP HA setup</p></li>
+<li><p>SSL Orchestrator is not initialized</p></li>
+<li><p>The iApp LX sub-system is currently unresponsive. The JavaScript sub-system is currently unavailable.</p></li>
+<li><p>Invalid BIG-IP HA setup. Wait 2 minutes for self-recovery. If HA remains invalid, select HA-Status for more details to correct. Any Configuration changes are not allowed until resolved.</p></li>
+</ul>
+</div>
+<hr class="docutils"/>
+<div class="section" id="how-does-sslofix-work">
+<h2>How does SSLOFIX work?</h2>
+<p>SSLOFIX performs several actions, summarized here. For more detail, the linux shell script code is easily readible and available in <code class="docutils literal notranslate"><span class="pre">/usr/bin/sslofix</span></code>.</p>
+<div class="mermaid">
+            %%{init: {'securityLevel': 'loose', 'theme':'default', 'logLevel':'1'} }%%
+graph TD
+    VALID_INPUT[Validate Device Group and &lt;br&gt;CLI Parameters]
+    CHECK_ENV[Validate HA Environment]
+    PARSE_TARGETS[Determine Sync Target Devices]
+    DIAG_REST[REST Diagnostic]
+    END[Done]
+    SYNC_MCP[Synchronize MCP]
+    SYNC_REST[Fix REST IDs, Certs, Versions]
+    SYNC_REST_FORCE[Delete remote REST&lt;br&gt;Copy REST from Local to Remote]
+    diag_rest_device_groups[Check REST Device Group Info]
+    diag_rest_device_states[Check REST Active/Standby States]
+    diag_rest_device_ids[Check REST Peer Sync IDs]
+    diag_rest_device_frameworks[Check REST Framework Versions]
+    diag_rest_device_certificates[Check REST Device Auth Certificates]
+    diag_rest_gossip[Check REST Gossip Readiness State]
+    diag_rest_gossip_test[Check REST Gossip Operation]
+    verify_blocks[Reconcile REST Blocks with SSLO Deployments]
+    VALID_INPUT --&gt; CHECK_ENV
+    CHECK_ENV --&gt; PARSE_TARGETS
+    PARSE_TARGETS-. Diagnostic Mode .-&gt; DIAG_REST
+    PARSE_TARGETS-. Repair Mode .-&gt; SYNC_MCP
+    SYNC_MCP --&gt; SYNC_REST
+    SYNC_REST -. force .-&gt; SYNC_REST_FORCE
+    SYNC_REST_FORCE --&gt; END
+    DIAG_REST-. HA .-&gt; diag_rest_device_groups
+    DIAG_REST-. Standalone .-&gt; verify_blocks
+    diag_rest_device_groups --&gt;  diag_rest_device_states
+    diag_rest_device_states --&gt; diag_rest_device_ids
+    diag_rest_device_ids --&gt; diag_rest_device_frameworks
+    diag_rest_device_frameworks --&gt; diag_rest_device_certificates
+    diag_rest_device_certificates --&gt; diag_rest_gossip
+    diag_rest_gossip --&gt; diag_rest_gossip_test
+    diag_rest_gossip_test --&gt; verify_blocks
+    verify_blocks --&gt; END
+    SYNC_REST -. Default .-&gt; END
+
+    DIAG_REST[Detects REST Framework Problems]
+
+        </div><details><summary><b>▶ Detailed Command Line Options</b></summary>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># sslofix --help</span>
+<span class="n">BIG</span><span class="o">-</span><span class="n">IP</span> <span class="n">SSLo</span> <span class="n">diagnostics</span> <span class="ow">and</span> <span class="n">repair</span> <span class="n">utility</span>
+<span class="n">Usage</span><span class="p">:</span> <span class="n">sslofix</span> <span class="p">[</span><span class="n">OPTIONS</span><span class="p">]</span><span class="o">...</span>
+	 <span class="o">-</span><span class="n">d</span><span class="p">,</span> <span class="o">--</span><span class="n">dryrun</span> 			 <span class="n">Dry</span><span class="o">-</span><span class="n">run</span> <span class="p">(</span><span class="n">simulation</span><span class="p">)</span> <span class="n">mode</span>
+	 <span class="o">-</span><span class="n">D</span><span class="p">,</span> <span class="o">--</span><span class="n">devicegroup</span> <span class="n">NAME</span> 	 <span class="n">Specifies</span> <span class="n">the</span> <span class="n">HA</span> <span class="n">device</span> <span class="n">group</span> <span class="n">name</span>
+	   <span class="p">,</span> <span class="o">--</span><span class="n">diagnostic</span> 		 <span class="n">Runs</span> <span class="n">a</span> <span class="n">diagnostic</span> <span class="ow">and</span> <span class="n">attempts</span> <span class="n">to</span> <span class="n">detect</span> <span class="n">possible</span> <span class="n">HA</span> <span class="n">sync</span> <span class="n">problems</span>
+	 <span class="o">-</span><span class="n">f</span><span class="p">,</span> <span class="o">--</span><span class="n">force</span> 			 <span class="n">Enforces</span> <span class="n">a</span> <span class="n">more</span> <span class="n">coercive</span> <span class="n">HA</span> <span class="n">sync</span> <span class="p">(</span><span class="n">see</span> <span class="n">README</span> <span class="k">for</span> <span class="n">details</span><span class="p">)</span>
+	 <span class="o">-</span><span class="n">h</span><span class="p">,</span> <span class="o">--</span><span class="n">help</span> 			 <span class="n">Displays</span> <span class="n">help</span> <span class="n">text</span>
+	 <span class="o">-</span><span class="n">H</span><span class="p">,</span> <span class="o">--</span><span class="n">host</span> <span class="n">HA_PEER</span> 		 <span class="n">Specifies</span> <span class="n">the</span> <span class="n">HA</span> <span class="n">sync</span> <span class="n">peer</span>
+	 <span class="o">-</span><span class="n">m</span><span class="p">,</span> <span class="o">--</span><span class="n">manual</span> 			 <span class="n">Manual</span> <span class="p">(</span><span class="n">step</span><span class="o">-</span><span class="n">by</span><span class="o">-</span><span class="n">step</span><span class="p">)</span> <span class="n">mode</span>
+	 <span class="o">-</span><span class="n">s</span><span class="p">,</span> <span class="o">--</span><span class="n">stand</span><span class="o">-</span><span class="n">alone</span> 		 <span class="n">Runs</span> <span class="n">on</span> <span class="n">this</span> <span class="n">stand</span><span class="o">-</span><span class="n">alone</span> <span class="n">device</span> <span class="n">that</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">part</span> <span class="n">of</span> <span class="n">a</span> <span class="n">failover</span> <span class="n">group</span>
+	 <span class="o">-</span><span class="n">t</span><span class="p">,</span> <span class="o">--</span><span class="n">target</span> <span class="p">[</span><span class="n">NAMES</span><span class="p">]</span><span class="o">...</span> 	 <span class="n">Specifies</span> <span class="n">the</span> <span class="n">HA</span> <span class="n">sync</span> <span class="n">target</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="p">[</span><span class="n">ALL</span> <span class="n">MCP</span> <span class="n">REST</span><span class="p">]</span><span class="o">.</span> <span class="n">Default</span><span class="p">:</span> <span class="n">ALL</span>
+	 <span class="o">-</span><span class="n">v</span><span class="p">,</span> <span class="o">--</span><span class="n">verbose</span> 			 <span class="n">Provides</span> <span class="n">additional</span> <span class="p">(</span><span class="n">debug</span><span class="p">)</span> <span class="n">information</span>
+	 <span class="o">-</span><span class="n">V</span><span class="p">,</span> <span class="o">--</span><span class="n">version</span> 			 <span class="n">Displays</span> <span class="n">the</span> <span class="n">current</span> <span class="n">version</span> <span class="n">of</span> <span class="n">this</span> <span class="n">script</span>
+<span class="n">Examples</span><span class="p">:</span>
+	 <span class="n">sslofix</span> <span class="o">-</span><span class="n">D</span> <span class="n">ha</span><span class="o">-</span><span class="n">failover</span> <span class="o">-</span><span class="n">H</span> <span class="mf">10.192.228.78</span> <span class="o">--</span><span class="n">diagnostic</span>
+	 <span class="n">sslofix</span> <span class="o">-</span><span class="n">D</span> <span class="n">ha</span><span class="o">-</span><span class="n">failover</span> <span class="o">-</span><span class="n">H</span> <span class="mf">10.192.228.78</span>
+	 <span class="n">sslofix</span> <span class="o">--</span><span class="n">stand</span><span class="o">-</span><span class="n">alone</span> <span class="o">--</span><span class="n">diagnostic</span>
+	 <span class="n">sslofix</span> <span class="o">--</span><span class="n">stand</span><span class="o">-</span><span class="n">alone</span>
+</pre></div>
+</div>
+</details>
+</div>
+<hr class="docutils"/>
+<div class="section" id="does-this-tool-impact-production-traffic">
+<h2>Does this tool impact production traffic?</h2>
+<p>SSLOFIX only makes changes to the control plan. Since the BIG-IP’s <strong>data plane</strong> will not be affected, traffic processing is not impacted.</p>
+<p>Towards the end of the repair process, it will initiate a <em>CMI sync</em> operation for the sync-failover device group which copies the local BIG-IP’s configuration database <em>from</em> the local device <em>to</em> the remote device.</p>
+<p><strong>Note:</strong>
+Ensure the local device has the most recent configuration.</p>
+</div>
+</div>
+<hr class="docutils"/>
+<div class="section" id="how-to-use-sslofix">
+<h1>How to use SSLOFIX</h1>
+<p>Follow these steps to repair most SSLO control plane problems.</p>
+<ol class="simple">
+<li><p>Ensure <a class="reference external" href="https://support.f5.com/csp/article/K13132">UCS backups</a> of all BIG-IPs are up-to-date.</p></li>
+<li><p>Enable public key authentication from the BIG-IP you use to run SSLOFIX (the peer with the most up-to-date configuration) to its HA peer.<br/>
+<a class="reference external" href="https://support.f5.com/csp/article/K13454">K13454: Configuring SSH public key authentication on BIG-IP systems</a>.</p></li>
+<li><p><b><a class="reference external" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/sslofix.html#initial-diagnostic">Initial Diagnostic</a></b>: Use SSLOFIX in <code class="docutils literal notranslate"><span class="pre">--diagnostic</span></code> mode to perform an initial diagnostic and record all errors found.</p></li>
+<li><p><b><a class="reference external" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/sslofix.html#run-in-repair-mode">Run in Repair Mode</a></b>: Use SSLOFIX in <em>repair</em> (default) mode to repair errors.</p></li>
+<li><p><b><a class="reference external" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/sslofix.html#verify-repair-is-complete">Verify Repair is Complete</a></b>: Use SSLOFIX in <code class="docutils literal notranslate"><span class="pre">--diagnostic</span></code> mode to verify all errors are corrected.</p></li>
+<li><p>If all errors are not corrected, wait a few minutes and repeat the repair operation to fix compound problems.</p></li>
+</ol>
+<div class="section" id="initial-diagnostic">
+<h2>Initial Diagnostic</h2>
+<p>Use SSLOFIX with the <code class="docutils literal notranslate"><span class="pre">--diagnostic</span></code> option to assess the condition, since without that flag it will also proceed by default to apply fixes.</p>
+<p>Example:</p>
+<p><code class="docutils literal notranslate"><span class="pre">sslofix</span> <span class="pre">-D</span> <span class="pre">&lt;sync-failover</span> <span class="pre">group&gt;</span> <span class="pre">-H</span> <span class="pre">&lt;remote</span> <span class="pre">BIG-IP</span> <span class="pre">host&gt;</span> <span class="pre">--diagnostic</span></code></p>
+<details><summary><b>▶ Example diagnostic run with no problems found</b></summary>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span># ~/sslofix -D /Common/mysyncfailovergroup -H 10.140.10.64 --diagnostic
+info: Verifying local device belongs to /Common/mysyncfailovergroup device group...
+info: Verifying peer device belongs to /Common/mysyncfailovergroup device group...
+info: Retrieving platform versions locally...
+info: Retrieving platform versions on remote HA peer [10.140.10.64]...
+info: Starting MCP diagnostic...
+info: Starting REST framework diagnostic...
+info: Checking SSLo package installed locally...
+info: Checking SSLo package installed on remote HA peer [10.140.10.64]
+info: Verifying all SSLo blocks on local device...
+info: Verifying all SSLo blocks on remote HA peer [10.140.10.64]...
+info: Retrieving device/machine IDs locally...
+info: Retrieving device/machine IDs on remote HA peer [10.140.10.64]...
+info: Checking REST framework device groups locally...
+info: Checking REST framework device groups on remote HA peer [10.140.10.64]
+info: Checking REST framework device states locally...
+info: Checking REST framework device states on remote HA peer [10.140.10.64]...
+info: Checking REST framework device/machine IDs locally...
+info: Checking REST framework device/machine IDs on remote HA peer [10.140.10.64]...
+info: Checking version match across device groups...
+info: Checking device REST framework versions locally...
+info: Checking device REST framework versions on remote HA peer [10.140.10.64]...
+info: Checking REST framework device certificates locally...
+info: Checking REST framework device certificates on remote HA peer [10.140.10.64]
+info: Checking REST framework gossip/sync status locally...
+info: Checking REST framework gossip/sync status on remote HA peer [10.140.10.64]...
+info: Testing Echo gossip/sync from local to remote HA peer [10.140.10.64]...
+info: Testing Echo gossip/sync from remote HA peer [10.140.10.64] to local...
+info: No problems detected!
+</pre></div>
+</div>
+</details>
+<details><summary><b>▶ Example diagnostic run with REST subsystem down on remote</b></summary>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span># ~/sslofix -D /Common/mysyncfailovergroup -H 10.140.10.64 --diagnostic
+info: Verifying local device belongs to /Common/mysyncfailovergroup device group...
+info: Verifying peer device belongs to /Common/mysyncfailovergroup device group...
+info: Retrieving platform versions locally...
+info: Retrieving platform versions on remote HA peer [10.140.10.64]...
+info: Starting MCP diagnostic...
+info: Starting REST framework diagnostic...
+info: Checking SSLo package installed locally...
+info: Checking SSLo package installed on remote HA peer [10.140.10.64]
+jq: error (at &lt;stdin&gt;:6): Cannot iterate over null (null)
+warning: [SEVERE] Device SSLo RPM mismatch detected!
+ Local: f5-iappslx-ssl-orchestrator-16.1.0-9.0.24.noarch
+ 10.140.10.64: Not Installed
+warning: It is recommended that you verify and install the correct SSLo RPM
+ on device(s) as needed and then run this command with the --force option!
+</pre></div>
+</div>
+</details>
+<details><summary><b>▶ Example diagnostic run with blocks in error state</b></summary>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span># ~/sslofix -D /Common/mysyncfailovergroup -H 10.140.10.64 --diagnostic
+info: Verifying local device belongs to /Common/mysyncfailovergroup device group...
+info: Verifying peer device belongs to /Common/mysyncfailovergroup device group...
+info: Retrieving platform versions locally...
+info: Retrieving platform versions on remote HA peer [10.140.10.64]...
+info: Starting MCP diagnostic...
+info: Starting REST framework diagnostic...
+info: Checking SSLo package installed locally...
+info: Checking SSLo package installed on remote HA peer [10.140.10.64]
+info: Verifying all SSLo blocks on local device...
+warning: Found 1 block(s) in bad state on local device!
+info: Verifying all SSLo blocks on remote HA peer [10.140.10.64]...
+warning: Found 1 block(s) in bad state on remote HA peer [10.140.10.64]!
+warning: Found 1 blocks with low config processor timeouts on remote HA peer [10.140.10.64]!
+info: Retrieving device/machine IDs locally...
+info: Retrieving device/machine IDs on remote HA peer [10.140.10.64]...
+info: Checking REST framework device groups locally...
+info: Checking REST framework device groups on remote HA peer [10.140.10.64]
+info: Checking REST framework device states locally...
+info: Checking REST framework device states on remote HA peer [10.140.10.64]...
+info: Checking REST framework device/machine IDs locally...
+info: Checking REST framework device/machine IDs on remote HA peer [10.140.10.64]...
+info: Checking version match across device groups...
+info: Checking device REST framework versions locally...
+info: Checking device REST framework versions on remote HA peer [10.140.10.64]...
+info: Checking REST framework device certificates locally...
+info: Checking REST framework device certificates on remote HA peer [10.140.10.64]
+info: Checking REST framework gossip/sync status locally...
+info: Checking REST framework gossip/sync status on remote HA peer [10.140.10.64]...
+info: Testing Echo gossip/sync from local to remote HA peer [10.140.10.64]...
+info: Testing Echo gossip/sync from remote HA peer [10.140.10.64] to local...
+warning: Problems detected!
+</pre></div>
+</div>
+</details>
+</div>
+<div class="section" id="run-in-repair-mode">
+<h2>Run in Repair Mode</h2>
+<p>If errors are found during the diagnostic, run sslo in repair mode (without <code class="docutils literal notranslate"><span class="pre">--diagnostic</span></code>).</p>
+<p>Use the <code class="docutils literal notranslate"><span class="pre">--force</span></code> option to overwrite the REST database on the remove device with the one on the local device. In most cases this is the correct approach to take.</p>
+<p><code class="docutils literal notranslate"><span class="pre">sslofix</span> <span class="pre">-D</span> <span class="pre">/Common/mysyncfailovergroup</span> <span class="pre">-H</span> <span class="pre">&lt;remote</span> <span class="pre">host&gt;</span> <span class="pre">--force</span></code></p>
+<blockquote>
+<div><p><strong>NOTE:</strong><br/>
+The repair process is automatic. To prevent SSLOFIX from executing unexpected commands on BIG-IP, SSLOFIX provides two options</p>
+<ul class="simple">
+<li><p>To review all commands of the repair process, use the <code class="docutils literal notranslate"><span class="pre">--dryrun</span></code> option to show the commands that would run. The script does not execute the commands.</p></li>
+<li><p>To pause before each command is executed, use the <code class="docutils literal notranslate"><span class="pre">--manual</span></code> option.</p></li>
+</ul>
+</div></blockquote>
+<details><summary><b>▶ Example repair on clean system</b></summary>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span># ~/sslofix -D /Common/mysyncfailovergroup -H 10.140.10.64
+info: Verifying local device belongs to /Common/mysyncfailovergroup device group...
+info: Verifying peer device belongs to /Common/mysyncfailovergroup device group...
+Please enter your BIG-IP Admin account credentials.
+Enter Username: admin
+Enter Password:
+info: Starting MCP HA sync...
+info: Initiating CM Config-Sync locally...
+info: MCP HA sync completed!
+info: Starting REST Framework HA sync...
+info: Stopping restjavad locally...
+info: Stopping restjavad on remote HA peer [10.140.10.64]...
+info: Removing REST Framework device certificate files locally...
+info: Removing REST Framework device certificate files on remote HA peer [10.140.10.64]...
+info: Starting restjavad locally...
+info: Starting restjavad on remote HA peer [10.140.10.64]...
+info: Removing REST Framework sync conflicts locally...
+info: Removing REST Framework sync conflicts on remote HA peer [10.140.10.64]...
+info: Removing REST Framework device certificates locally...
+info: Removing REST Framework device certificates on remote HA peer [10.140.10.64]...
+info: Generating REST Framework device key-pair locally...
+info: Generating REST Framework device key-pair on remote HA peer [10.140.10.64]...
+info: Removing REST Framework devices locally...
+info: Removing REST Framework devices on remote HA peer [10.140.10.64]...
+info: Restarting restjavad, restnoded locally...
+info: Restarting restjavad, restnoded on remote HA peer [10.140.10.64]...
+info: Verifying all SSLo blocks on local device...
+info: Saving current block state on local device...
+info: Verifying all SSLo blocks on remote HA peer [10.140.10.64]...
+info: Saving current block state on remote HA peer [10.140.10.64]...
+info: REST Framework HA sync completed!
+</pre></div>
+</div>
+</details>
+</div>
+<div class="section" id="verify-repair-is-complete">
+<h2>Verify Repair is Complete</h2>
+<p>Finish the repair by running the <code class="docutils literal notranslate"><span class="pre">--diagnostic</span></code> command to ensure no problems are found.</p>
+<p>A trouble-free diagnostic results in this console message:</p>
+<p><code class="docutils literal notranslate"><span class="pre">info:</span> <span class="pre">No</span> <span class="pre">problems</span> <span class="pre">detected!</span></code></p>
+<blockquote>
+<div><p><strong>NOTE:</strong><br/>
+It may be necessary to run the repair kit multiple times to repair compound problems.</p>
+</div></blockquote>
+<hr class="docutils"/>
+</div>
+</div>
+</div>
+<div class="row next-prev-btn-row">
+<div class="col-lg-12">
+<a accesskey="p" class="btn btn-primary left" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/ts_procedures.html" title="Various Procedures"><i aria-hidden="true" class="fa fa-arrow-circle-left"></i> Previous</a>
+<a accesskey="n" class="btn btn-primary right" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/glossary.html" title="Glossary">Next <i aria-hidden="true" class="fa fa-arrow-circle-right"></i></a>
+</div>
+</div>
+<!-- Qualtrics -->
+<div id="ZN_4N7PlIMqx2BMY6O">
+<!--DO NOT REMOVE-CONTENTS PLACED HERE-->
+</div>
+<!-- Qualtrics -->
+</article>
+</body></html>

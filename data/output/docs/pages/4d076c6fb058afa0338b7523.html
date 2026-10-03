@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ltm rule command SSL cert</title><link rel="canonical" href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_SSL_cert.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>ltm rule command SSL cert</h1><p>cli_reference · 17.0.0</p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_SSL_cert.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="ltm-rule-command-ssl-cert">
+<span id="id1"></span><h1>ltm rule command SSL cert</h1>
+<html>
+<pre>
+iRule(1)						BIG-IP TMSH Manual						  iRule(1)
+
+SSL::cert
+       Returns data about an X509 SSL certificate, or sets the certificate mode.
+
+SYNOPSIS
+       SSL::cert (CERT_IDX | count | (issuer CERT_IDX) |
+			  (mode (ignore | request | require)?))
+
+DESCRIPTION
+       Returns data about an X509 SSL certificate, or sets the certificate mode.
+
+RETURN VALUE
+       SSL::cert <index>
+	   Returns the X509 SSL certificate at the specified index in the peer certificate chain, where index is a value greater
+       than or equal to zero. A value of zero denotes the first certificate in the chain, a value of one denotes the next, and so
+       on. This command is currently applicable only under a client-side context and returns an error within a server-side
+       context.
+
+       SSL::cert issuer <index>
+	   Returns the issuer certificate of the index of the X509 SSL certificate in the peer certificate chain, where index is a
+       value greater than or equal to zero. A value of zero denotes the first certificate in the chain, a value of one denotes the
+       next, and so on. This command is currently applicable only under a client-side context and returns an error within a
+       server-side context.
+
+       SSL::cert count
+	   Returns the total number of certificates that the peer has offered.
+
+       SSL::cert mode
+	   This command has different results depending on whether the system evaluates the command under a client-side or server-
+       side context. When the system evaluates the command under a client-side context, the command overrides the client-side SSL
+       connectionXs current setting regarding client certificates. When the system evaluates the command under a server-side
+       context, the command overrides the server-side SSL connectionXs current setting regarding server certificates. Only the
+       require and ignore arguments are valid in a server-side context.
+
+       Note: As of 10.1.0, as described in CR116806, the following iRule commands now apply to the lifetime of the SSL session,
+       and not only for the connection in which the system receives the client certificate:
+
+	   SSL::cert
+	   SSL::cert issuer
+	   SSL::cert count
+
+       With this change, the system stores the received peer certificate in the SSL session table, so the certificate is available
+       to the specified iRule commands as long as the SSL session is valid. In previous releases, the CLIENTSSL_CLIENTCERT iRule
+       event retrieved the peer certificate; now the stored certificate can also be retrieved inside the HTTP_REQUEST event.
+
+VALID DURING
+EXAMPLES
+	# v10.1 or higher
+	# Redirect any client HTTP request with no client certificate or with a cert which is not correctly
+	# validated against the trusted root certificate specified in the client SSL profile.
+	when HTTP_REQUEST {
+	    # Check if there is more than one client cert
+	    if {[SSL::cert count] &gt; 0}{
+
+		# Check if there was no error in validating the client cert against LTM's server cert
+		if { [SSL::verify_result] == 0 }{
+
+		    # Exit this event in this iRule
+		    return
+		} else {
+		    # Use the SSL status code in the HTTP response (defined here: http://www.openssl.org/docs/apps/verify.html#DIAGNOSTICS)
+		    set error_string [X509::verify_cert_error_string [SSL::verify_result]]
+		}
+	    } else {
+		set error_string "No client certificate provided"
+	    }
+	    # If we are still executing this iRule, the client did not present a cert or did not present a valid cert
+	    HTTP::respond 403 content "<html>Invalid client certificate: $error_string</html>"
+	}
+
+	when RULE_INIT {
+	    set ::key [AES::key 128]
+	}
+	when CLIENTSSL_CLIENTCERT {
+	    session add ssl [SSL::sessionid] [SSL::cert 0] 180
+	}
+	when HTTP_REQUEST {
+	    if {! [HTTP::cookie exists EncClientCert]} {
+		if { [SSL::cert count] &lt; 1 } {
+		    HTTP::redirect "http://errorpage.example.com/"
+		    return
+		}
+		set id [SSL::sessionid]
+		if { $id eq "" } {
+		    reject
+		    return
+		} else {
+		    set cert [session lookup ssl $id]
+		}
+		if { $cert eq "" } {
+		    reject
+		    return
+		}
+		session delete ssl $id
+		set enccert [b64encode [AES::encrypt $::key $cert]]
+	    } else {
+		set cert [AES::decrypt $::key [b64decode [HTTP::cookie EncClientCert]]]
+	    }
+	    HTTP::header insert ClientCert [b64encode $cert]
+	}
+	when HTTP_RESPONSE {
+	    if { [info exists enccert ]} {
+		HTTP::header insert "Set-Cookie EncClientCert=$enccert"
+	    }
+	}
+
+HINTS
+SEE ALSO
+CHANGE LOG
+       @BIGIP-9.0.0 --First introduced the command.
+
+BIG-IP							    2022-04-12							  iRule(1)
+</index></index></pre>
+</html>
+</div>
+</div>
+</article>
+</body></html>

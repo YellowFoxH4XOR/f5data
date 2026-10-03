@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>LTM Maintenance Page</title><link rel="canonical" href="https://clouddocs.f5.com/api/irules/LTMMaintenancePage.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>LTM Maintenance Page</h1><p>programming_reference · See product applicability metadata</p><a href="https://clouddocs.f5.com/api/irules/LTMMaintenancePage.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!DOCTYPE html>
+
+<div class="section" id="ltm-maintenance-page">
+<h1>LTM Maintenance Page</h1>
+<div class="section" id="contributed-by-spark-based-off-several-other-contributors-including-citizen-elah">
+<h2>Contributed by: spark, based off several other contributors including citizen_elah</h2>
+</div>
+<div class="section" id="update-should-now-work-for-v10-x">
+<h2>UPDATE: Should now work for v10.x</h2>
+<div class="section" id="description">
+<h3><strong>Description</strong></h3>
+<div class="line-block">
+<div class="line">How to use the LTM as a webserver for a particular directory. In this
+case, we use it to return a maintenance page with text and images to
+return when no pool members are available. The maintenance pages are
+always served up, even if the pool is active. This is partly to handle
+the case where the pool comes back up while the client is loading all
+the parts of the maintenance page, and partly to show how to use the
+LTM as a rudimentary web server.</div>
+<div class="line">1. Create the HTML for the maintenance page. It must be on one line,
+and all double-quotes must be escaped with backslashes., the code must
+start with ” and end with ” .</div>
+<div class="line">2. Save it to a file <strong>/var/class/maint.index.html.class</strong> on the LTM.</div>
+<div class="line">3. Upload all desired images to /var/images on the BigIP (create the
+directory as needed).</div>
+<div class="line">4. Convert images into base64 format string:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>#!/bin/bash
+
+## clear images class
+echo -n "" &gt; /var/class/images.class
+
+## loop through real images and create base64 data for images class
+for i in $(ls /var/images); do
+        echo "\"`echo \"$i\"|tr '[:upper:]' '[:lower:]'`\" := \"`base64 /var/images/$i|tr -d '\n'`\"," &gt;&gt; /var/class/images.class
+done
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">5. Note that this creates a file called /var/class/images.class –
+always run “b load” after creating or updating an external class file!</div>
+<div class="line">6. Use the configuration below, changing the error condition and
+maintenance prefix if needed.</div>
+<div class="line">You can easily extend this example to serve up multiple pages, both
+text and not. You could also just use variables for these files
+instead of classes, but it seems much more risky to me to edit the
+actual bigip.conf file or iRule than it does to just edit one file
+under <strong>/var/class/</strong> and do a <strong>b load</strong>.</div>
+<div class="line">Note: The file content is stored in LTM memory upon configuration
+load, so you should be cautious about serving large amounts of data
+from the classes.</div>
+</div>
+</div>
+<div class="section" id="configuration-including-irule">
+<h3><strong>Configuration, including iRule</strong></h3>
+<p>The class containing the HTML page will be defined as a Data Group List
+in the GUI: Local Traffic -&gt; iRules -&gt; Data Group List -&gt; Create…</p>
+<ul class="simple">
+<li>Name: maint_index_html_class</li>
+<li>Type: (External File)</li>
+<li>Path/Filename: /var/class/maint.index.html.class</li>
+<li>File Contents: String</li>
+<li>Key/Value Pair Separator: :=</li>
+<li>Access Mode: Read Only</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">The class containing the base64 encoded image will be defined as a
+Data Group List in the GUI: Local Traffic -&gt; iRules -&gt; Data Group List
+-&gt; Create…</div>
+</div>
+<ul class="simple">
+<li>Name: images_class</li>
+<li>Type: (External File)</li>
+<li>Path/Filename: /var/class/images.class</li>
+<li>File Contents: String</li>
+<li>Key/Value Pair Separator: :=</li>
+<li>Access Mode: Read Only</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">Note: in case of error reduce the size of the image files</div>
+<div class="line">iRule which references the HTML and logo class:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">when</span><span class="w"> </span>RULE_INIT<span class="w"> </span><span class="k">{</span>
+<span class="w">   </span><span class="c"># set DEBUG to 1 for debug log output</span>
+<span class="w">   </span><span class="k">set</span><span class="w"> </span>static::DEBUG<span class="w"> </span><span class="mi">0</span>
+<span class="k">}</span>
+
+<span class="nv">when</span><span class="w"> </span>HTTP_REQUEST<span class="w"> </span><span class="k">{</span>
+
+<span class="w">   </span><span class="c"># Service requests for files (URIs) from the maintenance page.</span>
+<span class="w">   </span><span class="c"># Note that we always service these pages, even if the http_pool is up.</span>
+<span class="w">   </span><span class="c"># The maintenance prefix should be unique in the application and</span>
+<span class="w">   </span><span class="c">#   not conflict with an existing directory on the web servers.</span>
+<span class="w">   </span><span class="k">set</span><span class="w"> </span>maint_prefix<span class="w"> </span><span class="s2">"/maintenancepage"</span>
+
+<span class="w">   </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>uri<span class="k">]</span><span class="w"> </span><span class="nv">starts_with</span><span class="w"> </span><span class="s2">"$maint_prefix"</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+
+<span class="w">      </span><span class="c"># Strip off the $maint_prefix from the URI as you can't easily do variable expansion</span>
+<span class="w">      </span><span class="c"># within a switch statement.</span>
+<span class="w">      </span><span class="c"># Note that requests for the exact maintenance prefix URI will be set to a null string,</span>
+<span class="w">      </span><span class="c"># so handle null in the first switch case.</span>
+<span class="w">      </span><span class="k">set</span><span class="w"> </span>uri<span class="w"> </span><span class="k">[</span><span class="nb">string</span><span class="w"> </span>map<span class="w"> </span><span class="k">[</span><span class="nb">list</span><span class="w"> </span><span class="nv">$maint_prefix</span><span class="w"> </span><span class="s2">""</span><span class="k">]</span><span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>uri<span class="k">]]</span>
+
+<span class="w">      </span><span class="c"># Return the requested page based on the requested URI</span>
+<span class="w">      </span><span class="k">switch</span><span class="w"> </span><span class="o">-</span>glob<span class="w"> </span><span class="o">--</span><span class="w"> </span><span class="nv">$uri</span><span class="w"> </span><span class="k">{</span>
+<span class="w">         </span><span class="s2">""</span><span class="w"> </span><span class="k">{</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">$static::DEBUG</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">log</span><span class="w"> </span>local0.<span class="w"> </span><span class="s2">"Request for $maint_prefix. Redirecting to $maint_prefix/"</span><span class="w"> </span><span class="k">}</span>
+<span class="w">            </span><span class="nv">HTTP</span><span class="o">::</span>redirect<span class="w"> </span><span class="s2">"$maint_prefix/index.html"</span>
+<span class="w">         </span><span class="k">}</span>
+<span class="w">         </span><span class="s2">"/"</span><span class="w"> </span><span class="nv">-</span>
+<span class="w">         </span><span class="s2">"/index.html"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">$static::DEBUG</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">log</span><span class="w"> </span>local0.<span class="w"> </span><span class="s2">"Request for index. Responding with content: [class element -value 0 maint_index_html_class]"</span><span class="w"> </span><span class="k">}</span>
+<span class="w">            </span><span class="nv">HTTP</span><span class="o">::</span>respond<span class="w"> </span><span class="mi">200</span><span class="w"> </span>content<span class="w"> </span><span class="k">[</span><span class="nv">class</span><span class="w"> </span>element<span class="w"> </span><span class="o">-</span>value<span class="w"> </span><span class="mi">0</span><span class="w"> </span>maint_index_html_class<span class="k">]</span><span class="w"> </span><span class="s2">"Content-Type"</span><span class="w"> </span><span class="s2">"text/html"</span>
+<span class="w">         </span><span class="k">}</span>
+<span class="w">         </span><span class="s2">"/*.png"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">            </span><span class="c"># NOTE: '17' is derived by the length of /maintenancepage/</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[</span><span class="nv">class</span><span class="w"> </span>match<span class="w"> </span><span class="k">[</span><span class="nv">findstr</span><span class="w"> </span><span class="k">[</span><span class="nb">string</span><span class="w"> </span>tolower<span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>path<span class="k">]]</span><span class="w"> </span><span class="s2">"/"</span><span class="w"> </span><span class="mi">17</span><span class="k">]</span><span class="w"> </span>equals<span class="w"> </span>images_class<span class="k">]</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">               </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">$static::DEBUG</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">log</span><span class="w"> </span>local0.<span class="w"> </span><span class="s2">"Request for [findstr [HTTP::path] "/" 17] found. Responding with binary content"</span><span class="w"> </span><span class="k">}</span>
+<span class="w">               </span><span class="nv">HTTP</span><span class="o">::</span>respond<span class="w"> </span><span class="mi">200</span><span class="w"> </span>content<span class="w"> </span><span class="k">[</span><span class="nv">b64decode</span><span class="w"> </span><span class="k">[</span><span class="nv">class</span><span class="w"> </span>lookup<span class="w"> </span><span class="k">[</span><span class="nv">findstr</span><span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>path<span class="k">]</span><span class="w"> </span><span class="s2">"/"</span><span class="w"> </span><span class="mi">17</span><span class="k">]</span><span class="w"> </span>images_class<span class="k">]]</span><span class="w"> </span><span class="s2">"Content-Type"</span><span class="w"> </span><span class="s2">"image/png"</span>
+<span class="w">            </span><span class="k">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">{</span>
+<span class="w">               </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">$static::DEBUG</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">log</span><span class="w"> </span>local0.<span class="w"> </span><span class="s2">"Request for [findstr [HTTP::path] "/" 1] NOT found.  Ignoring..."</span><span class="w"> </span><span class="k">}</span>
+<span class="w">            </span><span class="k">}</span>
+<span class="w">         </span><span class="k">}</span>
+<span class="w">         </span><span class="nv">default</span><span class="w"> </span><span class="k">{</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">$static::DEBUG</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">log</span><span class="w"> </span>local0.<span class="w"> </span><span class="s2">"Unrecognized request to URI: [HTTP::uri]"</span><span class="w"> </span><span class="k">}</span>
+<span class="w">            </span><span class="nv">HTTP</span><span class="o">::</span>respond<span class="w"> </span><span class="mi">404</span><span class="w"> </span>content<span class="w"> </span><span class="s2">"Unrecognized request to [HTTP::uri]"</span><span class="w"> </span><span class="s2">"Content-Type"</span><span class="w"> </span><span class="s2">"text/html"</span>
+<span class="w">         </span><span class="k">}</span>
+<span class="w">      </span><span class="k">}</span>
+<span class="w">      </span><span class="k">return</span>
+<span class="w">   </span><span class="k">}</span>
+<span class="w">   </span><span class="c">#</span>
+<span class="w">   </span><span class="c"># If the all members in the default pool are down, redirect to the maintenance page</span>
+<span class="w">   </span><span class="c">#</span>
+<span class="w">   </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[</span><span class="nv">active_members</span><span class="w"> </span><span class="k">[</span><span class="nv">LB</span><span class="o">::</span>server<span class="w"> </span>pool<span class="k">]]</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="nv">1</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">      </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">$static::DEBUG</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">log</span><span class="w"> </span>local0.<span class="w"> </span><span class="s2">"All Pool Members down: Redirecting to $maint_prefix/index.html"</span><span class="w"> </span><span class="k">}</span>
+<span class="w">      </span><span class="nv">HTTP</span><span class="o">::</span>redirect<span class="w"> </span><span class="s2">"$maint_prefix/index.html"</span>
+<span class="w">   </span><span class="k">}</span>
+<span class="k">}</span>
+</pre></div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">virtual</span><span class="w"> </span>servertest<span class="w"> </span><span class="k">{</span>
+<span class="w">   </span><span class="nv">pool</span><span class="w"> </span>http_pool
+<span class="w">   </span><span class="nv">destination</span><span class="w"> </span><span class="mf">10.1</span>.2.3:http
+<span class="w">   </span><span class="nv">ip</span><span class="w"> </span>protocol<span class="w"> </span>tcp
+<span class="w">   </span><span class="nv">rule</span><span class="w"> </span>webserver
+<span class="w">   </span><span class="nv">profiles</span>
+<span class="w">      </span><span class="nb">http</span>
+<span class="w">      </span><span class="nv">tcp</span>
+<span class="k">}</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="contents-of-the-class-files">
+<h3><strong>Contents of the class files</strong></h3>
+<p><strong>/var/class/maint.index.html.class</strong></p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>"key" := "&lt;html&gt;&lt;head&gt;&lt;title&gt;Maintenance page&lt;/title&gt;&lt;/head&gt;&lt;body&gt;&lt;img src=\"logo.png\"&gt;&lt;p&gt;&lt;h2&gt;Sorry! This site is down for maintenance.&lt;/h2&gt;&lt;/body&gt;&lt;/html&gt;",
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line"><strong>/var/class/images.class</strong> (all one line in reality, split here for
+the sake of readability. Note the quotes &amp; trailing comma are
+REQUIRED)</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>"logo.png" := "iVBORw0KGgoAAAANSUhEUgAAAL4AAAC3AgMAAADRFQzGAAAACVBMVEUAAADDAAD///8UoaPIAAAD
+hElEQVRo3u3ZOW7dMBAAUB8lSBXkPmTB3g1PEqSf3jAwgYenTP4icVYuXpDmq/Dyv564SSNy+NT2
+jpenB3iALYAp7wBI12MZpOOoayClgXAAMJAWAPLzbdMtSPIoM4AKpBnQ5+siNDAF6CI0sOerIhRw
+ClAdpUDyjhoDckGOAbggxcA/XzRbAApAjkBQI1EnAaLzeT9xQCHIPkB2QYrqxAHwy0FQJw5E8Rh0
+LAMkSw8awQDKa4HfCAZAXgpvVdeNYED3+HFdFAV3QPomgLMiyL7oAPWtj6zm/c8O4Ggb3S9HvDyw
+4Kwp3H/7AfwEdNboKGkFiMaDiXoC4FEjOro3jQEcNcL7vUALgN91FVV8qQqco3YHGRQoEtA5/BhE
+MAdUDUTlswS4C842R4CSAebZzBJUAdI7QJmAwgF54N8HaQSqB1K/YzIHOALX72IAbKBZwHy+9/Id
+9GGIQPoKoANsZSB9CSgdkAeyDsgfBXkKcgfogaJfqwtANjsAZxQp5k00AdXp5wOAnaCyIAMeaAPQ
+FoGdU9RVcFSqgzQBNAcgew1mgEyQmQDQ43KOvQPQmxCjBX/UMJVm6sSBvfmKnZSfgDxQ7UJnC+Au
+oClw1kYSlAmAXYATkB2QtwDtltAmoHwcwCeD6qz6/zOwsz3avDWmwLnB5SNqgRptmjzTwQRoDKRY
+AUIsAX6LiFAZAv5eWQPZAzAAvYhVkHdBX2y2RVAswCHIuyBtg1s/UV4GxQAag/xOUJZBMqB9BnjW
+3YRVTqUVyLgJCs1A0pFPDwToBYeOfHtATotLXyqyRZMARcxxF0A1gIpe+Akg81NzkGX+p5y9yhev
+A1BHAE8gAz+YBbiY8smlQG3nsnQNOCt2UmvRKrqpdxJPUxjQ+BOHE1A4uPwD1zj5k2dObG6Nz0iv
+X/9+5ckcC5BnFi8ffPsRZtYzX2hcCrt88Pb6ywHEIgur0eXH24tXQmOBAnuNalgCG7n+LoNbH353
+AU/gHU/i/QK8l3Q7qrejwseh0QC4qcfG3uEqP4Z+chP6WZT0ui/Otza9gheB18voXs4k/kYPU8DN
+fVfRIMkcJtajNPZ2ojxOxZfdZH+Qu3d3UIbbCdsbFlGdaghwd9OlTWu0snGURhtHtLs1NZheBYAm
+W1n2mYbdDTza3SLUHbWwzRlvrS1spJalnVcanB9Evvj8aLuZ3BX1Y1P+AUbgLzbWCp20NpfmAAAA
+AElFTkSuQmCC",
+</pre></div>
+</div>
+<p><em>The BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor 
+or control community code contributions. We make no guarantees or warranties regarding the available code, 
+and it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any 
+code available in the BIG-IP API reference guides is solely at your own risk.</em></p>
+</div>
+</div>
+</div>
+</article>
+</body></html>

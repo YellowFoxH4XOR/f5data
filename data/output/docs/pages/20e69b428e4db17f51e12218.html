@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>HTTP delay and validate clients using Javascript and cookies when CPU is overloaded</title><link rel="canonical" href="https://clouddocs.f5.com/api/irules/HTTP_delay_and_validate_clients_using_javascript_and_cookies_when_CPU_is_overloaded.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>HTTP delay and validate clients using Javascript and cookies when CPU is overloaded</h1><p>programming_reference · See product applicability metadata</p><a href="https://clouddocs.f5.com/api/irules/HTTP_delay_and_validate_clients_using_javascript_and_cookies_when_CPU_is_overloaded.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!DOCTYPE html>
+
+<div class="section" id="http-delay-and-validate-clients-using-javascript-and-cookies-when-cpu-is-overloaded">
+<h1>HTTP delay and validate clients using Javascript and cookies when CPU is overloaded</h1>
+<div class="section" id="contributed-by-mikelowell-m-lowell-at-f5-com">
+<h2>Contributed by: MikeLowell - m.lowell at f5.com</h2>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+<div class="section" id="description">
+<h3><strong>Description</strong></h3>
+<div class="line-block">
+<div class="line">If CPU usage is over $::maxcpu (default 60%), send the client
+javascript that causes the client to delay a minimum of $::basedelay
+milliseconds (default 5000ms, i.e. 5 seconds), plus a random amount of
+additional time between 0 and $::basedelay. After the delay, set a
+session cookie named $::cookie (default “bigverify”) with a random
+token (taken from $::token), and redirect the client back to the same
+virtual server (all this is done via client-side javascript). When the
+client comes back after the redirect, their cookie is checked against
+$::token and if it matches the iRule returns (which causes the pool
+associated with the virtual server to be used), otherwise the iRule
+sends back the same javascript as though the client was new (i.e. same
+as not providing a cookie). Clients that don’t support javascript
+would be unable to access the site if this iRule is engaged (based on
+exceeding $::maxcpu).</div>
+</div>
+</div>
+<div class="section" id="irule-source">
+<h3><strong>iRule Source</strong></h3>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="c"># What does this iRule do?</span>
+
+<span class="c"># If CPU usage is over $::maxcpu (default 60%), send the client javascript that</span>
+<span class="c"># causes the client to delay a minimum of $::basedelay milliseconds (default</span>
+<span class="c"># 5000ms, i.e. 5 seconds), plus a random amount of additional time between 0 and</span>
+<span class="c"># $::basedelay.  After the delay, set a session cookie named $::cookie (default</span>
+<span class="c"># "bigverify") with a random token (taken from $::token), and redirect the</span>
+<span class="c"># client back to the same virtual server (all this is done via client-side</span>
+<span class="c"># javascript).  When the client comes back after the redirect, their cookie is</span>
+<span class="c"># checked against $::token and if it matches the iRule returns (which causes the</span>
+<span class="c"># pool associated with the virtual server to be used), otherwise the iRule sends</span>
+<span class="c"># back the same javascript as though the client was new (i.e. same as not</span>
+<span class="c"># providing a cookie).  Clients that don't support javascript would be unable to</span>
+<span class="c"># access the site if this iRule is engaged (based on exceeding $::maxcpu).</span>
+
+<span class="c"># How does this iRule work?</span>
+
+<span class="c"># The token given to the client is created by encrypting a secret (stored in</span>
+<span class="c"># $::secret) with AES using a key (stored in $::key) that changes every</span>
+<span class="c"># $::session_timeout seconds (default 600, i.e. 10 minutes).  The token changes</span>
+<span class="c"># regularly to make it harder for attackers to defeat the protection mechanism</span>
+<span class="c"># (i.e. this prevents the attacker from simpling recording a single valid toke</span>
+<span class="c"># and reusing it forever).</span>
+
+<span class="c"># The previous token is saved (as $::prev_token) so that it can be compared</span>
+<span class="c"># against client requests in case the client doesn't provide the current token</span>
+<span class="c"># (this way regularly scheduled token changes and iRule modifications don't</span>
+<span class="c"># cause existing client sessions to fail verification).  This also means that a</span>
+<span class="c"># given cookie is valid for up to $::session_timeout * 2 (default 20 minutes).</span>
+<span class="c"># Note: since the token also gets updated on iRule modification (in the</span>
+<span class="c"># RULE_INIT event), rapid changes to the iRule could cause some open sessions to</span>
+<span class="c"># go through the javascript process again as though they were new clients (this</span>
+<span class="c"># is what happens if cookie validation fails).</span>
+
+<span class="c"># Having a delay (particularly one that is randomized) is intended to help</span>
+<span class="c"># spread out the traffic, but it's not necessary to serve the basic need of</span>
+<span class="c"># requiring that an encrypted token be presented from client-side javascript, so</span>
+<span class="c"># this functionality could be removed.  Also, the way in which the delay is</span>
+<span class="c"># achieved is by having javascript that executes a busy loop until enough time</span>
+<span class="c"># has passed.  This busy loop is likely to cause the client machine's CPU usage</span>
+<span class="c"># to spike during the delay.  This isn't ideal, however, it would only happen</span>
+<span class="c"># during an attack, and even then only once per session for valid clients (i.e.</span>
+<span class="c"># this seems like a pretty small price to pay if your site is under attack).</span>
+
+<span class="nv">rule</span><span class="w"> </span>verify_with_js_cookie<span class="w"> </span><span class="k">{</span>
+<span class="nv">when</span><span class="w"> </span>RULE_INIT<span class="w"> </span><span class="k">{</span>
+<span class="w">    </span><span class="c"># Settings</span>
+<span class="w">    </span><span class="k">set</span><span class="w"> </span><span class="o">::</span>maxcpu<span class="w">             </span><span class="mi">60</span>
+<span class="w">    </span><span class="k">set</span><span class="w"> </span><span class="o">::</span>session_timeout<span class="w">   </span><span class="mi">600</span>
+<span class="w">    </span><span class="k">set</span><span class="w"> </span><span class="o">::</span>basedelay<span class="w">        </span><span class="mi">5000</span>
+<span class="w">    </span><span class="k">set</span><span class="w"> </span><span class="o">::</span>cookie<span class="w">           </span><span class="s2">"bigverify"</span>
+<span class="w">    </span><span class="k">set</span><span class="w"> </span><span class="o">::</span>secret<span class="w">           </span><span class="s2">"doesntmatter"</span>
+
+<span class="w">    </span><span class="c"># No configurable parameters beyond this point</span>
+
+<span class="w">    </span><span class="c"># If this rule already exists and is modified, act like a normal re-key</span>
+<span class="w">    </span><span class="c"># event: update the current key and preserve the previous token</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[</span><span class="nb">info</span><span class="w"> </span>exists<span class="w"> </span><span class="o">::</span>key<span class="k">]</span><span class="w"> </span><span class="nv">and</span><span class="w"> </span><span class="k">[</span><span class="nb">string</span><span class="w"> </span>length<span class="w"> </span><span class="nv">$::key</span><span class="k">]</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="k">set</span><span class="w"> </span><span class="o">::</span>prev_token<span class="w"> </span><span class="k">[</span><span class="nv">b64encode</span><span class="w"> </span><span class="k">[</span><span class="nv">AES</span><span class="o">::</span>encrypt<span class="w"> </span><span class="nv">$::key</span><span class="w"> </span><span class="nv">$::secret</span><span class="k">]]</span>
+<span class="w">    </span><span class="k">}</span>
+
+<span class="w">    </span><span class="k">set</span><span class="w"> </span><span class="o">::</span>key<span class="w"> </span><span class="k">[</span><span class="nv">AES</span><span class="o">::</span>key<span class="w"> </span><span class="mi">128</span><span class="k">]</span>
+<span class="w">    </span><span class="k">set</span><span class="w"> </span><span class="o">::</span>token<span class="w"> </span><span class="k">[</span><span class="nv">b64encode</span><span class="w"> </span><span class="k">[</span><span class="nv">AES</span><span class="o">::</span>encrypt<span class="w"> </span><span class="nv">$::key</span><span class="w"> </span><span class="nv">$::secret</span><span class="k">]]</span>
+<span class="w">    </span><span class="k">set</span><span class="w"> </span><span class="o">::</span>last_rekey<span class="w"> </span><span class="k">[</span><span class="nb">clock</span><span class="w"> </span>seconds<span class="k">]</span>
+<span class="k">}</span>
+
+<span class="nv">when</span><span class="w"> </span>HTTP_REQUEST<span class="w"> </span><span class="k">{</span>
+<span class="w">    </span><span class="c"># By default do not engage the verification mechanism</span>
+<span class="w">    </span><span class="k">set</span><span class="w"> </span>need_cookie<span class="w"> </span><span class="mi">0</span>
+
+<span class="w">    </span><span class="c"># If enough time has passed, update the current session token.</span>
+<span class="w">    </span><span class="c"># Note: It could be reasonable to move this logic until after need_cookie</span>
+<span class="w">    </span><span class="c"># is checked, but in the case where usage is fluctuating near the</span>
+<span class="w">    </span><span class="c"># threshold it might prevent re-keying on a regular schedule, thereby</span>
+<span class="w">    </span><span class="c"># making it possible to use the same token for longer than intended.</span>
+<span class="w">    </span><span class="k">set</span><span class="w"> </span>now<span class="w"> </span><span class="k">[</span><span class="nb">clock</span><span class="w"> </span>seconds<span class="k">]</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[expr</span><span class="w"> </span><span class="nv">$now</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nv">$::last_rekey</span><span class="k">]</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="nv">$::session_timeout</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="c">#log local0. "updating session token"</span>
+<span class="w">        </span><span class="k">set</span><span class="w"> </span><span class="o">::</span>key<span class="w"> </span><span class="k">[</span><span class="nv">AES</span><span class="o">::</span>key<span class="w"> </span><span class="mi">128</span><span class="k">]</span>
+<span class="w">        </span><span class="k">set</span><span class="w"> </span><span class="o">::</span>prev_token<span class="w"> </span><span class="nv">$::token</span>
+<span class="w">        </span><span class="k">set</span><span class="w"> </span><span class="o">::</span>token<span class="w"> </span><span class="k">[</span><span class="nv">b64encode</span><span class="w"> </span><span class="k">[</span><span class="nv">AES</span><span class="o">::</span>encrypt<span class="w"> </span><span class="nv">$::key</span><span class="w"> </span><span class="nv">$::secret</span><span class="k">]]</span>
+<span class="w">        </span><span class="k">set</span><span class="w"> </span><span class="o">::</span>last_rekey<span class="w"> </span><span class="nv">$now</span>
+<span class="w">    </span><span class="k">}</span>
+
+<span class="w">    </span><span class="c"># See if we need to bother with verifying the client or not</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[</span><span class="nv">cpu</span><span class="w"> </span>usage<span class="w"> </span><span class="mi">5</span>sec<span class="k">]</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="nv">$::maxcpu</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="c">#log local0. "need cookie"</span>
+<span class="w">        </span><span class="c"># This value is used by the HTTP_RESPONSE event to decide whether</span>
+<span class="w">        </span><span class="c"># to insert a fresh cookie as part of the server response (which</span>
+<span class="w">        </span><span class="c"># only applies if the client already has a valid cookie)</span>
+<span class="w">        </span><span class="k">set</span><span class="w"> </span>need_cookie<span class="w"> </span><span class="mi">1</span>
+<span class="w">    </span><span class="k">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="c">#log local0. "don't need cookie"</span>
+
+<span class="w">        </span><span class="c"># If the client already has a cookie then we might be fluctuating</span>
+<span class="w">        </span><span class="c"># near the threshold, so continue giving the client fresh cookies</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>cookie<span class="w"> </span>exists<span class="w"> </span><span class="nv">$::cookie</span><span class="k">]</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">            </span><span class="c">#log local0. "providing cookie anyway"</span>
+<span class="w">            </span><span class="k">set</span><span class="w"> </span>need_cookie<span class="w"> </span><span class="mi">1</span>
+<span class="w">        </span><span class="k">}</span>
+<span class="w">        </span><span class="k">return</span>
+<span class="w">    </span><span class="k">}</span>
+
+<span class="w">    </span><span class="c"># If we get here, we need to verify the client cookie (if cookie exists)</span>
+<span class="w">    </span><span class="c"># or send them javascript to create a cookie (if cookie doesn't exist or</span>
+<span class="w">    </span><span class="c"># is invalid)</span>
+
+<span class="w">    </span><span class="c"># Check for/verify client cookie</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>cookie<span class="w"> </span>exists<span class="w"> </span><span class="nv">$::cookie</span><span class="k">]</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="c">#log local0. "has a cookie"</span>
+
+<span class="w">        </span><span class="c"># Check if clients cookie matches current or previous token</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">([</span><span class="nv">HTTP</span><span class="o">::</span>cookie<span class="w"> </span>value<span class="w"> </span><span class="nv">$::cookie</span><span class="k">]</span><span class="w"> </span><span class="nv">equals</span><span class="w"> </span><span class="nv">$::token</span><span class="k">)</span><span class="w"> </span><span class="nv">or</span>
+<span class="w">             </span><span class="k">([</span><span class="nv">HTTP</span><span class="o">::</span>cookie<span class="w"> </span>value<span class="w"> </span><span class="nv">$::cookie</span><span class="k">]</span><span class="w"> </span><span class="nv">equals</span><span class="w"> </span><span class="nv">$::prev_token</span><span class="k">)</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">            </span><span class="c">#log local0. "verification succeeded"</span>
+<span class="w">            </span><span class="k">return</span>
+<span class="w">        </span><span class="k">}</span>
+<span class="w">        </span><span class="c">#log local0. "verification failed"</span>
+<span class="w">    </span><span class="k">}</span>
+
+<span class="w">    </span><span class="c"># Generate appropriate redir location whether or not the client sent</span>
+<span class="w">    </span><span class="c"># an HTTP Host header</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[</span><span class="nb">string</span><span class="w"> </span>length<span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>host<span class="k">]]</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="k">set</span><span class="w"> </span>location<span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>host<span class="k">][</span><span class="nv">HTTP</span><span class="o">::</span>uri<span class="k">]</span>
+<span class="w">    </span><span class="k">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="k">set</span><span class="w"> </span>location<span class="w"> </span><span class="k">[</span><span class="nv">IP</span><span class="o">::</span>local_addr<span class="k">][</span><span class="nv">HTTP</span><span class="o">::</span>uri<span class="k">]</span>
+<span class="w">    </span><span class="k">}</span>
+
+<span class="w">    </span><span class="c"># Send client a page with javascript that sleeps, sets a cookie, and</span>
+<span class="w">    </span><span class="c"># redirects back here again.</span>
+<span class="w">    </span><span class="c">#log local0. "responding with javascript"</span>
+<span class="w">    </span><span class="nv">HTTP</span><span class="o">::</span>respond<span class="w"> </span><span class="mi">200</span><span class="w"> </span>content<span class="w"> </span><span class="s2">"</span>
+<span class="s2">&lt;html&gt;&lt;head&gt;</span>
+<span class="s2">    &lt; script type=\"text/javascript\"&gt;</span>
+<span class="s2">        function redirect() {</span>
+<span class="s2">            window.location=\"http://$location\";</span>
+<span class="s2">        }</span>
+<span class="s2">    &amp;lt;/script&amp;gt;</span>
+<span class="s2">&lt;/head&gt;</span>
+<span class="s2">&lt;body onload=\"redirect()\"&gt;</span>
+<span class="s2">    &lt; script type=\"text/javascript\"&gt;</span>
+<span class="s2">        var end=Math.ceil($::basedelay*Math.random()) + $::basedelay;</span>
+<span class="s2">        var start=new Date().getTime();</span>
+<span class="s2">        for (var i=0; i &lt; 1e7; i++) {</span>
+<span class="s2">            if ((new Date().getTime() - start) &gt; end) {</span>
+<span class="s2">                break;</span>
+<span class="s2">            }</span>
+<span class="s2">        }</span>
+<span class="s2">        document.cookie = \"$::cookie=$::token; path=/\";</span>
+<span class="s2">    &amp;lt;/script&amp;gt;</span>
+<span class="s2">&lt;/body&gt;</span>
+<span class="s2">&lt;/html&gt;</span>
+<span class="s2">"</span><span class="w"> </span><span class="s2">"Content-Type"</span><span class="w"> </span><span class="s2">"text/html"</span>
+
+<span class="w">    </span><span class="c"># end of HTTP_REQUEST event</span>
+<span class="k">}</span>
+
+<span class="nv">when</span><span class="w"> </span>HTTP_RESPONSE<span class="w"> </span><span class="k">{</span>
+<span class="w">    </span><span class="c"># If we need to validate cookies or if we the client already had a cookie</span>
+<span class="w">    </span><span class="c"># then insert a cookie with the latest token into the server response.</span>
+<span class="w">    </span><span class="c"># This is needed to ensure that already-validated clients stay validated</span>
+<span class="w">    </span><span class="c"># and don't have to go through the javascript process again.</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">$need_cookie</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nv">1</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="c">#log local0. "inserting cookie in response"</span>
+<span class="w">        </span><span class="nv">HTTP</span><span class="o">::</span>cookie<span class="w"> </span>insert<span class="w"> </span>name<span class="w"> </span><span class="nv">$::cookie</span><span class="w"> </span>value<span class="w"> </span><span class="nv">$::token</span><span class="w"> </span>path<span class="w"> </span><span class="s2">"/"</span>
+<span class="w">    </span><span class="k">}</span>
+<span class="k">}</span>
+<span class="k">}</span>
+</pre></div>
+</div>
+<p><em>The BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor 
+or control community code contributions. We make no guarantees or warranties regarding the available code, 
+and it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any 
+code available in the BIG-IP API reference guides is solely at your own risk.</em></p>
+</div>
+</div>
+</div>
+</article>
+</body></html>

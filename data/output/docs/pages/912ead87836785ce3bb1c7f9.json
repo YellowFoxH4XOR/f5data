@@ -1,0 +1,104 @@
+{
+  "applies_to": [
+    {
+      "product": "F5 BIG-IP iRules API",
+      "versions": []
+    }
+  ],
+  "breadcrumbs": [],
+  "code_examples": [
+    {
+      "section": "Description",
+      "text": "clientflow\n"
+    },
+    {
+      "section": "Description",
+      "text": "serverflow\n"
+    },
+    {
+      "section": "Description",
+      "text": "FLOW::peer\n"
+    },
+    {
+      "section": "Description",
+      "text": "local_addr%route_domain,local_port,remote_addr%route_domain,remote_port,vlan_id,protocol\n"
+    },
+    {
+      "section": "Description",
+      "text": "local_addr%route_domain,local_port,remote_addr%route_domain,remote_port,\n\nvlan_id,protocol,tunnel_local_addr%route_domain,\n\ntunnel_local_port,tunnel_remote_addr%route_domain,\n\ntunnel_remote_port,tunnel_vlan_id,tunnel_protocol\n"
+    },
+    {
+      "section": "Syntax",
+      "text": "FLOW::create_related [-translation-loose] [-hairpin] {\n    [proto <protocol number>]\n    clientflow [-local-ip <local_addr>] [-local-port <local_port>] <remote_addr> <remote_port> <vlan>\n    serverflow [-local-ip <local_addr>] [-local-port <local_port>] <remote_addr> <remote_port> <vlan>\n    [inherit-vs <virtual server name>]\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "when SERVER_CONNECTED {\n    # LSN pool with prefix 4.4.4.0/30,port-range=2000-2005 and NAPT mode is configured. Parent connection is translated as follows\n    # 10.10.0.1%1:60412 -> 10.20.0.1%1:9000 TO 4.4.4.1:1084  10.20.0.1:9000  tcp\n    # Subscriber side: 10.10.0.1%1:60412 -> 10.20.0.1%1:9000\n    # Internet side: 4.4.4.1:1084  10.20.0.1:9000\n    # Below is an example of couple of related connections\n\n    # Connection-1:\n    # Objective is to create a related TCP connection. The first SYN packet will be received from the subscriber side. local_addr/local_port on\n    # both sides is not specified and is picked by the command. A skeleton structure of the connection looks like this.\n    # 10.10.0.1:9999 -> (not specified):(not specified) TO (not specified):(not specified) -> 200.1.1.1:80\n    #\n    # The command uses the parent flow to determine the related flow's local_addr/local_port. This is done by comparing the remote_addr's of\n    # the parent connection with the clientflow/serverflow information. For this example clientflow is the \"Subscriber side\" of the related\n    # connection and \"serverflow\" is the \"Internet side\" of the related connection. For e.g. serverflow valid\n    # local_addr:local_port=4.4.4.1:2000-2005(LSN pool port-range).\n    #\n    # Nov 13 13:55:50 bigip1 info tmm1[28205]: Rule /Common/doc_examples <SERVER_CONNECTED>: Connection-1: 10.20.0.1%1,58374,10.10.0.1%1,9999,4094,6 TO 4.4.4.1,2012,10.20.0.1,8889,4093,6\n    # Nov 13 13:55:50 bigip1 info tmm1[28205]: Rule /Common/doc_examples <SERVER_CONNECTED>: Connection-2: 4.4.4.1,2006,10.20.0.1,1221,4093,6 TO 10.20.0.1%1,33518,10.10.0.1%1,1221,4094,6\n    # Nov 13 13:55:50 bigip1 info tmm1[28205]: Rule /Common/doc_examples <SERVER_CONNECTED>: Connection-3: 11.11.11.11%1,2323,10.10.0.1%1,9999,4094,6 TO 4.4.4.0,2005,10.20.0.1,8889,4093,6\n    # Sys::Connections\n    # 10.10.0.1%1:60424  10.20.0.1%1:9000  4.4.4.1:2002  10.20.0.1:9000  tcp  10  (tmm: 1)  none  none <- Parent\n    # 10.10.0.1%1:9999  10.20.0.1%1:58374  4.4.4.1:2012  10.20.0.1:8889  tcp  11  (tmm: 1)  none  none <- Connection-1\n    # 10.20.0.1:1221  4.4.4.1:2006  10.20.0.1%1:33518  10.10.0.1%1:1221  tcp  11  (tmm: 1)  none  none <- Connection-2\n    # 10.10.0.1%1:9999  11.11.11.11%1:2323  4.4.4.0:2005  10.20.0.1:8889  tcp  11  (tmm: 1)  none  none <- Connection-3\n    if {[catch { FLOW::create_related {\n                        proto 6\n                        clientflow [clientside {IP::remote_addr}] 9999 [clientside {LINK::vlan_id}]\n                        serverflow [IP::remote_addr] 8889 [LINK::vlan_id]\n                    } } result] } {\n        log local0. \"Couldn't create the connection, error:$result\"\n    } else {\n        log local0. \"Connection-1: $result TO [FLOW::peer $result]\"\n    }\n\n    # Connection-2:\n    # Similar to Connection-1 but the first SYN is expected from the \"Internet side\"\n    if {[catch { FLOW::create_related {\n                        proto 6\n                        clientflow [IP::remote_addr] 1221 [LINK::vlan_id]\n                        serverflow [clientside {IP::remote_addr}] 1221 [clientside {LINK::vlan_id}]\n                    } } result] } {\n        log local0. \"Couldn't create the connection, error:$result\"\n    } else {\n        log local0. \"Connection-2: $result TO [FLOW::peer $result]\"\n    }\n\n    # Connection-3:\n    # Similar to Connection-1 but the -local-ip and -local-port parameters are specified.\n    # Interesting point to note here is clientflow -local-ip is set to a completely unrelated address 11.11.11.11.\n    # The command does not care because source is not being translated and does not need to conform to the\n    # source translation config. If however serverflow -local-ip is set to something outside the LSN pool, the\n    # command will thrown an exception.\n    if {[catch { FLOW::create_related {\n                        proto 6\n                        clientflow -local-ip 11.11.11.11 -local-port 2323 [clientside {IP::remote_addr}] 9999 [clientside {LINK::vlan_id}]\n                        serverflow -local-ip 4.4.4.0 -local-port 2005 [IP::remote_addr] 8889 [LINK::vlan_id]\n                    } } result] } {\n        log local0. \"Couldn't create the connection, error:$result\"\n    } else {\n        log local0. \"Connection-3: $result TO [FLOW::peer $result]\"\n    }\n\n    # Connection-4: Hairpin connection.\n    if {[catch { FLOW::create_related -hairpin {\n                        proto 6\n                        clientflow [clientside {IP::remote_addr}] 9999 [clientside {LINK::vlan_id}]\n                        serverflow 10.10.0.3 8889 [clientside {LINK::vlan_id}]\n                    } } result] } {\n        log local0. \"Couldn't create the connection, error:$result\"\n    } else {\n        log local0. \"Connection-1: $result TO [FLOW::peer $result]\"\n    }\n}\n"
+    }
+  ],
+  "content_hash": "344686e86c7f7269df9b01f58ac2a869cf001c0ee04ff5abe2b831b0e4c8fa90",
+  "diagrams": [],
+  "documentation_version": null,
+  "headings": [
+    {
+      "anchor": "flow-create-related",
+      "level": 1,
+      "path": [],
+      "title": "FLOW::create_related"
+    },
+    {
+      "anchor": "description",
+      "level": 2,
+      "path": [
+        "FLOW::create_related"
+      ],
+      "title": "Description"
+    },
+    {
+      "anchor": "syntax",
+      "level": 2,
+      "path": [
+        "FLOW::create_related"
+      ],
+      "title": "Syntax"
+    },
+    {
+      "anchor": "input-arguments",
+      "level": 3,
+      "path": [
+        "FLOW::create_related",
+        "Syntax"
+      ],
+      "title": "Input arguments"
+    },
+    {
+      "anchor": "examples",
+      "level": 2,
+      "path": [
+        "FLOW::create_related"
+      ],
+      "title": "Examples"
+    },
+    {
+      "anchor": "related-information",
+      "level": 2,
+      "path": [
+        "FLOW::create_related"
+      ],
+      "title": "Related Information"
+    }
+  ],
+  "id": "912ead87836785ce3bb1c7f9",
+  "images": [],
+  "kind": "programming_reference",
+  "links": [],
+  "publisher_product_labels": [
+    "F5 BIG-IP iRules API"
+  ],
+  "source": "irules",
+  "text": "FLOW::create_related\nDescription\nThis iRule command creates a related connection. Each related connection\nhas two flows in it, a clientside flow and a serverside flow. The\nclientside flow is created using the information provided in\nclientflow\nand serverside flow is created using the information provided in the\nserverflow\n. Both these flows are linked together and form a connection. BIGIP\nexpects that the first packet always comes from the client side of\nthe connection for all protocols except UDP.\nThe returned TCL handle points to the clientside flow. The\nFLOW\n::\npeer\ncommand can be used to get a handle to the peer flow. By default the\nrelated connections use the fastL4 profile and are hardware\naccelerated. Related flows do not get mirrored automatically. The\niRule must create them on the next-active with flow key returned after\ncreating the flows. This allows the standby to store the handles for\nthe created flows and manage them correctly on failover. Related\nconnections can only be setup between the hosts the parent flow is\nconnecting.\nOn error an exception is thrown with a message indicating the cause of\nfailure. The string representation of the TCL handle can be used to\nretrieve the flow details.\nString representation of a flow without a tunnel (when a local_addr\nis specified):\nlocal_addr\n%\nroute_domain\n,\nlocal_port\n,\nremote_addr\n%\nroute_domain\n,\nremote_port\n,\nvlan_id\n,\nprotocol\nString representation of a flow with a tunnel:\nlocal_addr\n%\nroute_domain\n,\nlocal_port\n,\nremote_addr\n%\nroute_domain\n,\nremote_port\n,\nvlan_id\n,\nprotocol\n,\ntunnel_local_addr\n%\nroute_domain\n,\ntunnel_local_port\n,\ntunnel_remote_addr\n%\nroute_domain\n,\ntunnel_remote_port\n,\ntunnel_vlan_id\n,\ntunnel_protocol\nNote: Route domain is not printed when zero.\nSyntax\nFLOW\n::\ncreate_related\n[\n-translation-loose\n]\n[\n-hairpin\n]\n{\n[\nproto\n<\nprotocol\nnumber\n>\n]\nclientflow\n[\n-local-ip\n<\nlocal_addr\n>\n]\n[\n-local-port\n<\nlocal_port\n>\n]\n<\nremote_addr\n>\n<\nremote_port\n>\n<\nvlan\n>\nserverflow\n[\n-local-ip\n<\nlocal_addr\n>\n]\n[\n-local-port\n<\nlocal_port\n>\n]\n<\nremote_addr\n>\n<\nremote_port\n>\n<\nvlan\n>\n[\ninherit-vs\n<\nvirtual\nserver\nname\n>\n]\n}\nInput arguments\n-hairpin: To create a hairpin related connection. This option is\nsupported with LSN and SECURITY-DYNAMIC-PAT source translation config\nonly. This option should be used when hairpin connections from other\nsubscribers using LSN or SECURITY-DYNAMIC-PAT are anticipated, as\nsuch the incoming subscriber flow (does not have to be the same as\nlistener subscriber) must match an existing virtual-server with a LSN\nor SECURITY-DYNAMIC-PAT source translation pool attached.\n-translation-loose: If -local-ip and/or -local-port values are used\nas a suggestion. If available they are picked, else another available\nendpoint is picked.\nproto: Related flow protocol. When inherit-vs is used this must match\nthe transport profile configured on the virtual.\nclientflow: Flow key for the client side of the connection. For TCP\nconnections the first syn must come from the clientside of the\nconnection.\nserverflow: Flow key for the server side of the connection\n-local-ip: Source IP for packets generated by the BIGIP. This is\noptional and we recommend that this is not be specified. BIGIP will\nchoose a valid IP which conforms to the config and is more efficient.\nFor picking the local_addr the command looks at the supplied\nremote_addr to determine the parent flow. Source translation used by\nthe parent is applied to the child flow too. If local_addr is\nspecified, then it must conform to the source translation config of\nthe parent, else the command will fail.\n-local-port: Source port for packets generated by the BIGIP. This is\noptional and we recommend that this is not be specified. BIGIP will\nchoose a valid port which conforms to the config and is more\nefficient. For picking the local_port the command looks at the\nsupplied remote_addr to determine the parent flow. Source translation\nused by the parent is applied to the child flow too. If local_port is\nspecified, then it must conform to the source translation config of\nthe parent, else the command will fail.\nDestination IP for the packets generated by the BIGIP.\nDestination port for the packets generated by the BIGIP.\nVLAN id or the name on which the packets are received.\ninherit-vs: Inherit the profiles from a virtual server. This allows\nthe related connections to use the parent virtual server profile and\nallows inspection of TCP/UDP packet payload. Currently this option is\nsupported only for simple virtuals with TCP/UDP profiles only.\nExamples\nwhen\nSERVER_CONNECTED\n{\n# LSN pool with prefix 4.4.4.0/30,port-range=2000-2005 and NAPT mode is configured. Parent connection is translated as follows\n# 10.10.0.1%1:60412 -> 10.20.0.1%1:9000 TO 4.4.4.1:1084  10.20.0.1:9000  tcp\n# Subscriber side: 10.10.0.1%1:60412 -> 10.20.0.1%1:9000\n# Internet side: 4.4.4.1:1084  10.20.0.1:9000\n# Below is an example of couple of related connections\n# Connection-1:\n# Objective is to create a related TCP connection. The first SYN packet will be received from the subscriber side. local_addr/local_port on\n# both sides is not specified and is picked by the command. A skeleton structure of the connection looks like this.\n# 10.10.0.1:9999 -> (not specified):(not specified) TO (not specified):(not specified) -> 200.1.1.1:80\n#\n# The command uses the parent flow to determine the related flow's local_addr/local_port. This is done by comparing the remote_addr's of\n# the parent connection with the clientflow/serverflow information. For this example clientflow is the \"Subscriber side\" of the related\n# connection and \"serverflow\" is the \"Internet side\" of the related connection. For e.g. serverflow valid\n# local_addr:local_port=4.4.4.1:2000-2005(LSN pool port-range).\n#\n# Nov 13 13:55:50 bigip1 info tmm1[28205]: Rule /Common/doc_examples <SERVER_CONNECTED>: Connection-1: 10.20.0.1%1,58374,10.10.0.1%1,9999,4094,6 TO 4.4.4.1,2012,10.20.0.1,8889,4093,6\n# Nov 13 13:55:50 bigip1 info tmm1[28205]: Rule /Common/doc_examples <SERVER_CONNECTED>: Connection-2: 4.4.4.1,2006,10.20.0.1,1221,4093,6 TO 10.20.0.1%1,33518,10.10.0.1%1,1221,4094,6\n# Nov 13 13:55:50 bigip1 info tmm1[28205]: Rule /Common/doc_examples <SERVER_CONNECTED>: Connection-3: 11.11.11.11%1,2323,10.10.0.1%1,9999,4094,6 TO 4.4.4.0,2005,10.20.0.1,8889,4093,6\n# Sys::Connections\n# 10.10.0.1%1:60424  10.20.0.1%1:9000  4.4.4.1:2002  10.20.0.1:9000  tcp  10  (tmm: 1)  none  none <- Parent\n# 10.10.0.1%1:9999  10.20.0.1%1:58374  4.4.4.1:2012  10.20.0.1:8889  tcp  11  (tmm: 1)  none  none <- Connection-1\n# 10.20.0.1:1221  4.4.4.1:2006  10.20.0.1%1:33518  10.10.0.1%1:1221  tcp  11  (tmm: 1)  none  none <- Connection-2\n# 10.10.0.1%1:9999  11.11.11.11%1:2323  4.4.4.0:2005  10.20.0.1:8889  tcp  11  (tmm: 1)  none  none <- Connection-3\nif\n{[catch\n{\nFLOW\n::\ncreate_related\n{\nproto\n6\nclientflow\n[\nclientside\n{\nIP\n::\nremote_addr\n}]\n9999\n[\nclientside\n{\nLINK\n::\nvlan_id\n}]\nserverflow\n[\nIP\n::\nremote_addr\n]\n8889\n[\nLINK\n::\nvlan_id\n]\n}\n}\nresult\n]\n}\n{\nlog\nlocal0.\n\"Couldn't create the connection, error:$result\"\n}\nelse\n{\nlog\nlocal0.\n\"Connection-1: $result TO [FLOW::peer $result]\"\n}\n# Connection-2:\n# Similar to Connection-1 but the first SYN is expected from the \"Internet side\"\nif\n{[catch\n{\nFLOW\n::\ncreate_related\n{\nproto\n6\nclientflow\n[\nIP\n::\nremote_addr\n]\n1221\n[\nLINK\n::\nvlan_id\n]\nserverflow\n[\nclientside\n{\nIP\n::\nremote_addr\n}]\n1221\n[\nclientside\n{\nLINK\n::\nvlan_id\n}]\n}\n}\nresult\n]\n}\n{\nlog\nlocal0.\n\"Couldn't create the connection, error:$result\"\n}\nelse\n{\nlog\nlocal0.\n\"Connection-2: $result TO [FLOW::peer $result]\"\n}\n# Connection-3:\n# Similar to Connection-1 but the -local-ip and -local-port parameters are specified.\n# Interesting point to note here is clientflow -local-ip is set to a completely unrelated address 11.11.11.11.\n# The command does not care because source is not being translated and does not need to conform to the\n# source translation config. If however serverflow -local-ip is set to something outside the LSN pool, the\n# command will thrown an exception.\nif\n{[catch\n{\nFLOW\n::\ncreate_related\n{\nproto\n6\nclientflow\n-\nlocal-ip\n11.11\n.11.11\n-\nlocal-port\n2323\n[\nclientside\n{\nIP\n::\nremote_addr\n}]\n9999\n[\nclientside\n{\nLINK\n::\nvlan_id\n}]\nserverflow\n-\nlocal-ip\n4.4\n.4.0\n-\nlocal-port\n2005\n[\nIP\n::\nremote_addr\n]\n8889\n[\nLINK\n::\nvlan_id\n]\n}\n}\nresult\n]\n}\n{\nlog\nlocal0.\n\"Couldn't create the connection, error:$result\"\n}\nelse\n{\nlog\nlocal0.\n\"Connection-3: $result TO [FLOW::peer $result]\"\n}\n# Connection-4: Hairpin connection.\nif\n{[catch\n{\nFLOW\n::\ncreate_related\n-\nhairpin\n{\nproto\n6\nclientflow\n[\nclientside\n{\nIP\n::\nremote_addr\n}]\n9999\n[\nclientside\n{\nLINK\n::\nvlan_id\n}]\nserverflow\n10.10\n.0.3\n8889\n[\nclientside\n{\nLINK\n::\nvlan_id\n}]\n}\n}\nresult\n]\n}\n{\nlog\nlocal0.\n\"Couldn't create the connection, error:$result\"\n}\nelse\n{\nlog\nlocal0.\n\"Connection-1: $result TO [FLOW::peer $result]\"\n}\n}\nRelated Information\nValid Events:\nSERVER_CONNECTED, CLIENT_DATA, SERVER_DATA\nWarning\nThe links to the sample code below are remnants of the old DevCentral wiki and will result in a 404 error. For best results, please copy the link text and search the codeshare directly on DevCentral.\nSample Code:\nIntroduced: BIGIP-14.1\nThe BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor \nor control community code contributions. We make no guarantees or warranties regarding the available code, \nand it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any \ncode available in the BIG-IP API reference guides is solely at your own risk.",
+  "title": "FLOW::create_related",
+  "updated": "2026-07-13 12:27:40",
+  "url": "https://clouddocs.f5.com/api/irules/FLOW__create_related.html",
+  "url_version": null
+}

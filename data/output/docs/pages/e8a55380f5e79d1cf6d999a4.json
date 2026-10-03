@@ -1,0 +1,178 @@
+{
+  "applies_to": [
+    {
+      "product": "F5 BIG-IP iRules API",
+      "versions": []
+    }
+  ],
+  "breadcrumbs": [],
+  "code_examples": [
+    {
+      "section": "LDAP (client certificate-based) :",
+      "text": "\"OK\"\n\"Error (No such user)\"\n\"Error (Non-unique user (db integrity))\"\n\"Error (Internal Error)\"\n\"Error (LDAP Error)\"\n\"Error (No Certificate Supplied)\"\n\"Error (Error Accessing Certificate)\"\n\"Error (User not in required group(s))\"\n\"Error (User does not have required role(s))\"\n\"Error (In Deny-All mode)\"\n\"Error (Error out of range)\"\n"
+    },
+    {
+      "section": "OCSP (client certificate-based) :",
+      "text": "\"OK\"\n\"Error (Could not connect to server)\"\n\"Error (Unknown client certificate)\"\n"
+    },
+    {
+      "section": "Syntax",
+      "text": "AUTH::response_data [<authid>]\n"
+    },
+    {
+      "section": "Examples",
+      "text": "rule http_insert_cc_ldap_username {\n    when CLIENT_ACCEPTED {\n        set cc_ldap_username “defaultuser”\n        set tmm_auth_subscription \"*\"\n    }\n    when AUTH_RESULT {\n        array set auth_response_data [AUTH::response_data]\n        set username [lindex [array get auth_response_data ccldap<!--:reply:username] 1]-->\n        if {username ne \"\"} {\n            set cc_ldap_username $username\n        }\n    }\n    when HTTP_REQUEST {\n        HTTP::header insert “Authorization: [b64encode $cc_ldap_username:password]”\n    }\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "rule http_lb_ldap_group {\n    when CLIENT_ACCEPTED {\n        set tmm_auth_subscription \"*\"\n    }\n    when AUTH_RESULT {\n        array set auth_response_data [AUTH::response_data]\n        set ldap_group [lindex [array get auth_response_data ldap<!--:attr:isMemberOf] 1]-->\n        if {ldap_group eq \"admin\"} {\n            use pool admin_pool\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "rule multi_pass_auth {\n    when HTTP_REQUEST {\n        if {not [info exists auth_pass]} {\n            set auth_sid [AUTH::start pam auth_method_user]\n            AUTH::subscribe $auth_sid\n            set auth_username [HTTP::username]\n            set auth_password [HTTP::password]\n            AUTH::username_credential $auth_sid $auth_username\n            AUTH::password_credential $auth_sid $auth_password\n            AUTH::authenticate $auth_sid\n            set auth_pass 1\n        }\n    }\n    when AUTH_RESULT {\n        if {[AUTH::status] != 1} {\n            if {$auth_pass == 1} {\n                HTTP::respond 401\n            } else {\n                reject\n            }\n        }\n        if {$auth_pass == 1} {\n            array set auth_response_data [AUTH::response_data]\n            set auth_group [lindex [array get auth_response_data ldap<!--:attr:isMemberOf] 1]-->\n            AUTH::abort $auth_sid\n            set auth_sid [AUTH::start pam $auth_group]\n            AUTH::username_credential $auth_sid $auth_username\n            AUTH::password_credential $auth_sid $auth_password\n            AUTH::unsubscribe $auth_sid\n            AUTH::authenticate $auth_sid\n            set auth_pass 2\n        } else {\n            HTTP::release\n            set auth_pass 3\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "rule ldap_auth_by_net_and_group {\n   when RULE_INIT {\n      array set ::auth_conf {\n         {default_mask}       {255.0.0.0}\n         {group_attribute}    {ldap<!--:attr:isMemberOf}-->\n      }\n      array set ::auth_class {\n         {10.0.0.0}        {Marketing Sales}\n         {20.0.0.0}        {Engineers Developers}\n         {30.0.0.0}        {Engineers}\n      }\n   }\n   when CLIENT_ACCEPTED {\n      set tmm_auth_subscription \"*\"\n      set auth_client_addr [IP::addr [IP::client_addr] mask $::auth_conf(default_mask)]\n   }\n   when AUTH_RESULT {\n      if { [AUTH::status] != 0 } {\n         HTTP::respond 401\n         return\n      }\n      if { not [info exists ::auth_class($auth_client_addr)] } {\n         HTTP::respond 401\n         return\n      }\n      array set auth_data [AUTH::response_data]\n\n      foreach group $::auth_class($auth_client_addr) {\n         if { $auth_data($::auth_conf(group_attribute)) eq $group } {\n            use pool validated\n         }\n      }\n      HTTP::respond 401\n   }\n}\n"
+    }
+  ],
+  "content_hash": "7286e9ae7ce015de7ff0f08c9c60d4667c6ffe404d7d8304d7fef6616e2fd74f",
+  "diagrams": [],
+  "documentation_version": null,
+  "headings": [
+    {
+      "anchor": "auth-response-data",
+      "level": 1,
+      "path": [],
+      "title": "AUTH::response_data"
+    },
+    {
+      "anchor": "description",
+      "level": 2,
+      "path": [
+        "AUTH::response_data"
+      ],
+      "title": "Description"
+    },
+    {
+      "anchor": "ldap-username-password-based",
+      "level": 3,
+      "path": [
+        "AUTH::response_data",
+        "Description"
+      ],
+      "title": "LDAP (username/password-based) :"
+    },
+    {
+      "anchor": "radius",
+      "level": 3,
+      "path": [
+        "AUTH::response_data",
+        "Description"
+      ],
+      "title": "RADIUS"
+    },
+    {
+      "anchor": "tacacs",
+      "level": 3,
+      "path": [
+        "AUTH::response_data",
+        "Description"
+      ],
+      "title": "TACACS"
+    },
+    {
+      "anchor": "kerberos",
+      "level": 3,
+      "path": [
+        "AUTH::response_data",
+        "Description"
+      ],
+      "title": "Kerberos"
+    },
+    {
+      "anchor": "ldap-client-certificate-based",
+      "level": 3,
+      "path": [
+        "AUTH::response_data",
+        "Description"
+      ],
+      "title": "LDAP (client certificate-based) :"
+    },
+    {
+      "anchor": "ocsp-client-certificate-based",
+      "level": 3,
+      "path": [
+        "AUTH::response_data",
+        "Description"
+      ],
+      "title": "OCSP (client certificate-based) :"
+    },
+    {
+      "anchor": "syntax",
+      "level": 2,
+      "path": [
+        "AUTH::response_data"
+      ],
+      "title": "Syntax"
+    },
+    {
+      "anchor": "examples",
+      "level": 2,
+      "path": [
+        "AUTH::response_data"
+      ],
+      "title": "Examples"
+    },
+    {
+      "anchor": "related-information",
+      "level": 2,
+      "path": [
+        "AUTH::response_data"
+      ],
+      "title": "Related Information"
+    }
+  ],
+  "id": "e8a55380f5e79d1cf6d999a4",
+  "images": [],
+  "kind": "programming_reference",
+  "links": [
+    {
+      "title": "AUTH_RESULT",
+      "url": "https://clouddocs.f5.com/api/irules/AUTH_RESULT.html"
+    },
+    {
+      "title": "AUTH::subscribe",
+      "url": "https://clouddocs.f5.com/api/irules/AUTH__subscribe.html"
+    },
+    {
+      "title": "AUTH::authenticate",
+      "url": "https://clouddocs.f5.com/api/irules/AUTH__authenticate.html"
+    },
+    {
+      "title": "RULE_INIT",
+      "url": "https://clouddocs.f5.com/api/irules/RULE_INIT.html"
+    },
+    {
+      "title": "CLIENT_ACCEPTED",
+      "url": "https://clouddocs.f5.com/api/irules/CLIENT_ACCEPTED.html"
+    },
+    {
+      "title": "Client Cert Request by URI with OCSP\nChecking",
+      "url": "https://clouddocs.f5.com/api/irules/client_cert_request_by_uri_with_ocsp_checking.html"
+    },
+    {
+      "title": "Client Certificate Request by URI with OCSP Checking (v10.1 -\nv10.2.x)",
+      "url": "https://clouddocs.f5.com/api/irules/Client-Cert-Request-by-URI-with-OCSP-Checking-v10-1.html"
+    }
+  ],
+  "publisher_product_labels": [
+    "F5 BIG-IP iRules API"
+  ],
+  "source": "irules",
+  "text": "AUTH::response_data\nDescription\nAUTH::response_data\nreturns the a set of name/value query results\nfrom the most recent query. This command would normally be called from\nthe\nAUTH_RESULT\nevent. The format of the data\nreturned is suitable for setting as the value of a TCL array.\nAUTH::subscribe\nmust first be called to\nregister interest in query results prior to calling\nAUTH::authenticate\n. As a convenience\nwhen using the builtin system auth rules, these rules will call\nAUTH::subscribe\nif the variable tmm_auth_subscription is set.\nInstead of calling\nAUTH::subscribe\ndirectly, we recommend\nsetting\ntmm_auth_subscription\nto “” as a local variable when using\nthe builtin system auth rules in the interest of\nforward-compatibility. This can be done in a non-\nRULE_INIT\nevent like\nCLIENT_ACCEPTED\nusing ‘set\ntmm_auth_subscription “*”’.\nTypically, response data is only useful if the result of the auth\nquery was\nsuccess\n. As of v9.4.0, the following modules provide\nresponse data:\nLDAP (username/password-based)\n:\nAll name/value pairs from the LDAP query response returned by the\nserver from a successful query, returned in the form of\nldap:attr:<name> <value>\n. Unsuccessful LDAP queries will not\nreturn response data.\nRADIUS\nAll name/value pairs from the RADIUS query response returned by the\nserver from a successful query, returned in the form of\nradius:attr:<name> <value>\n. Unsuccessful RADIUS queries will not\nreturn response data.\nTACACS\nAll name/value pairs from the TACACS query response returned by the\nserver from a successful query, returned in the form of\ntacplus:attr:<name> <value>\n. Unsuccessful TACACS queries will not\nreturn response data.\nKerberos\nAll name/value pairs from the Kerberos query response returned by the\nserver from a successful query, returned in the form of\nkrbdelegate:attr:<name> <value>\n. Unsuccessful Kerberos queries\nwill not return response data.\nLDAP (client certificate-based)\n:\nccldap:reply:status <status>\nwhere\n<status>\nis one of the following strings (without quotation\nmarks):\n\"OK\"\n\"Error (No such user)\"\n\"Error (Non-unique user (db integrity))\"\n\"Error (Internal Error)\"\n\"Error (LDAP Error)\"\n\"Error (No Certificate Supplied)\"\n\"Error (Error Accessing Certificate)\"\n\"Error (User not in required group(s))\"\n\"Error (User does not have required role(s))\"\n\"Error (In Deny-All mode)\"\n\"Error (Error out of range)\"\nOCSP (client certificate-based)\n:\nocsp:reply:status <status>\nwhere\n<status>\nis one of the following strings (without quotation\nmarks):\n\"OK\"\n\"Error (Could not connect to server)\"\n\"Error (Unknown client certificate)\"\nccldap:reply:username <username>\nwhere\n<username>\nis the query username corresponding to the BIG-IP\n4.x “set auth hdr enable” feature.\nSyntax\nAUTH\n::\nresponse_data\n[\n<\nauthid\n>\n]\nReturns the a set of name/value query results from the most recent\nquery.\nExamples\nExample 1\nThe rule below mimics the behavior of a BIG-IP 4.x authz configuration\n“set auth hdr enable” and “onfailure username defaultuser”. This rule\nwould be used in conjunction with client certificate LDAP auth.\nrule http_insert_cc_ldap_username {\n    when CLIENT_ACCEPTED {\n        set cc_ldap_username “defaultuser”\n        set tmm_auth_subscription \"*\"\n    }\n    when AUTH_RESULT {\n        array set auth_response_data [AUTH::response_data]\n        set username [lindex [array get auth_response_data ccldap<!--:reply:username] 1]-->\n        if {username ne \"\"} {\n            set cc_ldap_username $username\n        }\n    }\n    when HTTP_REQUEST {\n        HTTP::header insert “Authorization: [b64encode $cc_ldap_username:password]”\n    }\n}\nSimilar rule logic to the above example would be used with this data\nto mimic the 4.x authz configuration “insert client status enable”.\nExample 2\nThe rule below demonstrates how group membership might be used to\ninfluence a load balancing decision. This rule would be used in\nconjunction with username/password LDAP auth.\nrule\nhttp_lb_ldap_group\n{\nwhen\nCLIENT_ACCEPTED\n{\nset\ntmm_auth_subscription\n\"*\"\n}\nwhen\nAUTH_RESULT\n{\narray\nset\nauth_response_data\n[\nAUTH\n::\nresponse_data\n]\nset\nldap_group\n[\nlindex\n[array\nget\nauth_response_data\nldap\n<!--:\nattr:isMemberOf\n]\n1\n]\n-->\nif\n{\nldap_group\neq\n\"admin\"\n}\n{\nuse\npool\nadmin_pool\n}\n}\n}\nExample 3\nThe rule below demonstrates how multi-pass auth might be performed.\nAdditional error checking of the group name would be necessary in a\nproduction-ready rule.\nrule\nmulti_pass_auth\n{\nwhen\nHTTP_REQUEST\n{\nif\n{\nnot\n[\ninfo\nexists\nauth_pass\n]}\n{\nset\nauth_sid\n[\nAUTH\n::\nstart\npam\nauth_method_user\n]\nAUTH\n::\nsubscribe\n$auth_sid\nset\nauth_username\n[\nHTTP\n::\nusername\n]\nset\nauth_password\n[\nHTTP\n::\npassword\n]\nAUTH\n::\nusername_credential\n$auth_sid\n$auth_username\nAUTH\n::\npassword_credential\n$auth_sid\n$auth_password\nAUTH\n::\nauthenticate\n$auth_sid\nset\nauth_pass\n1\n}\n}\nwhen\nAUTH_RESULT\n{\nif\n{[\nAUTH\n::\nstatus\n]\n!=\n1\n}\n{\nif\n{\n$auth_pass\n==\n1\n}\n{\nHTTP\n::\nrespond\n401\n}\nelse\n{\nreject\n}\n}\nif\n{\n$auth_pass\n==\n1\n}\n{\narray\nset\nauth_response_data\n[\nAUTH\n::\nresponse_data\n]\nset\nauth_group\n[\nlindex\n[array\nget\nauth_response_data\nldap\n<!--:\nattr:isMemberOf\n]\n1\n]\n-->\nAUTH\n::\nabort\n$auth_sid\nset\nauth_sid\n[\nAUTH\n::\nstart\npam\n$auth_group\n]\nAUTH\n::\nusername_credential\n$auth_sid\n$auth_username\nAUTH\n::\npassword_credential\n$auth_sid\n$auth_password\nAUTH\n::\nunsubscribe\n$auth_sid\nAUTH\n::\nauthenticate\n$auth_sid\nset\nauth_pass\n2\n}\nelse\n{\nHTTP\n::\nrelease\nset\nauth_pass\n3\n}\n}\n}\nExample 4\nThe rule below demonstrates how to grant access based on a combination\nof source network and LDAP group membership. This rule would need to\nbe used in conjunction with an LDAP auth profile.\nrule\nldap_auth_by_net_and_group\n{\nwhen\nRULE_INIT\n{\narray\nset\n::\nauth_conf\n{\n{\ndefault_mask\n}\n{\n255.0.0.0\n}\n{\ngroup_attribute\n}\n{\nldap\n<!--:\nattr:isMemberOf\n}\n--\n>\n}\narray\nset\n::\nauth_class\n{\n{\n10.0.0.0\n}\n{\nMarketing\nSales\n}\n{\n20.0.0.0\n}\n{\nEngineers\nDevelopers\n}\n{\n30.0.0.0\n}\n{\nEngineers\n}\n}\n}\nwhen\nCLIENT_ACCEPTED\n{\nset\ntmm_auth_subscription\n\"*\"\nset\nauth_client_addr\n[\nIP\n::\naddr\n[\nIP\n::\nclient_addr\n]\nmask\n$::auth_conf\n(\ndefault_mask\n)]\n}\nwhen\nAUTH_RESULT\n{\nif\n{\n[\nAUTH\n::\nstatus\n]\n!=\n0\n}\n{\nHTTP\n::\nrespond\n401\nreturn\n}\nif\n{\nnot\n[\ninfo\nexists\n::\nauth_class\n(\n$auth_client_addr\n)]\n}\n{\nHTTP\n::\nrespond\n401\nreturn\n}\narray\nset\nauth_data\n[\nAUTH\n::\nresponse_data\n]\nforeach\ngroup\n$::auth_class\n(\n$auth_client_addr\n)\n{\nif\n{\n$auth_data\n(\n$::auth_conf\n(\ngroup_attribute\n))\neq\n$group\n}\n{\nuse\npool\nvalidated\n}\n}\nHTTP\n::\nrespond\n401\n}\n}\nRelated Information\nValid Events:\nWarning\nThe links to the sample code below are remnants of the old DevCentral wiki and will result in a 404 error. For best results, please copy the link text and search the codeshare directly on DevCentral.\nSample Code:\nClient Cert Request by URI with OCSP\nChecking\n- Request a client SSL certificate by URI and validate it using\nOCSP\nClient Certificate Request by URI with OCSP Checking (v10.1 -\nv10.2.x)\n- Request a client SSL certificate by URI and validate it using\nOCSP for v10.1 - 10.2.x\nIntroduced: BIGIP-9.4.0\nThe BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor \nor control community code contributions. We make no guarantees or warranties regarding the available code, \nand it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any \ncode available in the BIG-IP API reference guides is solely at your own risk.",
+  "title": "AUTH::response_data",
+  "updated": "2026-07-13 12:27:40",
+  "url": "https://clouddocs.f5.com/api/irules/AUTH__response_data.html",
+  "url_version": null
+}

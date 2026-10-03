@@ -1,0 +1,65 @@
+{
+  "applies_to": [
+    {
+      "product": "F5 BIG-IP iRules API",
+      "versions": []
+    }
+  ],
+  "breadcrumbs": [],
+  "code_examples": [
+    {
+      "section": "iRule Source",
+      "text": "# Log POST request payloads remotely via HSL to a syslog server and locally.\n\n# Based on Steve Hillier's example and the HTTP::collect wiki page\n# https://clouddocs.f5.com/api/irules/http__collect.html\n# Note that although any size payload can theoretically be collected, the maximum size of a Tcl variable in v9 and v10 is 4MB\n#   with a smaller functional maximum after charset expansion of approximately 1Mb.\n# In v11, the maximum variable size was increased to 32Mb.\n\nwhen RULE_INIT {\n\n    # Log debug to /var/log/ltm? 1=yes, 0=no\n    set static::payload_dbg 1\n\n    # Limit payload collection to 5Mb\n    set static::max_collect_len 5368709\n\n    # HSL pool name\n    set static::hsl_pool \"my_hsl_tcp_pool\"\n\n    # Max characters to log locally (must be less than 1024 bytes)\n    # https://clouddocs.f5.com/api/irules/log.html\n    set static::max_chars 900\n}\nwhen HTTP_REQUEST {\n\n    # Only collect POST request payloads\n    if {[HTTP::method] equals \"POST\"}{\n\n        if {$static::payload_dbg}{log local0. \"POST request\"}\n\n        # Open HSL connection\n        set hsl [HSL::open -proto TCP -pool $static::hsl_pool]\n\n\n        # Get the content length so we can request the data to be processed in the HTTP_REQUEST_DATA event.\n        if {[HTTP::header exists \"Content-Length\"]}{\n            set content_length [HTTP::header \"Content-Length\"]\n        } else {\n            set content_length 0\n        }\n        # content_length of 0 indicates chunked data (of unknown size)\n        if {$content_length > 0 && $content_length < $static::max_collect_len}{\n            set collect_length $content_length\n        } else {\n            set collect_length $static::max_collect_len\n        }\n        if {$static::payload_dbg}{log local0. \"Content-Length: $content_length, Collect length: $collect_length\"}\n    }\n}\n\nwhen HTTP_REQUEST_DATA {\n\n    # Log the bytes collected\n    if {$static::payload_dbg}{log local0. \"Collected [HTTP::payload length] bytes\"}\n\n    # Send all the collected payload to the remote syslog server\n    HSL::send $hsl \"<190>[HTTP::payload]\\n\"\n\n    # Log the payload locally\n    if {[HTTP::payload length] < $static::max_chars}{\n        log local0. \"Payload=[HTTP::payload]\"\n    } else {\n        # Initialize variables\n        set remaining $payload\n        set position 0\n        set count 1\n        set bytes_logged 0\n\n        # Loop through and log each chunk of the payload\n        while {[string length $remaining] > $static::max_chars}{\n\n            # Get the current chunk to log (subtract 1 from the end as string range is 0 indexed)\n            set current [string range $remaining $position [expr {$position + $static::max_chars -1}]]\n            log local0. \"chunk $count=$current\"\n\n            # Add the length of the current chunk to the position for the next chunk\n            incr position [string length $current]\n\n            # Get the next chunk to log\n            set remaining [string range $remaining $position end]\n            incr count\n            incr bytes_logged $position\n            log local0. \"remaining bytes=[string length $remaining], \\$position=$position, \\$count=$count, \\$bytes_logged=$bytes_logged\"\n        }\n        if {[string length $remaining]}{\n            log local0. \"chunk $count=$current\"\n            incr bytes_logged [string length $remaining]\n        }\n        log local0. \"Logged $count chunks for a total of $bytes_logged bytes\"\n    }\n}\n"
+    }
+  ],
+  "content_hash": "bd5fd2f95cc8e2f7dad2ee17460bd9b42da5cae5977c8f816a776d08fb619f33",
+  "diagrams": [],
+  "documentation_version": null,
+  "headings": [
+    {
+      "anchor": "log-large-http-payloads-in-chunks-locally-and-remotely",
+      "level": 1,
+      "path": [],
+      "title": "Log large HTTP payloads in chunks locally and remotely"
+    },
+    {
+      "anchor": "contributed-by-hoolio",
+      "level": 2,
+      "path": [
+        "Log large HTTP payloads in chunks locally and remotely"
+      ],
+      "title": "Contributed by: hoolio"
+    },
+    {
+      "anchor": "description",
+      "level": 3,
+      "path": [
+        "Log large HTTP payloads in chunks locally and remotely",
+        "Contributed by: hoolio"
+      ],
+      "title": "Description"
+    },
+    {
+      "anchor": "irule-source",
+      "level": 3,
+      "path": [
+        "Log large HTTP payloads in chunks locally and remotely",
+        "Contributed by: hoolio"
+      ],
+      "title": "iRule Source"
+    }
+  ],
+  "id": "a47a96caae195c4319e26a72",
+  "images": [],
+  "kind": "programming_reference",
+  "links": [],
+  "publisher_product_labels": [
+    "F5 BIG-IP iRules API"
+  ],
+  "source": "irules",
+  "text": "Log large HTTP payloads in chunks locally and remotely\nContributed by: hoolio\nDescription\nLog HTTP POST request payloads remotely via HSL to a syslog server and\nlocally.\niRule Source\n# Log POST request payloads remotely via HSL to a syslog server and locally.\n# Based on Steve Hillier's example and the HTTP::collect wiki page\n# https://clouddocs.f5.com/api/irules/http__collect.html\n# Note that although any size payload can theoretically be collected, the maximum size of a Tcl variable in v9 and v10 is 4MB\n#   with a smaller functional maximum after charset expansion of approximately 1Mb.\n# In v11, the maximum variable size was increased to 32Mb.\nwhen\nRULE_INIT\n{\n# Log debug to /var/log/ltm? 1=yes, 0=no\nset\nstatic::payload_dbg\n1\n# Limit payload collection to 5Mb\nset\nstatic::max_collect_len\n5368709\n# HSL pool name\nset\nstatic::hsl_pool\n\"my_hsl_tcp_pool\"\n# Max characters to log locally (must be less than 1024 bytes)\n# https://clouddocs.f5.com/api/irules/log.html\nset\nstatic::max_chars\n900\n}\nwhen\nHTTP_REQUEST\n{\n# Only collect POST request payloads\nif\n{[\nHTTP\n::\nmethod\n]\nequals\n\"POST\"\n}{\nif\n{\n$static::payload_dbg\n}{\nlog\nlocal0.\n\"POST request\"\n}\n# Open HSL connection\nset\nhsl\n[\nHSL\n::\nopen\n-\nproto\nTCP\n-\npool\n$static::hsl_pool\n]\n# Get the content length so we can request the data to be processed in the HTTP_REQUEST_DATA event.\nif\n{[\nHTTP\n::\nheader\nexists\n\"Content-Length\"\n]}{\nset\ncontent_length\n[\nHTTP\n::\nheader\n\"Content-Length\"\n]\n}\nelse\n{\nset\ncontent_length\n0\n}\n# content_length of 0 indicates chunked data (of unknown size)\nif\n{\n$content_length\n>\n0\n&&\n$content_length\n<\n$static::max_collect_len\n}{\nset\ncollect_length\n$content_length\n}\nelse\n{\nset\ncollect_length\n$static::max_collect_len\n}\nif\n{\n$static::payload_dbg\n}{\nlog\nlocal0.\n\"Content-Length: $content_length, Collect length: $collect_length\"\n}\n}\n}\nwhen\nHTTP_REQUEST_DATA\n{\n# Log the bytes collected\nif\n{\n$static::payload_dbg\n}{\nlog\nlocal0.\n\"Collected [HTTP::payload length] bytes\"\n}\n# Send all the collected payload to the remote syslog server\nHSL\n::\nsend\n$hsl\n\"<190>[HTTP::payload]\\n\"\n# Log the payload locally\nif\n{[\nHTTP\n::\npayload\nlength\n]\n<\n$static::max_chars\n}{\nlog\nlocal0.\n\"Payload=[HTTP::payload]\"\n}\nelse\n{\n# Initialize variables\nset\nremaining\n$payload\nset\nposition\n0\nset\ncount\n1\nset\nbytes_logged\n0\n# Loop through and log each chunk of the payload\nwhile\n{[\nstring\nlength\n$remaining\n]\n>\n$static::max_chars\n}{\n# Get the current chunk to log (subtract 1 from the end as string range is 0 indexed)\nset\ncurrent\n[\nstring\nrange\n$remaining\n$position\n[expr\n{\n$position\n+\n$static::max_chars\n-1\n}]]\nlog\nlocal0.\n\"chunk $count=$current\"\n# Add the length of the current chunk to the position for the next chunk\nincr\nposition\n[\nstring\nlength\n$current\n]\n# Get the next chunk to log\nset\nremaining\n[\nstring\nrange\n$remaining\n$position\nend\n]\nincr\ncount\nincr\nbytes_logged\n$position\nlog\nlocal0.\n\"remaining bytes=[string length $remaining], \\$position=$position, \\$count=$count, \\$bytes_logged=$bytes_logged\"\n}\nif\n{[\nstring\nlength\n$remaining\n]}{\nlog\nlocal0.\n\"chunk $count=$current\"\nincr\nbytes_logged\n[\nstring\nlength\n$remaining\n]\n}\nlog\nlocal0.\n\"Logged $count chunks for a total of $bytes_logged bytes\"\n}\n}\nThe BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor \nor control community code contributions. We make no guarantees or warranties regarding the available code, \nand it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any \ncode available in the BIG-IP API reference guides is solely at your own risk.",
+  "title": "Log large HTTP payloads in chunks locally and remotely",
+  "updated": "2026-07-13 12:27:40",
+  "url": "https://clouddocs.f5.com/api/irules/Log-large-HTTP-payloads-in-chunks-locally-and-remotely.html",
+  "url_version": null
+}

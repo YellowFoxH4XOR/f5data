@@ -1,0 +1,320 @@
+{
+  "applies_to": [
+    {
+      "product": "F5 BIG-IP iRules API",
+      "versions": []
+    }
+  ],
+  "breadcrumbs": [],
+  "code_examples": [
+    {
+      "section": "Examples",
+      "text": "when HTTP_REQUEST {\n  # Disable the stream filter for all requests\n  STREAM::disable\n}\n\nwhen HTTP_RESPONSE {\n  # Check if response type is text\n  if {[HTTP::header value Content-Type] starts_with \"text\"} {\n\n    # Match an \"http://imageserver-NNNN.example.com\" URL (and replace\n    # it with nothing yet.  We'll figure out the replacement later)\n    STREAM::expression {=http://imageserver-[0-9]{1,4}\\.example\\.com==}\n\n    # Enable the stream filter for this response only\n    STREAM::enable\n  }\n}\n\nwhen STREAM_MATCHED {\n  # Check if the matched string meets some condition that can't easily be checked\n  # for using a single regex in STREAM::expression.  For example, regex's are not\n  # very good at arithmetic\n\n  # extract the imageserver number\n  regexp {http://imageserver-([0-9]+)[.]example[.]com} [STREAM::match] url server_nbr\n\n  # want to switch protocol to HTTPS only for newer imageservers, numbers over 379\n  if {$server_nbr > 379} {\n    set url [string replace $url 0 3 \"https\"]\n  }\n\n  # now put the URL back into the data stream (otherwise it will be deleted by the\n  # empty replacement value we set with STREAM::expression)\n  STREAM::replace $url\n\n  log local0.info \"[IP::client_addr]_[TCP::local_port]: matched [STREAM::match], replaced with: ${url}\"\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "Rule stream_expression_rule <STREAM_MATCHED>: 10.0.0.1_3413: matched: http://imageserver-99.example.com, replaced with: http://imageserver-99.example.com\nRule stream_expression_rule <STREAM_MATCHED>: 10.0.0.1_3413: matched: http://imageserver-425.example.com, replaced with: https://imageserver-425.example.com\n"
+    },
+    {
+      "section": "Examples",
+      "text": "# Look for a JSESSIONID cookie in response content and add a persistence record when it is found.\n# To use STREAM commands a Stream Profile must be attached to the virtual server.  Use /Common/stream.\n\nwhen HTTP_RESPONSE {\n  # Clear the jsessionid if it exists already on this TCP connection\n  if {[info exists jsessionid]} {\n    unset jsessionid\n  }\n\n  # Only look for the jsessionid in text responses\n  if {[HTTP::header value \"Content-Type\"] starts_with \"text\"} {\n    log local0.info \"[IP::client_addr]_[TCP::client_port]: text response, enabling stream profile\"\n\n    # match the JSESSIONID string and value\n    # We'll parse out the value in STREAM_MATCHED\n    # Assume the jsessionid is 1 to 100 alphameric characters\n    STREAM::expression {/Set-Cookie: [^\\s]+;JSESSIONID=[A-Za-z0-9]{1,100}//}\n    STREAM::enable\n\n    # Enable the STREAM_MATCHED event as it could have been disabled if there was a prior\n    # response on this TCP connection\n    event STREAM_MATCHED enable\n\n  } else {\n    # Disable the stream filter as this wasn't a text response\n    log local0. \"[IP::client_addr]_[TCP::client_port]: No Content-Type match, disabling stream filter\"\n    STREAM::disable\n  }\n}\n\nwhen STREAM_MATCHED {\n  # Save the matched value (example: ;JSESSIONID=a9bh35uy)\n  regexp {Set-Cookie: [^\\s]+;JSESSIONID=([A-Za-z0-9]{1,100})} [STREAM::match] junk jsessionid\n  log local0.info \"[IP::client_addr]_[TCP::client_port]: Found JSESSIONID=${jsessionid}\"\n\n  # Prevent deletion of matched data which will occur if we don't do something (because\n  # the stream expression replacement value is empty)\n  # (STREAM::replace with no argument means don't replace anything, just leave it alone)\n  STREAM::replace\n\n  # Not sure why, but the parser doesn't allow the persist command in some TMOS versions\n  # It works though, so hide the command from the parser\n  set persist_cmd \"persist add uie ${jsessionid}\"\n  log local0.info \"[IP::client_addr]_[TCP::client_port]: Will persist on JSESSIONID (command '${persist_cmd}')\"\n\n  eval $persist_cmd\n\n  # Assume the first match is the same as any other jsessionids, so stop checking for them\n  log local0.info \"[IP::client_addr]_[TCP::client_port]: Added persistence record. No longer scanning this response for JSESSIONID\"\n  event STREAM_MATCHED disable\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "Rule persist_on_response_content_stream_rule <HTTP_RESPONSE>: 1.2.3.4_2418: text response, enabling stream profile\nRule persist_on_response_content_stream_rule <STREAM_MATCHED>: 1.2.3.4_2418: Found JSESSIONID=a111111111111111111z\nRule persist_on_response_content_stream_rule <STREAM_MATCHED>: 1.2.3.4_2418: Will persist on JSESSIONID (command 'persist add uie a111111111111111111z')\nRule persist_on_response_content_stream_rule <STREAM_MATCHED>: 1.2.3.4_2418: Added persistence record. No longer scanning this response for JSESSIONID\n"
+    }
+  ],
+  "content_hash": "6434fe2948e8f4210f81e8d600874104d4341a59a249e2fa7b8d5b057b7cd43f",
+  "diagrams": [],
+  "documentation_version": null,
+  "headings": [
+    {
+      "anchor": "stream-matched",
+      "level": 1,
+      "path": [],
+      "title": "STREAM_MATCHED"
+    },
+    {
+      "anchor": "description",
+      "level": 2,
+      "path": [
+        "STREAM_MATCHED"
+      ],
+      "title": "Description"
+    },
+    {
+      "anchor": "examples",
+      "level": 2,
+      "path": [
+        "STREAM_MATCHED"
+      ],
+      "title": "Examples"
+    },
+    {
+      "anchor": "related-information",
+      "level": 2,
+      "path": [
+        "STREAM_MATCHED"
+      ],
+      "title": "Related Information"
+    }
+  ],
+  "id": "8e8d38f26216d37cd4fdffc1",
+  "images": [],
+  "kind": "programming_reference",
+  "links": [
+    {
+      "title": "STREAM::expression",
+      "url": "https://clouddocs.f5.com/api/irules/STREAM__expression.html"
+    },
+    {
+      "title": "*",
+      "url": "https://clouddocs.f5.com/api/irules/STREAM_MATCHED.html#id1"
+    },
+    {
+      "title": "STREAM::encoding",
+      "url": "https://clouddocs.f5.com/api/irules/STREAM__encoding.html"
+    },
+    {
+      "title": "STREAM::match",
+      "url": "https://clouddocs.f5.com/api/irules/STREAM__match.html"
+    },
+    {
+      "title": "STREAM::replace",
+      "url": "https://clouddocs.f5.com/api/irules/STREAM__replace.html"
+    },
+    {
+      "title": "STREAM::match",
+      "url": "https://clouddocs.f5.com/api/irules/STREAM__match.html"
+    },
+    {
+      "title": "STREAM_MATCHED",
+      "url": "https://clouddocs.f5.com/api/irules/STREAM_MATCHED.html"
+    },
+    {
+      "title": "STREAM::expression",
+      "url": "https://clouddocs.f5.com/api/irules/STREAM__expression.html"
+    },
+    {
+      "title": "clone",
+      "url": "https://clouddocs.f5.com/api/irules/clone.html"
+    },
+    {
+      "title": "forward",
+      "url": "https://clouddocs.f5.com/api/irules/forward.html"
+    },
+    {
+      "title": "IP::idle_timeout",
+      "url": "https://clouddocs.f5.com/api/irules/IP__idle_timeout.html"
+    },
+    {
+      "title": "ip_ttl",
+      "url": "https://clouddocs.f5.com/api/irules/ip_ttl.html"
+    },
+    {
+      "title": "lasthop",
+      "url": "https://clouddocs.f5.com/api/irules/lasthop.html"
+    },
+    {
+      "title": "listen",
+      "url": "https://clouddocs.f5.com/api/irules/listen.html"
+    },
+    {
+      "title": "LSN::address",
+      "url": "https://clouddocs.f5.com/api/irules/LSN__address.html"
+    },
+    {
+      "title": "LSN::disable",
+      "url": "https://clouddocs.f5.com/api/irules/LSN__disable.html"
+    },
+    {
+      "title": "LSN::inbound",
+      "url": "https://clouddocs.f5.com/api/irules/LSN__inbound.html"
+    },
+    {
+      "title": "LSN::persistence",
+      "url": "https://clouddocs.f5.com/api/irules/LSN__persistence.html"
+    },
+    {
+      "title": "LSN::persistence-entry",
+      "url": "https://clouddocs.f5.com/api/irules/LSN__persistence-entry.html"
+    },
+    {
+      "title": "LSN::pool",
+      "url": "https://clouddocs.f5.com/api/irules/LSN__pool.html"
+    },
+    {
+      "title": "LSN::port",
+      "url": "https://clouddocs.f5.com/api/irules/LSN__port.html"
+    },
+    {
+      "title": "nexthop",
+      "url": "https://clouddocs.f5.com/api/irules/nexthop.html"
+    },
+    {
+      "title": "node",
+      "url": "https://clouddocs.f5.com/api/irules/node.html"
+    },
+    {
+      "title": "peer",
+      "url": "https://clouddocs.f5.com/api/irules/peer.html"
+    },
+    {
+      "title": "persist",
+      "url": "https://clouddocs.f5.com/api/irules/persist.html"
+    },
+    {
+      "title": "session",
+      "url": "https://clouddocs.f5.com/api/irules/session.html"
+    },
+    {
+      "title": "TCP::bandwidth",
+      "url": "https://clouddocs.f5.com/api/irules/TCP__bandwidth.html"
+    },
+    {
+      "title": "TCP::client_port",
+      "url": "https://clouddocs.f5.com/api/irules/TCP__client_port.html"
+    },
+    {
+      "title": "TCP::close",
+      "url": "https://clouddocs.f5.com/api/irules/TCP__close.html"
+    },
+    {
+      "title": "TCP::local_port",
+      "url": "https://clouddocs.f5.com/api/irules/TCP__local_port.html"
+    },
+    {
+      "title": "TCP::mss",
+      "url": "https://clouddocs.f5.com/api/irules/TCP__mss.html"
+    },
+    {
+      "title": "TCP::nagle",
+      "url": "https://clouddocs.f5.com/api/irules/TCP__nagle.html"
+    },
+    {
+      "title": "TCP::notify",
+      "url": "https://clouddocs.f5.com/api/irules/TCP__notify.html"
+    },
+    {
+      "title": "TCP::offset",
+      "url": "https://clouddocs.f5.com/api/irules/TCP__offset.html"
+    },
+    {
+      "title": "TCP::option",
+      "url": "https://clouddocs.f5.com/api/irules/TCP__option.html"
+    },
+    {
+      "title": "TCP::payload",
+      "url": "https://clouddocs.f5.com/api/irules/TCP__payload.html"
+    },
+    {
+      "title": "TCP::release",
+      "url": "https://clouddocs.f5.com/api/irules/TCP__release.html"
+    },
+    {
+      "title": "TCP::remote_port",
+      "url": "https://clouddocs.f5.com/api/irules/TCP__remote_port.html"
+    },
+    {
+      "title": "TCP::respond",
+      "url": "https://clouddocs.f5.com/api/irules/TCP__respond.html"
+    },
+    {
+      "title": "TCP::rtt",
+      "url": "https://clouddocs.f5.com/api/irules/TCP__rtt.html"
+    },
+    {
+      "title": "TCP::server_port",
+      "url": "https://clouddocs.f5.com/api/irules/TCP__server_port.html"
+    },
+    {
+      "title": "TCP::unused_port",
+      "url": "https://clouddocs.f5.com/api/irules/TCP__unused_port.html"
+    },
+    {
+      "title": "UDP::client_port",
+      "url": "https://clouddocs.f5.com/api/irules/UDP__client_port.html"
+    },
+    {
+      "title": "UDP::drop",
+      "url": "https://clouddocs.f5.com/api/irules/UDP__drop.html"
+    },
+    {
+      "title": "UDP::local_port",
+      "url": "https://clouddocs.f5.com/api/irules/UDP__local_port.html"
+    },
+    {
+      "title": "UDP::mss",
+      "url": "https://clouddocs.f5.com/api/irules/UDP__mss.html"
+    },
+    {
+      "title": "UDP::payload",
+      "url": "https://clouddocs.f5.com/api/irules/UDP__payload.html"
+    },
+    {
+      "title": "UDP::remote_port",
+      "url": "https://clouddocs.f5.com/api/irules/UDP__remote_port.html"
+    },
+    {
+      "title": "UDP::respond",
+      "url": "https://clouddocs.f5.com/api/irules/UDP__respond.html"
+    },
+    {
+      "title": "UDP::server_port",
+      "url": "https://clouddocs.f5.com/api/irules/UDP__server_port.html"
+    },
+    {
+      "title": "UDP::unused_port",
+      "url": "https://clouddocs.f5.com/api/irules/UDP__unused_port.html"
+    },
+    {
+      "title": "Credit Card Scrubber Using a Stream\nProfile",
+      "url": "https://clouddocs.f5.com/api/irules/CreditCardScrubberUsingStream.html"
+    },
+    {
+      "title": "Data Leakage\nProtection",
+      "url": "https://clouddocs.f5.com/api/irules/Data-Leakage-Protection.html"
+    },
+    {
+      "title": "Gomez\nInjection",
+      "url": "https://clouddocs.f5.com/api/irules/GomezInjection.html"
+    },
+    {
+      "title": "Gomez Injection With Group\nId",
+      "url": "https://clouddocs.f5.com/api/irules/GomezInjectionWithGroupId.html"
+    },
+    {
+      "title": "Gomez Injection With Page\nId",
+      "url": "https://clouddocs.f5.com/api/irules/GomezInjectionWithPageId.html"
+    },
+    {
+      "title": "HTML comment scrubber using a stream\nprofile",
+      "url": "https://clouddocs.f5.com/api/irules/HTML-comment-scrubber.html"
+    },
+    {
+      "title": "Parse username from HTTP\nrequests",
+      "url": "https://clouddocs.f5.com/api/irules/parse_username_from_http_requests_rule.html"
+    },
+    {
+      "title": "Persist client on response content with\nstream",
+      "url": "https://clouddocs.f5.com/api/irules/Persist_client_on_response_content_with_stream.html"
+    },
+    {
+      "title": "ProxyPass\nv10/v11",
+      "url": "https://devcentral.f5.com/s/articles/proxypass-v10-v11"
+    },
+    {
+      "title": "Redirect\nTrapper",
+      "url": "https://clouddocs.f5.com/api/irules/Redirect-Trapper.html"
+    }
+  ],
+  "publisher_product_labels": [
+    "F5 BIG-IP iRules API"
+  ],
+  "source": "irules",
+  "text": "STREAM_MATCHED\nDescription\nTriggered when the stream profile matches some data-stream octets* to\na match value (regular expresssion) specified in the Stream Profile or\nby an iRule using\nSTREAM::expression\n.\n(\n*\nSee\nSTREAM::encoding\nfor details on how\ndata-stream octets are matched.)\nThis event may be used to examine the matched string (see\nSTREAM::match\n) and optionally use\nSTREAM::replace\nto specify a replacement\nstring or avoid replacing the matched data at all.\nExamples\nThis example shows how you can use\nSTREAM::match\nin the\nSTREAM_MATCHED\nevent to check if the matched\nstring meets some condition that can’t easily be checked for using a\nregular expression in\nSTREAM::expression\n.\nwhen HTTP_REQUEST {\n  # Disable the stream filter for all requests\n  STREAM::disable\n}\n\nwhen HTTP_RESPONSE {\n  # Check if response type is text\n  if {[HTTP::header value Content-Type] starts_with \"text\"} {\n\n    # Match an \"http://imageserver-NNNN.example.com\" URL (and replace\n    # it with nothing yet.  We'll figure out the replacement later)\n    STREAM::expression {=http://imageserver-[0-9]{1,4}\\.example\\.com==}\n\n    # Enable the stream filter for this response only\n    STREAM::enable\n  }\n}\n\nwhen STREAM_MATCHED {\n  # Check if the matched string meets some condition that can't easily be checked\n  # for using a single regex in STREAM::expression.  For example, regex's are not\n  # very good at arithmetic\n\n  # extract the imageserver number\n  regexp {http://imageserver-([0-9]+)[.]example[.]com} [STREAM::match] url server_nbr\n\n  # want to switch protocol to HTTPS only for newer imageservers, numbers over 379\n  if {$server_nbr > 379} {\n    set url [string replace $url 0 3 \"https\"]\n  }\n\n  # now put the URL back into the data stream (otherwise it will be deleted by the\n  # empty replacement value we set with STREAM::expression)\n  STREAM::replace $url\n\n  log local0.info \"[IP::client_addr]_[TCP::local_port]: matched [STREAM::match], replaced with: ${url}\"\n}\nLog output:\nRule\nstream_expression_rule\n<\nSTREAM_MATCHED\n>:\n10.0\n.0.1_3413:\nmatched:\nhttp:\n//\nimageserver-99.example.com,\nreplaced\nwith:\nhttp:\n//\nimageserver-99.example.com\nRule\nstream_expression_rule\n<\nSTREAM_MATCHED\n>:\n10.0\n.0.1_3413:\nmatched:\nhttp:\n//\nimageserver-425.example.com,\nreplaced\nwith:\nhttps:\n//\nimageserver-425.example.com\nThis example just reads the stream match in the STREAM_MATCHED event\nand adds a persistence record.\n# Look for a JSESSIONID cookie in response content and add a persistence record when it is found.\n# To use STREAM commands a Stream Profile must be attached to the virtual server.  Use /Common/stream.\n\nwhen HTTP_RESPONSE {\n  # Clear the jsessionid if it exists already on this TCP connection\n  if {[info exists jsessionid]} {\n    unset jsessionid\n  }\n\n  # Only look for the jsessionid in text responses\n  if {[HTTP::header value \"Content-Type\"] starts_with \"text\"} {\n    log local0.info \"[IP::client_addr]_[TCP::client_port]: text response, enabling stream profile\"\n\n    # match the JSESSIONID string and value\n    # We'll parse out the value in STREAM_MATCHED\n    # Assume the jsessionid is 1 to 100 alphameric characters\n    STREAM::expression {/Set-Cookie: [^\\s]+;JSESSIONID=[A-Za-z0-9]{1,100}//}\n    STREAM::enable\n\n    # Enable the STREAM_MATCHED event as it could have been disabled if there was a prior\n    # response on this TCP connection\n    event STREAM_MATCHED enable\n\n  } else {\n    # Disable the stream filter as this wasn't a text response\n    log local0. \"[IP::client_addr]_[TCP::client_port]: No Content-Type match, disabling stream filter\"\n    STREAM::disable\n  }\n}\n\nwhen STREAM_MATCHED {\n  # Save the matched value (example: ;JSESSIONID=a9bh35uy)\n  regexp {Set-Cookie: [^\\s]+;JSESSIONID=([A-Za-z0-9]{1,100})} [STREAM::match] junk jsessionid\n  log local0.info \"[IP::client_addr]_[TCP::client_port]: Found JSESSIONID=${jsessionid}\"\n\n  # Prevent deletion of matched data which will occur if we don't do something (because\n  # the stream expression replacement value is empty)\n  # (STREAM::replace with no argument means don't replace anything, just leave it alone)\n  STREAM::replace\n\n  # Not sure why, but the parser doesn't allow the persist command in some TMOS versions\n  # It works though, so hide the command from the parser\n  set persist_cmd \"persist add uie ${jsessionid}\"\n  log local0.info \"[IP::client_addr]_[TCP::client_port]: Will persist on JSESSIONID (command '${persist_cmd}')\"\n\n  eval $persist_cmd\n\n  # Assume the first match is the same as any other jsessionids, so stop checking for them\n  log local0.info \"[IP::client_addr]_[TCP::client_port]: Added persistence record. No longer scanning this response for JSESSIONID\"\n  event STREAM_MATCHED disable\n}\nLog output:\nRule persist_on_response_content_stream_rule <HTTP_RESPONSE>: 1.2.3.4_2418: text response, enabling stream profile\nRule persist_on_response_content_stream_rule <STREAM_MATCHED>: 1.2.3.4_2418: Found JSESSIONID=a111111111111111111z\nRule persist_on_response_content_stream_rule <STREAM_MATCHED>: 1.2.3.4_2418: Will persist on JSESSIONID (command 'persist add uie a111111111111111111z')\nRule persist_on_response_content_stream_rule <STREAM_MATCHED>: 1.2.3.4_2418: Added persistence record. No longer scanning this response for JSESSIONID\nRelated Information\nAvailable Commands:\nclone\n- Causes the system to clone traffic to the\nspecified pool or pool member regardless of monitor status.\nforward\n- Sets the connection to forward IP\npackets.\nIP::idle_timeout\n- Returns or sets the\nidle timeout value.\nip_ttl\n- Returns the TTL of the latest IP packet\nreceived.\nlasthop\n- Sets the lasthop of an IP connection.\nlisten\n- Sets up a related ephemeral listener to\nallow an incoming related connection to be established.\nLSN::address\n- Set or override translation\naddress.\nLSN::disable\n- Disable LSN translation.\nLSN::inbound\n- Disable inbound connections\nto translation address/port.\nLSN::persistence\n- Set translation\nselection mode and persistence timeout.\nLSN::persistence-entry\n- Create\nor lookup translation address.\nLSN::pool\n- Specify LSN pool for current\nconnection.\nLSN::port\n- Set or override translation port.\nnexthop\n- Sets the nexthop of an IP connection.\nnode\n- Sends the packet directly to the identified\nserver node.\npeer\n- Causes the specified iRule commands to be\nevaluated under the peer’s (opposite) context.\npersist\n- Causes the system to use the named\npersistence type to persist the connection.\nsession\n- Utilizes the persistence table to\nstore arbitrary information based on the same keys as persistence.\nTCP::bandwidth\n- Returns a bandwidth\nestimate for the peer.\nTCP::client_port\n- Returns the remote\nTCP port/service number of the clientside TCP connection.\nTCP::close\n- Closes the TCP connection.\nTCP::local_port\n- Returns the local TCP\nport/service number of a TCP connection.\nTCP::mss\n- Returns the on-wire Maximum Segment\nSize (MSS) for a TCP connection.\nTCP::nagle\n- Enables or disables the Nagle\nalgorithm on the current TCP connection.\nTCP::notify\n- Causes the USER_REQUEST\nor USER_RESPONSE event to be raised.\nTCP::offset\n- Returns the number of bytes\ncurrently held in memory via\nTCP::collect\n.\nTCP::option\n- Gets or sets the value of the\nspecified option kind from the TCP header.\nTCP::payload\n- Returns or replaces TCP\ndata content.\nTCP::release\n- Releases and flushes\ncollected data. and resumes processing.\nTCP::remote_port\n- Returns the remote\nTCP port/service number of a TCP connection.\nTCP::respond\n- Sends the specified data\ndirectly to the peer.\nTCP::rtt\n- Returns the smoothed round-trip\ntime estimate for a TCP connection.\nTCP::server_port\n- Returns the remote\nTCP port/service number of the serverside TCP connection.\nTCP::unused_port\n- Returns an unused\nTCP port for the specified IP tuple.\nUDP::client_port\n- Returns the UDP\nport/service number of a client system.\nUDP::drop\n- Drops the current UDP packet\nwithout removing the flow from the connection table\nUDP::local_port\n- Returns the local UDP\nport/service number.\nUDP::mss\n- Returns the on-wire Maximum Segment\nSize (MSS) for a UDP connection.\nUDP::payload\n- Returns the content or\nlength of the current UDP payload.\nUDP::remote_port\n- Returns the remote\nUDP port/service number.\nUDP::respond\n- Sends data directly to a\npeer.\nUDP::server_port\n- Returns the UDP\nport/service number of a server system.\nUDP::unused_port\n- Returns an unused\nUDP port for the specified IP tuple.\nWarning\nThe links to the sample code below are remnants of the old DevCentral wiki and will result in a 404 error. For best results, please copy the link text and search the codeshare directly on DevCentral.\nSample Code:\nCredit Card Scrubber Using a Stream\nProfile\n- This iRule illustrates how to scrub out Credit Card Numbers from\nHTTP traffic using a STREAM profile.\nData Leakage\nProtection\n- Scrub sensitive data from application responses\nGomez\nInjection\n- Auto injection of Gomez Networks Actual XF client side\nJavascript.\nGomez Injection With Group\nId\n- Auto injection of Gomez Networks Actual XF client side\nJavascript.\nGomez Injection With Page\nId\n- The following iRule will utilize the Stream profile to\nauto-inject the required client side Gomez Networks performance\nmeasurement JavaScript code\nHTML comment scrubber using a stream\nprofile\n- Removes HTML comments from server responses\nParse username from HTTP\nrequests\n- Parse the username from HTTP requests in the basic auth header\nand POST data\nPersist client on response content with\nstream\n- Persist a client based on a string found in the response content\nusing a stream profile\nProxyPass\nv10/v11\n- iRule (for LTM v10/v11) to replace the functionality of Apache\nWebserver ProxyPass and ProxyPassReverse functions allowing for a\ndifferent server and client view of your web application(s).\nRedirect\nTrapper\n- iRule to trap server redirect response, follow the redirect on\nthe BIG-IP and return the followed response to the client as a\nresult of original request\nIntroduced: BIGIP-9.2.0\nThe BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor \nor control community code contributions. We make no guarantees or warranties regarding the available code, \nand it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any \ncode available in the BIG-IP API reference guides is solely at your own risk.",
+  "title": "STREAM_MATCHED",
+  "updated": "2026-07-13 12:27:40",
+  "url": "https://clouddocs.f5.com/api/irules/STREAM_MATCHED.html",
+  "url_version": null
+}

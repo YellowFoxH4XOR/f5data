@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>after</title><link rel="canonical" href="https://clouddocs.f5.com/api/irules/after.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>after</h1><p>programming_reference · See product applicability metadata</p><a href="https://clouddocs.f5.com/api/irules/after.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!DOCTYPE html>
+
+<div class="section" id="after">
+<h1>after</h1>
+<div class="section" id="description">
+<h2><strong>Description</strong></h2>
+<div class="line-block">
+<div class="line">The after command allows you to insert a delay into the processing of
+your iRule, executing the specified script after a certain amount of
+time has passed. It also allows for things like periodic (repeat)
+execution of a script, as well as looking up or canceling currently
+delayed scripts.</div>
+<div class="line">Note: The after command is not available in GTM.</div>
+</div>
+</div>
+<div class="section" id="syntax">
+<h2><strong>Syntax</strong></h2>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>after &lt;ms&gt;
+after &lt;ms&gt; [-periodic] &lt; script &gt;
+after cancel &lt;id&gt; …
+after cancel -current
+after info [&lt;id&gt; …]
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+<div class="section" id="after-ms">
+<h3>after &lt;ms&gt;</h3>
+<ul class="simple">
+<li>Delays rule execution for &lt;ms&gt; milliseconds.</li>
+<li>Returns timer ID (&lt;id&gt;)</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="after-ms-periodic-script">
+<h3>after &lt;ms&gt; [-periodic] &lt;script&gt;</h3>
+<ul class="simple">
+<li>Schedules &lt;script&gt; for execution after &lt;ms&gt; milliseconds.</li>
+<li>Once the timer has been scheduled, the iRule will continue
+(non-blocking command).</li>
+<li>Optional parameters:</li>
+<li>* If -periodic switch is supplied, &lt;script&gt; will be evaluated every
+&lt;ms&gt; milliseconds.</li>
+<li>Returns the scheduled timer ID (&lt;id&gt;)</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="after-cancel-id">
+<h3>after cancel &lt;id&gt; …</h3>
+<ul class="simple">
+<li>Cancels the scheduled evaluation of a script identified by &lt;id&gt;.</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="after-cancel-current">
+<h3>after cancel -current</h3>
+<ul class="simple">
+<li>Used from within after &lt;script&gt; to cancel the periodic timer of the
+active script.</li>
+<li>When used outside of after &lt;script&gt; will result in runtime error.</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="after-info-id">
+<h3>after info [&lt;id&gt; …]</h3>
+<ul class="simple">
+<li>Returns information about currently scheduled scripts, or about a
+specific &lt;id&gt;.</li>
+<li>Returns active timer ID(s) (&lt;id&gt; …) for the current executing
+context (i.e., client, server).</li>
+<li>If called without supplying &lt;id&gt; or multiple &lt;id&gt;s supplied, return
+value is TCL list.</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+</div>
+<div class="section" id="examples">
+<h2>Examples</h2>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>rule user_rate_limiter {
+   when RULE_INIT {
+      set users_last_sec 0
+      set new_user_count 0
+      after 1000 –periodic {
+         set users_last_sec $new_user_count
+         set new_user_count 0
+      }
+   }
+   when HTTP_REQUEST {
+      if {not [HTTP::cookie exists UserID]} {
+         incr new_user_count
+      }
+      if {[expr {$users_last_sec + $new_user_count}] &gt; 500} {
+         HTTP::respond 503 Retry-After 3
+      }
+   }
+}
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="more-examples-send-response-from-bigip-if-server-does-not-respond-within-a-specified-amount-of-time">
+<h2>More Examples: send response from BigIP if server does not respond within a specified amount of time.</h2>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>when RULE_INIT {
+# Timeout is in Milliseconds
+set static::response_timeout  10000
+}
+
+when HTTP_REQUEST {
+    log local0. "Received request, beginning response monitor interval. [clock seconds]"
+    set monitor_id [\
+        after $static::response_timeout {
+            log local0. "Timeout $static::response_timeout  milliseconds elapsed without server response. [clock seconds]"
+            TCP::respond "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\nContent-Length: 69\r\n\r\n&lt;html&gt;&lt;body&gt; We are responding because server was late.&lt;/body&gt;&lt;/html&gt;"
+        }\
+     ]
+}
+
+when HTTP_RESPONSE {
+    log local0. "Received server response. "
+    if {[info exists monitor_id]} {
+        log local0. "Canceling after script with id $monitor_id"
+        after cancel $monitor_id
+    }
+}
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">Close the client connection after X seconds no matter how long it’s
+idle for</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">when</span><span class="w"> </span>RULE_INIT<span class="w"> </span><span class="k">{</span>
+<span class="w">    </span><span class="c"># Timeout is in milliseconds</span>
+<span class="w">    </span><span class="k">set</span><span class="w"> </span>static::response_timeout<span class="w"> </span><span class="mi">10000</span>
+<span class="k">}</span>
+
+<span class="nv">when</span><span class="w"> </span>CLIENT_ACCEPTED<span class="w"> </span><span class="k">{</span>
+<span class="w">    </span><span class="nv">log</span><span class="w"> </span>local0.<span class="w"> </span><span class="s2">"Received connection, beginning timer for $static::response_timeout from [clock seconds]"</span>
+<span class="w">    </span><span class="k">after</span><span class="w"> </span><span class="nv">$static::response_timeout</span><span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="nv">log</span><span class="w"> </span>local0.<span class="w"> </span><span class="s2">"Timeout $static::response_timeout milliseconds elapsed closing connection. [clock seconds]"</span>
+<span class="w">        </span><span class="nv">reject</span>
+<span class="w">    </span><span class="k">}</span>
+<span class="k">}</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="related-information">
+<h2>Related Information</h2>
+<div class="line-block">
+<div class="line"><strong>Valid Events:</strong></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line"><br/></div>
+</div>
+<div class="admonition warning">
+<p class="first admonition-title">Warning</p>
+<p class="last"><strong>The links to the sample code below are remnants of the old DevCentral wiki and will result in a 404 error. For best results, please copy the link text and search the codeshare directly on DevCentral.</strong></p>
+</div>
+<p><strong>Sample Code:</strong></p>
+<div class="listbykeyword docutils container">
+<ul class="simple">
+<li><a class="reference external" href="https://clouddocs.f5.com/api/irules/HTTP-slow-post-mitigation.html">HTTP slow post
+mitigation</a>
+- Mitigating Slow HTTP Post DDoS Attacks With iRules</li>
+<li><a class="reference external" href="https://devcentral.f5.com/s/articles/ssl-renegotiation-dos-mitigation">SSL renegotiation DOS
+mitigation</a>
+- An example to mitigate SSL renegotiation DOS attacks</li>
+</ul>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+<ul class="simple">
+<li>Introduced: BIGIP-10.0.0</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line"><strong>Version Specific Notes</strong></div>
+</div>
+<p><em>The BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor 
+or control community code contributions. We make no guarantees or warranties regarding the available code, 
+and it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any 
+code available in the BIG-IP API reference guides is solely at your own risk.</em></p>
+</div>
+</div>
+</article>
+</body></html>

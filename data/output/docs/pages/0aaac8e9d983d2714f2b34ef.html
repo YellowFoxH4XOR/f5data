@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>MySQL Proxy</title><link rel="canonical" href="https://clouddocs.f5.com/api/irules/MySQL-Proxy.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>MySQL Proxy</h1><p>programming_reference · See product applicability metadata</p><a href="https://clouddocs.f5.com/api/irules/MySQL-Proxy.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!DOCTYPE html>
+
+<div class="section" id="mysql-proxy">
+<h1>MySQL Proxy</h1>
+<div class="section" id="contributed-by-rcorder">
+<h2>Contributed by: rcorder</h2>
+<div class="line-block">
+<div class="line"><strong>This iRule requires BIG-IP 11.1.0 or later.</strong></div>
+<div class="line">It is likely the proxy will not work unless you are running BIG-IP
+11.1 and MySQL 5.1, which were the versions I tested against. The
+MySQL protocol has a habit of changing.</div>
+<div class="line">To request support for other LTM and MySQL versions, please email
+<a class="reference external" href="mailto:solutionsfeedback%40f5.com">solutionsfeedback<span>@</span>f5<span>.</span>com</a>.</div>
+</div>
+</div>
+</div>
+<div class="section" id="description">
+<h1>Description</h1>
+<div class="line-block">
+<div class="line">iRule to implement Layer 7 full proxy for MySQL servers. This proxy
+alleviates the need for a developer to modify his/her application to
+use multiple database handles when scaling from a standalone MySQL
+server to a Master/Slave cluster. Read-only queries are sent to the
+slave pool while all others are sent to the master pool.</div>
+<div class="line">This proxy is also available as an
+<a class="reference external" href="https://devcentral.f5.com/wiki/iApp.MySQL-Proxy-iApp.html">iApp</a>.</div>
+</div>
+</div>
+<div class="section" id="implementation-details">
+<h1>Implementation Details</h1>
+<ul class="simple">
+<li>Setup two pools, one to contain the master MySQL server and a second
+containing all of your slave MySQL servers.</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">** <strong>MODIFY</strong> the arrays ‘mysql_pools’ and ‘mysql_pools_reverse’
+below accordingly</div>
+<div class="line">** <strong>CREATE</strong> a separate monitor for each pool.  A good starting
+point could be:</div>
+<div class="line">*** Master) New monitor of type</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">mysql</span>
+</pre></div>
+</div>
+<p>, use</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">SHOW</span><span class="w"> </span>MASTER<span class="w"> </span>STATUS
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">as the <strong>Send String</strong> and have an empty <strong>Receive String</strong> in Row 1
+Column 3.</div>
+<div class="line">*** Slave) New monitor of type</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">mysql</span>
+</pre></div>
+</div>
+<p>, use</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">SHOW</span><span class="w"> </span>SLAVE<span class="w"> </span>STATUS
+</pre></div>
+</div>
+<p>as the <strong>Send String</strong> and</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">0</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">as the <strong>Receive String</strong> in Row 1 Column 19.</div>
+</div>
+<ul class="simple">
+<li>Create a custom Data Group, of type <strong>String</strong>, that contains all
+the users (and their passwords) that you expect to use this proxy.
+ The passwords must be hashed with SHA1.</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">** <strong>GENERATE</strong> the appropriate hash(es) by using the following
+one-liner on the BIG-IP command line or any standard Linux host:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>echo -n '&lt;password&gt;' | sha1sum | cut -d' ' -f1
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">*** For example:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>echo -n default | sha1sum | cut -d' ' -f1
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">*** Would result in the following:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">7505d64a54e061b7acd54ccd58b49dc43500b635</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">*** And in your data group, you would use this value as the
+<strong>Value</strong> and the <strong>String</strong> would be your username.</div>
+<div class="line">** <strong>MODIFY</strong> the ‘users_data_group’ variable below to reference the
+name of the Data Group that you just created.</div>
+</div>
+<ul class="simple">
+<li>Create a <strong>Standard</strong> Virtual Server, listening on port 3306. Turn on
+<strong>SNAT Automap</strong>, specify this iRule in the ‘Resources’ tab, and use
+the slave pool you created earlier as the <strong>Default Pool</strong>.  Use
+<strong>universal</strong> as your Default persistence profile and <strong>dest_addr</strong>
+as the Fallback.</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+<ul>
+<li><p class="first">There is a LOT of debug logging in this iRule. You may want to
+comment out most of the</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>log local0.debug
+</pre></div>
+</div>
+<p>lines once you are settled in. There are a few</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>log local0.warn
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">or higher messages that I recommend you leave in tact.  All
+messages should show up in <strong>/var/log/ltm</strong>.</div>
+</div>
+</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+<ul>
+<li><p class="first">Default Persistence behavior is per-authenticated session from the
+client. This doesn’t do anything towards connection pooling, but
+is the most “secure”.  If you want to change this behavior, modify
+ALL of the instances of</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>persist uie ...
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">(clientside and serverside, respectively) to use something else as
+the unique label to persist connections on.</div>
+</div>
+</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+<ul class="simple">
+<li>Please let us know what you tested/changed and what did or did not
+work; there should be a thread in the Open Source forum on F5
+DevCentral to talk about it.</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+<ul class="simple">
+<li>Currently only supports the following Command Packets:</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">**</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">0x00</span><span class="w"> </span><span class="o">/</span><span class="w"> </span>COM_QUIT
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><em>(mysql_close)</em></div>
+<div class="line">**</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">0x01</span><span class="w"> </span><span class="o">/</span><span class="w"> </span>COM_INIT_DB
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><em>(mysql_select_db)</em></div>
+<div class="line">**</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">0x02</span><span class="w"> </span><span class="o">/</span><span class="w"> </span>COM_QUERY
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><em>(mysql_real_query)</em></div>
+<div class="line">**</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">0x0e</span><span class="w"> </span><span class="o">/</span><span class="w"> </span>COM_PING
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><em>(mysql_ping)</em></div>
+<div class="line">** All other Command Packets should technically work, but have not
+been tested and will log a message to syslog with the level of WARN.</div>
+</div>
+<ul>
+<li><p class="first">Typically upon connecting and after authentication, a client will
+send a</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>SET
+</pre></div>
+</div>
+<p>query that we save and replay the first time we switch pools.  If a</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>SET
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">query is sent later, it will only get applied to the node of the
+pool we are currently connected to.  We need to set a flag so that
+it gets replayed if/when we ever do switch back.</div>
+</div>
+</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+<ul>
+<li><p class="first">There is an authenticated or not flag that we have set.  If the
+client and/or the server disagrees with us we don’t recover properly;
+instead we</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>TCP::close
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">and kill everything.</div>
+</div>
+</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+<ol class="arabic simple">
+<li>SSL connections.</li>
+<li>Compression/compressed data stream.</li>
+<li>MySQL’s version of persistent connections.  Not that it can’t
+or wouldn’t work, I just haven’t had a chance to test them yet.
+ Besides, MySQL themselvess recommend against using them.</li>
+<li>Transactions – I’ll have a fix for this in the next version.
+Essentially, we need to stick to a specific server to the duration
+of the transaction, regardless of what class (read vs. write) of
+query is sent.</li>
+</ol>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+<p><em>The BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor 
+or control community code contributions. We make no guarantees or warranties regarding the available code, 
+and it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any 
+code available in the BIG-IP API reference guides is solely at your own risk.</em></p>
+</div>
+</article>
+</body></html>

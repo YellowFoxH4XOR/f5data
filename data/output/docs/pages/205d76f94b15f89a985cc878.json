@@ -1,0 +1,98 @@
+{
+  "applies_to": [
+    {
+      "product": "F5 BIG-IP iRules API",
+      "versions": []
+    }
+  ],
+  "breadcrumbs": [],
+  "code_examples": [
+    {
+      "section": "Description",
+      "text": "#!/bin/bash\n\n## clear images class\necho -n \"\" > /var/class/images.class\n\n## loop through real images and create base64 data for images class\nfor i in $(ls /var/images); do\n        echo \"\\\"`echo \\\"$i\\\"|tr '[:upper:]' '[:lower:]'`\\\" := \\\"`base64 /var/images/$i|tr -d '\\n'`\\\",\" >> /var/class/images.class\ndone\n"
+    },
+    {
+      "section": "Configuration, including iRule",
+      "text": "when RULE_INIT {\n   # set DEBUG to 1 for debug log output\n   set static::DEBUG 0\n}\n\nwhen HTTP_REQUEST {\n\n   # Service requests for files (URIs) from the maintenance page.\n   # Note that we always service these pages, even if the http_pool is up.\n   # The maintenance prefix should be unique in the application and\n   #   not conflict with an existing directory on the web servers.\n   set maint_prefix \"/maintenancepage\"\n\n   if { [HTTP::uri] starts_with \"$maint_prefix\" } {\n\n      # Strip off the $maint_prefix from the URI as you can't easily do variable expansion\n      # within a switch statement.\n      # Note that requests for the exact maintenance prefix URI will be set to a null string,\n      # so handle null in the first switch case.\n      set uri [string map [list $maint_prefix \"\"] [HTTP::uri]]\n\n      # Return the requested page based on the requested URI\n      switch -glob -- $uri {\n         \"\" {\n            if { $static::DEBUG } { log local0. \"Request for $maint_prefix. Redirecting to $maint_prefix/\" }\n            HTTP::redirect \"$maint_prefix/index.html\"\n         }\n         \"/\" -\n         \"/index.html\" {\n            if { $static::DEBUG } { log local0. \"Request for index. Responding with content: [class element -value 0 maint_index_html_class]\" }\n            HTTP::respond 200 content [class element -value 0 maint_index_html_class] \"Content-Type\" \"text/html\"\n         }\n         \"/*.png\" {\n            # NOTE: '17' is derived by the length of /maintenancepage/\n            if { [class match [findstr [string tolower [HTTP::path]] \"/\" 17] equals images_class] } {\n               if { $static::DEBUG } { log local0. \"Request for [findstr [HTTP::path] \"/\" 17] found. Responding with binary content\" }\n               HTTP::respond 200 content [b64decode [class lookup [findstr [HTTP::path] \"/\" 17] images_class]] \"Content-Type\" \"image/png\"\n            } else {\n               if { $static::DEBUG } { log local0. \"Request for [findstr [HTTP::path] \"/\" 1] NOT found.  Ignoring...\" }\n            }\n         }\n         default {\n            if { $static::DEBUG } { log local0. \"Unrecognized request to URI: [HTTP::uri]\" }\n            HTTP::respond 404 content \"Unrecognized request to [HTTP::uri]\" \"Content-Type\" \"text/html\"\n         }\n      }\n      return\n   }\n   #\n   # If the all members in the default pool are down, redirect to the maintenance page\n   #\n   if { [active_members [LB::server pool]] < 1 } {\n      if { $static::DEBUG } { log local0. \"All Pool Members down: Redirecting to $maint_prefix/index.html\" }\n      HTTP::redirect \"$maint_prefix/index.html\"\n   }\n}\n"
+    },
+    {
+      "section": "Configuration, including iRule",
+      "text": "virtual servertest {\n   pool http_pool\n   destination 10.1.2.3:http\n   ip protocol tcp\n   rule webserver\n   profiles\n      http\n      tcp\n}\n"
+    },
+    {
+      "section": "Contents of the class files",
+      "text": "\"key\" := \"<html><head><title>Maintenance page</title></head><body><img src=\\\"logo.png\\\"><p><h2>Sorry! This site is down for maintenance.</h2></body></html>\",\n"
+    },
+    {
+      "section": "Contents of the class files",
+      "text": "\"logo.png\" := \"iVBORw0KGgoAAAANSUhEUgAAAL4AAAC3AgMAAADRFQzGAAAACVBMVEUAAADDAAD///8UoaPIAAAD\nhElEQVRo3u3ZOW7dMBAAUB8lSBXkPmTB3g1PEqSf3jAwgYenTP4icVYuXpDmq/Dyv564SSNy+NT2\njpenB3iALYAp7wBI12MZpOOoayClgXAAMJAWAPLzbdMtSPIoM4AKpBnQ5+siNDAF6CI0sOerIhRw\nClAdpUDyjhoDckGOAbggxcA/XzRbAApAjkBQI1EnAaLzeT9xQCHIPkB2QYrqxAHwy0FQJw5E8Rh0\nLAMkSw8awQDKa4HfCAZAXgpvVdeNYED3+HFdFAV3QPomgLMiyL7oAPWtj6zm/c8O4Ggb3S9HvDyw\n4Kwp3H/7AfwEdNboKGkFiMaDiXoC4FEjOro3jQEcNcL7vUALgN91FVV8qQqco3YHGRQoEtA5/BhE\nMAdUDUTlswS4C842R4CSAebZzBJUAdI7QJmAwgF54N8HaQSqB1K/YzIHOALX72IAbKBZwHy+9/Id\n9GGIQPoKoANsZSB9CSgdkAeyDsgfBXkKcgfogaJfqwtANjsAZxQp5k00AdXp5wOAnaCyIAMeaAPQ\nFoGdU9RVcFSqgzQBNAcgew1mgEyQmQDQ43KOvQPQmxCjBX/UMJVm6sSBvfmKnZSfgDxQ7UJnC+Au\noClw1kYSlAmAXYATkB2QtwDtltAmoHwcwCeD6qz6/zOwsz3avDWmwLnB5SNqgRptmjzTwQRoDKRY\nAUIsAX6LiFAZAv5eWQPZAzAAvYhVkHdBX2y2RVAswCHIuyBtg1s/UV4GxQAag/xOUJZBMqB9BnjW\n3YRVTqUVyLgJCs1A0pFPDwToBYeOfHtATotLXyqyRZMARcxxF0A1gIpe+Akg81NzkGX+p5y9yhev\nA1BHAE8gAz+YBbiY8smlQG3nsnQNOCt2UmvRKrqpdxJPUxjQ+BOHE1A4uPwD1zj5k2dObG6Nz0iv\nX/9+5ckcC5BnFi8ffPsRZtYzX2hcCrt88Pb6ywHEIgur0eXH24tXQmOBAnuNalgCG7n+LoNbH353\nAU/gHU/i/QK8l3Q7qrejwseh0QC4qcfG3uEqP4Z+chP6WZT0ui/Otza9gheB18voXs4k/kYPU8DN\nfVfRIMkcJtajNPZ2ojxOxZfdZH+Qu3d3UIbbCdsbFlGdaghwd9OlTWu0snGURhtHtLs1NZheBYAm\nW1n2mYbdDTza3SLUHbWwzRlvrS1spJalnVcanB9Evvj8aLuZ3BX1Y1P+AUbgLzbWCp20NpfmAAAA\nAElFTkSuQmCC\",\n"
+    }
+  ],
+  "content_hash": "2059015705b2d883dd02e39d0099fa513d2b98b0ad4bcdc2ddfcf13871d29b2d",
+  "diagrams": [],
+  "documentation_version": null,
+  "headings": [
+    {
+      "anchor": "ltm-maintenance-page",
+      "level": 1,
+      "path": [],
+      "title": "LTM Maintenance Page"
+    },
+    {
+      "anchor": "contributed-by-spark-based-off-several-other-contributors-including-citizen-elah",
+      "level": 2,
+      "path": [
+        "LTM Maintenance Page"
+      ],
+      "title": "Contributed by: spark, based off several other contributors including citizen_elah"
+    },
+    {
+      "anchor": "update-should-now-work-for-v10-x",
+      "level": 2,
+      "path": [
+        "LTM Maintenance Page"
+      ],
+      "title": "UPDATE: Should now work for v10.x"
+    },
+    {
+      "anchor": "description",
+      "level": 3,
+      "path": [
+        "LTM Maintenance Page",
+        "UPDATE: Should now work for v10.x"
+      ],
+      "title": "Description"
+    },
+    {
+      "anchor": "configuration-including-irule",
+      "level": 3,
+      "path": [
+        "LTM Maintenance Page",
+        "UPDATE: Should now work for v10.x"
+      ],
+      "title": "Configuration, including iRule"
+    },
+    {
+      "anchor": "contents-of-the-class-files",
+      "level": 3,
+      "path": [
+        "LTM Maintenance Page",
+        "UPDATE: Should now work for v10.x"
+      ],
+      "title": "Contents of the class files"
+    }
+  ],
+  "id": "205d76f94b15f89a985cc878",
+  "images": [],
+  "kind": "programming_reference",
+  "links": [],
+  "publisher_product_labels": [
+    "F5 BIG-IP iRules API"
+  ],
+  "source": "irules",
+  "text": "LTM Maintenance Page\nContributed by: spark, based off several other contributors including citizen_elah\nUPDATE: Should now work for v10.x\nDescription\nHow to use the LTM as a webserver for a particular directory. In this\ncase, we use it to return a maintenance page with text and images to\nreturn when no pool members are available. The maintenance pages are\nalways served up, even if the pool is active. This is partly to handle\nthe case where the pool comes back up while the client is loading all\nthe parts of the maintenance page, and partly to show how to use the\nLTM as a rudimentary web server.\n1. Create the HTML for the maintenance page. It must be on one line,\nand all double-quotes must be escaped with backslashes., the code must\nstart with ” and end with ” .\n2. Save it to a file\n/var/class/maint.index.html.class\non the LTM.\n3. Upload all desired images to /var/images on the BigIP (create the\ndirectory as needed).\n4. Convert images into base64 format string:\n#!/bin/bash\n\n## clear images class\necho -n \"\" > /var/class/images.class\n\n## loop through real images and create base64 data for images class\nfor i in $(ls /var/images); do\n        echo \"\\\"`echo \\\"$i\\\"|tr '[:upper:]' '[:lower:]'`\\\" := \\\"`base64 /var/images/$i|tr -d '\\n'`\\\",\" >> /var/class/images.class\ndone\n5. Note that this creates a file called /var/class/images.class –\nalways run “b load” after creating or updating an external class file!\n6. Use the configuration below, changing the error condition and\nmaintenance prefix if needed.\nYou can easily extend this example to serve up multiple pages, both\ntext and not. You could also just use variables for these files\ninstead of classes, but it seems much more risky to me to edit the\nactual bigip.conf file or iRule than it does to just edit one file\nunder\n/var/class/\nand do a\nb load\n.\nNote: The file content is stored in LTM memory upon configuration\nload, so you should be cautious about serving large amounts of data\nfrom the classes.\nConfiguration, including iRule\nThe class containing the HTML page will be defined as a Data Group List\nin the GUI: Local Traffic -> iRules -> Data Group List -> Create…\nName: maint_index_html_class\nType: (External File)\nPath/Filename: /var/class/maint.index.html.class\nFile Contents: String\nKey/Value Pair Separator: :=\nAccess Mode: Read Only\nThe class containing the base64 encoded image will be defined as a\nData Group List in the GUI: Local Traffic -> iRules -> Data Group List\n-> Create…\nName: images_class\nType: (External File)\nPath/Filename: /var/class/images.class\nFile Contents: String\nKey/Value Pair Separator: :=\nAccess Mode: Read Only\nNote: in case of error reduce the size of the image files\niRule which references the HTML and logo class:\nwhen\nRULE_INIT\n{\n# set DEBUG to 1 for debug log output\nset\nstatic::DEBUG\n0\n}\nwhen\nHTTP_REQUEST\n{\n# Service requests for files (URIs) from the maintenance page.\n# Note that we always service these pages, even if the http_pool is up.\n# The maintenance prefix should be unique in the application and\n#   not conflict with an existing directory on the web servers.\nset\nmaint_prefix\n\"/maintenancepage\"\nif\n{\n[\nHTTP\n::\nuri\n]\nstarts_with\n\"$maint_prefix\"\n}\n{\n# Strip off the $maint_prefix from the URI as you can't easily do variable expansion\n# within a switch statement.\n# Note that requests for the exact maintenance prefix URI will be set to a null string,\n# so handle null in the first switch case.\nset\nuri\n[\nstring\nmap\n[\nlist\n$maint_prefix\n\"\"\n]\n[\nHTTP\n::\nuri\n]]\n# Return the requested page based on the requested URI\nswitch\n-\nglob\n--\n$uri\n{\n\"\"\n{\nif\n{\n$static::DEBUG\n}\n{\nlog\nlocal0.\n\"Request for $maint_prefix. Redirecting to $maint_prefix/\"\n}\nHTTP\n::\nredirect\n\"$maint_prefix/index.html\"\n}\n\"/\"\n-\n\"/index.html\"\n{\nif\n{\n$static::DEBUG\n}\n{\nlog\nlocal0.\n\"Request for index. Responding with content: [class element -value 0 maint_index_html_class]\"\n}\nHTTP\n::\nrespond\n200\ncontent\n[\nclass\nelement\n-\nvalue\n0\nmaint_index_html_class\n]\n\"Content-Type\"\n\"text/html\"\n}\n\"/*.png\"\n{\n# NOTE: '17' is derived by the length of /maintenancepage/\nif\n{\n[\nclass\nmatch\n[\nfindstr\n[\nstring\ntolower\n[\nHTTP\n::\npath\n]]\n\"/\"\n17\n]\nequals\nimages_class\n]\n}\n{\nif\n{\n$static::DEBUG\n}\n{\nlog\nlocal0.\n\"Request for [findstr [HTTP::path] \"/\" 17] found. Responding with binary content\"\n}\nHTTP\n::\nrespond\n200\ncontent\n[\nb64decode\n[\nclass\nlookup\n[\nfindstr\n[\nHTTP\n::\npath\n]\n\"/\"\n17\n]\nimages_class\n]]\n\"Content-Type\"\n\"image/png\"\n}\nelse\n{\nif\n{\n$static::DEBUG\n}\n{\nlog\nlocal0.\n\"Request for [findstr [HTTP::path] \"/\" 1] NOT found.  Ignoring...\"\n}\n}\n}\ndefault\n{\nif\n{\n$static::DEBUG\n}\n{\nlog\nlocal0.\n\"Unrecognized request to URI: [HTTP::uri]\"\n}\nHTTP\n::\nrespond\n404\ncontent\n\"Unrecognized request to [HTTP::uri]\"\n\"Content-Type\"\n\"text/html\"\n}\n}\nreturn\n}\n#\n# If the all members in the default pool are down, redirect to the maintenance page\n#\nif\n{\n[\nactive_members\n[\nLB\n::\nserver\npool\n]]\n<\n1\n}\n{\nif\n{\n$static::DEBUG\n}\n{\nlog\nlocal0.\n\"All Pool Members down: Redirecting to $maint_prefix/index.html\"\n}\nHTTP\n::\nredirect\n\"$maint_prefix/index.html\"\n}\n}\nvirtual\nservertest\n{\npool\nhttp_pool\ndestination\n10.1\n.2.3:http\nip\nprotocol\ntcp\nrule\nwebserver\nprofiles\nhttp\ntcp\n}\nContents of the class files\n/var/class/maint.index.html.class\n\"key\" := \"<html><head><title>Maintenance page</title></head><body><img src=\\\"logo.png\\\"><p><h2>Sorry! This site is down for maintenance.</h2></body></html>\",\n/var/class/images.class\n(all one line in reality, split here for\nthe sake of readability. Note the quotes & trailing comma are\nREQUIRED)\n\"logo.png\" := \"iVBORw0KGgoAAAANSUhEUgAAAL4AAAC3AgMAAADRFQzGAAAACVBMVEUAAADDAAD///8UoaPIAAAD\nhElEQVRo3u3ZOW7dMBAAUB8lSBXkPmTB3g1PEqSf3jAwgYenTP4icVYuXpDmq/Dyv564SSNy+NT2\njpenB3iALYAp7wBI12MZpOOoayClgXAAMJAWAPLzbdMtSPIoM4AKpBnQ5+siNDAF6CI0sOerIhRw\nClAdpUDyjhoDckGOAbggxcA/XzRbAApAjkBQI1EnAaLzeT9xQCHIPkB2QYrqxAHwy0FQJw5E8Rh0\nLAMkSw8awQDKa4HfCAZAXgpvVdeNYED3+HFdFAV3QPomgLMiyL7oAPWtj6zm/c8O4Ggb3S9HvDyw\n4Kwp3H/7AfwEdNboKGkFiMaDiXoC4FEjOro3jQEcNcL7vUALgN91FVV8qQqco3YHGRQoEtA5/BhE\nMAdUDUTlswS4C842R4CSAebZzBJUAdI7QJmAwgF54N8HaQSqB1K/YzIHOALX72IAbKBZwHy+9/Id\n9GGIQPoKoANsZSB9CSgdkAeyDsgfBXkKcgfogaJfqwtANjsAZxQp5k00AdXp5wOAnaCyIAMeaAPQ\nFoGdU9RVcFSqgzQBNAcgew1mgEyQmQDQ43KOvQPQmxCjBX/UMJVm6sSBvfmKnZSfgDxQ7UJnC+Au\noClw1kYSlAmAXYATkB2QtwDtltAmoHwcwCeD6qz6/zOwsz3avDWmwLnB5SNqgRptmjzTwQRoDKRY\nAUIsAX6LiFAZAv5eWQPZAzAAvYhVkHdBX2y2RVAswCHIuyBtg1s/UV4GxQAag/xOUJZBMqB9BnjW\n3YRVTqUVyLgJCs1A0pFPDwToBYeOfHtATotLXyqyRZMARcxxF0A1gIpe+Akg81NzkGX+p5y9yhev\nA1BHAE8gAz+YBbiY8smlQG3nsnQNOCt2UmvRKrqpdxJPUxjQ+BOHE1A4uPwD1zj5k2dObG6Nz0iv\nX/9+5ckcC5BnFi8ffPsRZtYzX2hcCrt88Pb6ywHEIgur0eXH24tXQmOBAnuNalgCG7n+LoNbH353\nAU/gHU/i/QK8l3Q7qrejwseh0QC4qcfG3uEqP4Z+chP6WZT0ui/Otza9gheB18voXs4k/kYPU8DN\nfVfRIMkcJtajNPZ2ojxOxZfdZH+Qu3d3UIbbCdsbFlGdaghwd9OlTWu0snGURhtHtLs1NZheBYAm\nW1n2mYbdDTza3SLUHbWwzRlvrS1spJalnVcanB9Evvj8aLuZ3BX1Y1P+AUbgLzbWCp20NpfmAAAA\nAElFTkSuQmCC\",\nThe BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor \nor control community code contributions. We make no guarantees or warranties regarding the available code, \nand it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any \ncode available in the BIG-IP API reference guides is solely at your own risk.",
+  "title": "LTM Maintenance Page",
+  "updated": "2026-07-13 12:27:40",
+  "url": "https://clouddocs.f5.com/api/irules/LTMMaintenancePage.html",
+  "url_version": null
+}

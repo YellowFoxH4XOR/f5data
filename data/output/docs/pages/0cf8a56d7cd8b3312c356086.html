@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ltm rule command IP reputation</title><link rel="canonical" href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_IP_reputation.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>ltm rule command IP reputation</h1><p>cli_reference · 17.0.0</p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_IP_reputation.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="ltm-rule-command-ip-reputation">
+<span id="id1"></span><h1>ltm rule command IP reputation</h1>
+<html>
+<pre>
+iRule(1)						BIG-IP TMSH Manual						  iRule(1)
+
+IP::reputation
+       Looks up the supplied IP address in the IP intelligence (reputation) database and returns a TCL list containing reputation
+       categories.
+
+SYNOPSIS
+       IP::reputation (IP_ADDR)+
+
+DESCRIPTION
+       Performs a lookup of the supplied IP address against the IP reputation database. Returns a TCL list containing possible
+       reputation categories:
+
+       Category 		    Description Botnets 		     IP addresses of computers that are infected with
+       malicious software and are controlled as a group, and are now part of a botnet. Hackers can exploit botnets to send spam
+       messages, launch various attacks, or cause target systems to behave in other unpredictable ways.  Cloud Provider Networks
+       IP addresses of cloud providers.  Denial of Service	      IP addresses that have launched Denial of Service (DoS)
+       attacks. These attacks are usually requests for legitimate services, but occur at such a fast rate that targeted systems
+       cannot respond and become bogged down or unable to service legitimate clients.  Infected Sources 	    IP addresses
+       that issue HTTP requests with a low reputation index score, or are known malware sites.	Mobile Threats		     IP
+       addresses of malicious and unwanted mobile applications.  Phishing		      IP addresses that are associated
+       with phishing web sites that masquerade as legitimate web sites.  Proxy			      IP addresses that are
+       associated with web proxies that shield the originator's IP address (such as anonymous proxies).  Scanners
+       IP addresses that have been observed to perform port scans or network scans, typically to identify vulnerabilities for
+       later exploits.	Tor Proxy		     IP addresses that act as exit nodes for the Tor Network.  Web Attacks
+       IP addresses that have launched web attacks of various forms.  Windows Exploits		   IP addresses that have
+       exercised various exploits against Windows resources using browsers, programs, downloaded files, scripts, or operating
+       system vulnerabilities.
+
+       An IP intelligence database is a list of IP addresses with questionable reputations. IP addresses gain a questionable
+       reputation and are added to the database as a result of having performed exploits or attacks, or these addresses might
+       represent proxy servers, scanners, or systems that have been infected. You can prevent system attacks by excluding traffic
+       from malicious IP addresses. The IP Intelligence database is maintained online by a third party.
+
+       The BIG-IP system can connect to an IP intelligence database, download the contents, and automatically keep the database up
+       to date. You use iRules to instruct the system on how to use IP address intelligence information. For example, iRules can
+       instruct the system to verify the reputation of and log the originating IP address of all requests.
+
+       You can also use the IP address intelligence information within security policies in the Application Security Manager to
+       log or block requests from IP addresses with questionable reputations.
+
+       The requirements for using IP address intelligence are:
+
+       The system must have an IP Intelligence license. The system must have an Internet connection either directly or through a
+       proxy server. The system must have DNS configured (go to System &gt; Configuration &gt; Device &gt; DNS).
+
+RETURN VALUE
+       Return a TCL list containing reputation categories.
+
+VALID DURING
+       ANY_EVENT
+
+EXAMPLES
+	# Look up a set of IP addresses in the IP reputation database and log the output. As an example, check if the IP is a Proxy (lsearch returns a non -1 value).
+	when RULE_INIT {
+	    # Only log once regardless of however many TMMs are running
+	    if {[TMM::cmp_unit]==0}{
+		# Loop through some known bad IPs
+		foreach ip [list 8.5.1.16 1.1.17.0 1.161.40.194 2.32.20.157 2.50.32.55 2.56.0.0 254.46.202.147] {
+		    # Log the IP, reputation list, count of reputation hits and a sample search to see if the IP is a Proxy (non -1 = true)
+		    log local0. "$ip: \"[IP::reputation $ip]\", count: [llength [IP::reputation $ip]], lsearch for Proxy: [lsearch [IP::reputation $ip] Proxy] "
+		}
+	    }
+	}
+
+	# Log output:
+	#<rule_init>: 8.5.1.16: "{Web Attacks} BotNets Scanners Proxy", count: 4, lsearch for Proxy: 3
+	#<rule_init>: 1.1.17.0: "{Web Attacks} Scanners", count: 2, lsearch for Proxy: -1
+	#<rule_init>: 1.161.40.194: "{Windows Exploits} Scanners", count: 2, lsearch for Proxy: -1
+	#<rule_init>: 2.32.20.157: "Proxy", count: 1, lsearch for Proxy: 0
+	#<rule_init>: 2.50.32.55: "{Spam Sources} Proxy", count: 2, lsearch for Proxy: 1
+	#<rule_init>: 2.56.0.0: "{Spam Sources} {Web Attacks}", count: 2, lsearch for Proxy: -1
+	#<rule_init>: 254.46.202.147: "Phishing", count: 1, lsearch for Proxy: -1
+
+	# Here are a few example IPs with reputations:
+	# 1.1.17.0    Scanners
+	# 2.32.20.157 Proxy
+	# 2.56.0.0    Spam Sources, Web Attacks
+	# 198.200.32.76   Spam Sources, Scanners
+
+	#Drop the packet after initial TCP handshake if the client has a bad reputation
+	when CLIENT_ACCEPTED {
+	    # Check if the IP reputation list for the client IP is not 0
+	    if {[llength [IP::reputation [IP::client_addr]]] != 0}{
+		# Drop the connection
+		drop
+	    }
+	}
+
+	when DNS_RESPONSE {
+	    # If Query type was A and response is an answer.
+	    if { ([DNS::question type] eq "A") and ([DNS::ptype] == "ANSWER") } {
+		set rrs [DNS::answer]
+		foreach rr $rrs {
+		    if { [DNS::type $rr] eq "A" } {
+			if {[llength [IP::reputation [DNS::rdata $rr]]] != 0} {
+			    # Bad IP Reputation for destination detected
+			    log local0. "$rr: \"[IP::reputation $ip]\", count: [llength [IP::reputation $rr]]"
+			}
+		    }
+		}
+	    }
+	}
+
+HINTS
+SEE ALSO
+CHANGE LOG
+       @BIGIP-11.2.0 --First introduced the command.
+
+BIG-IP							    2022-04-12							  iRule(1)
+</rule_init></rule_init></rule_init></rule_init></rule_init></rule_init></rule_init></pre>
+</html>
+</div>
+</div>
+</article>
+</body></html>

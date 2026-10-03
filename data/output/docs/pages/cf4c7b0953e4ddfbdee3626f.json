@@ -1,0 +1,103 @@
+{
+  "applies_to": [
+    {
+      "product": "F5 BIG-IP iRules API",
+      "versions": []
+    }
+  ],
+  "breadcrumbs": [],
+  "code_examples": [
+    {
+      "section": "Introduction",
+      "text": "ACCESS::policy evaluate\n"
+    },
+    {
+      "section": "Example: Query LDAP from an iRule",
+      "text": "(uid=%{session.ximap.username})\n"
+    },
+    {
+      "section": "Example: Query LDAP from an iRule",
+      "text": "when HTTP_REQUEST {\n set username \"\"\n if {[HTTP::path] starts_with \"/lookup/\"} {\n  regexp {/([^/]+)$} [HTTP::path] junk x\n  set username [URI::decode $x]\n }\n}\n\nwhen ACCESS_SESSION_STARTED {\n if {$username ne \"\"} {\n  ACCESS::session data set session.ximap.username $username\n }\n}\n\nwhen ACCESS_POLICY_COMPLETED {\n set reply \"NOT_FOUND\"\n if {[ACCESS::session data get session.ldap.last.queryresult] == 1} {\n  set reply [ACCESS::session data get session.ldap.last.attr.imap-server]\n }\n ACCESS::respond 200 content $reply Content-Type \"text/plain\" Connection close\n}\n"
+    },
+    {
+      "section": "Example: Query LDAP from an iRule",
+      "text": "when CLIENT_ACCEPTED {\n TCP::respond \"* OK IMAP4rev1 server ready\"\n TCP::collect\n}\n\nwhen CLIENT_DATA {\n set username \"\"\n regexp {^[^ ]+ LOGIN ([^ ]+)} [TCP::payload] junk username\n\n #invoke iRule proc http_req to talk to APM over SIDEBAND\n\n set status [call /Common/HSSR::http_req -virt \"/vs-APM-LDAP\" \\\n                 -uri \"http://apm-ldap/lookup/[URI::encode $username]\" \\\n                 -tag \"IMAP\" -key $username -rbody rbody]\n\n if {($status == 200) && ($rbody ne \"NOT_FOUND\")} {\n  node $rbody\n  TCP::release\n  return\n }\n #otherwise\n TCP::respond \"* BYE No server for user ${username}\"\n TCP::close\n}\n"
+    }
+  ],
+  "content_hash": "097c3e2b7bb0bb5d746921a2f6b3fad83fdc90c466295bea91a9a6308fbf561b",
+  "diagrams": [],
+  "documentation_version": null,
+  "headings": [
+    {
+      "anchor": "ldap-query-from-an-irule-and-or-use-apm-with-non-http-services",
+      "level": 1,
+      "path": [],
+      "title": "LDAP Query From An iRule and/or Use APM With Non-HTTP Services"
+    },
+    {
+      "anchor": "contributed-by-mark-seecof",
+      "level": 2,
+      "path": [
+        "LDAP Query From An iRule and/or Use APM With Non-HTTP Services"
+      ],
+      "title": "Contributed by: Mark Seecof"
+    },
+    {
+      "anchor": "introduction",
+      "level": 3,
+      "path": [
+        "LDAP Query From An iRule and/or Use APM With Non-HTTP Services",
+        "Contributed by: Mark Seecof"
+      ],
+      "title": "Introduction"
+    },
+    {
+      "anchor": "example-query-ldap-from-an-irule",
+      "level": 3,
+      "path": [
+        "LDAP Query From An iRule and/or Use APM With Non-HTTP Services",
+        "Contributed by: Mark Seecof"
+      ],
+      "title": "Example: Query LDAP from an iRule"
+    },
+    {
+      "anchor": "use-apm-policy-with-non-http-services",
+      "level": 3,
+      "path": [
+        "LDAP Query From An iRule and/or Use APM With Non-HTTP Services",
+        "Contributed by: Mark Seecof"
+      ],
+      "title": "Use APM Policy With Non-HTTP Services"
+    }
+  ],
+  "id": "cf4c7b0953e4ddfbdee3626f",
+  "images": [],
+  "kind": "programming_reference",
+  "links": [
+    {
+      "title": "ACCESS::policy\nevaluate",
+      "url": "https://clouddocs.f5.com/api/irules/ACCESS__policy.html"
+    },
+    {
+      "title": "HTTP Super SIDEBAND\nRequestor",
+      "url": "https://clouddocs.f5.com/api/irules/HTTP-Super-SIDEBAND-Requestor-Client-Handles-Redirects-Cookies-Chunked-Transfer-APM-Access-etc.html"
+    },
+    {
+      "title": "table",
+      "url": "https://clouddocs.f5.com/api/irules/table.html"
+    },
+    {
+      "title": "table",
+      "url": "https://clouddocs.f5.com/api/irules/table.html"
+    }
+  ],
+  "publisher_product_labels": [
+    "F5 BIG-IP iRules API"
+  ],
+  "source": "irules",
+  "text": "LDAP Query From An iRule and/or Use APM With Non-HTTP Services\nContributed by: Mark Seecof\nIntroduction\nFor years LTM administrators asked for a way to make LDAP queries\n(other than Simple Bind authentication) from an iRule. You could\nalmost do it with the ACA module but not quite.\nThen f5 shipped APM. It is easy to run an LDAP query from an APM\npolicy. It is also easy to apply an APM Profile to a private virtual\nserver just so you can invoke APM from an iRule on some other virtual\nserver.\n(Often you cannot attach an APM policy to your primary virtual server\nbecause APM insists upon sending HTTP redirects to clients– which\ndoes not work with non-HTTP clients, and often confuses non-browser\n(e.g., web services) HTTP clients.)\nThe APM\nACCESS::policy evaluate\niRule function added in TMOS v11.4.0 makes the private-virtual-server\ntechnique described here obsolescent. See\nACCESS::policy\nevaluate\nfor details.\nBefore f5 added the SIDEBAND functions to iRules in LTM version 11.0,\nit was rather tedious to call APM (or any other alternate service)\nfrom an iRule. Now it is pretty easy.\nExample: Query LDAP from an iRule\nLet’s look at an example. Suppose you have a virtual server for the\nnon-HTTP service IMAP (RFC 3501). Suppose further that your\norganization issues device-specific IMAP passwords to users with\nmobile mail clients which differ from their normal passwords in your\nLDAP directory (only the IMAP servers recognize the special\npasswords).\nFinally, suppose you wish to route each IMAP client connection to one\nIMAP server or another depending on the value of an LDAP attribute\n‘imap-server’ on the user’s LDAP Person object.\nYou can capture a username easily enough from the IMAP LOGIN command.\nYou just need to run an LDAP query to retrieve the user’s\n‘imap-server’ attribute value. You cannot use the AUTH iRule functions\nfrom ACA because you don’t have the user’s LDAP password (the LOGIN\ncommand contains only the device-specific mail password).\nYou may use APM to run your LDAP query:\n1. Create a virtual server to which you can attach an APM profile. Put\nit on some non-routeable IP address like 198.51.100.1 (you will only\naccess it by virtual-server name) at port 80, and apply the default\nHTTP Profile. For example, your virtual server might be named\n“/vs-APM-LDAP”.\n2. Create an APM LDAP AAA Server object and point it at your LDAP\nserver.\n3. Create an APM Access Profile and a corresponding Access Policy. You\ncan leave all the Access Profile settings at their defaults.\n4. To the Access Policy add a single LDAP Query item and configure it\nto invoke your LDAP AAA Server. Set the SearchDN appropriately (e.g.,\ndc=example,dc=com) and request the ‘imap-server’ attribute. Set the\nSearchFilter to\n(uid=%{session.ximap.username})\n. Delete useless “group 100” branch rule and leave the Default branch\nconnected to the “Deny” terminal.\n5. Create the following iRule named “ir-APM-LDAP”:\nwhen HTTP_REQUEST {\n set username \"\"\n if {[HTTP::path] starts_with \"/lookup/\"} {\n  regexp {/([^/]+)$} [HTTP::path] junk x\n  set username [URI::decode $x]\n }\n}\n\nwhen ACCESS_SESSION_STARTED {\n if {$username ne \"\"} {\n  ACCESS::session data set session.ximap.username $username\n }\n}\n\nwhen ACCESS_POLICY_COMPLETED {\n set reply \"NOT_FOUND\"\n if {[ACCESS::session data get session.ldap.last.queryresult] == 1} {\n  set reply [ACCESS::session data get session.ldap.last.attr.imap-server]\n }\n ACCESS::respond 200 content $reply Content-Type \"text/plain\" Connection close\n}\nThe ir-APM-LDAP iRule extracts a target username from the path string\nof an HTTP request and puts it into an APM session variable where the\nLDAP Query Item can get at it. Then the same iRule formats the data\nretrieved by the LDAP Query Item into a very simple HTTP response.\n6. Apply your APM Profile to the virtual server /vs-APM-LDAP and also\nattach the iRule ir-APM-LDAP to that virtual server.\n7. Load the\nHTTP Super SIDEBAND\nRequestor\niRule /Common/HSSR on your BIG-IP.\n8. Create another iRule named “ir-IMAP-LDAP-picker”. This iRule will\nprocess connections from clients to your IMAP virtual server. (For\nbrevity I omit discussion of TLS.)\nwhen CLIENT_ACCEPTED {\n TCP::respond \"* OK IMAP4rev1 server ready\"\n TCP::collect\n}\n\nwhen CLIENT_DATA {\n set username \"\"\n regexp {^[^ ]+ LOGIN ([^ ]+)} [TCP::payload] junk username\n\n #invoke iRule proc http_req to talk to APM over SIDEBAND\n\n set status [call /Common/HSSR::http_req -virt \"/vs-APM-LDAP\" \\\n                 -uri \"http://apm-ldap/lookup/[URI::encode $username]\" \\\n                 -tag \"IMAP\" -key $username -rbody rbody]\n\n if {($status == 200) && ($rbody ne \"NOT_FOUND\")} {\n  node $rbody\n  TCP::release\n  return\n }\n #otherwise\n TCP::respond \"* BYE No server for user ${username}\"\n TCP::close\n}\n8. The way this all works is: first the IMAP client connects to the\nIMAP virtual server. The iRule ir-IMAP-LDAP-Picker greets the IMAP\nclient, implicitly requesting an IMAP LOGIN command. The iRule\nextracts the username from the LOGIN command and uses HSSR::http_req\nto query virtual server /vs-APM-LDAP with the username in the HTTP\npath. The iRule ir-APM-LDAP extracts the username from the path and\nholds it briefly in an iRule variable. APM will send an HTTP redirect\nto /my.policy (which the HTTP Super SIDEBAND Requestor will follow),\nthen issue event ACCESS_SESSION_STARTED enabling ir-APM-LDAP to copy\nthe username into APM session variable %{session.ximap.username}. The\nonly Item in the APM Policy is an LDAP Query, which will retrieve the\nvalue of the ‘imap-server’ attribute associated with username. The APM\nPolicy will “Deny” access then issue the event\nACCESS_POLICY_COMPLETED, giving ir-APM-LDAP a chance to return the\nvalue of ‘imap-server’ in a terse HTTP reply. When ir-IMAP-LDAP-Picker\ngets that reply, it will send the IMAP connection to the proper\nserver, or inform the IMAP client that no server is available.\nUse APM Policy With Non-HTTP Services\nAs illustrated in the last example, set up a private virtual server to\nhost your APM Profile and Policy. From an iRule on your primary\nvirtual server, pass user identity, credentials, and so-forth to APM\nover a SIDEBAND connection. You can generally avoid using interactive\nAPM Policy Items like Logon Page if you collect credentials using the\nmechanisms of your non-HTTP service and stuff them into APM session\nvariables. You can return APM results via SIDEBAND or by sharing\nvalues in the LTM cache ([\ntable\n] command), though\ntable\nonly works on TMOS 11.4+ if all your virtual\nservers are in the same traffic-group.\n.\nThe BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor \nor control community code contributions. We make no guarantees or warranties regarding the available code, \nand it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any \ncode available in the BIG-IP API reference guides is solely at your own risk.",
+  "title": "LDAP Query From An iRule and/or Use APM With Non-HTTP Services",
+  "updated": "2026-07-13 12:27:40",
+  "url": "https://clouddocs.f5.com/api/irules/Query-LDAP-From-An-iRule-And-Or-Use-APM-With-Non-HTTP-Services.html",
+  "url_version": null
+}

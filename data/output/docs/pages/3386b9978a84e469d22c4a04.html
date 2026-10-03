@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>NTLM logger</title><link rel="canonical" href="https://clouddocs.f5.com/api/irules/NTLM_logger.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>NTLM logger</h1><p>programming_reference · See product applicability metadata</p><a href="https://clouddocs.f5.com/api/irules/NTLM_logger.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!DOCTYPE html>
+
+<div class="section" id="ntlm-logger">
+<h1>NTLM logger</h1>
+<div class="line-block">
+<div class="line">Contributed by: joelmoses - joelmoses - at - mindspring.com</div>
+</div>
+<div class="section" id="description">
+<h2><strong>Description</strong></h2>
+<div class="line-block">
+<div class="line">This is intended to be an example of an iRule that fully decodes NTLM.
+It can (and will) be used as a building block to create an
+authentication-snooping session table (see “table” command in 10.1.x).</div>
+<div class="line">For reference information on NTLM see the following links:</div>
+</div>
+<ul class="simple">
+<li><a class="reference external" href="http://davenport.sourceforge.net/ntlm.html">http://davenport.sourceforge.net/ntlm.html</a></li>
+<li><a class="reference external" href="http://www.innovation.ch/personal/ronald/ntlm.html">http://www.innovation.ch/personal/ronald/ntlm.html</a></li>
+<li><a class="reference external" href="http://www.opensource.apple.com/source/tcl/tcl-87/tcl_ext/tcllib/tcllib/modules/sasl/ntlm.tcl">http://www.opensource.apple.com/source/tcl/tcl-87/tcl_ext/tcllib/tcllib/modules/sasl/ntlm.tcl</a></li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">It logs the username, domain, calling host, and URI that required the
+authentication to the LTM logs.</div>
+<div class="line">This is essentially a modification of stock SASL::NTLM decoders,
+mainly to work around lack of a unicode-handling function. It needs
+lots of work, but it functions fine as-is. It’s provided merely as a
+discussion starter.</div>
+</div>
+</div>
+<div class="section" id="irule-source">
+<h2><strong>iRule Source</strong></h2>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>when RULE_INIT {
+
+    # NTLM decoder function.
+    # Portions gratuitously copied from SASL::NTLM decode methods in the main TCL codebase,
+    # modified slightly to be happy on a BigIP.
+    #
+    # Right now this does nothing but log presented NTLM authentications by domain and username.
+    # This is intended to be a starting point for an authentication-snooping session tracker.
+
+    array set NTLMFlags {
+        unicode        0x00000001
+        oem            0x00000002
+        req_target     0x00000004
+        unknown1       0x00000008
+        sign           0x00000010
+        seal           0x00000020
+        datagram       0x00000040
+        lmkey          0x00000080
+        netware        0x00000100
+        ntlm           0x00000200
+        unknown2       0x00000400
+        unknown3       0x00000800
+        ntlm_domain    0x00001000
+        ntlm_server    0x00002000
+        ntlm_share     0x00004000
+        NTLM2          0x00008000
+        targetinfo     0x00800000
+        128bit         0x20000000
+        keyexch        0x40000000
+        56bit          0x80000000
+    }
+}
+
+when HTTP_REQUEST {
+
+    if { [HTTP::header Authorization] starts_with "NTLM " } {
+        set ntlm_msg [ b64decode [split [lindex [HTTP::header Authorization] 1] ] ]
+        binary scan $ntlm_msg a7ci protocol zero type
+        switch -exact -- $type {
+            1 {
+                binary scan $ntlm_msg @12ississi flags dlen dlen2 doff hlen hlen2 hoff
+                binary scan $ntlm_msg @${hoff}a${hlen} ntlm_host
+                binary scan $ntlm_msg @${doff}a${dlen} ntlm_domain
+                return [list type $type flags [format 0x%08x $flags] ntlm_domain $ntlm_domain ntlm_host $ntlm_host]
+            }
+            2 {
+                binary scan $ntlm_msg @12ssiia8a8 dlen dlen2 doff flags nonce pad
+                set domain {}; binary scan $ntlm_msg @${doff}a${dlen} ntlm_domain
+                set unicode [expr {$flags &amp; 0x00000001}]
+                if {$unicode} {
+                    set ntlm_domain_convert ""
+                    foreach i [ split $ntlm_domain ""] {
+                        scan $i %c c
+                        if {$c&gt;1} {
+                            append ntlm_domain_convert $i
+                        } elseif {$c&lt;128} {
+                            set ntlm_domain_convert $ntlm_domain_convert
+                        } else {
+                            append ntlm_domain_convert \\u[format %04.4X $c]
+                        }
+                    }
+                set ntlm_domain $ntlm_domain_convert
+                }
+                binary scan $nonce H* nonce_h
+                binary scan $pad   H* pad_h
+                return [list type $type flags [format 0x%08x $flags] ntlm_domain $ntlm_domain nonce $nonce]
+            }
+            3 {
+                binary scan $ntlm_msg @12ssissississississii \
+                    lmlen lmlen2 lmoff \
+                    ntlen ntlen2 ntoff \
+                    dlen  dlen2  doff  \
+                    ulen  ulen2  uoff \
+                    hlen  hlen2  hoff \
+                    slen  slen2  soff \
+                    flags
+                set ntlm_domain {}; binary scan $ntlm_msg @${doff}a${dlen} ntlm_domain
+                set ntlm_user {};   binary scan $ntlm_msg @${uoff}a${ulen} ntlm_user
+                set ntlm_host {};   binary scan $ntlm_msg @${hoff}a${hlen} ntlm_host
+                set unicode [expr {$flags &amp; 0x00000001}]
+                if {$unicode} {
+                    set ntlm_domain_convert ""
+                    foreach i [ split $ntlm_domain ""] {
+                        scan $i %c c
+                        if {$c&gt;1} {
+                            append ntlm_domain_convert $i
+                        } elseif {$c&lt;128} {
+                            set ntlm_domain_convert $ntlm_domain_convert
+                        } else {
+                            append ntlm_domain_convert \\u[format %04.4X $c]
+                        }
+                    }
+                    set ntlm_domain $ntlm_domain_convert
+                    set ntlm_user_convert ""
+                    foreach i [ split $ntlm_user ""] {
+                        scan $i %c c
+                        if {$c&gt;1} {
+                            append ntlm_user_convert $i
+                        } elseif {$c&lt;128} {
+                            set ntlm_user_convert $ntlm_user_convert
+                        } else {
+                            append ntlm_user_convert \\u[format %04.4X $c]
+                        }
+                    }
+                    set ntlm_user   $ntlm_user_convert
+                    set ntlm_host_convert ""
+                    foreach i [ split $ntlm_host ""] {
+                        scan $i %c c
+                        if {$c&gt;1} {
+                            append ntlm_host_convert $i
+                        } elseif {$c&lt;128} {
+                            set ntlm_host_convert $ntlm_host_convert
+                        } else {
+                            append ntlm_host_convert \\u[format %04.4X $c]
+                        }
+                    }
+                    set ntlm_host   $ntlm_host_convert
+                }
+                binary scan $ntlm_msg @${ntoff}a${ntlen} ntdata
+                binary scan $ntlm_msg @${lmoff}a${lmlen} lmdata
+                binary scan $ntdata H* ntdata_h
+                binary scan $lmdata H* lmdata_h
+                log local0. "NTLM login by $ntlm_domain\\$ntlm_user from workstation $ntlm_host for [HTTP::uri]."
+                return [list type $type flags [format 0x%08x $flags] \
+                    ntlm_domain $ntlm_domain ntlm_host $ntlm_host ntlm_user $ntlm_user \
+                    lmhash $lmdata nthash $ntdata]
+            }
+            default {
+                return -code error "invalid NTLM data: type not recognised"
+            }
+        }
+    }
+}
+</pre></div>
+</div>
+<p><em>The BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor 
+or control community code contributions. We make no guarantees or warranties regarding the available code, 
+and it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any 
+code available in the BIG-IP API reference guides is solely at your own risk.</em></p>
+</div>
+</div>
+</article>
+</body></html>

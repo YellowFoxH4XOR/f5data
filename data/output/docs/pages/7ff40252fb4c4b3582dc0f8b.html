@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Architecture Overview</title><link rel="canonical" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/architecture.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>Architecture Overview</h1><p>architecture · main</p><a href="https://clouddocs.f5.com/sslo-troubleshooting-guide/architecture.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!DOCTYPE html>
+
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<!-- HTML Metadata for this page -->
+<meta content="F5 SSLO Architecture" name="description"/>
+<meta content="f5, sslo, architecture" name="keywords"/>
+<meta content="Lucas Thompson" name="authors"/>
+<div class="section" id="architecture-overview">
+<h1>Architecture Overview</h1>
+<p>SSL Orchestrator is an iApp LX app that uses the BIG-IP data plane for its traffic processing. There are 2 distinct areas: <a class="reference external" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/architecture.html#control-plane-diagram">Control Plane</a> and the <a class="reference external" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/architecture.html#data-plane-diagram">Data Plane</a>.</p>
+<div class="section" id="control-plane-diagram">
+<h2>Control Plane Diagram</h2>
+<p>These main components control the overall SSLO configuration</p>
+<div class="mermaid">
+            %%{init: {'securityLevel': 'loose', 'theme':'default'} }%%
+
+graph TD
+    XUI[SSLO Web UI&lt;br&gt;] --&gt; RND(Rest Node Daemon)
+    click RND "./architecture.html#rest-node-daemon"
+    click XUI "./architecture.html#sslo-web-ui"
+    TMOS[TMOS Microkernel]
+    click TMOS "./architecture.html#tmm-data-plane"
+    RND --&gt; LDB[(Rest Configuration Database)]
+    click LDB "./architecture.html#rest-database"
+    RND --&gt; RJD(Rest Java Daemon)
+    click RJD "./architecture.html#rest-java-daemon"
+    RJD --&gt; LDB
+    RJD --&gt; MCP(Master Control Program) 
+    click MCP "./architecture.html#master-control-program-mcp"
+    MCP --&gt; MCPD[(MCP Configuration Database)]
+    click MCPD "/architecture.html#master-control-program-mcp"
+    MCP --&gt; TMOS
+    click IFILE "/architecture.html#iFile"
+    MCPD --&gt; IFILE[(iFile)]
+
+        </div></div>
+<hr class="docutils"/>
+<div class="section" id="control-plane-components">
+<h2>Control Plane Components</h2>
+<div class="section" id="sslo-web-ui">
+<h3>SSLO Web UI</h3>
+<p>The Web GUI is used for creation and management of SSLO topologies. It runs in an iFrame from the main BIG-IP Web UI. A link to <strong>SSL Orchestrator &gt;&gt; Configuration</strong> appears there when SSLO is licensed and provisioned.</p>
+<p>Whereas BIG-IP’s primary web UI uses <strong>Apache Tomcat</strong>, the SSLO iAppLX GUI is powered by <strong>Apache Jetty</strong> running from the <strong>Rest Node Daemon</strong>.</p>
+<p>The files for the web content are loaded from the SSLO RPM and placed in the BIG-IP filesystem.</p>
+<p><code class="docutils literal notranslate"><span class="pre">/var/config/rest/iapps/f5-iappslx-ssl-orchestrator/presentation/sgc</span></code></p>
+</div>
+<div class="section" id="rest-daemons">
+<h3>REST Daemons</h3>
+<p>The REST daemons are a primary part of BIG-IP’s <a class="reference external" href="https://clouddocs.f5.com/products/iapp/iapp-lx/tmos-14_0/iapplx_concepts/overview.html">iAppLX infrastructure</a> and a major part of BIG-IP’s control plane.</p>
+<p>BIG-IP contains two REST daemons, <em>restnoded</em> and <em>restjavad</em>. Both implement HTTP routers that direct incoming web calls to an appropriate <b><i>worker</i></b> based on the incoming URI. Other REST workers perform management operations to maintain configuration consistiency, and many other management and maintenance functions. Some worker functions run on asynchronous schedules and some run synchronously when activated by the admin or other components.</p>
+<table border="1" class="docutils">
+<thead>
+<tr>
+<th>Name</th>
+<th>Service</th>
+<th>Log Location</th>
+<th>Purpose in SSLO</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Rest Java Daemon</td>
+<td>restjavad</td>
+<td><code>/var/log/restjavad0.log</code></td>
+<td>REST Infrastructure</td>
+</tr>
+<tr>
+<td>Rest Node Daemon</td>
+<td>restnoded</td>
+<td><code>/var/log/restnoded/restnoded.log</code></td>
+<td>Primary SSLO Logic</td>
+</tr>
+</tbody>
+</table>
+<hr class="docutils"/>
+<div class="section" id="rest-node-daemon">
+<h4>Rest Node Daemon</h4>
+<ul class="simple">
+<li><p>Runs the <em>Rest Node</em> worker processes.</p></li>
+<li><p>Most important SSLO related logs include the text: <code class="docutils literal notranslate"><span class="pre">[SSLO]</span></code>.</p></li>
+<li><p>All workers produce log messages with their <code class="docutils literal notranslate"><span class="pre">severity</span></code>, <code class="docutils literal notranslate"><span class="pre">[SSLO]</span></code>, and <code class="docutils literal notranslate"><span class="pre">worker</span> <span class="pre">name</span></code>. <details><summary>Example</summary><code class="docutils literal notranslate"><span class="pre">severe:</span> <span class="pre">[SSLO]</span> <span class="pre">[appReconcileWorker]</span> <span class="pre">Device</span> <span class="pre">10.140.10.63</span> <span class="pre">is</span> <span class="pre">having</span> <span class="pre">hanging</span> <span class="pre">MCP</span> <span class="pre">objects</span> <span class="pre">and</span> <span class="pre">need</span> <span class="pre">cleanup</span></code></details></p></li>
+<li><p>Current status <code class="docutils literal notranslate"><span class="pre">bigstart</span> <span class="pre">status</span> <span class="pre">restnoded</span></code></p></li>
+</ul>
+<p>Log messages usually reference workers processors, or handlers in the rest node logs. These are some of the workers.</p>
+<table border="1" class="docutils">
+<thead>
+<tr>
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>ssloRestoreWorker</strong></td>
+<td>Processes the MCP iFile to/from the REST database (9.0 and later)</td>
+</tr>
+<tr>
+<td><strong>topologyReconcileDataWorker</strong></td>
+<td>Detects and tracks changes to LTM virtuls outside of SSLO</td>
+</tr>
+<tr>
+<td><strong>restJavadMonitor</strong></td>
+<td>Polls restjava <strong>storage</strong> and <strong>forwarder</strong> workers' availability</td>
+</tr>
+<tr>
+<td><strong>appsCleanupWorker/appsCleanupUtil</strong></td>
+<td>Contains "Reset to default" functionality</td>
+</tr>
+<tr>
+<td><strong>ssloSetupWorker/upgradeWorker</strong></td>
+<td>Performs upgrades and installs of SSLO RPM</td>
+</tr>
+<tr>
+<td><strong>upgradeUtils/upgradeWorker</strong></td>
+<td>Handles configuration upgrades and validation</td>
+</tr>
+<tr>
+<td><strong>appsReconcileWorker</strong></td>
+<td>Checks and corrects SSLO deployment overall health. Check and generate errors to UI based on the information provided by appsListWorker</td>
+</tr>
+<tr>
+<td><strong>appsCleanupWorker</strong></td>
+<td>Provide the functionality to delete all configurations of SSLO</td>
+</tr>
+<tr>
+<td><strong>icrdConfigurationWorker</strong></td>
+<td>iControl REST exposes tmsh functionality via a well defined REST based interface</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="rest-java-daemon">
+<h4>Rest Java Daemon</h4>
+<p>The Rest Java Daemon runs the Rest Java worker processes which comprise BIG-IP’s <b><i>iAppLX</i></b> Infrastructure. It also runs the <a class="reference external" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/architecture.html#rest-database">REST Database</a>.</p>
+<p>To obtain the current status - <code class="docutils literal notranslate"><span class="pre">bigstart</span> <span class="pre">status</span> <span class="pre">restjavad</span></code></p>
+<p>All workers produce log messages with their name. For example:</p>
+<blockquote>
+<div><p><code class="docutils literal notranslate"><span class="pre">[8100/shared/iapp/blocks</span> <span class="pre">BlockCollectionWorker]</span> <span class="pre">BlockCollectionWorker:</span> <span class="pre">Local</span> <span class="pre">MachineID</span> <span class="pre">dc017723-29a9-49ff-91ac-84a0d365c09c</span></code></p>
+</div></blockquote>
+<table border="1" class="docutils">
+<thead>
+<tr>
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Icrworker/RestWorkerHost</strong></td>
+<td>General purpose REST worker, registers other workers and paths, handles startup, etc</td>
+</tr>
+<tr>
+<td><strong>ForwarderPassThroughWorker</strong></td>
+<td>Performs authorization functions, sanitization, and request forwarding</td>
+</tr>
+<tr>
+<td><strong>BlockCollectionWorker</strong></td>
+<td>Create, Update, Delete interface for REST block data</td>
+</tr>
+<tr>
+<td><strong>DeviceInfoWorker</strong></td>
+<td>Gathers device-level data about BIG-IPs, CMI and GOSSIP sync status, etc</td>
+</tr>
+<tr>
+<td><strong>StorageWorker</strong></td>
+<td>Proxies access and provides statistics of REST database</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="section" id="rest-database">
+<h3>Rest Database</h3>
+<p>The REST database holds BIG-IP and iAppLX data, including the SSLO configuration, current device status, peer status, <em><strong>CMI</strong></em> information, <em><strong>ASM/Advanced WAF</strong></em> information, and more.</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://lucene.apache.org/">Apache Lucene</a> Database running in <code class="docutils literal notranslate"><span class="pre">restjavad</span></code></p></li>
+<li><p>Data is organized into <em>REST blocks</em></p></li>
+<li><p>Each single <em>block</em> is one <em>iAppLX Application</em></p>
+<ul>
+<li><p>SSLO uses multiple blocks to store a typical deployment</p></li>
+<li><p>In contrast, <em>Access Guided Configuration</em> and other iapps use a single block to store a typical deployment</p></li>
+</ul>
+</li>
+<li><p>SSLO relays SSLO config change operations through <em><strong>BlockCollectionWorker</strong></em></p></li>
+<li><p>SSLO relays MCP config change operations through MCP</p></li>
+<li><p>Database files in <code class="docutils literal notranslate"><span class="pre">/var/config/rest/storage</span></code></p></li>
+</ul>
+<p>The current instantaneous state of the REST database is collected while <a class="reference external" href="https://support.f5.com/csp/article/K4423">UCS archives</a> are created. This state includes quasi-ephemeral information about members of BIG-IP’s traffic group(s). This traffic group information is not portable between BIG-IPs and <a class="reference external" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/procs/troubleshooting-ha.html#reset-device-information">must be reset</a> when restoring the UCS to a different BIG-IP.</p>
+</div>
+<div class="section" id="master-control-program-mcp">
+<h3>Master Control Program (MCP)</h3>
+<p>Maintains the primary data plane configuration database used by BIG-IP.</p>
+<ul class="simple">
+<li><p>The <code class="docutils literal notranslate"><span class="pre">tmsh</span></code> utility connects to MCP to read and write configuration properties.</p></li>
+<li><p>MCP feeds configuration to TMM, APMD, and other BIG-IP processes.</p></li>
+<li><p>Reads configuration from the <a class="reference external" href="https://support.f5.com/csp/article/K26582310">stardard BIG-IP configuration files</a></p></li>
+</ul>
+</div>
+</div>
+<div class="section" id="data-plane-diagram">
+<h2>Data Plane Diagram</h2>
+<p>These major Run-Time components are configured by MCP through SSLO and handle network traffic. Click a diagram element to read its description.</p>
+<div class="mermaid">
+            %%{init: {'securityLevel': 'loose', 'theme':'default'} }%%
+graph LR
+    TMM[TMM Microkernel]
+    click TMM "./architecture.html#traffic-management-microkernel-tmm"
+    SDB[(SessionDB)]
+    click SDB "./architecture.html#sessiondb"
+    APMD[[APM Daemon]]
+    click APMD "./architecture.html#apm-daemon"
+    N(Network Interfaces)
+    click N "./architecture.html#network-interfaces"
+    TMM --&gt; SDB
+    APMD --&gt; SDB
+    TMM --&gt;  N
+    APMD &lt;--&gt;  TMM
+        </div></div>
+<div class="section" id="data-plane-component-descriptions">
+<h2>Data Plane Component Descriptions</h2>
+<div class="section" id="traffic-management-microkernel-tmm">
+<h3>Traffic Management Microkernel (TMM)</h3>
+<p>TMM is the heart of BIG-IP. It is responsible for almost all runtime network traffic processing. As the name implies, it is a <a class="reference external" href="https://en.wikipedia.org/wiki/Microkernel">microkernel</a> with its own network stack, scheduling, memory, and peripheral management that runs in Linux user space. TMM provides much higher security hardness and performance than possible with a traditional native Linux network solution.</p>
+<ul class="simple">
+<li><p>Interfaces with other plugins such as the APM Daemon</p></li>
+<li><p>Runs the ephemeral session database (sessionDB)</p></li>
+<li><p>Logs primarily to <code class="docutils literal notranslate"><span class="pre">/var/log/ltm</span></code> and <code class="docutils literal notranslate"><span class="pre">/var/log/tmm*</span></code></p></li>
+<li><p>Obtains configuration from MCP</p></li>
+<li><p>Current status can be obtained with <code class="docutils literal notranslate"><span class="pre">bigstart</span> <span class="pre">status</span> <span class="pre">tmm</span></code></p></li>
+<li><p>Runtime statistics can be obtained with <code class="docutils literal notranslate"><span class="pre">tmsh</span> <span class="pre">show</span></code></p></li>
+<li><p>Real-time load and memory statistics can be viewed instantaneously with <code class="docutils literal notranslate"><span class="pre">tmstat</span></code></p></li>
+</ul>
+</div>
+<div class="section" id="sessiondb">
+<h3>SessionDB</h3>
+<p>SessionDB is BIG-IP’s ephemeral database for runtime persistent data such as LTM persistence records, AVR statistics, APM/SWG user sessions, and APM policy configuration data.
+APM Daemon (APMD) interacts with various user libraries for AAA and other Access functions.</p>
+<ul class="simple">
+<li><p>Main “outside tmm” consumers are <em><strong>APMD</strong></em> and <em><strong>AVRD</strong></em></p></li>
+<li><p>Implemented directly inside TMM for performance</p></li>
+</ul>
+</div>
+<div class="section" id="avr-daemon">
+<h3>AVR Daemon</h3>
+<p>The Application Visibility and Reporting Daemon (avrd) collects, aggregates and publishes application performance data for the BIG-IP Analytics module to provide more insight into the performance of web applications.</p>
+<ul class="simple">
+<li><p>Logs to <code class="docutils literal notranslate"><span class="pre">/var/log/avr</span></code></p></li>
+<li><p>Current status can be obtained with <code class="docutils literal notranslate"><span class="pre">bigstart</span> <span class="pre">status</span> <span class="pre">avrd</span></code></p></li>
+</ul>
+</div>
+<div class="section" id="apm-daemon">
+<h3>APM Daemon</h3>
+<p>The Access Policy Manager Daemon (apmd) handles session management, user-space AAA functions, 3rd party authentication libraries, access policy configuration snapshots for the BIG-IP</p>
+<ul class="simple">
+<li><p>Logs to <code class="docutils literal notranslate"><span class="pre">/var/log/apm</span></code></p></li>
+<li><p>Runs outside of TMM in a separate process</p></li>
+<li><p>Current status can be obtained with <code class="docutils literal notranslate"><span class="pre">bigstart</span> <span class="pre">status</span> <span class="pre">apmd</span></code></p></li>
+<li><p>Indirectly processes SSLO Security Policies (security policies are derived from Per-Request Access Policies)</p></li>
+</ul>
+</div>
+<div class="section" id="network-interfaces">
+<h3>Network Interfaces</h3>
+<p>BIG-IP contains multiple network interfaces of different kinds, depending on model. The first (eth0) is used for management via the Linux control-plane. The remainder are used for the TMM data-plane.</p>
+</div>
+</div>
+<div class="section" id="configuration-architecture">
+<h2>Configuration Architecture</h2>
+<p>The configuration control plane for SSLO has two primary parts</p>
+<p><strong>MCP Configuration</strong> handles the TMOS configuration used for run-time traffic processing.</p>
+<ul class="simple">
+<li><p>Changes done via MCP TMSH, TMUI, iControl, etc</p></li>
+<li><p>SSLO <em>deploy</em> operations create and push the MCP configuration derived from the deployed SSLO <em>topology</em></p></li>
+<li><p>HA peer synchronization done by traditional BIG-IP CMI</p></li>
+<li><p>Changes logged to <code class="docutils literal notranslate"><span class="pre">/var/log/audit</span></code></p></li>
+<li><p>The configuration is loaded from TMOS. See <a class="reference external" href="https://support.f5.com/csp/article/K26582310">K26582310: Overview of BIG-IP configuration files</a></p></li>
+</ul>
+<p><strong>REST Database</strong> handles the SSLO iApp configuration.</p>
+<ul class="simple">
+<li><p>Also known as the <em>iApp LX Block Database</em></p></li>
+<li><p>In v9.0 and later this is loaded from an MCP iFile upon startup and updated upon reconfiguration</p></li>
+<li><p>HA peer synchronization done by iAppLX GOSSIP</p></li>
+<li><p>Config reads/writes are done by the restjavad <strong>Block Collection Worker</strong></p></li>
+<li><p>Stored in Apache Lucene database</p></li>
+<li><p>Integrity of MCP and REST configuration continuiously monitored by REST Node <strong>Reconciliation Worker</strong></p></li>
+</ul>
+<div class="section" id="rest-configuration-contents">
+<h3>REST Configuration Contents</h3>
+<p>The REST configuration is stored in the <a class="reference external" href="https://clouddocs.f5.com/products/iapp/iapp-lx/tmos-14_0/iapplx_concepts/block.html">iApp LX Block Database</a>. SSLO stores its configuration templates for newly created services, user defined services and policies, and inter-dependency information. REST blocks each contain one part of the overall SSLO configuration.</p>
+<p>SSLO typically contains these kind of blocks in REST storage:</p>
+<table border="1" class="docutils">
+<thead>
+<tr>
+<th>Block Name</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>sslo_xxxxx</td>
+<td>General (vip and general settings)</td>
+</tr>
+<tr>
+<td>ssloSC_xxxxx</td>
+<td>Service Chain</td>
+</tr>
+<tr>
+<td>ssloS_xxxxx</td>
+<td>Service (Security Services)</td>
+</tr>
+<tr>
+<td>ssloT_xxxxx</td>
+<td>TLS (SSL and general options)</td>
+</tr>
+<tr>
+<td>ssloN_xxxxx</td>
+<td>Auto-Managed IPs</td>
+</tr>
+<tr>
+<td>ssloP_xxxxx</td>
+<td>Security Policy</td>
+</tr>
+<tr>
+<td>f5-sslo-dg-data</td>
+<td>Derived Dependency Graph Data</td>
+</tr>
+</tbody>
+</table>
+<p><sub><em>where xxxxx is repeated for each Deployment or object</em></sub></p>
+<div class="section" id="what-data-is-inside-of-a-block">
+<h4>What data is inside of a block</h4>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">.inputProperties</span></code> - User configured properties. Search here to find the administrator-input config properties.</p></li>
+<li><p>Name, ID, State, Timestamps, Type, other metadata</p></li>
+<li><p>Dependency information</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">.dataProperties</span></code> - System derived properties. These reflect the derived MCP configuration and are created during deployment operations.</p></li>
+</ul>
+</div>
+<div class="section" id="high-availability">
+<h4>High Availability</h4>
+<p>During management operations (Deploy, Delete), SSLO automatically handles REST block synchronization with its HA peer, performing block update operations on <em>both</em> units. 8.x and earlier performed this operation via GOSSIP. 9.0 and later require manual MCP synchronization from the “administrative BIG-IP” to its peer after reconfiguration.</p>
+</div>
+<div class="section" id="configuration-templates">
+<h4>Configuration Templates</h4>
+<p>SSLO <strong>does not</strong> automatically synchronize BIG-IP <em>MCP</em> (run-time config) data between HA peers in a manual sync group. You must instruct CMI to <a class="reference external" href="https://support.f5.com/csp/article/K14856">synchronize the MCP data manually</a>. CMI sync can be configured to operate manually or automatically, depending on preference. Manual sync is typical.</p>
+</div>
+</div>
+<div class="section" id="the-mcp-configuration">
+<h3>The MCP configuration</h3>
+<p>Master Control Program (MCP) is the primary configuration mechanism of BIG-IP. It defines the run-time properties of all traffic handling in the system data plane.</p>
+<ul class="simple">
+<li><p>Reload the configuration: <code class="docutils literal notranslate"><span class="pre">tmsh</span> <span class="pre">load</span> <span class="pre">/sys</span> <span class="pre">config</span></code></p></li>
+<li><p>Refer to [<code class="docutils literal notranslate"><span class="pre">bigip.conf</span></code>] and similar <a class="reference external" href="https://support.f5.com/csp/article/K26582310">K26582310</a></p></li>
+<li><p>Current status of MCP can be obtained from <code class="docutils literal notranslate"><span class="pre">bigstart</span> <span class="pre">status</span> <span class="pre">mcpd</span></code></p></li>
+<li><p>SSLO iAppLX <strong>Deploy</strong> and <strong>Delete</strong> operations modify the <em>local</em> MCP configuration</p></li>
+</ul>
+</div>
+<div class="section" id="ifile">
+<h3>iFile</h3>
+<div class="section" id="introduction">
+<h4>Introduction</h4>
+<p>Starting with 9.0, an LTM iFile is now the <em>source of truth</em> for the SSLO configuration, instead of REST. SSLO (and iApps in general) normally depend on the GOSSIP protocol to replicate its REST configurations across different HA devices but this can be unreliable.</p>
+<p>The SSLO control plane solution relies on the iAppLX framework which in turn relies on the restjavad process. The task of the restjavad REST worker replication mechanism based on the GOSSIP Protocol was to synchronize live REST resources between multiple peer devices. But GOSSIP is just a black box from the point of view of the iApp SSLO and this can make troubleshooting very difficult.</p>
+<p>In earlier releases of SSLO it was discovered that GOSSIP could encounter issues when trying to duplicate iApplx SSLO blocks: for example, when the generation ID (version) of the blocks on these HA device configurations diverge to such an extent that GOSSIP stops replicating due to conflicts.</p>
+<p>To address this architectural constraint, SSLO will now completely bypass GOSSIP and use MCP file objects - in particular an iFile - to copy pending SSLO object updates between peer devices.</p>
+<p>iFile restoration on the Standby device then requires a CMI sync.</p>
+</div>
+<div class="section" id="source">
+<h4>Source</h4>
+<p>The latest working copy of the iFile
+<code class="docutils literal notranslate"><span class="pre">/tmp/ssloConfigs.json</span></code>
+is also added to the cache path
+<code class="docutils literal notranslate"><span class="pre">/config/filestore/files_d/Common_d/ifile_d/.</span></code></p>
+<p>Below is an example of the iFile created for the current SSLO configuration.  It is version 3 of this configuration because “_3” is appended to the filename.</p>
+<p><code class="docutils literal notranslate"><span class="pre">cat</span> <span class="pre">/config/filestore/files_d/Common_d/ifile_d/:Common:ssloF_global.app:SSLOiFile_60542_3</span> <span class="pre">|</span> <span class="pre">jq</span></code></p>
+<p>The flag <em>-hidden</em> must be added to return the cache-path using TMSH</p>
+<p><code class="docutils literal notranslate"><span class="pre">tmsh</span> <span class="pre">list</span> <span class="pre">sys</span> <span class="pre">file</span> <span class="pre">ifile</span> <span class="pre">/Common/ssloF_global.app/SSLOiFile</span> <span class="pre">all-properties</span> <span class="pre">-hidden</span></code></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sys</span> <span class="n">file</span> <span class="n">ifile</span> <span class="o">/</span><span class="n">Common</span><span class="o">/</span><span class="n">ssloF_global</span><span class="o">.</span><span class="n">app</span><span class="o">/</span><span class="n">SSLOiFile</span> <span class="p">{</span>
+  <span class="n">app</span><span class="o">-</span><span class="n">service</span> <span class="o">/</span><span class="n">Common</span><span class="o">/</span><span class="n">ssloF_global</span><span class="o">.</span><span class="n">app</span><span class="o">/</span><span class="n">ssloF_global</span>
+  <span class="n">cache</span><span class="o">-</span><span class="n">path</span> <span class="o">/</span><span class="n">config</span><span class="o">/</span><span class="n">filestore</span><span class="o">/</span><span class="n">files_d</span><span class="o">/</span><span class="n">Common_d</span><span class="o">/</span><span class="n">ifile_d</span><span class="o">/</span><span class="p">:</span><span class="n">Common</span><span class="p">:</span><span class="n">ssloF_global</span><span class="o">.</span><span class="n">app</span><span class="p">:</span><span class="n">SSLOiFile_60542_3</span>
+  <span class="n">revision</span> <span class="mi">6</span>
+  <span class="n">source</span><span class="o">-</span><span class="n">path</span> <span class="n">file</span><span class="p">:</span><span class="o">///</span><span class="n">tmp</span><span class="o">/</span><span class="n">ssloConfigs</span><span class="o">.</span><span class="n">json</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="location-specific-objects">
+<h4>Location Specific Objects</h4>
+<p>BIG-IP HA uses <em>Traffic Groups</em> to specify what is shared between HA peers. BIG-IP network objects can be restricted for sync, remaining <em>local only</em> with <strong>traffic-group-local-only</strong> to avoid fail-over. The following LTM related SSLO objects are <em>location specific</em> and outside scope of MCP synchronization process and must be manually added to both peer devices (since other objects depend on their existence) before SSLO is configured or synchronized.</p>
+<ul class="simple">
+<li><p>VLANs in the traffic group “traffic-group-local-only”.</p></li>
+<li><p>Static Self-IPs in the traffic group “traffic-group-local-only”</p></li>
+<li><p>Route domains which are not assigned to any traffic group</p></li>
+</ul>
+</div>
+<div class="section" id="snapshot">
+<h4>Snapshot</h4>
+<p>Snapshot functionality (camera icon top right in the UI) will be introduced in SSLO 10.x and above so that an administrator can easily save and restore the SSLO configuration to an earlier state.</p>
+<p>The snapshot will contain both the SSLO config blocks and SSLO created TMSH objects to retain out-of-band changes.</p>
+<hr class="docutils"/>
+<p><strong>NOTE</strong></p>
+<p>Use only one BIG-IP for combined LTM and SSLO management operations. CMI syncronization must be performed <em>from</em> the same BIG-IP used for SSLO management <em>to</em> its HA peer. This avoids potential problems caused by a stale REST database being copied over the top of a REST database (or iFile) that contains the most current SSLO objects. The MCP synchronization must occur from the BIG-IP used for SSLO management operations to its peer, regardless of active/standby state.</p>
+</div>
+</div>
+<hr class="docutils"/>
+<div class="section" id="sslo-templates">
+<h3>SSLO Templates</h3>
+<p>SSLO’s object configuration templates serve as the basis for new configurations, and what defaults appear in the SSLO GUI. These templates are installed when the iApp Upgrade or Install process runs.</p>
+<hr class="docutils"/>
+<p><strong>NOTE</strong></p>
+<p>The templates are unique to each version. Each SSLO peer must have templates that:</p>
+<ul class="simple">
+<li><p>Match the same version of the SSLO RPM installed on the system</p></li>
+<li><p>Match between HA peers</p></li>
+</ul>
+<p>You can <a class="reference external" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/ts_procedures.html#get-current-templates">view them</a> to understand how the data are organized.</p>
+</div>
+</div>
+<div class="section" id="sslo-topologies-vs-ltm-virtual-servers">
+<h2>SSLO Topologies vs LTM Virtual Servers</h2>
+<p>Toplogy/Virtual configuration objects have a human readable relationship for easy correlation in logs, statistics, and the like.</p>
+<table border="1" class="docutils">
+<thead>
+<tr>
+<th>SSLO Topology Name</th>
+<th>SSLO Interception Rule Name</th>
+<th>LTM Virtual Server Name</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>example_topo</td>
+<td>example_topo-in-t-4</td>
+<td>example_topo.app/example_topo_in-t-4</td>
+</tr>
+</tbody>
+</table>
+<p>When troubleshooting, be sure to pay close attention to what virtual servers are associated with what topologies.</p>
+</div>
+<div class="section" id="ssl-orchestrator-ha-verification">
+<h2>SSL Orchestrator HA verification</h2>
+<p>SSL Orchestrator (SSLO) 7.5 and later contain functions to validate the High Availability (HA) configuration and REST framework status. These functions are activated with the “HA Status” or “3 Blocks” menu in the upper-right corner is clicked. Once activated, the HA status is analyzed, and the results printed to the browser. The following categories are tested:</p>
+<p><strong>v7</strong></p>
+<ul class="simple">
+<li><p>Echo Verification</p></li>
+<li><p>GOSSIP State</p></li>
+<li><p>CMI Sync Status</p></li>
+<li><p>Device Group Failover Status</p></li>
+<li><p>Peer HA Verification Response</p></li>
+</ul>
+<p><strong>v8.2+</strong></p>
+<ul class="simple">
+<li><p>ConfigSync IP</p></li>
+<li><p>NTP</p></li>
+<li><p>DNS</p></li>
+<li><p>Port Lockdown</p></li>
+<li><p>Communication Status
+note: Communication Status displays other status dynamically</p></li>
+</ul>
+<p>In a working deployment, each of these will produce an OK result.</p>
+<p>For error cases, more troubleshooting is required to resolve the problem. For v7-8, you should perform these manual checks from the command line to resolve any problems encountered.</p>
+<p>Note:</p>
+<p>If the 3 Blocks / HA Status icon is missing, SSLO is not operating in HA-aware mode. It is not possible to switch SSLO to HA-aware mode. See <a class="reference external" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/ts_procedures.html#completely-remove-sslo">Completely remove SSLO</a> for instructions.</p>
+</div>
+</div>
+</div>
+<div class="row next-prev-btn-row">
+<div class="col-lg-12">
+<a accesskey="p" class="btn btn-primary left" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/introduction.html" title="Introduction"><i aria-hidden="true" class="fa fa-arrow-circle-left"></i> Previous</a>
+<a accesskey="n" class="btn btn-primary right" href="https://clouddocs.f5.com/sslo-troubleshooting-guide/troubleshooting.html" title="Fault Identification Chart">Next <i aria-hidden="true" class="fa fa-arrow-circle-right"></i></a>
+</div>
+</div>
+<!-- Qualtrics -->
+<div id="ZN_4N7PlIMqx2BMY6O">
+<!--DO NOT REMOVE-CONTENTS PLACED HERE-->
+</div>
+<!-- Qualtrics -->
+</article>
+</body></html>

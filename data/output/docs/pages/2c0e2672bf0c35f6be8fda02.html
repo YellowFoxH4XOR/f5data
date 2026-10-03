@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ltm rule command HTTP proxy</title><link rel="canonical" href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_HTTP_proxy.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>ltm rule command HTTP proxy</h1><p>cli_reference · 17.0.0</p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_HTTP_proxy.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="ltm-rule-command-http-proxy">
+<span id="id1"></span><h1>ltm rule command HTTP proxy</h1>
+<html>
+<pre>
+iRule(1)						BIG-IP TMSH Manual						  iRule(1)
+
+HTTP::proxy
+       Controls the application of HTTP proxy when using an Explicit HTTP profile.  Controls HTTP Proxy features when using an
+       Explicit HTTP or HTTP proxy chaining profile.
+
+SYNOPSIS
+       HTTP::proxy
+
+       HTTP::proxy ('enable' | 'disable')
+
+       HTTP::proxy 'uri-rewrite' ('enable' | 'disable')
+
+       HTTP::proxy ('addr' | 'port' | 'rtdom' | 'exists' | 'iptuple')
+
+       HTTP::proxy 'chain' ('enable' | 'disable' |
+		   ('port' (PORT)?) | ('host' (VALUE | VALUE PORT)?))
+
+       HTTP::proxy 'chain' 'retry'
+
+DESCRIPTION
+       When an Explicit HTTP profile is applied to a virtual server, HTTP::proxy allows control of whether the BIG-IP will handle
+       the proxy of the connection locally or send it to a downstream pool for processing instead.
+
+       This functionality was introduced in v11.6, and is available for v11.5.1 via an Engineering Hotfix.
+
+       HTTP::proxy allows inspection of the results of the DNS lookup used in the Explicit HTTP Proxy.
+
+       When a HTTP Proxy Chaining profile is applied to a virtual server, HTTP::proxy chain may be used to control the CONNECT
+       request used to connect to the next proxy in the chain.
+
+       This functionality was introduced in v13.0.
+
+       Syntax
+
+       HTTP::proxy
+
+	   * Returns true (1) if the local proxy handler is enabled, or false (0) if it is presently disabled.
+
+       HTTP::proxy <enable disable="" |="">
+
+	   * Allows control of proxy processing. If HTTP::proxy disable is called, the proxy will not attempt to look up the proxy request's hostname, it will simply send the request, unmodified, to the default pool.
+
+       HTTP::proxy uri-rewrite <enable disable="" |="">
+
+	   * Allows control of the uri sent to the next hop.  The uri will be re-written into "proxy form" if this is enabled, with an added "http://<host name="">" or "https://<host name=""> prefix.
+
+       HTTP::proxy addr
+
+	   * Returns the IP address resolved by the HTTP Explicit Proxy for the hostname in the request.
+
+       HTTP::proxy port
+
+	   * Gets the port used to connect to the remote server for a HTTP Explicit Proxy request.
+
+       HTTP::proxy rtdom
+
+	   * Returns the route domain id being used to connect to the remote server for the HTTP Explicit Proxy request.
+
+       HTTP::proxy exists
+
+	   * Returns TRUE if the HTTP Explicit Proxy has resolved the request's hostname.  (This command may be used to check whether other HTTP::proxy commands may be safely used in this context.)
+
+       HTTP::proxy iptuple
+
+	   * Returns the full IP Tuple resolved by the HTTP Explicit Proxy for the request.
+
+       HTTP::proxy chain <enable disable="" |="">
+
+	   * Allows control of the HTTP Proxy Chaining feature.  If it is disabled, then a HTTP CONNECT will not be added to the outgoing request.
+
+       HTTP::proxy chain host <hostname> <port>
+
+	   * Allows getting or setting the hostname used in the HTTP Proxy Chaining CONNECT request.  The port field is optional
+
+       HTTP::proxy chain port <port>
+
+	   * Allows getting or setting the port described in the hostname used for HTTP Proxy Chaining.
+
+       HTTP::proxy chain retry
+
+	   * If the status code in the response from the HTTP Proxy Chaining CONNECT request was not a 200, then the connection will be aborted.  If this command is called, then the request will be retried once again.  (It may be useful to alter the headers sent to include extra authentication information in the new CONNECT request.)
+
+RETURN VALUE
+VALID DURING
+       HTTP_PROXY_REQUEST, HTTP_REQUEST, HTTP_REQUEST_DATA, HTTP_RESPONSE, HTTP_RESPONSE_DATA, HTTP_PROXY_CONNECT,
+       HTTP_PROXY_RESPONSE
+
+EXAMPLES
+	# Example 1: Simple Proxy Chaining
+
+	when HTTP_PROXY_REQUEST {
+	    if { (not [HTTP::method] == "CONNECT") &amp;&amp; [URI::host [HTTP::uri]] ends_with ".internal.domain.com" } {
+		  HTTP::proxy disable
+		  pool internal_proxy_3128
+	    } else {
+		  HTTP::proxy enable
+	    }
+	}
+
+	# Example 2: Advanced Proxy Chaining &amp; URI Rewriting
+
+	when HTTP_PROXY_REQUEST {
+	    log local0. "[HTTP::method] [HTTP::uri]"
+	    switch [string tolower [URI::host [HTTP::uri]]] {
+		"www.google.com" {
+		     # send request to default pool (aka proxy-chaining)
+		     HTTP::proxy disable
+		 }
+		 "www.abc.com" {
+		     # change request to a different host - remains a proxy request
+		     HTTP::uri http://www.google.com/
+		 }
+		 "www.def.com" {
+		     # change request to a normal (not proxy) request - goes to the default pool
+		     HTTP::uri /def.html
+		  }
+	     }
+	}
+
+	when HTTP_REQUEST {
+	    log local0. "[HTTP::method] [HTTP::uri]"
+	}
+
+	# Example 3: Proxy Chaining via Categorization (Requires either an SWG or URL Filtering Subscription)
+
+	when RULE_INIT {
+	    log local0. "Proxy Chain iRule"
+	    set static::Proxy_Chain_categories {
+	       /Common/Restaurants_and_Dining
+	    }
+	    set static::Proxy_Chain_debug 1
+	}
+
+	when HTTP_PROXY_REQUEST {
+	    set proxy_chain 0
+	    if { $static::Proxy_Chain_debug } { log local0. "URI: [HTTP::uri]" }
+
+	    # Check for a category match
+	    set reply [getfield [CATEGORY::lookup [HTTP::uri]] " " 1]
+	    if {[lsearch -exact $static::Proxy_Chain_categories $reply] &gt;= 0}{
+		if { $static::Proxy_Chain_debug } { log local0. "HIT: The category $reply should be bypassed for [HTTP::uri]" }
+		set proxy_chain 1
+	    }
+
+	    # Check for a URI::host for HTTP connections
+	    if {[URI::host [HTTP::uri]] == "www.cariboucoffee.com"} {
+		set proxy_chain 1
+	    }
+
+	    # Perform the prescibed action
+	    if { $proxy_chain } {
+		if { $static::Proxy_Chain_debug } { log local0. "Proxy Chain: [HTTP::method] URI:[HTTP::uri]" }
+		HTTP::proxy disable
+		snat 10.10.1.10
+		pool squid
+	    }
+	}
+
+	# Example 4: Explicit Proxy logging
+
+	when HTTP_REQUEST {
+	    if { [HTTP::proxy exists] } {
+		log local0. "Explicit proxy request: [HTTP::proxy addr]:[HTTP::proxy port] [HTTP::uri]"
+	    } else {
+		log local0. "Local request:[HTTP::uri]"
+	    }
+
+	}
+
+	# Example 5: Proxy Chaining through a VIP-on-VIP solution
+
+	when HTTP_REQUEST {
+	    if { [HTTP::proxy exists] } {
+		# Use the tunnel_http_80 virtual, but keep the
+		# resolved address to connect to.
+		virtual tunnel_http_80 [HTTP::proxy addr] [HTTP::proxy port]
+	     }
+	}
+
+HINTS
+SEE ALSO
+CHANGE LOG
+       @BIGIP-11.6.0 --First introduced the command.  @BIGIP-13.0.0 --Added HTTP::proxy and HTTP::proxy chain sub-commands.
+
+BIG-IP							    2022-04-12							  iRule(1)
+</port></port></hostname></enable></host></host></enable></enable></pre>
+</html>
+</div>
+</div>
+</article>
+</body></html>
