@@ -68,7 +68,7 @@ def main() -> None:
                    help="output/cache directory (default: data/output)")
     p.add_argument("--refresh", action="store_true",
                    help="ignore cache; re-scrape everything")
-    p.add_argument("--limit", type=_positive_int, default=None,
+    p.add_argument("--limit", type=int, default=None,
                    help="cap reports / KB articles / documentation page fetches")
     p.add_argument("--ttl-days", type=int, default=None,
                    help="re-scrape content older than N days (default: 7 for docs, 0/always otherwise)")
@@ -90,6 +90,8 @@ def main() -> None:
     args = p.parse_args()
     if args.ttl_days is None:
         args.ttl_days = 7 if args.command == "docs" else 0
+    if args.command in ("docs", "updates") and args.limit is not None and args.limit <= 0:
+        p.error("--limit must be greater than zero for docs and updates")
     if args.doc_source and args.command != "docs":
         p.error("--doc-source is only supported by the docs command")
     if args.local and args.command != "updates":
