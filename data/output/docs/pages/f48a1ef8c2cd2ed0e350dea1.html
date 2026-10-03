@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>BIG-IP AS3 Best Practices</title><link rel="canonical" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/best-practices.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>BIG-IP AS3 Best Practices</h1><p>automation_reference · 3.57.0</p><a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/best-practices.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="big-ip-as3-best-practices">
+<span id="best-practice"></span><h1>BIG-IP AS3 Best Practices</h1>
+<p>This page contains best practices for using BIG-IP AS3 as well as a brief architectural overview.
+This page is also on DevCentral, where there may be more frequent updates and user interaction, see <a class="reference external" href="https://community.f5.com/t5/technical-articles/as3-best-practice/ta-p/287466">https://community.f5.com/t5/technical-articles/as3-best-practice/ta-p/287466</a>.</p>
+<div class="section" id="architecture-overview">
+<h2>Architecture overview</h2>
+<p>In the TMOS space, the services that BIG-IP AS3 provides are processed by a daemon named <strong>restnoded</strong>. It relies on the existing BIG-IP framework for deploying declarations. The framework consists of <strong>httpd</strong>, <strong>restjavad</strong> and <strong>icrd_child</strong> as depicted in the following image (the numbers in parenthesis are listening TCP port numbers).</p>
+<img alt="../_images/architecture.png" src="../assets/e510982cf9c6a4206cdcc4d1.png"/>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+<p>These processes are also used by other services. For example, <strong>restjavad</strong> is a gateway for all the iControl REST requests, and is used by a number of services on BIG-IP and BIG-IQ. When an interaction between any of the processes fails, the BIG-IP AS3 operation fails. The failures stem from lack of resources, timeouts, data exceeding predefined thresholds, resource contention among the services, and more. In order to complete BIG-IP AS3 operations successfully, use the following best practices.</p>
+</div>
+<div class="section" id="best-practices">
+<h2>Best Practices</h2>
+<div class="section" id="your-single-source-of-truth-is-your-declaration">
+<h3>Your single source of truth is your declaration</h3>
+<p>Refrain from overwriting the BIG-IP AS3-deployed BIG-IP configuration by other means such as TMSH, GUI, or iControl REST calls.</p>
+<p>If you initially used the BIG-IP AS3 declarative model, the source of truth for your device’s configuration is in your declaration, not the BIG-IP configuration files. Although BIG-IP AS3 tries to weigh BIG-IP locally stored configurations as much as it can, any discrepancy between the declaration and the current configuration on BIG-IP may cause the BIG-IP AS3 to perform less efficiently or error unexpectedly. When you want to change a section of a tenant (for example, a pool name change), modify the declaration and submit it.</p>
+</div>
+<div class="section" id="keep-the-number-of-applications-in-one-tenant-to-a-minimum">
+<h3>Keep the number of applications in one tenant to a minimum</h3>
+<p>BIG-IP AS3 processes each tenant separately. Having too many applications (virtual servers) in a single tenant (partition) results in a lengthy poll when determining the current configuration. In extreme cases (thousands of virtual servers), the action may time out. When you want to deploy a thousand or more applications on a single device, consider chunking the work for BIG-IP AS3 by spreading the applications across multiple tenants (say, 100 applications per tenant).</p>
+<p>BIG-IP AS3 tenant access behavior is the same as BIG-IP partition behavior. A virtual that is not in the Common partition cannot gain access to a pool in another partition, and in the same way, a BIG-IP AS3 application does not have access to a pool or profile in another tenant. In order to share configurations across tenants, BIG-IP AS3 allows configuration of the “Shared” application within the “Common” tenant (see <a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/declaration-purpose-function.html#shared-ref"><span class="std std-ref">Shared</span></a>). BIG-IP AS3 avoids race conditions while configuring /Common/Shared by processing additions first and deletions last, as shown below. This dual process may cause some additional delay in declaration handling.</p>
+<img alt="../_images/as3-processing.png" src="../assets/56915d33e665031c4c5e9643.png"/>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="overwrite-rather-than-patching-posting-is-a-more-efficient-practice-than-patching">
+<h3>Overwrite rather than patching (POSTing is a more efficient practice than PATCHing)</h3>
+<p>BIG-IP AS3 is stateless and idempotent. It polls BIG-IP for its full configuration, performs a current-vs-desired state comparison, and generates an optimal set of REST calls to fill the differences. When the initial state of BIG-IP is blank, the poll time is negligible. This is why initial configuration with BIG-IP AS3 is often quicker than subsequent changes, especially when the tenant contains a large number of applications.</p>
+<p>BIG-IP AS3 provides the means to partially modify using PATCH (see <a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/as3-api.html#patch-ref"><span class="std std-ref">Method:Patch</span></a>), but do not expect PATCH changes to be performant. BIG-IP AS3 processes each PATCH by (1) performing a GET to obtain the last declaration, (2) patching that declaration, and (3) POSTing the entire declaration to itself. A PATCH of one pool member is therefore slower than a POST of your entire tenant configuration. If you decide to use PATCH, make sure that the tenant configuration is a manageable size.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Using PATCH to make a surgical change is convenient, but using PATCH over POST breaks the declarative model. Your declaration should be your single source of truth. If you include PATCH, the source of truth becomes “POST this file, then apply one or more PATCH declarations.”</p>
+</div>
+</div>
+<div class="section" id="get-the-latest-version">
+<h3>Get the latest version</h3>
+<p>BIG-IP AS3 is evolving rapidly with new features that customers have been wishing for along with fixes for known issues.</p>
+<p>Visit the <a href="https://github.com/F5Networks/f5-appsvcs-extension" target="_blank">F5 BIG-IP AS3 repository on GitHub</a>. The <a href="https://github.com/F5Networks/f5-appsvcs-extension/issues" target="_blank">Issues</a> page shows what features and fixes have been incorporated.</p>
+</div>
+<div class="section" id="use-the-administrator-role">
+<h3>Use the administrator role</h3>
+<p>Use a user with the administrator role when you submit your declaration to a target BIG-IP device. Your may find your role insufficient to manipulate BIG-IP objects that are included in your declaration. Even one authorized item will cause the entire operation to fail and role back.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">You must use the <strong>admin</strong> user (and not just a user with administrator privileges) to install BIG-IP AS3.</p>
+</div>
+<p>See the following articles for more on BIG-IP user and role.</p>
+<p><a class="reference external" href="https://techdocs.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/bigip-user-account-administration-12-0-0/4.html">Manual Chapter: User Roles (12.x)</a> <br/>
+<a class="reference external" href="https://techdocs.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/bigip-user-account-administration-13-0-0/3.html">Manual Chapter: User Roles (13.x)</a> <br/>
+<a class="reference external" href="https://techdocs.f5.com/en-us/bigip-14-0-0/big-ip-systems-user-account-administration-14-0-0/administrative-partitions.html">Manual Chapter: User Roles (14.x)</a> <br/>
+<a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/prereqs.html"><span class="doc">Prerequisites and Requirements</span></a></p>
+</div>
+<div class="section" id="use-basic-authentication-for-a-large-declaration">
+<h3>Use Basic Authentication for a large declaration</h3>
+<p>You can choose either Basic Authentication (HTTP Authorization header) or Token-Based Authentication (F5 proprietary X-F5-Auth-Token) for accessing BIG-IP. While the Basic Authentication can be used any time, a token obtained for the Token-Based Authentication expires after 1,200 seconds (20 minutes). While BIG-IP AS3 does re-request a new token upon expiry, it requires time to perform the operation, which may cause BIG-IP AS3 to slow down. Also, the number of tokens for a user is limited to 100 (since BIG-IP AS3 13.1), therefore, if you happen to have other iControl REST players (such as BIG-IQ or your custom iControl REST scripts) using the Token-Based Authentication for the same user, BIG-IP AS3 may not be able to obtain the next token, and your request will fail.</p>
+<p>See the following articles for more on the Token-Based Authentication.</p>
+<p><a class="reference external" href="https://community.f5.com/t5/technical-articles/demystifying-icontrol-rest-part-6-token-based-authentication/ta-p/286793">Demystifying iControl REST Part 6: Token-Based Authentication (DevCentral article)</a> <br/>
+<a class="reference external" href="https://community.f5.com/t5/technical-articles/icontrol-rest-authentication-token-management/ta-p/287462">iControl REST Authentication Token Management (DevCentral article)</a>
+<a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/authentication.html"><span class="doc">Authentication and Authorization</span></a></p>
+</div>
+<div class="section" id="choose-the-best-window-for-deployment">
+<h3>Choose the best window for deployment</h3>
+<p>BIG-IP AS3 (<strong>restnoded</strong> daemon) is a Control Plane process. It competes against other Control Plane processes such as <strong>monpd</strong> and iRules LX (node.js) for CPU/memory resources. BIG-IP AS3 uses the iControl REST framework for manipulating the BIG-IP resources. This implies that its operation is impacted by any processes that use <strong>httpd</strong> (such as the BIG-IP GUI), <strong>restjavad</strong>, <strong>icrd_child</strong> and <strong>mcpd</strong>. If you have resource-hungry processes that run periodically (such as <strong>avrd</strong>), you may want to run your BIG-IP AS3 declaration during some other time window.</p>
+<p>See the following K articles for a list of processes:</p>
+<p><a class="reference external" href="https://support.f5.com/csp/article/K89999342">K89999342 BIG-IP Daemons (12.x)</a> <br/>
+<a class="reference external" href="https://support.f5.com/csp/article/K05645522">K05645522 BIG-IP Daemons (v13.x)</a> <br/>
+<a class="reference external" href="https://support.f5.com/csp/article/K67197865">K67197865 BIG-IP Daemons (v14.x)</a> <br/>
+<a class="reference external" href="https://support.f5.com/csp/article/K14020">K14020: BIG-IP ASM daemons (11.x - 15.x)</a> <br/>
+<a class="reference external" href="https://support.f5.com/csp/article/K14462">K14462: Overview of BIG-IP AAM daemons (11.x - 15.x)</a> <br/></p>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+</div>
+<div class="section" id="workarounds">
+<h2>Workarounds</h2>
+<p>If you experience issues such as a timeout on <strong>restjavad</strong>, it is possible your BIG-IP AS3 operation had resource issues. After reviewing the guidance on this page you are still unable to alleviate the problem, you may be able to temporarily fix it using the following guidance.</p>
+<div class="section" id="increase-the-restjavad-memory-allocation">
+<span id="restjavadmem"></span><h3>Increase the restjavad memory allocation</h3>
+<p>The memory size of restjavad can be increased by the following tmsh sys db commands.</p>
+<div class="admonition warning">
+<p class="first admonition-title">Warning</p>
+<p class="last">These commands have changed for some versions of BIG-IP, see <a class="reference external" href="https://my.f5.com/manage/s/article/K000133258">K000133258: Sys DB restjavad.useextramb has been removed after upgrade</a> for details.</p>
+</div>
+<div class="admonition important">
+<p class="first admonition-title">Important</p>
+<p class="last">Do not provision more than 2400MB of memory for restjavad. For more information, see <a class="reference external" href="https://support.f5.com/csp/article/K000133258">K000133258: Restjavad memory provisioning threshold limit</a></p>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">tmsh</span> <span class="pre">modify</span> <span class="pre">sys</span> <span class="pre">db</span> <span class="pre">provision.extramb</span> <span class="pre">value</span> <span class="pre">&lt;value&gt;</span></code></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">BIG-IP AS3 performance testing shows that a value of <strong>256</strong> is a good place to start for extramb. If you are using other iControl LX extensions in addition to BIG-IP AS3, we recommend starting with a value of <strong>512</strong>.</p>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">tmsh</span> <span class="pre">modify</span> <span class="pre">sys</span> <span class="pre">db</span> <span class="pre">restjavad.useextramb</span> <span class="pre">value</span> <span class="pre">true</span></code></p>
+<p>The provision.extramb db key changes the maximum Java heap memory to (192 + &lt;value&gt; * 8 / 10) MB. The default value is 0. After changing the memory size, you need to restart restjavad.</p>
+<p><code class="docutils literal notranslate"><span class="pre">tmsh</span> <span class="pre">restart</span> <span class="pre">sys</span> <span class="pre">service</span> <span class="pre">restjavad</span></code></p>
+<p>See <a class="reference external" href="https://support.f5.com/csp/article/K26427018">K26427018: Overview of Management provisioning</a> for more on the memory allocation.</p>
+</div>
+<div class="section" id="request-failed-errors">
+<h3>Request failed errors</h3>
+<p>If you receive an error code when submitting a declaration, then REST responses are limited to 2k bytes. This issue has been resolved in TMOS 16.1 and later.</p>
+<p>If you are using TMOS 16.0 or earlier and are encountering a response similar to:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span>{
+    "code": 422,
+    "message": "request failed with null exception",
+    "referer": "192.168.100.100",
+    "restOperationId": "130704167,
+    "kind": ":resterrorresponse"
+}
+</pre></div>
+</div>
+<p>You can either upgrade to TMOS 16.1 or later, or if you have a <strong>controls</strong> section in your declaration with <strong>traceResponse</strong> set to <strong>true</strong>, set it to <strong>false</strong>.</p>
+</div>
+<div class="section" id="enable-encodedeclarationmetadata">
+<h3>Enable encodeDeclarationMetadata</h3>
+<p>This option compresses tenant metadata before storing it in the datagroup, maximizing storage efficiency.Encoding also helps accommodate larger declarations by fitting metadata within the 64KB MCPD storage limit. Once enabled, it will be deficult to disable, as AS3 relies on the encoded metadata to manage tenant configurations. Hence, F5 recommends you to enable this parameter only when you encounter the below error while posting a large AS3 declaration.</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"code"</span><span class="p">:</span><span class="w"> </span><span class="mi">500</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"declarationFullId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"autogen_28ad72e1-a42c-44fb-b521-2e46a83f4344"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="s2">"POST http://admin:XXXXXX@localhost:8100/mgmt/tm/ltm/data-group/internal store a declaration response=400 body={\"code\":400,\"message\":\"01070712:3: Max string size exceeded during update of attribute:data type:class_value_item max:65520 received:65529\",\"errorStack\":[],\"apiError\":3}"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"declarationId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"autogen_28ad72e1-a42c-44fb-b521-2e46a83f4344"</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+<p><strong>To enable encodeDeclarationMetadata:</strong></p>
+<ol class="arabic simple">
+<li>Set the <code class="docutils literal notranslate"><span class="pre">encodeDeclarationMetadata</span></code> to <code class="docutils literal notranslate"><span class="pre">true</span></code> using the <a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/settings-endpoint.html"><span class="doc">Settings Endpoint</span></a>.</li>
+<li>Re-POST the existing AS3 declaration to the BIG-IP system.</li>
+</ol>
+<p><strong>To disable encodeDeclarationMetadata:</strong></p>
+<ol class="arabic simple">
+<li>Delete the existing AS3 Configuration.</li>
+<li>Manually remove any datagroups named <code class="docutils literal notranslate"><span class="pre">____appsvcs_declaration-*</span></code> from <strong>Local Traffic ›› iRules: Data Group List</strong> on BIG-IP.</li>
+<li>Set the <code class="docutils literal notranslate"><span class="pre">encodeDeclarationMetadata</span></code> to <code class="docutils literal notranslate"><span class="pre">false</span></code> using the <a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/settings-endpoint.html"><span class="doc">Settings Endpoint</span></a> and Re-POST the AS3 declaration to the BIG-IP system.</li>
+</ol>
+</div>
+<div class="section" id="decrease-the-verbosity-levels-of-restjavad-and-icrd-child">
+<h3>Decrease the verbosity levels of restjavad and icrd_child</h3>
+<p>Writing log messages to the file system does take system resources. Writing unnecessarily large amount of messages to files would increase the I/O wait, hence results in slowness of processes. If you have changed the verbosity levels of restjavad and/or icrd_child, consider rolling back the default levels.</p>
+<p>See <a class="reference external" href="https://support.f5.com/csp/article/K15436">K15436: Configuring the verbosity for restjavad logs on the BIG-IP system</a> for methods to change verbosity level.</p>
+</div>
+<div class="section" id="increase-timeout-values-if-the-rest-api-is-timing-out">
+<span id="restapi"></span><h3>Increase timeout values if the REST API is timing out</h3>
+<p>If you find that the REST API is timing out, you can increase the timeout values for ircd, restjavad, and restnoded. These timeouts may occur due to large responses, such as when requesting the status of all virtual servers or all Wide-IPs.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Not all variables are present in all BIG-IP versions.  See <a class="reference external" href="https://support.f5.com/csp/article/K94602685">K94602685</a> and the associated <a class="reference external" href="https://cdn.f5.com/product/bugtracker/ID858189.html">Bug ID 858189</a> for information on specific versions.</p>
+</div>
+<p>To increase timeout values, use the following commands (the defaults are all 60 seconds):</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">tmsh</span> <span class="pre">modify</span> <span class="pre">sys</span> <span class="pre">db</span> <span class="pre">icrd.timeout</span> <span class="pre">value</span> <span class="pre">180</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">tmsh</span> <span class="pre">modify</span> <span class="pre">sys</span> <span class="pre">db</span> <span class="pre">restjavad.timeout</span> <span class="pre">value</span> <span class="pre">180</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">tmsh</span> <span class="pre">modify</span> <span class="pre">sys</span> <span class="pre">db</span> <span class="pre">restnoded.timeout</span> <span class="pre">value</span> <span class="pre">180</span></code></li>
+</ul>
+<p>And then save changes and restart related services:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">tmsh</span> <span class="pre">save</span> <span class="pre">sys</span> <span class="pre">config</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">tmsh</span> <span class="pre">restart</span> <span class="pre">sys</span> <span class="pre">service</span> <span class="pre">restjavad</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">tmsh</span> <span class="pre">restart</span> <span class="pre">sys</span> <span class="pre">service</span> <span class="pre">restnoded</span></code></li>
+</ul>
+<p>See <a class="reference external" href="https://support.f5.com/csp/article/K94602685">K94602685: REST API occasionally times out</a> for additional information.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="row next-prev-btn-row">
+<div class="col-lg-12">
+<a accesskey="p" class="btn btn-primary left" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/quick-start.html" title="Quick Start"><i aria-hidden="true" class="fa fa-arrow-circle-left"></i> Previous</a>
+<a accesskey="n" class="btn btn-primary right" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/http-methods.html" title="HTTP Methods">Next <i aria-hidden="true" class="fa fa-arrow-circle-right"></i></a>
+</div>
+</div>
+</article>
+</body></html>

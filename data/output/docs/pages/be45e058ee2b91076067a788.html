@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Lab 6: Device Service Clusters (DSC)</title><link rel="canonical" href="https://clouddocs.f5.com/training/community/f5cert/html/class2/modules/module06.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>Lab 6: Device Service Clusters (DSC)</h1><p>training_lab · See product applicability metadata</p><a href="https://clouddocs.f5.com/training/community/f5cert/html/class2/modules/module06.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!-- custom breadcrumb -->
+<h5>
+<a href="https://clouddocs.f5.com/training/community/f5cert/html/index.html">Unofficial - F5 Certification Exam Prep Material</a>
+              &gt; <a href="https://clouddocs.f5.com/training/community/f5cert/html/class2/class2.html">Symposium 2026 - BIG-IP Administrator:</a>
+<span class="right">
+<a href="https://clouddocs.f5.com/training/community/f5cert/html/_sources/class2/modules/module06.rst.txt" rel="nofollow">Source</a> |
+             <a href="https://github.com/f5devcentral/f5-agility-labs-cert">Edit on <i aria-hidden="true" class="fa fa-github"></i></a>
+</span>
+</h5>
+<!-- end custom breadcrumb -->
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="lab-6-device-service-clusters-dsc">
+<h1>Lab 6: Device Service Clusters (DSC)</h1>
+<p>This lab is designed to help you understand Device and Traffic Groups, as well as the process of building an Active-Standby HA pair. While there is a wizard, we will configuring this manually.</p>
+<div class="section" id="base-networking-and-ha-vlan">
+<h2>Base Networking and HA VLAN</h2>
+<p>You will be creating a high availability cluster using the second BIG-IP
+(<strong>bigip2)</strong> in your lab , so let’s prep our current BIG-IP and we will
+be creating a high availability VLAN.</p>
+<ol class="arabic simple">
+<li>On <strong>bigip01.f5demo.com</strong> archive your configuration in case you need
+to revert.</li>
+</ol>
+<ol class="loweralpha simple">
+<li>Go to <strong>System &gt; Archives</strong> and create a new archive.</li>
+<li>You will be using your third interface (1.3) for Network Failover and
+ConfigSync. This requires certain ports to be open on the Self IP;
+TCP port 4353 for ConfigSync and TCP port 1026 for Network Failover
+and TCP port 6699 for the Master Control Program.<ol class="lowerroman">
+<li>Build a new untagged VLAN <strong>ha_vlan</strong> on interface <strong>1.3</strong></li>
+<li>Add a self-IP address to the VLAN, <strong>10.1.30.245</strong> net mask
+<strong>255.255.255.0.</strong><ol class="arabic">
+<li>Under <strong>Port Lockdown</strong>, select <strong>Allow Default</strong>, to open
+ports required for HA communications.<ol class="loweralpha">
+<li>Optionally you could select: <strong>Allow Custom</strong> and add TCP
+ports 4353,1026 and 6699</li>
+</ol>
+</li>
+</ol>
+</li>
+</ol>
+</li>
+</ol>
+<ol class="arabic simple">
+<li>Go to <strong>https://10.1.1.246</strong> which is <strong>bigip02.f5demo.com</strong> and
+login with the credentials <strong>admin/f5UDFrocks!</strong>.<ol class="loweralpha">
+<li><strong>bigip02</strong> has already been licensed and provisioned. You will
+need to set up the base networking.</li>
+</ol>
+</li>
+</ol>
+<table border="1" class="docutils">
+<colgroup>
+<col width="24%"/>
+<col width="24%"/>
+<col width="26%"/>
+<col width="26%"/>
+</colgroup>
+<thead valign="bottom">
+<tr class="row-odd"><th class="head"><strong>Interface</strong></th>
+<th class="head"><strong>Untagged
+VLAN</strong></th>
+<th class="head"><strong>Self IP</strong></th>
+<th class="head"><strong>Netmask</strong></th>
+</tr>
+</thead>
+<tbody valign="top">
+<tr class="row-even"><td>1.1</td>
+<td>client_vlan</td>
+<td>10.1.10.246</td>
+<td>255.255.255.0</td>
+</tr>
+<tr class="row-odd"><td>1.2</td>
+<td>server_vlan</td>
+<td>10.1.20.246</td>
+<td>255.255.255.0</td>
+</tr>
+<tr class="row-even"><td>1.3</td>
+<td>ha_vlan</td>
+<td>10.1.30.246</td>
+<td>255.255.255.0</td>
+</tr>
+</tbody>
+</table>
+<ol class="loweralpha simple" start="2">
+<li>On the <strong>ha_vlan</strong> ip configure set <strong>Port Lockdown</strong> to <strong>Allow
+Default</strong></li>
+<li>Build the default gateway destination <strong>0.0.0.0</strong>, mask <strong>0.0.0.0</strong>,
+gateway ip address <strong>10.1.10.1</strong></li>
+<li>What is the status your BIG-IPs? Check the upper left-hand corner
+next to the F5 ball.</li>
+</ol>
+</div>
+<div class="section" id="configure-ha">
+<h2>Configure HA</h2>
+<ol class="arabic simple">
+<li><strong>On each BIG-IP</strong>, prior to building the Device Trust it is
+recommended renewing the BIG-IP self-signed certificate with valid
+information and re-generating the local Device Trust certificate.</li>
+</ol>
+<ol class="loweralpha">
+<li><p class="first">Under <strong>System &gt; Device Certificate &gt; Device Certificate</strong> select the
+<strong>Renew…</strong> button</p>
+<ol class="lowerroman simple">
+<li><strong>Common Name</strong>: &lt;the Hostname of the BIG-IP in the upper left
+corner&gt;</li>
+<li><strong>Country</strong>: United States (or your country of preference)</li>
+<li><strong>Lifetime</strong>: 3650<ol class="arabic">
+<li>Lifetime is important, if your cert expires your HA setup
+will fail.</li>
+</ol>
+</li>
+<li>Select <strong>Finished</strong>. Your browser will ask to exchange certs
+with the BIG-IP again.</li>
+</ol>
+</li>
+<li><p class="first">Under <strong>Device Management &gt; Device Trust &gt; Local Domain</strong> select
+<strong>Reset Device Trust…</strong></p>
+<p>i. In the <strong>Certificate Signing Authority</strong> select <strong>Generate New
+Self-Signed Authority</strong> and hit <strong>Update</strong>.</p>
+<p>ii. <strong>On each BIG-IP</strong> configure the device object failover parameters
+the BIG-IP will send to other BIG-IPs that want to be a part of a
+sync-only or sync-failover group.</p>
+</li>
+<li><p class="first">Click <strong>Device Management &gt; Device</strong> and select the local BIG-IP. It will have the self suffix.</p>
+<blockquote>
+<div><ol class="lowerroman simple">
+<li>Under <strong>Device Connectivity</strong> on the top bar select:<ol class="arabic">
+<li><strong>ConfigSync</strong></li>
+<li>Use the Self IP address of the HA VLAN for your <strong>Local Address</strong>.</li>
+<li>Hit <strong>Update</strong></li>
+</ol>
+</li>
+<li><strong>Network Failover</strong><ol class="arabic">
+<li>In the <strong>Failover Unicast Configuration</strong> section select
+the <strong>Add</strong> button</li>
+<li>Use the Self IP address the HA VLAN for your <strong>Address</strong></li>
+<li>Leave the <strong>Port</strong> at the default setting of 1026</li>
+<li><strong>Note:</strong> Multicast is for Viprion chasses only.</li>
+<li>Select <strong>Finished</strong></li>
+</ol>
+</li>
+<li><strong>Mirroring</strong></li>
+</ol>
+<blockquote>
+<div><ol class="arabic simple">
+<li><strong>Primary Local Mirror Address</strong>: use the Self IP address of
+the HA VLAN of this bigip</li>
+<li><strong>Secondary Local Mirror Address:</strong> None</li>
+<li>Select <strong>Update</strong></li>
+</ol>
+</div></blockquote>
+</div></blockquote>
+</li>
+</ol>
+<ol class="arabic simple" start="2">
+<li>On <strong>bigip01.f5demo.com</strong> build the Device Trust.<ol class="loweralpha">
+<li>Under <strong>Device Management &gt; Device Trust &gt; Device Trust Members</strong> and
+select <strong>Add</strong> to add other BIG-IP(s) you will trust.<ol class="lowerroman">
+<li><strong>Device IP Address</strong>: &lt;management IP address of the BIG-IP
+to add&gt;<ol class="arabic">
+<li>You could use any Self IP if the out-of-band management
+interface is not configured.</li>
+</ol>
+</li>
+<li>Enter the Administrator Username and Password of the BIG-IP
+you are trusting.</li>
+<li>Select <strong>Retrieve Device Information</strong><ol class="arabic">
+<li>The certificate information and name from the other BIG-IP
+should appear</li>
+<li>Select <strong>Device Certificate Matches</strong></li>
+</ol>
+</li>
+<li>Select <strong>Add Device</strong>.<ol class="arabic">
+<li>On each BIG-IP check the other BIG-IP in the <strong>Peer
+Authorities</strong> list. <strong>Is all the information there?</strong></li>
+</ol>
+</li>
+</ol>
+</li>
+</ol>
+</li>
+</ol>
+<blockquote>
+<div><a class="reference internal image-reference" href="https://clouddocs.f5.com/training/community/f5cert/html/_images/image66.png"><img alt="../../_images/image66.png" src="../assets/d4511ad17f018ef217917e09.png" style="width: 4.5974in; height: 0.53243in;"/></a>
+</div></blockquote>
+<ol class="arabic simple" start="3">
+<li>If some information is missing delete the trust and try again.</li>
+</ol>
+<blockquote>
+<div><a class="reference internal image-reference" href="https://clouddocs.f5.com/training/community/f5cert/html/_images/image67.png"><img alt="../../_images/image67.png" src="../assets/e43ef8768b00f766d2e8d8b0.png" style="width: 4.51948in; height: 0.50506in;"/></a>
+</div></blockquote>
+<ol class="arabic" start="4">
+<li><p class="first">What are the statuses of your BIG-IPs now?</p>
+<blockquote>
+<div><ol class="loweralpha simple">
+<li>They should be <strong>In Sync</strong>. But wait! We haven’t even created a
+device group! But remember the <strong>Device Trust</strong> creates a
+<strong>Sync-Only</strong> group for the certificates under the covers
+(<em>device-trust-group</em>) and that should be in sync.</li>
+<li>Click on <strong>In Sync</strong> in the upper Left corner or <strong>Device
+Management &gt; Overview</strong> to see the <strong>device_trust_group</strong>.</li>
+</ol>
+</div></blockquote>
+</li>
+<li><p class="first">On bigip01.f5demo.com create a new <strong>Sync-Failover</strong> device group</p>
+<ol class="loweralpha simple">
+<li><strong>Under Device Management &gt; Device Groups</strong> create a new device
+group.<ol class="lowerroman">
+<li><strong>Name:</strong> my-device-group</li>
+<li><strong>Group Type</strong>: Sync-Failover</li>
+<li>Add the members of the group to the <strong>Includes</strong> box and
+select <strong>Finished</strong>.</li>
+<li>Check <strong>Device Groups</strong> on each BIG-IP.</li>
+<li>Did you have to create the Device Group on the other BIG-IP?<ol class="arabic">
+<li>Is the full configuration synchronized yet? (No! Only the
+Device Group is sync’d)</li>
+</ol>
+</li>
+<li>What is your sync status?<ol class="arabic">
+<li>It should be <strong>Awaiting Initial Sync</strong></li>
+</ol>
+</li>
+<li>Click on the sync status or go to <strong>Device
+Management &gt; Overview</strong> (or click on <strong>Awaiting Initial</strong>
+Sync) of the BIG-IP with the <strong>good/current</strong> configuration.</li>
+<li>Click the device with the configuration you want to
+synchronize. <strong>Sync Options</strong> should appear.</li>
+<li><strong>Push the selected device configuration to the group</strong>. It
+could take up to 30 seconds for synchronization to complete.<ol class="arabic">
+<li>What are the statuses of your BIG-IPs? Do you have an
+active-standby pair?</li>
+<li>Are the configurations the same?</li>
+</ol>
+</li>
+</ol>
+</li>
+</ol>
+</li>
+<li><p class="first">Now that you have created your HA environment. HA selections will
+show up for SNAT addressed (not tied to your base network),
+persistence profiles and connection mirroring on virtual servers.</p>
+<ol class="loweralpha simple">
+<li>Go to your <strong>Active</strong> BIG-IP.</li>
+<li>Go to your persistence profile <strong>my-src-persist</strong> and check
+the <strong>Mirror Persistence</strong> box.</li>
+<li>Go to your <strong>www_vs</strong> virtual server and set the <strong>Default
+Persistence Profile</strong> to <strong>my-src-persistence.</strong></li>
+<li>Synchronize your changes. Did the changes sync?</li>
+<li>On each BIG-IP go to <strong>Module Statistics &gt; Local Traffic</strong> and
+bring up the persistence record statistics.<ol class="lowerroman">
+<li>Go to the home page of you www_vs web service
+(<a class="reference external" href="http://10.128.10.100">http://10.1.10.100</a>). Refresh a few
+times.</li>
+<li>Check the persistence records on each of your BIG-IPs, you
+should see the records are mirrored on each device.</li>
+</ol>
+</li>
+</ol>
+</li>
+<li><p class="first">Go to <strong>Device Management &gt; Traffic Groups</strong>. As you can see the
+default traffic group “<strong>traffic-group-1</strong>” already exists.</p>
+<ol class="loweralpha simple">
+<li>Select <strong>traffic-group-1</strong>, check out the page information and
+then select <strong>Force to Standby</strong>.</li>
+<li>What are the statuses of your BIG-IPs? Go to your web page. What
+is the client IP?</li>
+<li>Go to your self-IP addresses. What traffic group are they in? What
+does it mean?</li>
+<li>Archive your work.</li>
+</ol>
+</li>
+</ol>
+</div>
+</div>
+</div>
+<div class="row next-prev-btn-row">
+<div class="col-lg-12">
+<a accesskey="p" class="btn btn-primary left" href="https://clouddocs.f5.com/training/community/f5cert/html/class2/modules/module05.html" title="Lab 5: Support and Troubleshooting"><i aria-hidden="true" class="fa fa-arrow-circle-left"></i> Previous</a>
+<a accesskey="n" class="btn btn-primary right" href="https://clouddocs.f5.com/training/community/f5cert/html/class2/modules/module07.html" title="Lab 7: Common Configuration Items">Next <i aria-hidden="true" class="fa fa-arrow-circle-right"></i></a>
+</div>
+</div>
+</article>
+</body></html>

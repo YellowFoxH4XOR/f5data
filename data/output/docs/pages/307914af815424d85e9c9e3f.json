@@ -1,0 +1,172 @@
+{
+  "applies_to": [
+    {
+      "product": "F5 BIG-IP iRules API",
+      "versions": []
+    }
+  ],
+  "breadcrumbs": [],
+  "code_examples": [
+    {
+      "section": "1.) Logging",
+      "text": "when HTTP_REQUEST {\n  log local0. \"Domain: [HTTP::host]\"\n  log local0. \"URI: [HTTP::uri]\"\n}\n\nwhen HTTP_RESPONSE {\n  if { [HTTP::header exists \"Location\"] } {\n    log local0. \"Location: [HTTP::header Location]\"\n  }\n}\n"
+    },
+    {
+      "section": "1.) Logging",
+      "text": "when RULE_INIT {\n  set ::debug 1\n}\n\nwhen HTTP_REQUEST {\n  if { $::debug } {\n    log local0. \"Domain: [HTTP::host]\"\n    log local0. \"URI: [HTTP::uri]\"\n  }\n}\n\nwhen HTTP_RESPONSE {\n  if { $::debug } {\n    if { [HTTP::header exists \"Location\"] } {\n      log local0. \"Location: [HTTP::header Location]\"\n    }\n  }\n}\n"
+    },
+    {
+      "section": "2.) HTTP Redirect",
+      "text": "when HTTP_REQUEST {\n   if {[HTTP::path] eq \"/\"}{\n      log local0. \"redirecting client [IP::client_addr]\"\n      HTTP::redirect \"http://[HTTP::host]/cda/homepage.do\"\n   }\n}\n"
+    },
+    {
+      "section": "3.) URI Re-Writing",
+      "text": "when HTTP_REQUEST {\n   if {[HTTP::uri] == \"/\"}{\n      HTTP::uri \"/New/URI\"\n   }\n}\n"
+    },
+    {
+      "section": "4.) JSessionID Persistence",
+      "text": "when HTTP_REQUEST {\n  if { [HTTP::cookie exists \"JSESSIONID\"] } {\n    persist uie [HTTP::cookie \"JSESSIONID\"]\n  } else {\n    set jsess [findstr [string tolower [HTTP::query]] \"jsessionid\" 11 \";\"]\n    if { $jsess != \"\" } {\n      persist uie $jsess\n    }\n  }\n}\n"
+    },
+    {
+      "section": "5.) Limit the number of Client Requests",
+      "text": "when RULE_INIT {\n  array set ::active_clients { }\n}\nwhen CLIENT_ACCEPTED {\n  set client_ip [IP::remote_addr]\n  set normal_close 1\n  if { [info exists ::active_clients($client_ip)] } {\n    if {$::active_clients($client_ip) > 5 } {\n      set normal_close 0\n      reject\n      return\n    } else {\n      incr ::active_clients($client_ip)\n    }\n  } else {\n    set ::active_clients($client_ip) 1\n  }\n}\nwhen CLIENT_CLOSED {\n  if { $normal_close eq 1 }\n   {\n     if { [info exists ::active_clients($client_ip)] } {\n          incr ::active_clients($client_ip) -1\n          if { $::active_clients($client_ip) <= 0 } {\n               unset ::active_clients($client_ip)\n             }\n        }\n   }\n}\n"
+    },
+    {
+      "section": "6.) Information inserted into HTTP Header (Header Inserts/Reading)",
+      "text": "when CLIENTSSL_CLIENTCERT {\n  # set time to maintain session data (in seconds)\n  set session_timeout 300\n\n  set ssl_stuff [list anything1 anything2]\n  set ssl_cert [SSL::cert 0]\n  set ssl_errstr [X509::verify_cert_error_string [SSL::verify_result]]\n  lset ssl_stuff 0 $ssl_cert\n  lset ssl_stuff 1 $ssl_errstr\n  session add ssl [SSL::sessionid] $ssl_stuff $session_timeout\n}\n\nwhen HTTP_REQUEST {\n  set ssl_stuff2 [session lookup ssl [SSL::sessionid]]\n  set ssl_cert2 [lindex $ssl_stuff2 0]\n  set ssl_errstr2 [lindex $ssl_stuff2 1]\n  if { $ssl_errstr2 eq \"ok\" } {\n    HTTP::header insert SSLClientCertStatus $ssl_errstr2\n    HTTP::header insert SSLClientCertSN [X509::serial_number $ssl_cert2]\n  } else {\n    # send HTTP 302 redirect to an error page\n    HTTP::redirect \"http://192.168.0.64/error.html\"\n  }\n}\n"
+    },
+    {
+      "section": "7.) Loadbalance Reselect",
+      "text": "when CLIENT_ACCEPTED {\n  TCP::collect 34\n}\n\nwhen CLIENT_DATA {\n  set usrid [string range [TCP::payload] 24 33]\n  if {[regexp {\\d{10}} $usrid]} {\n    persist uie $usrid\n    log local0. \"Persisting $usrid\"\n  }\n}\n\nwhen LB_FAILED {\n  set p [LB::server pool]\n  set n [LB::server addr]\n  log local0. \"Set node down: $n\"\n  LB::down node $n\n  log local0. \"Deleting $usrid from Pool $p\"\n  persist delete uie $usrid\n  LB::detach\n  LB::reselect pool $p\n  set x [LB::server addr]\n  log local0. \"After reselect node is $x\"\n}\n"
+    },
+    {
+      "section": "8.) Query Pool for Information",
+      "text": "when LB_FAILED {\n  if { [LB::status pool $poolname member $ip $port] eq \"down\" } {\n    log \"Server $ip $port down!\"\n  }\n}\n\nwhen HTTP_REQUEST {\n  if { [active_members your_pool] < 1 } {\n    HTTP::redirect \"http://somedomain.com/somepage.html\"\n  } else {\n    pool your_pool\n  }\n}\n"
+    },
+    {
+      "section": "9.) Session / Persistence table lookups",
+      "text": "when HTTP_REQUEST {\n  set persistA [persist lookup simple [IP::client_addr]]\n  log \"persistA output is $persistA\"\n}\n"
+    },
+    {
+      "section": "9.) Session / Persistence table lookups",
+      "text": "when CLIENTSSL_CLIENTCERT {\n  log \"begining\"\n  log \"ssl cert count = + [SSL::cert count]\"\n  if { [SSL::cert count] > 0 } {\n    session add ssl [SSL::sessionid] [X509::cert_fields [SSL::cert 0]\n    [SSL::verify_result] whole] 450\n    log \"session ID: + [SSL::sessionid] + [X509::cert_fields [SSL::cert 0] [SSL::verify_result] whole]\"\n    log \"certfields lookup = [session lookup ssl {[SSL::sessionid] any}]\"\n  }\n}\n"
+    },
+    {
+      "section": "10.) Using matchclass and findclass to query Data Groups",
+      "text": "class myCSID {\n  \"b02181 pl_1\"\n  \"h05527 pl_1\"\n  \"x07770 pl_2\"\n  \"y07070 pl_3\"\n}\n\niRule Source\n\nwhen HTTP_REQUEST {\n  set CSID [string tolower [URI::path [HTTP::uri] 1 1]]\n  if { [matchclass $::myCSID starts_with $CSID] } {\n    pool [findclass $CSID $::myCSID \" \"]\n  } else {\n      pool defaultPool\n  }\n}\n"
+    }
+  ],
+  "content_hash": "0b7c6fbfd87deb046a52a7cf6cafd8515373b30226a096319c96f44634a8fb73",
+  "diagrams": [],
+  "documentation_version": null,
+  "headings": [
+    {
+      "anchor": "irules-common-concepts",
+      "level": 1,
+      "path": [],
+      "title": "iRules Common Concepts"
+    },
+    {
+      "anchor": "logging",
+      "level": 2,
+      "path": [
+        "iRules Common Concepts"
+      ],
+      "title": "1.) Logging"
+    },
+    {
+      "anchor": "http-redirect",
+      "level": 2,
+      "path": [
+        "iRules Common Concepts"
+      ],
+      "title": "2.) HTTP Redirect"
+    },
+    {
+      "anchor": "uri-re-writing",
+      "level": 2,
+      "path": [
+        "iRules Common Concepts"
+      ],
+      "title": "3.) URI Re-Writing"
+    },
+    {
+      "anchor": "jsessionid-persistence",
+      "level": 2,
+      "path": [
+        "iRules Common Concepts"
+      ],
+      "title": "4.) JSessionID Persistence"
+    },
+    {
+      "anchor": "limit-the-number-of-client-requests",
+      "level": 2,
+      "path": [
+        "iRules Common Concepts"
+      ],
+      "title": "5.) Limit the number of Client Requests"
+    },
+    {
+      "anchor": "information-inserted-into-http-header-header-inserts-reading",
+      "level": 2,
+      "path": [
+        "iRules Common Concepts"
+      ],
+      "title": "6.) Information inserted into HTTP Header (Header Inserts/Reading)"
+    },
+    {
+      "anchor": "loadbalance-reselect",
+      "level": 2,
+      "path": [
+        "iRules Common Concepts"
+      ],
+      "title": "7.) Loadbalance Reselect"
+    },
+    {
+      "anchor": "query-pool-for-information",
+      "level": 2,
+      "path": [
+        "iRules Common Concepts"
+      ],
+      "title": "8.) Query Pool for Information"
+    },
+    {
+      "anchor": "session-persistence-table-lookups",
+      "level": 2,
+      "path": [
+        "iRules Common Concepts"
+      ],
+      "title": "9.) Session / Persistence table lookups"
+    },
+    {
+      "anchor": "using-matchclass-and-findclass-to-query-data-groups",
+      "level": 2,
+      "path": [
+        "iRules Common Concepts"
+      ],
+      "title": "10.) Using matchclass and findclass to query Data Groups"
+    }
+  ],
+  "id": "307914af815424d85e9c9e3f",
+  "images": [],
+  "kind": "programming_reference",
+  "links": [
+    {
+      "title": "http://mydomain.com",
+      "url": "http://mydomain.com"
+    },
+    {
+      "title": "http://mydomain.com/userlogin.aspx?login=new",
+      "url": "http://mydomain.com/userlogin.aspx?login=new"
+    }
+  ],
+  "publisher_product_labels": [
+    "F5 BIG-IP iRules API"
+  ],
+  "source": "irules",
+  "text": "iRules Common Concepts\n1.) Logging\nBy making use of the built in logging features that are available to\nyou when writing iRules you’ll be able to see what the expected\noutcome of a rule will be before effecting live traffic, troubleshoot\na malfunctioning rule by identifying which sections are failing,\nidentify errors in logic or coding that are returning unexpected\nresults, etc. Logging is the first step in any good troubleshooting\nguide once you’ve confirmed the rule compiles properly. Logging is\nyour friend!\niRule Source\nwhen\nHTTP_REQUEST\n{\nlog\nlocal0.\n\"Domain: [HTTP::host]\"\nlog\nlocal0.\n\"URI: [HTTP::uri]\"\n}\nwhen\nHTTP_RESPONSE\n{\nif\n{\n[\nHTTP\n::\nheader\nexists\n\"Location\"\n]\n}\n{\nlog\nlocal0.\n\"Location: [HTTP::header Location]\"\n}\n}\nLogging is great for troubleshooting, but can impact performance.\nRather than adding logging statements for troubleshooting and removing\nthem when finished, you can set a debug variable and place all\nappropriate logging within IF statements so the logging can be enabled\n& disabled with a single variable setting.\nNote: The static prefix was introduced with v10 and allows for\nClustered Multi-Processing (CMP; effectively multicore or parallel\nprocessing) compatible variables (read only constants or per TMM\nread/write). A separate copy of each variable marked static is\ncreated on each TMM instance (effectively each processor core) and\neach instance is completely independent of the others.\nwhen\nRULE_INIT\n{\nset\n::\ndebug\n1\n}\nwhen\nHTTP_REQUEST\n{\nif\n{\n$::debug\n}\n{\nlog\nlocal0.\n\"Domain: [HTTP::host]\"\nlog\nlocal0.\n\"URI: [HTTP::uri]\"\n}\n}\nwhen\nHTTP_RESPONSE\n{\nif\n{\n$::debug\n}\n{\nif\n{\n[\nHTTP\n::\nheader\nexists\n\"Location\"\n]\n}\n{\nlog\nlocal0.\n\"Location: [HTTP::header Location]\"\n}\n}\n}\n2.) HTTP Redirect\nSimple HTTP redirect upon connecting to a particular URI. This is a\nvery commonly requested iRule function, though sometimes the logic\nsurrounding the redirect itself can be a bit more involved, the\nconcept remains the same. Make logical comparisons, if a certain\ncriteria is found, send the request to a given location.\niRule Source\nwhen\nHTTP_REQUEST\n{\nif\n{[\nHTTP\n::\npath\n]\neq\n\"/\"\n}{\nlog\nlocal0.\n\"redirecting client [IP::client_addr]\"\nHTTP\n::\nredirect\n\"http://[HTTP::host]/cda/homepage.do\"\n}\n}\nAlso see: HTTPToHTTPSRedirect_302\n3.) URI Re-Writing\nUsers often times want to be able to seamlessly re-write the URI\nportion of the HTTP request a user sends in. For instance, when you\nrequest\nhttp://mydomain.com\n, you get sent to\nhttp://mydomain.com/userlogin.aspx?login=new\nThis can be done without\na redirect, and is transparent to the user until the response from the\nserver contains the new URI.\niRule Source\nwhen\nHTTP_REQUEST\n{\nif\n{[\nHTTP\n::\nuri\n]\n==\n\"/\"\n}{\nHTTP\n::\nuri\n\"/New/URI\"\n}\n}\n4.) JSessionID Persistence\nThis rule searches for the JSESSIONID stored in a cookie and persists\nbased on that information if it exists. Many different permutations of\nsuch a rule might exist, including ones that look in the URI for the\nJSESSIONID, or perform different actions when one is not found.\niRule Source\nwhen\nHTTP_REQUEST\n{\nif\n{\n[\nHTTP\n::\ncookie\nexists\n\"JSESSIONID\"\n]\n}\n{\npersist\nuie\n[\nHTTP\n::\ncookie\n\"JSESSIONID\"\n]\n}\nelse\n{\nset\njsess\n[\nfindstr\n[\nstring\ntolower\n[\nHTTP\n::\nquery\n]]\n\"jsessionid\"\n11\n\";\"\n]\nif\n{\n$jsess\n!=\n\"\"\n}\n{\npersist\nuie\n$jsess\n}\n}\n}\n5.) Limit the number of Client Requests\nThis rule limits the number of connections that any given client IP\ncan establish with the virtual server that the rule is applied to.\nThis can be modified to include a white-list of internal or trusted\nIPs that wouldn’t be subject to the limiting, to redirect those that\nexceed the limit to an explanation page, etc. With the normal_close\nlocal variable, we only decrease the amount of active connections if\nthe close event is executed normally, and not after the reject command\nexecution from the CLIENT_ACCEPTED event.\niRule Source\nwhen\nRULE_INIT\n{\narray\nset\n::\nactive_clients\n{\n}\n}\nwhen\nCLIENT_ACCEPTED\n{\nset\nclient_ip\n[\nIP\n::\nremote_addr\n]\nset\nnormal_close\n1\nif\n{\n[\ninfo\nexists\n::\nactive_clients\n(\n$client_ip\n)]\n}\n{\nif\n{\n$::active_clients\n(\n$client_ip\n)\n>\n5\n}\n{\nset\nnormal_close\n0\nreject\nreturn\n}\nelse\n{\nincr\n::\nactive_clients\n(\n$client_ip\n)\n}\n}\nelse\n{\nset\n::\nactive_clients\n(\n$client_ip\n)\n1\n}\n}\nwhen\nCLIENT_CLOSED\n{\nif\n{\n$normal_close\neq\n1\n}\n{\nif\n{\n[\ninfo\nexists\n::\nactive_clients\n(\n$client_ip\n)]\n}\n{\nincr\n::\nactive_clients\n(\n$client_ip\n)\n-\n1\nif\n{\n$::active_clients\n(\n$client_ip\n)\n<=\n0\n}\n{\nunset\n::\nactive_clients\n(\n$client_ip\n)\n}\n}\n}\n}\n6.) Information inserted into HTTP Header (Header Inserts/Reading)\nMany users are looking to store some information from the SSL cert or\ntransaction in a header to be passed to their back-end servers for use\nin a later\niRule Source\nwhen\nCLIENTSSL_CLIENTCERT\n{\n# set time to maintain session data (in seconds)\nset\nsession_timeout\n300\nset\nssl_stuff\n[\nlist\nanything1\nanything2\n]\nset\nssl_cert\n[\nSSL\n::\ncert\n0\n]\nset\nssl_errstr\n[\nX509\n::\nverify_cert_error_string\n[\nSSL\n::\nverify_result\n]]\nlset\nssl_stuff\n0\n$ssl_cert\nlset\nssl_stuff\n1\n$ssl_errstr\nsession\nadd\nssl\n[\nSSL\n::\nsessionid\n]\n$ssl_stuff\n$session_timeout\n}\nwhen\nHTTP_REQUEST\n{\nset\nssl_stuff2\n[\nsession\nlookup\nssl\n[\nSSL\n::\nsessionid\n]]\nset\nssl_cert2\n[\nlindex\n$ssl_stuff2\n0\n]\nset\nssl_errstr2\n[\nlindex\n$ssl_stuff2\n1\n]\nif\n{\n$ssl_errstr2\neq\n\"ok\"\n}\n{\nHTTP\n::\nheader\ninsert\nSSLClientCertStatus\n$ssl_errstr2\nHTTP\n::\nheader\ninsert\nSSLClientCertSN\n[\nX509\n::\nserial_number\n$ssl_cert2\n]\n}\nelse\n{\n# send HTTP 302 redirect to an error page\nHTTP\n::\nredirect\n\"http://192.168.0.64/error.html\"\n}\n}\n7.) Loadbalance Reselect\nThere are certain situations in which users want to use the same\nrequest that was sent from the client, but retry transmitting it to a\ndifferent member of a pool (whether it’s the same pool as the last\nattempt or not). This can be because of a failure on the first attempt\nor because of some application needs they have in their configuration.\niRule Source\nwhen CLIENT_ACCEPTED {\n  TCP::collect 34\n}\n\nwhen CLIENT_DATA {\n  set usrid [string range [TCP::payload] 24 33]\n  if {[regexp {\\d{10}} $usrid]} {\n    persist uie $usrid\n    log local0. \"Persisting $usrid\"\n  }\n}\n\nwhen LB_FAILED {\n  set p [LB::server pool]\n  set n [LB::server addr]\n  log local0. \"Set node down: $n\"\n  LB::down node $n\n  log local0. \"Deleting $usrid from Pool $p\"\n  persist delete uie $usrid\n  LB::detach\n  LB::reselect pool $p\n  set x [LB::server addr]\n  log local0. \"After reselect node is $x\"\n}\n8.) Query Pool for Information\nSome commands allow you to query a given pool for information, whether\nthat’s the active_members command to see how many pool members are\nmarked as up, or something like the LB::status command, the\ninformation can be used in many different and useful ways.\niRule Source\nwhen\nLB_FAILED\n{\nif\n{\n[\nLB\n::\nstatus\npool\n$poolname\nmember\n$ip\n$port\n]\neq\n\"down\"\n}\n{\nlog\n\"Server $ip $port down!\"\n}\n}\nwhen\nHTTP_REQUEST\n{\nif\n{\n[\nactive_members\nyour_pool\n]\n<\n1\n}\n{\nHTTP\n::\nredirect\n\"http://somedomain.com/somepage.html\"\n}\nelse\n{\npool\nyour_pool\n}\n}\n9.) Session / Persistence table lookups\nBesides being extremely useful ways to retrieve information being\nstored in the Session or Persistence tables, knowing how to perform\nsession and persistence lookups allows users to store data in those\ntables as opposed to using the much more resource intensive, messier\nglobal variable option.\niRule Source\nwhen\nHTTP_REQUEST\n{\nset\npersistA\n[\npersist\nlookup\nsimple\n[\nIP\n::\nclient_addr\n]]\nlog\n\"persistA output is $persistA\"\n}\nwhen\nCLIENTSSL_CLIENTCERT\n{\nlog\n\"begining\"\nlog\n\"ssl cert count = + [SSL::cert count]\"\nif\n{\n[\nSSL\n::\ncert\ncount\n]\n>\n0\n}\n{\nsession\nadd\nssl\n[\nSSL\n::\nsessionid\n]\n[\nX509\n::\ncert_fields\n[\nSSL\n::\ncert\n0\n]\n[\nSSL\n::\nverify_result\n]\nwhole\n]\n450\nlog\n\"session ID: + [SSL::sessionid] + [X509::cert_fields [SSL::cert 0] [SSL::verify_result] whole]\"\nlog\n\"certfields lookup = [session lookup ssl {[SSL::sessionid] any}]\"\n}\n}\n10.) Using matchclass and findclass to query Data Groups\nBy storing data in Data Groups or “classes”, users are able to store\nlarge data structures in an organized, reasonably efficient structure\nthat allows for use across multiple connections in a flexible manner.\niRule Source\nclass\nmyCSID\n{\n\"b02181 pl_1\"\n\"h05527 pl_1\"\n\"x07770 pl_2\"\n\"y07070 pl_3\"\n}\niRule\nSource\nwhen\nHTTP_REQUEST\n{\nset\nCSID\n[\nstring\ntolower\n[\nURI\n::\npath\n[\nHTTP\n::\nuri\n]\n1\n1\n]]\nif\n{\n[\nmatchclass\n$::myCSID\nstarts_with\n$CSID\n]\n}\n{\npool\n[\nfindclass\n$CSID\n$::myCSID\n\" \"\n]\n}\nelse\n{\npool\ndefaultPool\n}\n}\nThe BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor \nor control community code contributions. We make no guarantees or warranties regarding the available code, \nand it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any \ncode available in the BIG-IP API reference guides is solely at your own risk.",
+  "title": "iRules Common Concepts",
+  "updated": "2026-07-13 12:27:40",
+  "url": "https://clouddocs.f5.com/api/irules/iRulesCommonConcepts.html",
+  "url_version": null
+}

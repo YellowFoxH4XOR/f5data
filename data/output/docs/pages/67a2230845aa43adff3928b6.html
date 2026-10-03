@@ -1,0 +1,2780 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>HTTP Super SIDEBAND Requestor (Client) Handles Redirects, Cookies, Chunked Transfer, APM Access, etc</title><link rel="canonical" href="https://clouddocs.f5.com/api/irules/HTTP-Super-SIDEBAND-Requestor-Client-Handles-Redirects-Cookies-Chunked-Transfer-APM-Access-etc.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>HTTP Super SIDEBAND Requestor (Client) Handles Redirects, Cookies, Chunked Transfer, APM Access, etc</h1><p>programming_reference · See product applicability metadata</p><a href="https://clouddocs.f5.com/api/irules/HTTP-Super-SIDEBAND-Requestor-Client-Handles-Redirects-Cookies-Chunked-Transfer-APM-Access-etc.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!DOCTYPE html>
+
+<div class="section" id="http-super-sideband-requestor-client-handles-redirects-cookies-chunked-transfer-apm-access-etc">
+<h1>HTTP Super SIDEBAND Requestor (Client) Handles Redirects, Cookies, Chunked Transfer, APM Access, etc</h1>
+<div class="section" id="mark-s-http-super-sideband-requestor">
+<h2>Mark’s HTTP Super SIDEBAND Requestor!</h2>
+<div class="line-block">
+<div class="line">This iRule implements a nifty HTTP client “<strong>http_req</strong>” using
+<a class="reference external" href="https://clouddocs.f5.com/api/irules/SIDEBAND.html">SIDEBAND</a>. You may <a class="reference external" href="https://clouddocs.f5.com/api/irules/call.html">call</a> it from
+another iRule to fetch or process data via some HTTP(S) service. It
+handles challenges like redirects and cookies (lets you access
+APM-protected services!), IPv6, chunked transfer coding, easy form
+submission, and Basic AuthN. <strong>http_req</strong> emulates the critical
+functions of a web browser (somewhat in the spirit of cURL).</div>
+<div class="line"><em>For example, you might query a RESTful API service to decide, based
+on the geographic origin of an incoming LTM connection, which LTM pool
+to proxy it to. Using</em><strong>http_req</strong><em>a single (long) line is
+sufficient to send a query containing LTM IP Geolocation info then act
+on the response:</em></div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="k">if</span><span class="w"> </span><span class="k">{[</span><span class="nv">call</span><span class="w"> </span><span class="o">/</span>Common<span class="o">/</span>HSSR::http_req<span class="w"> </span><span class="o">-</span>uri<span class="w"> </span><span class="nv">$dbURI</span><span class="w"> </span><span class="o">-</span>rbody<span class="w"> </span>xpool
+<span class="w"> </span><span class="nv">-form</span><span class="w"> </span><span class="k">[</span><span class="nb">list</span><span class="w"> </span>country<span class="w"> </span><span class="k">[</span><span class="nv">whereis</span><span class="w"> </span><span class="k">[</span><span class="nv">IP</span><span class="o">::</span>client_addr<span class="k">]</span><span class="w"> </span>country<span class="k">]]]</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nv">200</span><span class="k">}</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">pool</span><span class="w"> </span><span class="nv">$xpool</span><span class="w"> </span><span class="k">}</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">You may connect directly to remote HTTP servers or to virtual servers
+(http/https) on your BIG-IP. To connect to remote HTTP<strong>S</strong> servers
+you must utilize a simple helper virtual server with a Server SSL
+Profile. For universal outbound HTTP(S) support attach the iRule
+<strong>HSSR-helper</strong> to your helper virtual server.
+<em>See</em><strong>HSSR-helper</strong><em>below for easy setup details.</em></div>
+</div>
+<div class="box docutils container">
+Changes from previous version: iRules
+<a class="reference external" href="https://clouddocs.f5.com/api/irules/proc.html">proc</a>
+implementation; persistent-connection support; full/proper cookie
+support; IPv6 support; universal outbound HTTP(S)
+helper-virtual-server support (including SNI); easy HTML form
+submission; HTTP proxy support; HTTP 100-Continue support for Web
+Services; good RFC compliance; content character-set sniffing; much
+more besides!</div>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+<div class="section" id="performance">
+<h3>Performance</h3>
+<div class="line-block">
+<div class="line"><strong>http_req</strong> is efficient in three ways: (1) it is carefully coded to
+run quickly; (2) it supports reuse of http(s) connections (HTTP/1.1);
+(3) it frees you to spend <em>your</em> time implementing business logic
+rather than formatting HTTP requests and decoding the responses.</div>
+<div class="line"><em>An example of connection reuse appears below; see</em> <strong>APM+LTM SSO
+Cookie Example</strong>.</div>
+</div>
+</div>
+<div class="section" id="installation">
+<h3>Installation</h3>
+<p>Save <strong>this</strong> iRule in the <strong>Common</strong> partition under the name <strong>HSSR</strong>.
+Other iRules will <a class="reference external" href="https://clouddocs.f5.com/api/irules/call.html">call</a> procs (mainly <strong>http_req</strong>) from
+<strong>HSSR</strong>, <em>e.g.</em>,</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="k">set</span><span class="w"> </span>status<span class="w"> </span><span class="k">[</span><span class="nv">call</span><span class="w"> </span><span class="o">/</span>Common<span class="o">/</span>HSSR::http_req<span class="w"> </span><span class="o">-</span>uri<span class="w"> </span><span class="nv">$someURL</span><span class="w"> </span><span class="o">-</span>state<span class="w"> </span>xyz<span class="k">]</span>
+</pre></div>
+</div>
+<p>and</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">call</span><span class="w"> </span><span class="o">/</span>Common<span class="o">/</span>HSSR::http_done<span class="w"> </span>xyz
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">.</div>
+<div class="line"><em>Also install iRule</em> <strong>/Common/HSSR-helper</strong> <em>(see below) for when you
+want to connect to a TLS-protected (https) service.</em></div>
+</div>
+<div class="box docutils container">
+Follow
+<a class="reference external" href="http://support.f5.com/kb/en-us/solutions/public/12000/200/sol12224">SOL12224</a>
+to avert issues resolving hostnames in URI’s after you set System:
+Configuration: Device: DNS: BIND_Forwarder_Server_List</div>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+<div class="box docutils container">
+<p>If you wish HSSR to query DNS nameservers in a Route Domain other
+than the default Route Domain 0 you must use the</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-ns
+</pre></div>
+</div>
+<p>option to pass HSSR the name of a virtual server which you have
+configured with a pool of forwarding nameservers for the non-0 Route
+Domain. See the explanation of the -ns option below.</p>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="usage-and-options">
+<h3>Usage and Options</h3>
+<p>Every <strong>http_req</strong> option argument, such as</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-uri</span>
+</pre></div>
+</div>
+<p>, takes exactly one value argument, such as</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nb">http</span><span class="o">://</span>svc.example.com
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">. You may supply options in any order but later values replace earlier
+ones.</div>
+<div class="line"><em>Basic usage example:</em></div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>set sts [call /Common/HSSR::http_req -uri "http://svc.example.com/X" \
+            -tag "getX" -rbody rbody]
+
+log local0.info "server returned status=${sts}, content=${rbody}"
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line"><em>Secure access over TLS (SSL):</em></div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>set sts [call /Common/HSSR::http_req -uri "https://secure.example.com/X" \
+            -virt /Common/vs-HSSR-helper -tag "getX" -rbody rbody]
+
+log local0.info "server returned status=${sts}, content=${rbody}"
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line"><em>Request with arguments:</em></div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>set sts [call /Common/HSSR::http_req -uri "http://svc.example.com/user2pool" \
+            -form [list srcIP [IP::client_addr] userID $userID] -rbody xpool]
+
+#actual query will look like:  /user2pool?srcIP=198.51.100.49&amp;userID=homer
+
+if {$sts == 200} { pool $xpool }
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line"><em>Fancier: Log in to service with forms-based authentication, then send
+a query. After the login request the session cookie for the service is
+stored in variable</em></div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">$hstate</span>
+</pre></div>
+</div>
+<p>for use with subsequent requests. Value of</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-virt</span>
+</pre></div>
+</div>
+<p>is also in</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">$hstate</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">, so that later call to <strong>http_req</strong> is easier to type:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>set logonform [list username "service_acct_RO" password "g7W2n0m8"]
+
+set s1 [call /Common/HSSR::http_req -state hstate -virt /Common/vs-HSSR-helper \
+           -uri "https://svc.example.com/logon" -method POST -form $logonform -redir 0]
+
+if {$s1 == 302} {
+ #logon succeeded (otherwise server returns 200 with a blank logon form)
+ set s2 [call /Common/HSSR::http_req -state hstate \
+            -uri "https://svc.example.com/getinfo" -rbody info]
+
+ if {$s2 == 200} {
+  log local0.info "server returned info=${info}"
+  #do something with $info
+ }
+} else {
+ #logon failed.  Do something?
+}
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">NOTE: options</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-</span><span class="k">(</span><span class="nv">state</span><span class="o">|</span>rbody<span class="o">|</span>rheader<span class="o">|</span>rcookies<span class="o">|</span>rformat<span class="k">)</span><span class="w"> </span>pqr
+</pre></div>
+</div>
+<p><em>name variables</em></p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">$pqr</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><em>into which data will be placed,</em> destroying any previous contents!</div>
+<div class="line">Return value from <strong>http_req</strong> is HTTP status code (<em>555</em> indicates
+some local problem; check the LTM log).</div>
+<div class="line">When you invoke <strong>http_req</strong> you supply:</div>
+</div>
+<table border="1" class="docutils">
+<colgroup>
+<col width="50%"/>
+<col width="50%"/>
+</colgroup>
+<tbody valign="top">
+<tr class="row-odd"><td><strong>option</strong></td>
+<td><strong>value</strong></td>
+</tr>
+<tr class="row-even"><td>-uri</td>
+<td>absolute URI of target
+<em>(required)</em></td>
+</tr>
+<tr class="row-odd"><td>-virt <em>(optional)</em></td>
+<td><p class="first">name of LTM virtual server to
+connect to. If given, used in
+lieu of host:port from</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-uri
+</pre></div>
+</div>
+<p>(or host:port from</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-proxy
+</pre></div>
+</div>
+<p>URL). Default: none (see
+explanation below).</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-virt
+</pre></div>
+</div>
+<p>value will be reused from</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-state
+</pre></div>
+</div>
+<p>info (see below) until you give</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-virt
+</pre></div>
+</div>
+<p>option again. To stop using</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-virt
+</pre></div>
+</div>
+<p>from state info specify</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-virt {}
+</pre></div>
+</div>
+<p class="last">.</p>
+</td>
+</tr>
+<tr class="row-even"><td>-state <em>(optional)</em></td>
+<td><p class="first">name of variable in which
+connection state (plus
+<strong>cookies</strong>, credentials, custom
+headers,</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-virt
+</pre></div>
+</div>
+<p>value,</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-proxy
+</pre></div>
+</div>
+<p>value, and</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-ns
+</pre></div>
+</div>
+<p>value) will be stored between
+calls to <strong>http_req</strong>. In use
+this looks like</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-state xyz
+</pre></div>
+</div>
+<p>(no</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span><span class="p">$</span>
+</pre></div>
+</div>
+<p>before</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>xyz
+</pre></div>
+</div>
+<p class="last">). Default: none (stateless
+operation).</p>
+</td>
+</tr>
+</tbody>
+</table>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line"><em>Important:</em> If you will make multiple requests, either to a single
+server or to various servers which use cookies, <strong>please</strong> supply
+option</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-state</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">.</div>
+<div class="line">Using</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-state</span>
+</pre></div>
+</div>
+<p>lets <strong>http_req</strong> perform better by keeping a
+<a class="reference external" href="https://clouddocs.f5.com/api/irules/SIDEBAND.html">SIDEBAND</a> connection open between requests when
+appropriate (<strong>http_req</strong> will manage connections properly).</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-state</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">also stores cookies, credentials, and other state info, improving
+performance in most cases <em>and</em> letting you avoid repeating lengthy
+arguments on successive calls to <strong>http_req</strong>.</div>
+<div class="line">If you use</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-state</span><span class="w"> </span>xyz
+</pre></div>
+</div>
+<p>you may invoke</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">call</span><span class="w"> </span><span class="o">/</span>Common<span class="o">/</span>HSSR::http_close<span class="w"> </span>xyz
+</pre></div>
+</div>
+<p>after your <em>final</em> call to <strong>http_req</strong> to free
+<a class="reference external" href="https://clouddocs.f5.com/api/irules/SIDEBAND.html">SIDEBAND</a> resources immediately (and discard all
+other state info such as cookies, so be careful). <strong>http_close</strong> is
+optional because open connections will close automatically after a while
+(see</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-idle</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">option) and you will often want to keep state around pending iRule
+events like <a class="reference external" href="https://clouddocs.f5.com/api/irules/HTTP_REQUEST.html">HTTP_REQUEST</a> from which you wish
+to call <strong>http_req</strong> efficiently (that is, reusing an open connection
+when possible).</div>
+<div class="line">There are four connection possibilities:</div>
+<div class="line">(1) Supply just</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-uri</span><span class="w"> </span>URI
+</pre></div>
+</div>
+<p>to connect to the host specified in the target URI using HTTP over
+TCP/IP. (The source IP for each connection will be some BIG-IP Self-IP.)
+HTTP redirects to different URI hosts (see</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-redir</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">) will engender new TCP connections.</div>
+<div class="line">(2) Supply</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-virt</span><span class="w"> </span>VIRT
+</pre></div>
+</div>
+<p>to query a service provided by a virtual-server on the current BIG-IP
+device. It doesn’t matter what IP address or port virtual-server VIRT
+uses, nor whether it has a Client SSL Profile. You must still supply</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-uri</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">but the hostname in the target URI need not resolve to any IP address.
+All queries will be sent to VIRT even after an HTTP redirect to a
+different URI host.</div>
+<div class="line">(3) Supply</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-virt</span><span class="w"> </span>HELPER
+</pre></div>
+</div>
+<p>to connect to some service via virtual-server HELPER on the same BIG-IP.
+A helper virtual server proxies connections to some <em>other</em> host(s)
+using LTM features (pools, nodes, <em>etc</em>.) and may have a Server SSL
+Profile so it can connect to TLS-protected (https) services. You must
+still supply</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-uri</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">.</div>
+<div class="line">If HELPER is a <em>universal</em> helper-virtual-server with iRule
+<strong>HSSR-helper</strong> plus a Server SSL Profile then it will proxy
+connections to any http or https URI. In this case the hostname in the
+target URI must resolve to an IP address. (You may SNAT the source IP
+for each connection in HELPER’s virtual-server settings.) <em>A single
+universal helper-virtual-server will support multiple unrelated
+instances of</em><strong>http_req</strong><em>.</em></div>
+<div class="line"><strong>http_req</strong> will send all queries over one connection to HELPER even
+after an HTTP redirect to a different URI host <em>but</em> a <em>universal</em>
+helper-virtual-server will make <em>new</em> server-side TCP connections to
+different hosts (remember, a helper-virtual-server is a sort of
+proxy).</div>
+<div class="line">(4) If you supply</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-proxy</span><span class="w"> </span>PROXY-URI
+</pre></div>
+</div>
+<p>then a connection is made to the specified HTTP proxy host instead of to
+the host named in</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-uri</span><span class="w"> </span>URI
+</pre></div>
+</div>
+<p>or any HTTP-redirect URI hosts.</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-virt</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">works as in (2) or (3) but each target URI is simply passed to the
+HTTP proxy. (Each target URI hostname must be resolvable <em>by the
+proxy</em>.)</div>
+<div class="line">NB: Even when you set</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-virt</span>
+</pre></div>
+</div>
+<p>, your</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-uri</span>
+</pre></div>
+</div>
+<p>URI must include some hostname or IP address (which by default will be
+copied into the HTTP</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">Host</span>
+</pre></div>
+</div>
+<p>header). If you do not set</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-virt</span>
+</pre></div>
+</div>
+<p>, then: ensure your BIG-IP DNS setup is valid so</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="k">[</span><span class="nv">RESOLV</span><span class="o">::</span>lookup<span class="k">]</span>
+</pre></div>
+</div>
+<p>works; or supply the</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-ns</span>
+</pre></div>
+</div>
+<p>option; or put server IP (or IP:port) in</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-uri</span>
+</pre></div>
+</div>
+<p>URI. If you put server IP into URI you may use the</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-host</span>
+</pre></div>
+</div>
+<p>option to force a hostname (rather than numeric IP) into the HTTP</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">Host</span>
+</pre></div>
+</div>
+<p>header (plus TLS SNI when using <strong>HSSR-helper</strong>). To make https requests
+you must use</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-virt</span><span class="w"> </span><span class="o">/</span>Common<span class="o">/</span>vs-HSSR-helper
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">or similar. Attach the iRule <strong>HSSR-helper</strong> to your
+helper-virtual-server.</div>
+<div class="line">You should supply as well:</div>
+</div>
+<table border="1" class="docutils">
+<colgroup>
+<col width="50%"/>
+<col width="50%"/>
+</colgroup>
+<tbody valign="top">
+<tr class="row-odd"><td>-tag</td>
+<td>a short name for target (<em>e.g.</em>,
+hostname) just for local logging.</td>
+</tr>
+<tr class="row-even"><td>-key</td>
+<td><p class="first">a short ID for this particular
+request in the local log, such as</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>[ACCESS::session data get sess
+</pre></div>
+</div>
+<p>ion.user.display_sessionid]</p>
+<p class="last">. Default is client address:port
+(if available).</p>
+</td>
+</tr>
+</tbody>
+</table>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">To receive data from the target server into variables, indicate:</div>
+</div>
+<table border="1" class="docutils">
+<colgroup>
+<col width="50%"/>
+<col width="50%"/>
+</colgroup>
+<tbody valign="top">
+<tr class="row-odd"><td><strong>option</strong></td>
+<td><strong>value</strong></td>
+</tr>
+<tr class="row-even"><td>-rbody</td>
+<td><p class="first">name (<em>without</em></p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span><span class="p">$</span>
+</pre></div>
+</div>
+<p>) of variable to receive (final)
+response entity body.</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-rbody
+</pre></div>
+</div>
+<p>value will be a TCL string in
+either binary or Unicode-text
+format (perhaps transcoded, in
+the latter case, from text in
+another charset like ISO-8859-1;
+see</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-rformat
+</pre></div>
+</div>
+<p>value to find out which). (This
+is mandated by the way iRules TCL
+strings work. See</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-rformat
+</pre></div>
+</div>
+<p>and</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-sniff
+</pre></div>
+</div>
+<p class="last">options plus <strong>Note 1</strong> for more
+details.)</p>
+</td>
+</tr>
+<tr class="row-odd"><td>-rheaders</td>
+<td><p class="first">name of variable to receive
+(final) reply headers. A fake
+header</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>X-HSSR-Charset
+</pre></div>
+</div>
+<p>will be appended to indicate what
+charset (if any) <strong>http_req</strong>
+thinks was used to encode the
+response entity body (see the</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-sniff
+</pre></div>
+</div>
+<p class="last">option).</p>
+</td>
+</tr>
+<tr class="row-even"><td>-rcookies</td>
+<td>name of variable to receive final
+summary of cookies (just cookie
+names and values, so beware of
+duplicate names).</td>
+</tr>
+<tr class="row-odd"><td>-rformat</td>
+<td><p class="first">name of variable which will be
+set to “binary” or “text” to
+indicate format of</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-rbody
+</pre></div>
+</div>
+<p>value. May be used without</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-rbody
+</pre></div>
+</div>
+<p class="last">option.</p>
+</td>
+</tr>
+<tr class="row-even"><td>-maxbody</td>
+<td><p class="first">longest acceptable response body
+(octets). Default 1 Mbyte. Before
+increasing</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-maxbody
+</pre></div>
+</div>
+<p class="last">length-limit review
+<a class="reference external" href="http://support.f5.com/kb/en-us/solutions/public/6000/500/sol6578.html">SOL6578</a>.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">For speed, <strong>http_req</strong> only sniffs content-type when given one or
+more of options</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-</span><span class="k">(</span><span class="nv">rbody</span><span class="o">|</span>rheaders<span class="o">|</span>rformat<span class="k">)</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">.</div>
+<div class="line">Each of</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-</span><span class="k">(</span><span class="nv">rbody</span><span class="o">|</span>rheaders<span class="o">|</span>rcookies<span class="o">|</span>rformat<span class="k">)</span>
+</pre></div>
+</div>
+<p>is optional and</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-</span><span class="k">(</span><span class="nv">rheaders</span><span class="o">|</span>rcookies<span class="k">)</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">variables, if requested, will be lists of alternating names and
+values.</div>
+<div class="line">You may optionally supply the following (use only ASCII characters in
+values for options other than</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-body</span>
+</pre></div>
+</div>
+<p>and</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-form</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">):</div>
+</div>
+<table border="1" class="docutils">
+<colgroup>
+<col width="50%"/>
+<col width="50%"/>
+</colgroup>
+<tbody valign="top">
+<tr class="row-odd"><td><strong>option</strong></td>
+<td><strong>value</strong></td>
+</tr>
+<tr class="row-even"><td>-method</td>
+<td>[<strong>GET</strong>|POST|…], default is
+GET.</td>
+</tr>
+<tr class="row-odd"><td>-form</td>
+<td><p class="first">a TCL list of (alternating)
+form-field names and values to
+submit to</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-uri
+</pre></div>
+</div>
+<p>, like</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>[list "name" "homer" "food" "d
+</pre></div>
+</div>
+<p>onut”]</p>
+<p>. The form-field data will be
+converted to format</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>application/x-www-form-urlenco
+</pre></div>
+</div>
+<p>ded</p>
+<p>then appended to URI if</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-method
+</pre></div>
+</div>
+<p>is GET or HEAD, uploaded in
+request body otherwise (<em>e.g.</em>,
+POST). <em>Note that with GET</em></p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-form
+</pre></div>
+</div>
+<p>yields standard query-string
+format like</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>http://svc.example.com/somethi
+</pre></div>
+</div>
+<p>ng?name=homer&amp;food=donut</p>
+<p>. Values must be text. A suitable</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>Content-Type
+</pre></div>
+</div>
+<p>header will be sent. You may not
+use both</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-form
+</pre></div>
+</div>
+<p>and</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span><span class="o">-</span><span class="p">(</span><span class="nx">body</span><span class="o">|</span><span class="k">type</span><span class="p">)</span>
+</pre></div>
+</div>
+<p class="last">at the same time. Default: none.</p>
+</td>
+</tr>
+<tr class="row-even"><td>-body</td>
+<td><p class="first">data to send (<em>e.g.</em>, with</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-method POST
+</pre></div>
+</div>
+<p>). Default: none (but see</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-form
+</pre></div>
+</div>
+<p>option). <em>Also set</em></p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span><span class="o">-</span><span class="k">type</span>
+</pre></div>
+</div>
+<p class="last">.</p>
+</td>
+</tr>
+<tr class="row-odd"><td>-type</td>
+<td><p class="first">value of</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>Content-Type
+</pre></div>
+</div>
+<p>header to send with</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-body
+</pre></div>
+</div>
+<p>data, such as “</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>application/json; charset=utf-
+</pre></div>
+</div>
+<p>8</p>
+<p>” or</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>multipart/form-data
+</pre></div>
+</div>
+<p>. It is very important to set</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span><span class="o">-</span><span class="k">type</span>
+</pre></div>
+</div>
+<p>when sending</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-body
+</pre></div>
+</div>
+<p class="last">data! Default: none.</p>
+</td>
+</tr>
+<tr class="row-even"><td>-headers</td>
+<td><p class="first">list of alternating HTTP header
+names and values to add to
+request, such as</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>  {Accept text/* Accept-Language
+fr-CA}
+</pre></div>
+</div>
+<p>. These headers override any
+corresponding defaults except for</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>Host
+</pre></div>
+</div>
+<p>and</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>Content-(Length|Type)
+</pre></div>
+</div>
+<p>. Defaults:</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>  {Accept <span class="gs">*/*</span> Accept-Language en
+User-Agent {BigIP/nn.xxxx (HSSRv
+</pre></div>
+</div>
+<p>2)} Accept-Charset {utf-8;q=1, is
+o-8859-1;q=0.9, <a href="https://clouddocs.f5.com/api/irules/HTTP-Super-SIDEBAND-Requestor-Client-Handles-Redirects-Cookies-Chunked-Transfer-APM-Access-etc.html#id1"><span class="problematic" id="id2">*</span></a>;q=0.8} Accept-E
+ncoding identity}</p>
+<p>where nn.xxxx is TMOS version+
+build-identifier and (HSSRv2) is
+version string for HTTP Super
+SIDEBAND Requestor. Headers set
+using</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-headers
+</pre></div>
+</div>
+<p>will be reused from</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-state
+</pre></div>
+</div>
+<p>info until you set</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-headers
+</pre></div>
+</div>
+<p>again. To cancel all custom
+headers give option</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span><span class="o">-</span><span class="n">headers</span><span class="w"> </span><span class="o">[</span><span class="n">list</span><span class="o">]</span>
+</pre></div>
+</div>
+<p class="last">.</p>
+</td>
+</tr>
+<tr class="row-odd"><td>-cookies</td>
+<td><p class="first">list of alternating cookie names
+and values to inject into
+request. Default: none. (To
+accumulate cookies between calls
+to <strong>http_req</strong> use the</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-state
+</pre></div>
+</div>
+<p>option. <em>Do not copy</em></p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-rcookies
+</pre></div>
+</div>
+<p><em>value to</em></p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-cookies
+</pre></div>
+</div>
+<p class="last">.)</p>
+</td>
+</tr>
+<tr class="row-even"><td>-userid</td>
+<td>a username for Basic
+Authentication (default none)
+and…</td>
+</tr>
+<tr class="row-odd"><td>-passwd</td>
+<td><p class="first">…a password (missing</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-passwd
+</pre></div>
+</div>
+<p>value defaults to empty string).
+NB: to gain speed in the normal
+case, these credentials will be
+sent preemptively and
+promiscuously to all servers
+queried (even after redirection).
+Credentials will be reused from</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-state
+</pre></div>
+</div>
+<p>info until you specify</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-(userid|passwd)
+</pre></div>
+</div>
+<p>again. To clear credentials give
+option</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-userid {}
+</pre></div>
+</div>
+<p class="last">.</p>
+</td>
+</tr>
+<tr class="row-even"><td>-nocache</td>
+<td><p class="first">[<strong>false</strong>|true] where
+false=trust upstream caches to do
+their jobs; true=demand fresh
+responses from origin servers.
+Default: false. Note:</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-nocache true
+</pre></div>
+</div>
+<p class="last">may cause delays. Also,
+<strong>http_req</strong> does not cache
+content locally; if you need a
+local cache, use a helper virtual
+server with a cache profile.</p>
+</td>
+</tr>
+<tr class="row-odd"><td>-ns</td>
+<td><p class="first">IP address of a single DNS
+nameserver or name (like
+/Common/vs-dns) of a virtual
+server having a pool of
+nameservers, which should be used
+to resolve hostnames in URI’s to
+IP addresses. Default: none (use
+BIG-IP management-plane BIND
+forwarding nameservers, per
+SOL12224). To make HSSR query
+nameservers in a Route Domain
+other than 0 you should use</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-ns
+</pre></div>
+</div>
+<p>with a virtual server using a
+pool of nameservers in the Route
+Domain of interest. Value of</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-ns
+</pre></div>
+</div>
+<p>will be reused from</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-state
+</pre></div>
+</div>
+<p>info until you give</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-ns
+</pre></div>
+</div>
+<p>option again. To stop using
+custom nameserver specify</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-ns {}
+</pre></div>
+</div>
+<p class="last">.</p>
+</td>
+</tr>
+<tr class="row-even"><td>-hostname <em>(optional)</em></td>
+<td><p class="first">hostname to place in HTTP Host
+header rather than hostname or
+IPaddress from</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-uri
+</pre></div>
+</div>
+<p class="last">URI.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">To utilize an HTTP(S) proxy server, supply:</div>
+</div>
+<table border="1" class="docutils">
+<colgroup>
+<col width="50%"/>
+<col width="50%"/>
+</colgroup>
+<tbody valign="top">
+<tr class="row-odd"><td>-proxy</td>
+<td><p class="first">URL (like</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>https://proxy.example.com:8443
+</pre></div>
+</div>
+<p>/</p>
+<p>) of HTTP proxy to use for <em>both</em>
+http and https requests. To
+access the proxy itself via TLS
+you will need a helper virtual
+server. If you access a proxy via
+plain http you may omit</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-virt
+</pre></div>
+</div>
+<p>but your traffic will <em>not</em> be
+secure en-route to proxy. If
+proxy wants authentication (Basic
+AuthN only) place user-ID and
+password into proxy URL like
+this:</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span><span class="nl">https</span><span class="p">:</span><span class="o">//</span><span class="nl">userid</span><span class="p">:</span><span class="n">password</span><span class="nv">@proxy</span><span class="p">.</span>
+</pre></div>
+</div>
+<p>example.com/</p>
+<p>. Default: none. The value of</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-proxy
+</pre></div>
+</div>
+<p>will be reused from</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-state
+</pre></div>
+</div>
+<p>info until you give</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-proxy
+</pre></div>
+</div>
+<p>option again. To stop using any
+proxy specify</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-proxy {}
+</pre></div>
+</div>
+<p class="last">.</p>
+</td>
+</tr>
+</tbody>
+</table>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">In special cases you may wish to supply:</div>
+</div>
+<table border="1" class="docutils">
+<colgroup>
+<col width="50%"/>
+<col width="50%"/>
+</colgroup>
+<tbody valign="top">
+<tr class="row-odd"><td><strong>option</strong></td>
+<td><strong>value</strong></td>
+</tr>
+<tr class="row-even"><td>-redir</td>
+<td><p class="first">[0|**1**|2] where 0=don’t
+follow redirects; <strong>1</strong>=follow
+redirects and retry POST/PUT/??
+after any redir out-and-back
+(supports POST to an
+APM-protected resource), but if</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-virt
+</pre></div>
+</div>
+<p class="last">is set send all requests to it;
+2=like 1 except do not retry
+POST/<em>etc</em>. Default is 1.</p>
+</td>
+</tr>
+<tr class="row-odd"><td>-expect</td>
+<td><p class="first">[<strong>0</strong>|100] where 0=send</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-(body|form)
+</pre></div>
+</div>
+<p class="last">data with request headers;
+100=send request headers then
+wait for server prompt before
+sending content (sometimes used
+with WS+SOAP). Default is 0.</p>
+</td>
+</tr>
+<tr class="row-even"><td>-sniff</td>
+<td><p class="first">[0|1|**2**|3|4|5] where
+0=determine content charset
+strictly per
+<a class="reference external" href="http://www.w3.org/Protocols/rfc2616/rfc2616.html">rfc2616</a>
+so text defaults to ISO-8859-1;
+1=like 0 but text defaults to
+UTF-8; <strong>2</strong>=when charset is
+not set by rfc2616 header,
+determine charset heuristically
+(W3C method; best); 3=treat
+response as ISO-8859-1 text
+regardless of headers or other
+info; 4=treat response as UTF-8
+text regardless; 5=treat response
+as binary no matter what. Default
+2 (see <strong>Note 1</strong>). You may use</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-rheaders
+</pre></div>
+</div>
+<p>option and inspect value of</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>X-HSSR-Charset
+</pre></div>
+</div>
+<p class="last">to learn <strong>http_req</strong>’s charset
+determination (likely easier than
+parsing reply headers and body
+yourself).</p>
+</td>
+</tr>
+<tr class="row-odd"><td>-munch</td>
+<td><p class="first">[0|**1**] where 0=enforce cookie
+origin rules; <strong>1</strong>=accept and
+send cookies liberally when
+hostname in</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-uri
+</pre></div>
+</div>
+<p>is not FQDN (helpful when you
+access some resource with just IP
+or a short alias for host in</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-uri
+</pre></div>
+</div>
+<p>, perhaps by using</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-virt
+</pre></div>
+</div>
+<p class="last">). Default is 1.</p>
+</td>
+</tr>
+<tr class="row-even"><td>-timeout</td>
+<td>maximum wait for connection in
+milliseconds. Default 7500.</td>
+</tr>
+<tr class="row-odd"><td>-wait</td>
+<td><p class="first">maximum wait for server response
+in seconds. Default 10. The
+receive-polling interval is
+proportional to</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span><span class="o">-</span><span class="k">wait</span>
+</pre></div>
+</div>
+<p>. Note: to fetch a very large
+response from a slow server you
+may have to increase</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span><span class="o">-</span><span class="k">wait</span>
+</pre></div>
+</div>
+<p class="last">.</p>
+</td>
+</tr>
+<tr class="row-even"><td>-idle</td>
+<td>maximum idle time on connection
+in seconds. Default 300.</td>
+</tr>
+<tr class="row-odd"><td>-maxtime</td>
+<td><p class="first">number of seconds after which
+<strong>http_req</strong> will cease trying to
+complete request and just return
+the current status. Use this
+option to limit “tolerance
+stacking” whereby a series of
+redirects and other delays, each
+of which seems tolerable by
+itself, may sum to an intolerable
+delay. Default is roughly 4-1/2
+minutes using default</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span><span class="o">-</span><span class="k">wait</span>
+</pre></div>
+</div>
+<p>and</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-timeout
+</pre></div>
+</div>
+<p>values. Note: setting</p>
+<div class="highlight-guess notranslate"><div class="highlight"><pre><span></span>-maxtime
+</pre></div>
+</div>
+<p class="last">isn’t mandatory; <strong>http_req</strong>
+always terminates even if server
+is malicious (see <strong>Note 2</strong>).</p>
+</td>
+</tr>
+<tr class="row-even"><td>-debug</td>
+<td>[<strong>0</strong>|1] where 1 means log
+debug info. Default is 0.</td>
+</tr>
+</tbody>
+</table>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+</div>
+<div class="section" id="apm-ltm-sso-cookie-example">
+<h2>APM+LTM SSO Cookie Example</h2>
+<div class="line-block">
+<div class="line">Suppose you use APM to authenticate and authorize connections via an
+LTM virtual server to a web application. You wish to SSO each client
+to that application, which uses its own session cookies for access
+control.</div>
+<div class="line">Suppose as well that the application sets its session cookies
+initially from a forms-based logon page which includes a new
+pseudorandom anti-XSRF token in a hidden form field every time that
+page is accessed. Finally, suppose that you are reluctant to use APM’s
+Client- Initiated Forms-Based SSO Logon Item (not an uncommon whimsy).</div>
+<div class="line">You might utilize <strong>http_req</strong> to log on to the web application on
+behalf of the user, then ensure that the application’s cookies get
+propagated to the user’s client:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>when RULE_INIT {
+ set static::logon_uri "https://orderEntry.example.com/logon"
+ set static::rex {(?i)&lt;input [^&gt;]* name=["']?authenticity_token["']?[^&gt;]*&gt;}
+ set static::chief_cookie "_webOE_session"
+}
+
+when ACCESS_SESSION_STARTED {
+ set sid [ACCESS::session sid]
+
+ #get logon form with fresh anti-XSRF token
+ set sts [call /Common/HSSR::http_req -virt /Common/vs-HSSR-helper \
+          -state hstate -uri $static::logon_uri -rbody logonform]
+ if { ($sts != 200) ||
+      ![regexp $static::rex $logonform elem] ||
+      ![regexp {(?i) value=['"]?([^ '"&gt;]{1,})} $elem junk token] } {
+  log local0.err "cannot get XSRF token from ${static::logon_uri} for sid ${sid}"
+  call /Common/HSSR::http_close hstate
+  ACCESS::session remove
+  return
+ }
+
+ #submit logon form with anti-XSRF token plus name &amp; password
+ #to obtain application session cookies
+ set uid [ACCESS::session data get "session.sso.token.last.username"]
+ set pwd [ACCESS::session data get -secure "session.sso.token.last.password"]
+
+ set sts [call /Common/HSSR::http_req -state hstate \
+          -uri $static::logon_uri -redir 0 -rcookies cookies \
+          -rheaders headers -method POST \
+          -form [list authenticity_token $token username $uid password $pwd]]
+ unset pwd ; #not something to leave lying around
+ if { ($sts == 302) &amp;&amp;
+      ([lsearch $cookies $static::chief_cookie] &gt;= 0) } {
+  #pass server cookies to client
+  set locn [ACCESS::session data get "session.server.landinguri"]
+  set resp "ACCESS::respond 302 Location ${locn}\x20"
+  foreach nam val $headers {
+   if {[string tolower $nam] eq "set-cookie"} {
+    append resp "Set-Cookie \x7b${val}\x7d\x20"
+   }
+  }
+  eval $resp
+ } else {
+  log local0.info "sid ${sid} user ${uid} logon refused by ${static::logon_uri}"
+  ACCESS::session remove
+ }
+
+ call /Common/HSSR::http_close hstate
+}
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line"><em>Note: the preceding example omits several details which would be
+wanted for use in a production system.</em></div>
+</div>
+<div class="section" id="notes">
+<h3>Notes</h3>
+<p><strong>Note 1</strong>: The format of</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-rbody</span>
+</pre></div>
+</div>
+<p>value (binary or text (=Unicode), see the</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-rformat</span>
+</pre></div>
+</div>
+<p>option) depends on content-mimetype as well as charset. <strong>For textual
+content-types</strong> (explicit or sniffed), <strong>if</strong> charset is <strong>not</strong>
+recognized as one which iRules can transcode to Unicode, <strong>then</strong></p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-rbody</span>
+</pre></div>
+</div>
+<p>value will be a <strong>binary</strong> string. <strong>If</strong> charset <strong>can</strong> be transcoded
+to Unicode, <strong>then</strong></p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-rbody</span>
+</pre></div>
+</div>
+<p>value <strong>will be</strong> a <strong>Unicode</strong> string <strong>no matter what any headers
+say</strong>. (For non-text content like</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">image</span><span class="o">/</span>jpeg
+</pre></div>
+</div>
+<p>,</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-rbody</span>
+</pre></div>
+</div>
+<p>format will be binary, of course.) The</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">X-HSSR-Charset</span>
+</pre></div>
+</div>
+<p>(fake) header shows approximately what the original character set was
+(ASCII and Windows-1252 map to ISO-8859-1). (Note: If you control the
+remote server, make it send a</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">Content-Type</span>
+</pre></div>
+</div>
+<p>header with suitable</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>charset=XXX
+</pre></div>
+</div>
+<p>on every response!) <strong>If</strong> your server does <strong>not</strong> indicate charset
+<strong>but</strong> you are <strong>certain</strong> it is <strong>always</strong> the same for</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">text</span><span class="o">/*</span>
+</pre></div>
+</div>
+<p>mimetypes, you may set</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-sniff</span><span class="w"> </span><span class="k">[</span><span class="nv">0</span><span class="o">|</span><span class="mi">1</span><span class="k">]</span>
+</pre></div>
+</div>
+<p>to save a few cycles. You may use</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-sniff</span><span class="w"> </span><span class="k">[</span><span class="nv">3</span><span class="o">|</span><span class="mi">4</span><span class="o">|</span><span class="mi">5</span><span class="k">]</span>
+</pre></div>
+</div>
+<p>when you are very confident of response format. (Without charset info in
+headers</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-sniff</span><span class="w"> </span><span class="mi">2</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">may mistake other ISO-8859-* charsets for ISO-8859-1; they are very
+hard to distinguish).</div>
+<div class="line"><strong>Note 2</strong>: Do not write to me about the Halting Problem.</div>
+</div>
+</div>
+<div class="section" id="security-warnings">
+<h3>Security Warnings</h3>
+<div class="line-block">
+<div class="line">For performance reasons this code sends Basic AuthN credentials
+promiscuously. Also this code does <em>not</em> validate all inputs strictly,
+nor will it prevent a malicious server wasting some BIG-IP memory. Do
+not expect this code to protect correspondent systems; for example,
+this code will accept and repeat cookies with invalid (per
+<a class="reference external" href="http://tools.ietf.org/html/rfc6265">rfc6265</a>) and probably
+dangerous names. NB: if you supply bogus options this code may produce
+unsought results.</div>
+</div>
+</div>
+<div class="section" id="hssr-helper-for-mark-s-http-super-sideband-requestor-v2-1">
+<h3>HSSR-helper for Mark’s HTTP Super SIDEBAND Requestor! (v2.1)</h3>
+<div class="line-block">
+<div class="line">Save this iRule in the Common partition under the name
+<strong>HSSR-helper</strong>.</div>
+<div class="line">You will use this iRule <strong>/Common/HSSR-helper</strong> along with iRule
+<a class="reference external" href="https://clouddocs.f5.com/api/irules/proc.html">proc</a>
+<strong>/Common/HSSR::http_req</strong> (the HTTP Super SIDEBAND Requestor v2.1) to
+greatly simplify access from your own iRules to arbitrary HTTP and
+HTTPS resources.</div>
+<div class="line">To make a <a class="reference external" href="https://clouddocs.f5.com/api/irules/SIDEBAND.html">SIDEBAND</a> connection to a TLS-guarded
+service you need a helper virtual server (at least through TMOS 11.5).
+One helper virtual server can support an arbitrary number of http_req
+instances/calls.</div>
+<div class="line">Configure your helper virtual server (say, “/Common/vs-HSSR-helper”)
+with a suitable Server SSL Profile, an HTTP Profile, and either
+SNAT-Automap or a SNAT Pool. Attach this iRule to the virtual server.
+Give your helper virtual server a non-routeable virtual IP address and
+non-standard port (say, 192.0.2.2:50002); you don’t want any
+accidental non-SIDEBAND connections to it. Do not configure any pool.
+Do not apply any Client SSL Profile.</div>
+<div class="line">When you <a class="reference external" href="https://clouddocs.f5.com/api/irules/call.html">call</a> <strong>/Common/HSSR::http_req</strong> to send web
+requests to servers off your BIG-IP, set</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">-virt</span>
+</pre></div>
+</div>
+<p>to your helper virtual server. E.g.,</p>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="k">[</span><span class="nv">call</span><span class="w"> </span><span class="o">/</span>Common<span class="o">/</span>HSSR::http_req<span class="w"> </span><span class="o">-</span>virt<span class="w"> </span><span class="o">/</span>Common<span class="o">/</span>vs-HSSR-helper<span class="w"> </span><span class="o">-</span>uri<span class="w"> </span>...<span class="k">]</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">.</div>
+<div class="line">The <strong>HSSR::http_req</strong> proc will add an</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">X-HSSR-Helper</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">header to each of its outbound requests. This iRule will read (and
+elide) that header, then use the <a class="reference external" href="https://clouddocs.f5.com/api/irules/node.html">node</a> command (and
+possibly an <a class="reference external" href="https://clouddocs.f5.com/api/irules/SSL.html">SSL</a> command) to connect each request to the
+proper server (supporting HTTP/1.1 persistent connections in normal
+fashion).</div>
+<div class="line">(Yes, we could build a full HTTP proxy to handle this. That would be
+overkill for our purposes.)</div>
+</div>
+</div>
+<div class="section" id="irule-hssr-source">
+<h3>iRule HSSR Source</h3>
+<div class="line-block">
+<div class="line">(This code is available in a ZIP file below.)</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>#== Mark's HTTP Super SIDEBAND Requestor! (v2.1) =====================
+#
+# Save THIS iRule in the Common partition under the name 'HSSR'.  Other
+# iRules will "call" procs (mainly 'http_req') from /Common/HSSR, e.g.,
+# "set status [call /Common/HSSR::http_req -uri $someURL -state xyz]"
+# and "call /Common/HSSR::http_done -state xyz".
+#
+# Also install iRule /Common/HSSR-helper (see below) for when you want to
+# connect to a TLS-protected (https) service.
+#
+#  ////////////////////////////////////////////////////////////////////////
+# // Follow SOL12224 to avert issues resolving hostnames in URI's after //
+# \\ you set System:Configuration:Device:DNS:BIND_Forwarder_Server_List \\
+#  \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+#
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Changes from previous version:  iRules proc implementation; persistent-
+# connection support; full/proper cookie support; IPv6 support; universal
+# outbound HTTP(S) helper-virtual-server support (including SNI); easy
+# HTML form submission; HTTP proxy support; HTTP 100-Continue support for
+# Web Services; good RFC compliance; content character-set sniffing; much
+# more besides!
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#
+# This iRule implements a nifty HTTP client 'http_req' using SIDEBAND.
+# It handles challenges like redirects and cookies (lets you access APM-
+# protected services!), IPv6, chunked transfer coding, easy HTML forms,
+# and Basic AuthN.
+#
+# You may connect directly to remote HTTP servers or to virtual servers
+# (http/https) on your LTM.  To connect to HTTPS remote servers you must
+# utilize a simple helper virtual server with a Server SSL Profile.  For
+# universal outbound HTTP(S) support attach the iRule 'HSSR-helper' to
+# your helper virtual server.  See 'HSSR-helper' for easy setup details.
+#
+# Basic usage example:
+#  set sts [call /Common/HSSR::http_req -uri "https://foo.com/bar/" \
+#                                       -virt /Common/vs-HSSR-helper \
+#                                       -tag "get-bar" -rbody rbody]
+#  log local0.info "server returned status=${sts}, content=${rbody}"
+#
+# NOTE: values for "-(state|rbody|rheaders|rcookies|rformat) pqr" NAME
+# VARIABLES $pqr INTO WHICH DATA WILL BE PLACED, destroying any previous
+# contents!
+#
+# Return value from http_req is HTTP status code ('555' indicates some
+# local problem--check the LTM log).  You may give options in any order
+# but if you repeat an option the later value replaces the earlier.
+#
+# You supply:
+#  -uri = absolute URI of target (required!)
+#
+#  -virt = (optional) name of LTM virtual server to connect to--if set,
+#            used in lieu of host:port from -uri (or host:port from
+#            -proxy url).  -virt value will be reused from -state info
+#            (see below) until you give -virt option again.  To stop using
+#            -virt specify "-virt {}".  Note: use of -virt is required to
+#            make https requests, and is useful when accessing a resource
+#            represented by a virtual server on your BIG-IP.
+#
+# Even when you set -virt, your -uri URI must include some hostname or
+# IP address (which by default will be copied into the HTTP Host header).
+# If you do not set -virt, then:  ensure your BIG-IP DNS setup is valid
+# so [RESOLV::lookup] works; or supply the -ns option; or put server IP
+# (or IP:port) in -uri URI.  If you put server IP into URI you may use
+# the -host option to force a hostname (rather than numeric IP) into the
+# HTTP Host header (plus TLS SNI when using 'HSSR-helper').  To make
+# https requests you must use "-virt /Common/vs-HSSR-helper" or similar.
+# Attach the iRule 'HSSR-helper' to your helper-virtual-server.
+#
+# IMPORTANT:  If you will make multiple requests, either to a single
+# server or to various servers which use cookies, PLEASE supply:
+#
+#  -state = name of variable in which connection state (including cookies,
+#             credentials, custom headers, -virt value, -proxy value, and
+#             -ns value) will be stored between calls to http_req.  In use
+#             this looks like "-state xyz" (no '$' before "xyz").  Using
+#             -state lets http_req perform better by keeping a SIDEBAND
+#             connection open between requests when appropriate.  Storing
+#             cookies also improves performance in most cases.  If using
+#             "-state xyz" you may "call /Common/HSSR::http_close xyz"
+#             after your final call to http_req.  NOTE:  preserve the
+#             value of $xyz between calls to http_req.  Default:  none
+#             (stateless operation).
+#
+# You should supply as well:
+#  -tag = a short name for target (e.g., hostname) just for local logging.
+#  -key = a short ID for this particular request in the local log, such
+#          as [ACCESS::session data get session.user.display_sessionid].
+#          Default is client address:port if available.
+#
+# To receive data from the target server into variables, indicate:
+#
+#  -rbody = name (without '$') of variable to receive (final) response
+#             entity body.  -rbody value will be a TCL string in either
+#             binary or Unicode-text format (perhaps transcoded, in the
+#             latter case, from text in another charset like ISO-8859-1);
+#             see -rformat value to find out which!  (This is mandated by
+#             the way iRules TCL strings work.  See -rformat and -sniff
+#             options plus [Note 1] for more details.)
+#  -rformat = name of variable which will be set to "binary" or "text" to
+#               indicate format of -rbody value.  May be used without
+#               -rbody option.
+#
+#  -rheaders = name of variable to receive (final) reply headers.  A fake
+#                header 'X-HSSR-Charset' will be appended to indicate what
+#                charset (if any) http_req thinks was used to encode the
+#                response entity body (see the -sniff option).
+#
+#  -rcookies = name of variable to receive final summary of cookies (just
+#                cookie names and values, so beware of duplicate names).
+#
+#  -maxbody = longest acceptable response body (octets).  Default 1 Mbyte.
+#               Before increasing -maxbody length-limit review SOL6578.
+#
+# Each of -(rbody|rheaders|rcookies|rformat) is optional and -(rheaders|
+# rcookies) variables, if requested, will be lists of alternating names
+# and values.
+#
+# For speed, http_req only sniffs content-type when one or more of
+# options -(rbody|rheaders|rformat) are specified.
+#
+# You may optionally supply the following (use only ASCII characters in
+# values of options other than -body and -form):
+#
+#  -method = [GET|POST|...], default is GET.
+#
+#  -form = a TCL list of (alternating) form-field names and values to
+#            submit to -uri, like [list "name" "homer" "food" "doughnut"].
+#            After conversion to 'application/x-www-form-urlencoded'
+#            format the form-field data is appended to URI if -method is
+#            GET or HEAD, uploaded in request body otherwise.  (With GET
+#            or HEAD, -form yields standard query-string format like
+#            "http://svc.example.com/whatever?name=homer&amp;food=doughnut".)
+#            Values must be text.  A suitable Content-Type header will be
+#            sent. You may not use -form and -(body|type) at the same
+#            time. Default: none.
+#  -body = data to send (e.g., when method is POST). Default: none (but
+#            see -form option).
+#  -type = value of Content-Type header to send with -body data, such as
+#            "application/json; charset=utf-8" or "multipart/form-data".
+#            It is very important to set -type when sending -body data!
+#            Default: none.
+#  -headers = list of alternating HTTP header names and values to add to
+#               request, such as {Accept text/* Accept-Language fr-CA}.
+#               These headers override any corresponding defaults except
+#               Host and Content-(Type|Length).  Defaults: {Accept */*
+#               Accept-Language en User-Agent {BigIP/nn.xxxx (HSSRv2)}
+#               Accept-Charset {utf-8;q=1, iso-8859-1;q=0.9, *;q=0.8}
+#               Accept-Encoding identity} where nn.xxxx is TMOS version+
+#               build-identifier and (HSSRv2) is version string for HTTP
+#               Super SIDEBAND Requestor.  Headers set using -headers will
+#               be reused from -state info until you set -headers again.
+#               To cancel all custom headers give option "-headers [list]".
+#
+#  -cookies = list of alternating cookie names and values to inject into
+#               request.  Default: none.  (To accumulate cookies between
+#               calls to http_req use the -state option.  DO NOT copy
+#               -rcookies value to -cookies.)
+#
+#  -userid = a username for Basic Authentication (default none) and...
+#  -passwd = ...a password (missing -passwd defaults to empty string)
+#             NB: to gain speed in the normal case, these credentials
+#             will be sent preemptively and promiscuously to all servers
+#             queried (even after redirection).  Credentials will be
+#             reused from -state info until you supply -(userid|passwd)
+#             again.  To clear credentials give option "-userid {}".
+#
+#  -nocache = [false|true] where *false*=trust upstream caches to do their
+#               jobs; true=demand fresh responses from origin servers.
+#               Default: false.  Note:  "-nocache true" may cause delays.
+#               Also, http_req does not cache content locally--if you need
+#               a cache, use a helper virtual server with a cache profile.
+#
+#  -ns = IP of DNS nameserver or name (e.g., /Common/vs-dns) of a virtual
+#          server having a pool of nameservers to resolve hostnames in
+#          URI's to IP addresses.  Default: none; use LTM nameserver(s).
+#          Value of -ns will be reused from -state info until you give
+#          -ns option again.  To stop using a custom nameserver supply
+#          "-ns {}".
+#
+#  -hostname = (optional) hostname to place in HTTP Host header rather
+#                than IP address or hostname from -uri URI.
+#
+# To utilize an HTTP(S) proxy server, supply:
+#  -proxy = URL of HTTP proxy (like "https://proxy.example.com:8443/") to
+#             use for BOTH http and https requests.  To access the proxy
+#             itself via TLS you will need a helper virtual server (e.g.,
+#             "-virt /Common/vs-HSSR-helper").  If you access a proxy
+#             via plain http you may omit -virt but your traffic will NOT
+#             be secure en-route to proxy.  If proxy wants authentication
+#             (Basic AuthN only) place user-ID and password into proxy URL
+#             like this: "https://userid:password@proxy.example.com/".
+#             Default: none.  The value of -proxy will be reused from
+#             -state info until you give -proxy option again.  To stop
+#             using any proxy supply "-proxy {}".
+#
+# In special cases you may wish to supply:
+#  -redir = [0|1|2] where 0=don't follow redirects; *1*=follow redirects
+#             and retry POST/PUT/?? after any redir out-and-back (supports
+#             POST to an APM-protected resource) but if -virt is set send
+#             all requests to it; 2=like 1 except do not retry POST/etc.
+#             Default is 1.
+#
+#  -expect = [0|100] where *0*=send -(body|form) data with request headers;
+#              100=send request headers then wait for server prompt before
+#              sending content.  (Used with WS+SOAP).  Default is 0.
+#
+#  -sniff = [0|1|2|3|4|5] where 0=determine content charset strictly per
+#             rfc2616 so text defaults to ISO-8859-1; 1=like 0 but text
+#             defaults to UTF-8; *2*=when charset is not set by rfc2616
+#             header, determine charset heuristically (W3C method--best);
+#             3=treat response as ISO-8859-1 text regardless of headers or
+#             other info; 4=treat response as UTF-8 text regardless;
+#             5=treat response as binary no matter what.  Default 2. [See
+#             Note 1]  You may use -rheaders option and inspect value of
+#             "X-HSSR-Charset" to learn http_req's charset determination
+#             (likely easier than parsing reply headers and body yourself).
+#
+#  -munch = [0|1] where 0=enforce cookie origin rules; *1*=accept and send
+#             cookies liberally when hostname in -uri is not FQDN (helpful
+#             when you access some resource with just IP or a short alias
+#             for host in -uri, perhaps by using -virt).  Default is 1.
+#
+#  -timeout = maximum wait for connection in milliseconds.  Default 7500.
+#  -wait = maximum wait for server response in seconds.  Default 10.  The
+#            receive-polling interval is proportional to -wait.  Note:  to
+#            fetch a very large response you may have to increase -wait.
+#  -idle = maximum idle time on connection in seconds.  Default 300.
+#  -maxtime = number of seconds after which http_req will cease trying to
+#               complete request and just return the current status.  Use
+#               this option to limit "tolerance stacking" whereby a series
+#               of redirects and other delays, each of which seems
+#               tolerable by itself, may sum to an intolerable delay.
+#               Default is roughly 4-1/2 minutes using default -wait and
+#               -timeout values.  Note:  setting -maxtime isn't mandatory;
+#               http_req always terminates even if server is malicious.
+#               [See Note 2]
+#  -debug = [0|1] where 1 means log debug info.  Default is 0.
+#
+# [Note 1] The format (binary or text (=Unicode), see -rformat option)
+#  of -rbody value depends on content-mimetype as well as charset.  FOR
+#  TEXTUAL CONTENT-TYPES (explicit or sniffed), IF charset is NOT
+#  recognized as one which iRules can transcode to Unicode, THEN -rbody
+#  value will be a BINARY string.  IF charset CAN be transcoded to
+#  Unicode, THEN -rbody value WILL BE a UNICODE string NO MATTER WHAT ANY
+#  HEADERS SAY.  (For non-text content like image/jpeg, -rbody format
+#  will be binary, of course.)  The X-HSSR-Charset (fake) header shows
+#  approximately what the original character set was (ASCII and
+#  Windows-1252 map to ISO-8859-1).  (Note:  If you control the remote
+#  server, make it send a Content-Type header with suitable charset=XXX
+#  on every response!)  IF your server does NOT indicate charset BUT you
+#  are CERTAIN it is ALWAYS the same for text/* mimetypes, you may set
+#  -sniff [0|1] to save a few cycles.  You may use -sniff [3|4|5] when
+#  you are very confident of response format.  (Without charset info
+#  in headers "-sniff 2" may mistake other ISO-8859-* charsets for
+#  ISO-8859-1; they are very hard to distinguish).
+#
+# [Note 2] Do not write to me about the Halting Problem.
+#
+# SECURITY NOTES:  for performance reasons this code sends Basic AuthN
+# credentials promiscuously.  Also this code does NOT validate all inputs
+# strictly, nor will it prevent a malicious server wasting some BIG-IP
+# memory.  Do not expect this code to protect correspondent systems; for
+# example, this code will accept and repeat cookies with invalid (per
+# rfc6265) and probably dangerous names.  NB: if you supply bogus options
+# this code may produce unsought results.
+#
+# Copyright &amp;copr; 2014 Mark Seecof.  Permission to modify and distribute
+# granted gratis on condition that you include this notice with each copy.
+#
+
+when RULE_INIT {
+ #IPv6 hostname per rfc2732; we recognize IPv6 but don't validate strictly
+ set static::HSSR_urlsplit {(?i)^(https?)://(?:([^:@]+):?([^@]*)@)?((?:\x5b[0-9a-f:.]{2,45}(?:%[0-9a-z:.]{1,18})?\x5d)|(?:[0-9.a-z-]{1,255}))(?::([0-9]{0,5}))?([*]|(?:/[^\x23]*)?)(?:\x23.*|)$}
+
+ set static::HSSR_ipv6match {(?i)[\x5b]?([0-9a-f:.]{2,45}(?:%[0-9a-z:.]{1,18})?)[\x5d]?}
+
+ set static::HSSR_ckymatch {^([^=\x24\x5c\x7b\x7d\x20\t]+)="?([^\x22;,\x20\t\x5c]*)"?(?:[\x20\t]*;[\x20\t]*(.*))?$}
+
+ set static::HSSR_quiver {(?i)&lt;meta[\x20\t][^&gt;]*[\x20\t]?http-equiv=['\x22]?content-type['\x22\x20\t]?[^&gt;]*&gt;}
+
+ set static::HSSR_csetmeta {(?i)&lt;meta[\x20\t]+charset=['\x22]?([^'\x22&gt;]+)}
+
+ set static::HSSR_xmlenc {(?i)&lt;[?]xml[\x20\t]+.*encoding=['\x22]?([^'\x22?&gt;]+)}
+
+ #string option names (sort alphabetically)
+ set static::HSSR_s_opts [list body cookies form headers hostname key \
+                     method nocache ns passwd proxy rbody rcookies \
+                     rformat rheaders state tag type uri userid virt]
+ #integer options (sort these too)
+ set static::HSSR_n_opts [list debug expect idle maxbody maxtime munch \
+                     redir sniff timeout wait]
+ #and these as well...
+ set static::HSSR_done [list accept accept-charset accept-encoding \
+                   accept-language content-length content-type host \
+                   user-agent x-hssr-helper]
+ set static::HSSR_nogo [list closed closing failed timeout]
+}
+
+proc http_req {args} {
+ #set me [lindex [info level 0] 0]
+ #oops, in TMOS 11.4-5 [info level 0] unavailing and [info frame] undefined
+ set me "http_req"
+
+ set uri ""
+ set virt "!"
+ set hostname ""
+ set state ""
+ set tag "HSSR"
+ set key ""
+ set rbody ""
+ set rformat ""
+ set rheaders ""
+ set rcookies ""
+ set method "GET"
+ set form [list]
+ set body ""
+ set type ""
+ set headers [list "!" "!"]
+ set cookies [list]
+ set userid "\x19"
+ set passwd ""
+ set proxy "!"
+ set ns "!"
+
+ set expect 0
+ set nocache false
+ set sniff 2
+ set redir 1
+ set munch 1
+ set timeout 7500
+ set wait 10
+ set idle 300
+ set maxtime 0
+ set maxbody 1048576
+ set debug 0
+
+ set e ""
+ set visits 0
+ while {[incr visits] &lt; 2} {
+  if {[llength $args] &amp; 1} {
+   set e "arguments must be '-option value' pairs"
+  } else {
+   foreach {n v} $args {
+    set opt [string range $n 1 end]
+    set xn -1
+    if {!($n starts_with "-") ||
+        ( ([lsearch -sorted $static::HSSR_s_opts $opt] &lt; 0) &amp;&amp;
+          ([set xn [lsearch -sorted $static::HSSR_n_opts $opt]] &lt; 0) )} {
+     set e "option '${n}' not recognized"
+     break
+    }
+    if {($xn &gt;= 0) &amp;&amp; [regexp {[^0-9]} $v]} {
+     set e "option ${n} value must be integer"
+     break
+    }
+    set $opt $v
+   }
+  }
+
+  #evade iRules checker so we can be called from events
+  #on different kinds of virtual server, etc
+  if {($key eq "") &amp;&amp;
+      ![catch {eval "IP::client_addr"} key] &amp;&amp;
+      ![catch {eval "IP::protocol"} pn] &amp;&amp;
+      ([set qry [expr {($pn == 6) ? "TCP::client_port" :
+                        (($pn == 17) ? "UDP::client_port" : "")}]] ne "") &amp;&amp;
+      ![catch {eval $qry} tmp]} {
+   append key ":" $tmp
+  }
+  set tkm "${tag} ${key}: ${me}"
+
+  if {$e ne ""} { break }
+
+  #saved state (possibly reuse connection)?
+  if {$state ne ""} { upvar 1 $state stvar }
+  if {![info exists stvar] || ([llength $stvar] &lt; 9)} {
+   set stvar [list false {} "" "" "" "" [list] "" ""]
+  } elseif {$debug &amp;&amp; [lindex $stvar 0]} {
+   log local0.info "${tkm} might re-use conn to [lindex $stvar 2]"
+  }
+  foreach {connected conn cdest vs px nsvr crumbs creds kopf} $stvar { break }
+
+  if {$virt eq "!"} { set virt $vs }
+  if {$proxy eq "!"} { set proxy $px }
+  if {$ns ne "!"} { set nsvr [expr {($ns ne "") ? "@${ns}" : ""}] }
+
+  set ffcount [llength $form]
+  set bodylen [string bytelength $body]
+
+  set auth_hdrs ""
+
+  if {$uri eq ""} {
+   set e "you must supply -uri option!"
+  } elseif {![regexp $static::HSSR_urlsplit $uri junk schm ruid rpwd host port path] ||
+            ([string length $path] &gt; 2040)} {
+   set e "malformed -uri ${uri}"
+  } elseif {([set schm [string tolower $schm]] ne "") &amp;&amp;
+            [set rTLS [expr {[string index $schm end] eq "s"}]] &amp;&amp;
+            ($virt eq "")} {
+   set e "SIDEBAND to TLS (https) needs helper virtual-server"
+  } elseif {$ffcount &amp; 0x1} {
+   set e "-form value must list pairs of field names and values"
+  } elseif {$ffcount &amp;&amp; ($bodylen || ($type ne ""))} {
+   set e "option -form precludes options -body or -type"
+  } elseif {$bodylen &amp;&amp; (($method eq "GET") || ($method eq "HEAD"))} {
+   set e "option -body incompatible with -method ${method}"
+  } elseif {($path eq "*") &amp;&amp; ($method ne "OPTIONS")} {
+   set e "URI path '*' valid only with -method OPTIONS"
+  } elseif {$ruid ne ""} {
+   set e "username+password in request URI not supported"
+  } elseif {[llength $headers] &amp; 1} {
+   set e "-headers option invalid"
+  } elseif {[llength $cookies] &amp; 1} {
+   set e "-cookies option invalid"
+  } elseif {$expect &amp;&amp; ( ($expect != 100) || !($bodylen || $ffcount) ||
+                         ($method eq "GET") || ($method eq "HEAD") )} {
+   set e "use '-expect 100' only when sending -body or -form data"
+  } elseif {$proxy ne ""} {
+   if {![regexp $static::HSSR_urlsplit $proxy junk pxy_s pxy_uid pxy_pwd pxy_h pxy_p]} {
+    set e "-proxy URL invalid"
+    break
+   }
+   set pxy_s [string tolower $pxy_s]
+   set pxy_h [string tolower $pxy_h]
+   if {[string index $pxy_h 0] eq "\x5b"} {
+    set pxy_h [string map [list "%25" "%"] $pxy_h]
+    regexp $static::HSSR_ipv6match $pxy_h junk raddr
+   } else {
+    if {[string index $pxy_h end] eq "."} {
+     set pxy_h [string range $pxy_h 0 end-1]
+    }
+    if {![catch {IP::addr $pxy_h mask 255.255.255.255}]} {
+     set raddr [eval format "::ffff:%02x%02x:%02x%02x" [split $pxy_h "."]]
+    } else {
+     if {!( ([set tmp [lindex [eval "RESOLV::lookup ${nsvr} inet -a ${pxy_h}"] 0]] ne "") &amp;&amp;
+            ([set raddr [eval format "::ffff:%02x%02x:%02x%02x" [split $tmp "."]]] ne "")
+          ) &amp;&amp;
+         ([set raddr [lindex [eval "RESOLV::lookup ${nsvr} inet6 -aaaa ${pxy_h}"] 0]] eq "") &amp;&amp;
+         ($virt eq "")} {
+      set e "cannot resolve proxy host ${pxy_h} to IP address"
+      break
+     }
+    }
+   }
+   if {$pxy_p eq ""} {
+    set pxy_p [expr {([string index $pxy_s end] eq "s") ? "443" : "80"}]
+   }
+   set xhelper ""
+   if {$virt eq ""} {
+    set dest "${raddr}.${pxy_p}"
+   } else {
+    set dest $virt
+    if {$raddr ne ""} {
+     set xhelper "X-HSSR-Helper: [list $pxy_s $raddr $pxy_p [virtual] $key]\r\n"
+    }
+   }
+   if {$pxy_uid ne ""} {
+    append auth_hdrs "Proxy-Authorization: Basic\x20" \
+                     [b64encode "${pxy_uid}:${pxy_pwd}"] "\r\n"
+   }
+   if {$debug} {
+    log local0.info "${tkm} will send requests via proxy ${pxy_h}:${pxy_p}"
+   }
+  } else {
+   set xhelper [set dest ""]
+  }
+ } ; #one-visit block
+ if {$e ne ""} {
+  log local0.err "${tkm} ${e}"
+  return -code error "${me} ${e}"
+ }
+
+ set host [string tolower $host]
+ if {[set ipv6 [expr {[string index $host 0] eq "\x5b"}]]} {
+  set host [string map [list "%25" "%"] $host]
+  regexp $static::HSSR_ipv6match $host junk haddr
+ } elseif {[string index $host end] eq "."} {
+  set host [string range $host 0 end-1]
+ }
+ if {$port eq ""} { set port [expr {$rTLS ? "443" : "80"}] }
+ set server "${host}:${port}"
+
+ if {$path eq ""} { set path "/" }
+
+ #milk helps us swallow cookies
+ set milk [expr {$munch &amp;&amp; ![regexp {[^.][.][^.]+[^0-9\x5d]$} $host]}]
+
+ if {$userid eq ""} {
+  set creds ""
+ } elseif {$userid ne "\x19"} {
+  set creds "Authorization: Basic [b64encode "${userid}:${passwd}"]\r\n"
+ }
+ if {$creds ne ""} { append auth_hdrs $creds }
+
+ #reuse headers like User-Agent from saved state unless caller overrides
+ if {($kopf eq "") || ![llength $headers] ||
+     ([lindex $headers 0] ne "!") || ([lindex $headers 1] ne "!")} {
+  set kopf ""
+
+  set v [expr {([set x [lsearch -regexp $headers {(?i)^Accept$}]] &lt; 0) ? \
+               "*/*" : [lindex $headers [incr x]]}]
+  append kopf "Accept: ${v}\r\n"
+
+  set v [expr {([set x [lsearch -regexp $headers {(?i)^Accept-Charset$}]] &lt; 0) ? \
+               "utf-8;q=1, iso-8859-1;q=0.8, *;q=0.6" : \
+               [lindex $headers [incr x]]}]
+  append kopf "Accept-Charset: ${v}\r\n"
+
+  set v [expr {([set x [lsearch -regexp $headers {(?i)^Accept-Encoding$}]] &lt; 0) ? \
+               "identity" : [lindex $headers [incr x]]}]
+  append kopf "Accept-Encoding: ${v}\r\n"
+
+  set v [expr {([set x [lsearch -regexp $headers {(?i)^Accept-Language$}]] &lt; 0) ? \
+               "en" : [lindex $headers [incr x]]}]
+  append kopf "Accept-Language: ${v}\r\n"
+
+  upvar #0 tcl_platform static::tcl_platform ; #SOL14544 workaround
+  set tmm_vers $static::tcl_platform(tmmVersion)
+  set v [expr {([set x [lsearch -regexp $headers {(?i)^User-Agent$}]] &lt; 0) ? \
+               "BigIP/${tmm_vers} (HSSRv2.1)" : [lindex $headers [incr x]]}]
+  append kopf "User-Agent: ${v}\r\n"
+
+  if {[llength $headers] &gt; 1} {
+   foreach {n v} $headers {
+    if {($n ne "!") &amp;&amp;
+        ([lsearch -sorted $static::HSSR_done [string tolower $n]] &lt; 0)} {
+     append kopf "${n}:\x20${v}\r\n"
+    }
+   }
+  }
+ }
+
+ #$crumbs format {name1 {dom1 path1 pathlen1 val1 exp1 secure1} name2 ...}
+ if {[llength $cookies]} {
+  set cdom [expr {$milk ? "***" : \
+                  [expr {([string first "." $host] &gt; 0) ? \
+                         "*.${host}" : $host}] }]
+  set cpth "/"
+  set cpsz 1
+  set cexp 2147485546 ; #we yield one second to propitiate Saturn
+  set cscr 0
+
+  foreach {n v} $cookies {
+   set repl 0
+   #cookie names and paths ARE case-sensitive
+   foreach x [lsearch -all -exact $crumbs $n] {
+    set c [lindex $crumbs [incr x]]
+    if {([lindex $c 0] eq $cdom) &amp;&amp; ([lindex $c 1] eq $cpth)} {
+     set crumbs [lreplace $crumbs $x $x [lreplace $c 3 5 $v $cexp $cscr]]
+     set repl 1
+    }
+   }
+   if {!$repl} {
+    lappend crumbs $n [list $cdom $cpth $cpsz $v $cexp $cscr]
+   }
+  }
+ }
+
+ if {$ffcount} {
+  #prepare to submit form
+  set w3c [list "%20" "+" "%0a" "%0d%0a"]
+  set utf8 0
+  set payload ""
+  set sep ""
+  foreach {n v} $form {
+   append payload $sep [string map $w3c [URI::encode $n]]
+   append payload "=" [string map $w3c [URI::encode $v]]
+   incr utf8 [expr {![string is ascii "${n}${v}"]}]
+   set sep "&amp;"
+  }
+
+  if {($method eq "GET") || ($method eq "HEAD")} {
+   append path [expr {([string first "?" $path] &lt; 0) ? "?" : "&amp;"}]
+   append path $payload
+  } else {
+   set body $payload
+   set bodylen [string bytelength $body]
+
+   set type "application/x-www-form-urlencoded"
+   #we only assert charset= if payload contains non-ASCII so server
+   #will (generally) assume an acceptable charset, since we don't
+   #really know what server wants and ASCII is broadly compatible
+   if {$utf8} { append type "; charset=UTF-8" }
+  }
+ }
+
+ if {$wait &lt; 0.2} { set wait 0.2 } ; #some eager-beager will try "-wait 0"
+ set wait_ms [expr {$wait * 1000}]
+
+ if {$maxtime} {
+  set maxclock [expr {[clock seconds] + $maxtime - ($timeout + $wait)}]
+ }
+
+ #max redirects we will follow
+ set rtry 7
+
+ set rslt 555
+ set hlist [list]
+ set booty "" ; set bootylen 0
+ set mimetype "unk/unk"
+ set charset "unk"
+ set who [set where [set how [set what [set when ""]]]]
+ while {[incr rtry -1] &gt;= 0} {
+  #to whom will we connect?
+  if {$dest eq ""} {
+   if {$ipv6} {
+    set raddr $haddr
+   } elseif {![catch {IP::addr $host mask 255.255.255.255}]} {
+    set raddr [eval format "::ffff:%02x%02x:%02x%02x" [split $host "."]]
+   } else {
+    if {!( ([set tmp [lindex [eval "RESOLV::lookup ${nsvr} inet -a ${host}"] 0]] ne "") &amp;&amp;
+           ([set raddr [eval format "::ffff:%02x%02x:%02x%02x" [split $tmp "."]]] ne "")
+        ) &amp;&amp;
+        ([set raddr [lindex [eval "RESOLV::lookup ${nsvr} inet6 -aaaa ${host}"] 0]] eq "") &amp;&amp;
+        ($virt eq "")} {
+     set e "cannot resolve ${host} to IP address"
+     set rtry -2
+     break
+    }
+   }
+   set xhelper ""
+   if {$virt eq ""} {
+    set dest "${raddr}.${port}"
+   } else {
+    set dest $virt
+    if {$raddr ne ""} {
+     set xhelper "X-HSSR-Helper: [list $schm $raddr $port [virtual] $key]\r\n"
+    }
+   }
+  }
+
+  #canonicalize path
+  regsub -all {(?://)|(?:[^/]+/[.][.]/)} $path "/" path
+
+  #retry POST/whatever after redirect(s)?
+  if {($what ne "") &amp;&amp; ($who eq $server) &amp;&amp; ($path eq $where)} {
+   set method $how
+   set body $what
+   set what ""
+   set expect $when
+   set when ""
+  }
+
+  #cons up HTTP request
+  set req [expr {($proxy eq "") ?
+                 "${method} ${path} HTTP/1.1\r\n" :
+                 "${method} ${schm}://${server}${path} HTTP/1.1\r\n"
+                }]
+  append req $xhelper
+  append req $auth_hdrs
+
+  if {$hostname eq ""} { set hostname $server }
+  append req "Host: ${hostname}\r\n"
+
+  if {($method ne "GET") &amp;&amp; ($method ne "HEAD")} {
+   #we handle Content-Length because caller might confuse chars and bytes
+   append req "Content-Length: ${bodylen}\r\n"
+
+   if {$bodylen} {
+    if {$type ne ""} { append req "Content-Type: ${type}\r\n" }
+
+    set dyt [clock format [clock seconds] -format "%a, %d %b %Y %T GMT" -gmt 1]
+    append req "Date: ${dyt}\r\n"
+
+    if {$expect} { append req "Expect: 100-Continue\r\n" }
+   }
+  }
+
+  if {$nocache} { append req "Cache-Control: no-cache\r\nPragma: no-cache\r\n" }
+
+  #purge expired cookies
+  set tmp [list]
+  set now [clock seconds]
+  foreach {n c} $crumbs {
+   if {[lindex $c 4] &gt; $now} { lappend tmp $n $c }
+  }
+  set crumbs $tmp
+
+  #assemble Cookie header
+  if {[llength $crumbs]} {
+   set tmp ""
+   set plen [string length $path]
+   foreach {n c} $crumbs {
+    set cdom [lindex $c 0]
+    set cpth [lindex $c 1]
+    if {($rTLS || ![lindex $c 5]) &amp;&amp; (
+         ($ipv6 &amp;&amp; ([string index $cdom 0] eq "\x5b") &amp;&amp;
+          [IP::addr [string range $cdom 1 end-1] equals $haddr]) ||
+         [string match $cdom $host] ||
+         ( ([string index $cdom 0] eq "*") &amp;&amp;
+           ([string range $cdom 2 end] eq $host)
+         )
+        ) &amp;&amp; (
+         ($path starts_with $cpth) &amp;&amp;
+         ( ($plen == [set cpsz [lindex $c 2]]) ||
+           ([string index $path $cpsz] eq "/") ||
+           ([string index $cpth end] eq "/")
+         )
+        )} {
+     append tmp "\x20${n}=[lindex $c 3];"
+    }
+   }
+   #possibly jar holds no cookies for this host
+   if {$tmp ne ""} { append req "Cookie:${tmp}\r\n" }
+  }
+
+  #bring in previously-prepared standard and custom headers
+  append req $kopf
+
+  append req "\r\n" ; #headers complete
+
+  #Are we already or still connected?
+  if {$connected &amp;&amp;
+      ( ($cdest ne $dest) ||
+        [catch {connect info -status $conn} sts] ||
+        ([lsearch -sorted $static::HSSR_nogo [lindex [lindex $sts 0] 0]] &gt; -1)
+      )} {
+   catch {close $conn}
+   set connected false
+  }
+  #otherwise a little race...
+
+  if {!$connected} {
+   if {$debug} {
+    log local0.info "${tkm} attempt connect to ${dest} '${server}' ${timeout} msec timeout"
+   }
+   if {[catch {connect -timeout $timeout -idle $idle -status sts $dest} conn] ||
+       ($conn eq "")} {
+    set e "connect to ${dest} '${server}' fails: ${sts} (${conn})"
+    set rtry -2
+    break
+   }
+   set connected true
+   set cdest $dest
+  }
+
+  if {$debug} {
+   log local0.info "${tkm} send to ${dest} '${server}' ${bodylen}-octet body, headers=${req}"
+  }
+
+  #we accept only one 100-Continue per POST/PUT attempt
+  set pending 0
+  set bites 2 ; #at the apple, lover
+  while {[incr bites -1] &gt;= 0} {
+   if {$expect} {
+    if {!$pending} {
+     #I see you shiver with antici...
+     set pending $bodylen ; set bodylen 0
+    } else {
+     #...pation
+     set bodylen $pending ; set pending 0
+    }
+   }
+
+   if {$req ne ""} {
+    if {$debug} {
+     log local0.info "${tkm} connected to ${dest} '${server}' sending [string length $req]-octet req headers"
+     if {$pending} {
+      log local0.info "${tkm} expecting 100-Continue before sending body"
+     }
+    }
+    if {[catch {send -timeout $wait_ms -status sts $conn $req} sent] ||
+        ($sts ne "sent") || ($sent != [string length $req])} {
+     set e "send [string length $req]-octet req to ${dest} '${server}' fails: sent ${sent}, got status ${sts} (${sent})"
+     break
+    }
+   }
+   if {$bodylen} {
+    if {$debug} {
+     log local0.info "${tkm} sending ${bodylen}-octet body to ${dest} '${server}'"
+    }
+    if {[catch {send -timeout $wait_ms -status sts $conn $body} sent] ||
+        ($sts ne "sent") || ($sent != $bodylen)} {
+     set e "send $bodylen-octet body to ${dest} '${server}' fails: sent ${sent}, got status ${sts} (${sent})"
+     break
+    }
+   }
+
+   #default recv-poll interval is 50ms with max wait 10 secs
+   #We adjust interval to -wait option
+   set ctr 200
+   set intvl [expr {int($wait_ms / $ctr)}] ; #keep this with initial ctr value
+   set hdrs [set booty ""]
+   set sts "unk"
+   while {($ctr &gt; 0) &amp;&amp; ($sts ne "failed") &amp;&amp; ($sts ne "closed")} {
+    if {[catch {recv -peek -timeout $intvl -status sts $conn} reply]} {
+     set e "peek hdrs fails: ${sts} (${reply})"
+     break
+    }
+
+    if {[set hbrk [string first "\r\n\r\n" $reply]] &gt; 0} {
+     #TODO: support rfc5987 header-value charsets (priority: quite low)
+     if {[catch {recv -status sts [incr hbrk 4] $conn} hdrs]} {
+      set e "recv hdrs fails: ${sts} (${hdrs})"
+      set hdrs ""
+      break
+     }
+     if {$debug} {
+      log local0.info "${tkm} reply hdrs [string map [list "\r\n" ",\x20"] $hdrs]"
+     }
+
+     #extract HTTP status code to $rslt
+     if {([string length $hdrs] &lt; 16) ||
+         ![regexp {^HTTP/1[.][01]\x20([0-9]+)[^\r]*\r\n} $hdrs skip rslt]} {
+      set e "server data unrecognized (not HTTP?), initial bytes:\x20"
+      append e [URI::encode [string range $hdrs 0 31]]
+      set hdrs ""
+      break
+     }
+     set hdrs [string range $hdrs [string length $skip] end]
+
+     if {($method eq "HEAD") || ($rslt == 204) || ($rslt starts_with "1")} {
+      break
+     }
+
+     if {[regexp {(?i)Transfer-Encoding:[\x20\t]*Chunked} $hdrs]} {
+      set bootylen 0
+      set trail false
+      while {$ctr &gt; 0} {
+       if {[catch {recv -peek -timeout $intvl -status sts $conn} chunk]} {
+        set e "peek chunksz fails: ${sts} (${chunk})"
+        break
+       }
+
+       if {$trail} {
+        #flush optional trailing headers
+        if {[string length $chunk] &gt; 1} {
+         if {( ($chunk starts_with "\r\n") &amp;&amp; [set flush 2] ) ||
+             ( ([set flush [string first "\r\n\r\n" $chunk]] &gt;= 0) &amp;&amp;
+               [incr flush 4] )} {
+          if {[catch {recv -status sts $flush $conn} junk]} {
+           set e "skip trailing headers fails: ${sts} (${junk})"
+          }
+          set trail false
+          break
+         }
+        }
+        incr ctr -1
+        continue
+       }
+
+       set hex ""
+       if {[regexp {^(?:[\r\n])*([0-9A-Fa-f]+)[^\r]*\r\n} $chunk skip hex] &amp;&amp;
+           ($hex ne "0")} {
+        if {[catch {recv -status sts [string length $skip] $conn} junk]} {
+         set e "skip chunksz fails: ${sts} (${junk})"
+         break
+        }
+        scan $hex "%x" chunksz
+        if {$chunksz &gt; 0} {
+         if {($bootylen + $chunksz) &gt; $maxbody} {
+          set e "chunked body length exceeds -maxbody ${maxbody}"
+          break
+         }
+         set z [expr {$ctr * $intvl}]
+         if {![catch {recv -timeout $z -status sts $chunksz $conn} chunk] &amp;&amp;
+             ([string length $chunk] == $chunksz)} {
+          set booty [binary format a*a* $booty $chunk]
+          incr bootylen $chunksz
+         } else {
+          set e "recv 0x${hex}=${chunksz}-octet chunk fails: ${sts} (${chunk})"
+          break
+         }
+        }
+       } elseif {$hex eq "0"} {
+        if {[catch {recv -status sts [string length $skip] $conn} junk]} {
+         set e "skip final chunksz fails: ${sts} (${junk})"
+         break
+        }
+        set trail true ; #ignore optional trailing headers
+        continue
+       }
+       incr ctr -1
+      } ; #chunks loop
+      if {$e eq ""} {
+       if {$hex ne "0"} {
+        set e "timed-out awaiting additional (or terminating zero-size) chunk"
+       } elseif {$trail} {
+        set e "timed-out while flushing optional trailing headers"
+       }
+      }
+     } elseif {(![set clh [regexp {(?i)Content-Length:[\x20\t]*([0-9]+)} $hdrs junk clen]] &amp;&amp;
+                [set clen $maxbody]) ||
+               (($clen &gt; 0) &amp;&amp; ($clen &lt;= $maxbody))} {
+      set z [expr {$ctr * $intvl}]
+      if {[catch {recv -timeout $z -status sts $clen $conn} booty] ||
+          ([set bootylen [string length $booty]] &lt; 0)} {
+       set e "recv ${clen}-octet body fails: ${sts} (${booty})"
+      } elseif {$clh &amp;&amp; ($bootylen &lt; $clen)} {
+       set e "recv body fails (${sts}), got only ${bootylen} of Content-Length: ${clen} octets"
+      }
+     } elseif {$clen &gt; $maxbody} {
+      set e "Content-Length: ${clen} exceeds -maxbody ${maxbody}"
+     }
+     if {$e ne ""} {
+      set booty "" ; set bootylen 0
+     }
+     #here we have reply headers, plus body if any, so stop polling
+     break
+    }
+
+    incr ctr -1
+   } ; #receive-poll (ctr) loop
+   if {$e ne ""} {
+    set rslt 555
+    catch {close $conn}
+    set connected false
+    break
+   }
+
+   if {($hdrs eq "") &amp;&amp; $expect &amp;&amp; $pending &amp;&amp; ($sts eq "timeout")} {
+    if {$debug} {
+     log local0.info "${tkm} wait for 100-Continue timed out--per rfc2616 send data now"
+    }
+    set req ""
+    continue
+   }
+
+   if {$debug} {
+    if {$ctr &lt; 1} {
+     log local0.info "${tkm} timed out awaiting response from ${dest} '${server}'"
+    }
+    log local0.info "${tkm} status ${rslt}, got [string length $hdrs] headers octets and ${bootylen} content octets"
+   }
+   if {$rslt != 100} {
+    set bites -1
+   } elseif {!$expect} {
+    #rfc2616 allows unexpected 100-Continue
+    set req ""
+    set bodylen 0
+    if {$debug} {
+     log local0.info "${tkm} got unexpected 100-Continue from ${server}"
+    }
+   }
+
+   if {$maxtime &amp;&amp; ([clock seconds] &gt; $maxclock)} {
+    if {$debug} {
+     log local0.info "${tkm} hit maxtime ${maxtime} secs after [expr {7 - $rtry}] redirects"
+    }
+    set rtry -1
+    break
+   }
+
+   #compute default cookie path
+   regexp {^/[^?#]*} $path ckypath
+   if {[set x [string last "/" $ckypath]] &gt; 0} { incr x -1 }
+   set ckypath [string range $ckypath 0 $x]
+
+   #remove LWS from headers
+   set hdrs [regsub -all {[\x20\t]*\r\n[\x20\t]+} $hdrs "\x20"]
+
+   #parse headers
+   set mimetype "unk/unk"
+   set charset "unk"
+   set hlist [list]
+
+   set hdrs [string map [list "\r\n" "\n"] $hdrs]
+   set rlist [split $hdrs "\n"]
+   foreach rline $rlist {
+    if {![regexp {^([^:]+):[ \t]+(.*)} $rline junk n v]} { continue }
+    set v [string trim $v]
+
+    #I wish (September 2013) iRules had "switch -nocase"
+    switch -- [string tolower $n] {
+     "set-cookie" {
+      set cky [set val [set opts ""]]
+      #unlike some browsers we reject nameless cookies
+      while {([string bytelength $v] &lt; 4480) &amp;&amp;
+             [regexp $static::HSSR_ckymatch $v junk cky val opts]} {
+       if {[regexp {(?i)Domain=[.]?([^.;\x20\t][^;\x20\t]*)} $opts junk cdom]} {
+        set cdom [string tolower $cdom]
+        if {[string index $cdom 0] eq "\x5b"} {
+         if {!$ipv6 || ![regexp $static::HSSR_ipv6match $cdom junk caddr] ||
+             ![IP::addr $caddr equals $haddr]} {
+          if {!$milk} { break }
+          set cdom "***"
+         }
+        } elseif {[string first "." $cdom] &lt; 1} {
+         if {$cdom ne $host} {
+          if {!$milk} { break }
+          set cdom "***"
+         }
+        } elseif {![string match [set cdom "*.${cdom}"] $host]} {
+         if {!$milk} { break }
+         set cdom "***"
+        }
+       } else {
+        set cdom [expr {$milk ? "***" : $host}]
+       }
+
+       #rfc6265 has ?query in cookie-path but not MS-IE and not us
+       if {![regexp {(?i)Path=(/[^?#;]*)} $opts junk cpth]} {
+        set cpth $ckypath
+       }
+       regsub -all {(?://)|(?:[^/]+/[.][.]/)} $cpth "/" cpth
+       set cpsz [string length $cpth]
+
+       set cexp 2147485546
+       if {[regexp {(?i)Max-Age=([0-9]+)} $opts junk expdt]} {
+        set cexp [expr {$expdt + [clock seconds]}]
+       } elseif {[regexp {(?i)Expires=([^;]+);?} $opts junk expdt] &amp;&amp;
+                 ![catch {clock scan $expdt -gmt 1} expdt]} {
+        set cexp $expdt
+       }
+
+       set cscr [regexp {(?i)\ySecure;?\y} $opts]
+
+       #cookie names and paths ARE case-sensitive
+       set repl 0
+       foreach x [lsearch -all -exact $crumbs $cky] {
+        set c [lindex $crumbs [incr x]]
+        if {([lindex $c 0] eq $cdom) &amp;&amp; ([lindex $c 1] eq $cpth)} {
+         set crumbs [lreplace $crumbs $x $x [lreplace $c 3 5 $val $cexp $cscr]]
+         set repl 1
+        }
+       }
+       if {!$repl} {
+        lappend crumbs $cky [list $cdom $cpth $cpsz $val $cexp $cscr]
+       }
+       #expired cookies will be purged before next request
+       break
+      }
+     }
+     "location" {
+      if {$redir &amp;&amp; ($rslt &gt; 300) &amp;&amp; (($rslt &lt; 304) || ($rslt == 307))} {
+       if {($rslt &lt;= 302) &amp;&amp; ($redir == 1) &amp;&amp; ($what eq "") &amp;&amp;
+           (($method ne "GET") &amp;&amp; ($method ne "HEAD"))} {
+        set who $server
+        set where $path
+        set how $method
+        set what $body
+        set when $expect
+       }
+       if {$rslt &lt;= 303} {
+        set method "GET"
+        set body ""
+        set expect 0
+       }
+       if {$v starts_with "/"} {
+        #relative path so contact same host
+        if {![regexp {^/[^\x23]*} $v a] || ([string length $a] &gt; 2040)} {
+         set e "bogus redirect from ${dest} '${server}'"
+         set rtry -2
+         break
+        }
+        set s $schm
+        set r $rTLS
+        set h $host
+        set p $port
+       } elseif {[regexp $static::HSSR_urlsplit $v junk s toss lose h p a] &amp;&amp;
+                 ([string length $a] &lt; 2041) &amp;&amp; ($a ne "*")} {
+        set s [string tolower $s]
+        set r [expr {[string index $s end] eq "s"}]
+        set h [string tolower $h]
+        if {[string index $h 0] eq "\x5b"} {
+         set h [string map [list "%25" "%"] $h]
+        } elseif {[string index $h end] eq "."} {
+         set h [string range $h 0 end-1]
+        }
+        if {$p eq ""} { set p [expr {$r ? "443" : "80"}] }
+        if {$a eq ""} { set a "/" }
+       } else {
+        #oops, Location not HTTP URI or path bogus
+        set e "cannot follow redir from ${dest} '${server}' to ${v}"
+        set rtry -2
+        break
+       }
+      }
+      #don't molest host/port/etc before swallowing all cookies
+     }
+     "connection" {
+      if {$connected &amp;&amp; ($rslt != 100) &amp;&amp; [regexp {(?i)\yclose\y} $v]} {
+       catch {close $conn}
+       set connected false
+      }
+     }
+     "content-length" {
+      if {($v != $bootylen) &amp;&amp; ($method ne "HEAD")} {
+       #rfc2616 sec4.4 commands us to log
+       log local0.err "${tkm} ${bootylen}-octet chunked body != Content-Length: ${v} from ${dest} '${server}'"
+      }
+     }
+     "content-type" {
+      set v [string tolower $v]
+      regexp {^[^/;\x20\t]+/[^;\x20\t]+} $v mimetype
+      if {![regexp {(?i)charset=([^;\x20\t]+)} $v junk charset] &amp;&amp;
+          (($mimetype starts_with "text/") ||
+           ($mimetype eq "application/javascript") ||
+           ($mimetype eq "application/ecmascript")) &amp;&amp; ($sniff != 2)} {
+       set charset [expr {($sniff == 0) ? "iso-8859-1" : "utf-8"}]
+      }
+     }
+     "www-authenticate" {
+      if {($rslt == 401) &amp;&amp; ($creds ne "") &amp;&amp; [regexp {(?i)Basic\x20} $v]} {
+       #We already sent "Authorization: Basic XXX" header but some servers
+       #(f5 APM) will 401 first request and only look for creds on second
+       #request (and change cookies too)
+       set rslt 455
+      }
+     }
+     "proxy-authenticate" {
+      if {($rslt == 407) &amp;&amp; ($pxy_uid ne "") &amp;&amp; [regexp {(?i)Basic\x20} $v]} {
+       set rslt 455 ; #what, again?
+      }
+     }
+     "retry-after" {
+      if {[regexp {^(503|(30[1237]))$} $rslt] &amp;&amp; (
+           ([regexp {^[0-9]+} $v delay] &amp;&amp; $delay) ||
+           ( ![catch {clock scan $v -gmt 1} dttm] &amp;&amp;
+             ([set delay [expr {$dttm - [clock seconds]}]] &gt; -1) )
+          ) &amp;&amp; (
+           [set delay [expr {int(min($delay,($rtry * $wait / 2)))}]] &amp;&amp;
+           ( !$maxtime ||
+             (($delay + [clock seconds] + $timeout + $wait) &lt; $maxclock) )
+          )} {
+       if {$debug} {
+        log local0.info "${tkm} Retry-After, sleep ${delay} seconds"
+       }
+       after $delay ; #sleep
+       if {$rslt == 503} { set rslt 455 }
+       #otherwise follow redirect
+      }
+     }
+    } ; #header name switch
+
+    lappend hlist $n $v
+   } ; #header parsing loop
+  } ; #100-continue loop
+  if {$e ne ""} {
+   set rtry -2
+   break
+  }
+
+  if {$rslt == 455} {
+   #retry Basic authz, or after server-requested delay
+   continue
+  }
+
+  #do we follow a redirect, or are we finished?
+  if {!$redir || ($rslt &lt; 301) || (($rslt &gt; 303) &amp;&amp; ($rslt != 307))} { break }
+
+  #yay, redir!
+  set path $a
+  if {($schm ne $s) || ($host ne $h) || ($port ne $p)} {
+   set schm $s
+   set rTLS $r
+   set host $h
+   if {[set ipv6 [expr {[string index $host 0] eq "\x5b"}]]} {
+    regexp $static::HSSR_ipv6match $host junk haddr
+   }
+   set port $p
+   set server "${host}:${port}"
+   set hostname ""
+
+   if {$proxy ne ""} {
+    #one benefit of proxy is single persistent connection
+    continue
+   }
+   if {$virt eq ""} {
+    set dest ""
+   }
+  }
+ } ; #rtry loop
+ if {$rtry == -1} {
+  set e "too many redirects for -uri ${uri}"
+ }
+ if {($e eq "") &amp;&amp; (($rslt == 401) || ($rslt == 407))} {
+  set e "missing/unsupported credentials for (WWW|Proxy)-Authenticate demand"
+ }
+
+ if {$state ne ""} {
+  set stvar [list $connected $conn $dest \
+                  $virt $proxy $nsvr $crumbs $creds $kopf]
+ } elseif {$connected} {
+  catch {close $conn}
+  set connected false
+ }
+
+ #NOTE:  as of August 2013 f5 has not corrected an awkwardness affecting
+ #all data obtained from SIDEBAND recv, which involves string content
+ #conversions between Latin-1 and UTF-8.  The code in this proc *assumes*
+ #the presence of that glitch and will work around it, but when f5 does
+ #fix the issue we may have to revisit this code.
+ if {($rbody ne "") || ($rformat ne "") || ($rheaders ne "")} {
+  if {$sniff &gt; 2} {
+   incr sniff -3
+   set charset [lindex [list "iso-8859-1" "utf-8" "binary"] $sniff]
+  }
+  while {$charset eq "unk"} {
+   if {$mimetype eq "application/json"} {
+    set charset "utf-8"
+    break
+   }
+
+   set charset "binary" ; #fallback, plus ensures loop-exit
+
+   set take "a[expr {$bootylen &amp; 0x3ff}]"
+   set odor [binary format $take $booty]
+   binary scan $odor c* miasma ; #scan *before* regexp or someone mangles
+
+   if {$odor starts_with "\xef\xbb\xbf"} {
+    set charset "utf-8"
+    break
+   }
+   if {($odor starts_with "\xfe\xff") || ($odor starts_with "\xff\xfe")} {
+    set charset "utf-16" ; #we neglect UTF-32
+    break
+   }
+
+   if {[regexp $static::HSSR_quiver $odor contag] &amp;&amp;
+       [regexp {(?i)[\x20\t]content=['\x22]?([^'\x22&gt;]+)} $contag junk contype]} {
+    set contype [string tolower $contype]
+    regexp {^[^/;\x20\t]+/[^;\x20\t]+} $contype mymtype
+    if {$mimetype eq "unk/unk"} { set mimetype $mymtype }
+
+    if {![regexp {charset=([^;\x20\t]+)} $contype junk charset] &amp;&amp;
+        (($mimetype starts_with "text/") ||
+         ($mimetype eq "application/javascript") ||
+         ($mimetype eq "application/ecmascript")) &amp;&amp; ($sniff != 2)} {
+     set charset [expr {($sniff == 0) ? "iso-8859-1" : "utf-8"}]
+    }
+    if {$charset ne "binary"} { break }
+   }
+
+   if {[regexp {/((xml)|([^;\x20\t]+[+]xml))} $mimetype]} {
+    set charset "utf-8" ; #text/xml dfl is ASCII; UTF-8 common, incls. both
+    #but next we check for overrides...
+   }
+   if {[regexp $static::HSSR_csetmeta $odor junk charset] ||
+       [regexp $static::HSSR_xmlenc $odor junk charset]} {
+    set charset [string tolower $charset]
+   }
+   if {$charset ne "binary"} { break }
+
+   set may_ascii true
+   set may_utf8 true
+   set may_latin true
+   set p 0
+   foreach c $miasma {
+    set c [expr {$c &amp; 0xff}]
+    if {$c &gt; 0x7f} {
+     set may_ascii false
+     if {($c &lt; 0xc0) &amp;&amp; (($p &lt; 0xc2) || ($p &gt; 0xf4))} {
+      set may_utf8 false
+      if {!$may_latin} { break }
+     }
+     if {($c == 0x81) || ($c == 0x8d) ||
+         ($c == 0x8f) || ($c == 0x90) || ($c == 0x9d)} {
+      set may_latin false
+      if {!$may_utf8} { break }
+     }
+    }
+    set p $c
+   }
+   #no time/space here to sniff for, say, Big5
+   if {$mimetype starts_with "text/"} {
+    if {$may_utf8} {
+     set charset "utf-8"
+    } else {
+     if {$may_latin} { set charset "iso-8859-1" }
+    }
+   } elseif {$may_ascii} {
+    set charset "utf-8"
+   }
+  }
+  if {($charset eq "windows-1252") ||
+      ([string first "ascii" $charset] &gt;= 0)} {
+   set charset "iso-8859-1"
+  }
+
+  if {$rformat ne ""} {
+   upvar 1 $rformat rtn_fmt
+
+   set rtn_fmt [expr {(($charset eq "utf-8") || ($charset eq "iso-8859-1")) ?
+                      "text" : "binary"}]
+  }
+  if {$rbody ne ""} {
+   upvar 1 $rbody rtn_body
+
+   if {$charset eq "utf-8"} {
+    set rtn_body [URI::decode [URI::encode $booty]] ; #don't a-ask me why!
+   } elseif {$charset eq "iso-8859-1"} {
+    #What is it?
+    #Evil, pure and simple, from the Eighth Dimension!
+    set rtn_body ""
+    append rtn_body $booty
+    ###regexp {.*} $booty rtn_body
+   } else {
+    set rtn_body [binary format a* $booty]
+   }
+  }
+ }
+ if {$rheaders ne ""} {
+  upvar 1 $rheaders rtn_headers
+
+  lappend hlist "X-HSSR-Charset" $charset
+  set rtn_headers $hlist
+ }
+ if {$rcookies ne ""} {
+  upvar 1 $rcookies rtn_cookies
+
+  set cookies [list]
+  set now [clock seconds]
+  foreach {n c} $crumbs {
+   if {[lindex $c 4] &gt; $now} {
+    lappend cookies $n [lindex $c 3]
+   }
+  }
+  set rtn_cookies $cookies
+ }
+
+ if {$e ne ""} {
+  log local0.err "${tkm} ${e}"
+ }
+ return $rslt
+ #At this point, http_req return value is HTTP status and
+ #you may inspect your -(rbody|rheaders|rcookies|rformat)
+ #variables for the results of your request
+} ; #http_req
+
+
+# After final [call /Common/HSSR::http_req -state xyz ...]
+# SIDEBAND connection to remote server may remain open.
+# Close it thusly:  [call /Common/HSSR::http_close xyz]
+# (For lagniappe we also support [call /Common/HSSR::http_close $xyz])
+#
+proc http_close {stvar} {
+ if {[catch {llength $stvar} varlen] || ($varlen == 1)} {
+  upvar 1 $stvar state
+ } else {
+  set state $stvar
+ }
+
+ if {[catch {llength $state} stlen] || ($stlen &lt; 9)} {
+  set e "http_close argument must be xyz (or \x24xyz) from: http_req -state xyz"
+  log local0.err $e
+  return -code error $e
+ }
+ if {[lindex $state 0]} {
+  catch {close [lindex $state 1]}
+ }
+ set state [list false {} "" "" "" "" [list] "" ""]
+ return
+} ; #http_close
+
+#== End of Mark's HTTP Super SIDEBAND Requestor! (v2.1) ==============
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="irule-hssr-helper-source">
+<h3>iRule HSSR-helper Source</h3>
+<div class="line-block">
+<div class="line">(This code is available in a ZIP file below.)</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>#== HSSR-Helper for Mark's HTTP Super SIDEBAND Requestor! (v2.1) ======
+#
+# Save this iRule in the Common partition under the name 'HSSR-helper'.
+#
+# You will use this iRule '/Common/HSSR-helper' along with iRule proc
+# '/Common/HSSR::http_req' (the HTTP Super SIDEBAND Requestor v2.1) to
+# greatly simplify access from your own iRules to arbitrary http and
+# https resources.
+#
+# To make a SIDEBAND connection to a TLS-guarded service you need a
+# helper virtual server (at least through TMOS 11.5).
+#
+# Configure your helper virtual server (say, "/Common/vs-HSSR-helper")
+# with a suitable Server SSL Profile, an HTTP Profile, and either
+# SNAT-Automap or a SNAT Pool.  Attach this iRule to the virtual server.
+# Give your helper virtual server a non-routeable virtual IP address
+# and non-standard port (say, 192.0.2.2:50002)--you don't want any
+# accidental non-SIDEBAND connections to it.  Do not configure any pool.
+# Do not apply any Client SSL Profile.
+#
+# When you call /Common/HSSR::http_req to send web requests to servers
+# off your BIG-IP, set -virt to your helper virtual server.  E.g.,
+# [call /Common/HSSR::http_req -virt /Common/vs-HSSR-helper -uri ...]
+#
+# The "HSSR::http_req" proc will add an "X-HSSR-Helper" header to each
+# of its outbound requests.  This iRule will read (and elide) that
+# header, then use the 'node' command (and possibly an 'SSL' command)
+# to connect each request to the proper server (supporting persistent
+# HTTP 1.1 connections in normal fashion).
+#
+# (Yes, we could build a full HTTP proxy to handle this.  That would
+# be overkill for our purposes.)
+#
+
+when RULE_INIT {
+ #shall we emit debug messages?
+ set static::HSSR_helper_debug false
+}
+
+when CLIENT_ACCEPTED {
+ set h ""
+ set prevdest [list]
+ set dest [list]
+ set v [list]
+}
+
+when HTTP_REQUEST {
+ regexp {^[^\x5b:][^:]*} [HTTP::header value Host] h
+
+ if {[set v [HTTP::header value X-HSSR-Helper]] ne ""} {
+  HTTP::header remove X-HSSR-Helper
+
+  if {$static::HSSR_helper_debug} {
+   log local0.info "prevdest='${prevdest}', h='${h}', v='${v}'"
+  }
+
+  #NB: before comparing lists as strings you must be
+  #very, very careful about canonical format (and in
+  #the other iRule too)
+
+  set dest [lrange $v 0 2]
+  if {$dest ne $prevdest} {
+   LB::detach
+   if {[string index [lindex $dest 0] end] eq "s"} {
+    SSL::enable serverside
+   } else {
+    SSL::disable serverside
+   }
+
+   if {$static::HSSR_helper_debug} {
+    log local0.info "selecting node [lrange $dest 1 2] for [lrange $v 3 4] to '${h}'"
+   }
+   if {[catch {node [lindex $dest 1] [lindex $dest 2]} err]} {
+    log local0.err "'node' command failed ($err) while selecting node [lrange $dest 1 2] for [lrange $v 3 4] to '${h}'"
+
+    HTTP::respond 502 Connection close
+   }
+  }
+
+  set prevdest $dest
+ }
+}
+
+when LB_FAILED {
+ if {[catch {LB::status} lbstatus]} { set lbstatus "unknown" }
+ log local0.err "cannot connect to node [lrange $dest 1 2] for [lrange $v 3 4] to '${h}', LB::status is '${lbstatus}'"
+
+ HTTP::respond 502 Connection close
+}
+
+when SERVERSSL_CLIENTHELLO_SEND {
+ #shamelessly derived from Kevin Stewart's admirable work:
+ #https://devcentral.f5.com/questions/regular-ssl-tls-for-user-connections-to-the-ltm-with-sni-support-from-ltm-to-the-real-webservers
+
+ if {$h ne ""} {
+  set k [string length $h]
+  set bin [binary format S1S1S1S1ca* 0 [expr {$k + 5}] [expr {$k + 3}] 0 $k $h]
+  SSL::extensions insert $bin
+ }
+}
+
+#== End of HSSR-Helper for Mark's HTTP Super SIDEBAND Requestor! (v2.1) ==
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="implementation-details">
+<h3>Implementation Details</h3>
+<p>This iRule requires TMOS v11.4 or higher.</p>
+<p><em>The BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor 
+or control community code contributions. We make no guarantees or warranties regarding the available code, 
+and it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any 
+code available in the BIG-IP API reference guides is solely at your own risk.</em></p>
+</div>
+</div>
+</div>
+</article>
+</body></html>

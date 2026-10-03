@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Client Certificate CN Checking</title><link rel="canonical" href="https://clouddocs.f5.com/api/irules/ClientCertificateCNChecking.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>Client Certificate CN Checking</h1><p>programming_reference · See product applicability metadata</p><a href="https://clouddocs.f5.com/api/irules/ClientCertificateCNChecking.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!DOCTYPE html>
+
+<div class="section" id="client-certificate-cn-checking">
+<h1>Client Certificate CN Checking</h1>
+<div class="section" id="description">
+<h2><strong>Description</strong></h2>
+<div class="line-block">
+<div class="line">These iRules will check the presented client certificate for a valid
+CN, allowing or rejecting</div>
+<div class="line"><strong>For either example, if you will be examining client certs signed by
+a CA not in LTM’s Trusted CA bundle, you will need to add it:</strong></div>
+</div>
+<ul class="simple">
+<li>In Local Traffic / SSL Certificates, import the certificate for the
+CA that will be used to validate the client certificates.</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line"><strong>The first example allows requests from only the specified CN’s from
+the same Org:</strong></div>
+<div class="line">1. Setup a new Client SSL Profile that contains the virtual server SSL
+Certificate. During the creation of this Profile, you will need to set
+the following values:</div>
+</div>
+<ul class="simple">
+<li>Configuration = Advanced</li>
+<li>Trusted Certificate Authorities = “Your_Certificate_Authority”</li>
+<li>Client Certificate = <strong>require</strong></li>
+<li>Frequency = once</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">2. Setup a String Data Group containing a list of acceptable CN’s:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>class my_cn_list  {
+    "CN=John Smith"
+    "CN=Amy Black
+    "CN=Jim Beam"
+    "CN=Johnny Walker"
+}
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">3. Add this iRule:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">when</span><span class="w"> </span>RULE_INIT<span class="w"> </span><span class="k">{</span>
+<span class="w">   </span><span class="k">set</span><span class="w"> </span>static::org<span class="w"> </span><span class="s2">"O=Your Organisation"</span>
+<span class="k">}</span>
+
+<span class="nv">when</span><span class="w"> </span>CLIENTSSL_CLIENTCERT<span class="w"> </span><span class="k">{</span>
+
+<span class="w">   </span><span class="c"># Check if client provided a cert</span>
+<span class="w">   </span><span class="k">if</span><span class="w"> </span><span class="k">{[</span><span class="nv">SSL</span><span class="o">::</span>cert<span class="w"> </span><span class="mi">0</span><span class="k">]</span><span class="w"> </span><span class="nv">eq</span><span class="w"> </span><span class="s2">""</span><span class="k">}{</span>
+
+<span class="w">      </span><span class="c"># Reset the connection</span>
+<span class="w">      </span><span class="nv">reject</span>
+
+<span class="w">   </span><span class="k">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">{</span>
+
+<span class="w">      </span><span class="c">#Example Subject DN:  /C=AU/ST=NSW/L=Syd/O=Your Organisation/OU=Your OU/CN=John Smith</span>
+<span class="w">      </span><span class="k">set</span><span class="w"> </span>subject_dn<span class="w"> </span><span class="k">[</span><span class="nv">X509</span><span class="o">::</span>subject<span class="w"> </span><span class="k">[</span><span class="nv">SSL</span><span class="o">::</span>cert<span class="w"> </span><span class="mi">0</span><span class="k">]]</span>
+<span class="w">      </span><span class="nv">log</span><span class="w"> </span><span class="s2">"Client Certificate Received: $subject_dn"</span>
+<span class="w">      </span><span class="c">#Check if the client certificate contains the correct O and a CN from the list</span>
+<span class="w">      </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">([</span><span class="nv">matchclass</span><span class="w"> </span><span class="nv">$subject_dn</span><span class="w"> </span>contains<span class="w"> </span>my_cn_list<span class="k">])</span><span class="w"> </span><span class="nv">and</span><span class="w"> </span><span class="k">(</span><span class="nv">$subject_dn</span><span class="w"> </span><span class="nv">contains</span><span class="w"> </span><span class="nv">$static::org</span><span class="k">)</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">         </span><span class="c">#Accept the client cert</span>
+<span class="w">         </span><span class="nv">log</span><span class="w"> </span><span class="s2">"Client Certificate Accepted: $subject_dn"</span>
+<span class="w">      </span><span class="k">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">{</span>
+<span class="w">         </span><span class="nv">log</span><span class="w"> </span><span class="s2">"No Matching Client Certificate Was Found Using: $subject_dn"</span>
+<span class="w">         </span><span class="nv">reject</span>
+<span class="w">      </span><span class="k">}</span>
+<span class="w">   </span><span class="k">}</span>
+<span class="k">}</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line"><strong>The second example selectively requires a client cert with a
+specific CN based on the URI:</strong></div>
+<div class="line">1. Setup a new Client SSL Profile that contains the virtual server SSL
+Certificate. During the creation of this Profile, you will need to set
+the following values:</div>
+</div>
+<ul class="simple">
+<li>Configuration = Advanced</li>
+<li>Trusted Certificate Authorities = “Your_Certificate_Authority”</li>
+<li>Client Certificate = request</li>
+<li>Frequency = once</li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">2. Add one of these iRules, depending on whether you also need to
+select a pool based on URI:</div>
+<div class="line"><strong>With pool selection:</strong></div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">when</span><span class="w"> </span>RULE_INIT<span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="k">set</span><span class="w"> </span>static::debug<span class="w"> </span><span class="mi">1</span>
+<span class="k">}</span>
+
+<span class="nv">when</span><span class="w"> </span>CLIENTSSL_CLIENTCERT<span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="c">#Example Subject DN:  /C=AU/ST=NSW/L=Syd/O=Your Organisation/OU=Your OU/CN=John Smith</span>
+<span class="w">        </span><span class="k">set</span><span class="w"> </span>subject_dn<span class="w"> </span><span class="k">[</span><span class="nv">X509</span><span class="o">::</span>subject<span class="w"> </span><span class="k">[</span><span class="nv">SSL</span><span class="o">::</span>cert<span class="w"> </span><span class="mi">0</span><span class="k">]]</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">$subject_dn</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="s2">""</span><span class="w"> </span><span class="k">}{</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">$static::debug</span><span class="w"> </span><span class="k">}{</span><span class="w"> </span><span class="nv">log</span><span class="w"> </span><span class="s2">"Client Certificate received: $subject_dn"</span><span class="k">}</span>
+<span class="w">        </span><span class="k">}</span>
+<span class="k">}</span>
+<span class="nv">when</span><span class="w"> </span>HTTP_REQUEST<span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>uri<span class="k">]</span><span class="w"> </span><span class="nv">starts_with</span><span class="w"> </span><span class="s2">"/companyA"</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">$subject_dn</span><span class="w"> </span><span class="nv">contains</span><span class="w"> </span><span class="s2">"CN=Company A"</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nv">pool</span><span class="w"> </span>companyA
+<span class="w">                </span><span class="k">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nv">reject</span>
+<span class="w">                </span><span class="k">}</span>
+<span class="w">        </span><span class="k">}</span><span class="w"> </span><span class="k">elseif</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>uri<span class="k">]</span><span class="w"> </span><span class="nv">starts_with</span><span class="w"> </span><span class="s2">"/companyB"</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                 </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">$subject_dn</span><span class="w"> </span><span class="nv">contains</span><span class="w"> </span><span class="s2">"CN=Company B"</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nv">pool</span><span class="w"> </span>companyB
+<span class="w">                </span><span class="k">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nv">reject</span>
+<span class="w">                </span><span class="k">}</span>
+<span class="w">        </span><span class="k">}</span>
+<span class="k">}</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line"><strong>Without pool selection:</strong></div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">when</span><span class="w"> </span>RULE_INIT<span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="k">set</span><span class="w"> </span>static::debug<span class="w"> </span><span class="mi">1</span>
+<span class="k">}</span>
+
+<span class="nv">when</span><span class="w"> </span>CLIENTSSL_CLIENTCERT<span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="c">#Example Subject DN:  /C=AU/ST=NSW/L=Syd/O=Your Organisation/OU=Your OU/CN=John Smith</span>
+<span class="w">        </span><span class="k">set</span><span class="w"> </span>subject_dn<span class="w"> </span><span class="k">[</span><span class="nv">X509</span><span class="o">::</span>subject<span class="w"> </span><span class="k">[</span><span class="nv">SSL</span><span class="o">::</span>cert<span class="w"> </span><span class="mi">0</span><span class="k">]]</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">$subject_dn</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="s2">""</span><span class="w"> </span><span class="k">}{</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">$static::debug</span><span class="w"> </span><span class="k">}{</span><span class="w"> </span><span class="nv">log</span><span class="w"> </span><span class="s2">"Client Certificate received: $subject_dn"</span><span class="k">}</span>
+<span class="w">        </span><span class="k">}</span>
+<span class="k">}</span>
+<span class="nv">when</span><span class="w"> </span>HTTP_REQUEST<span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>uri<span class="k">]</span><span class="w"> </span><span class="nv">starts_with</span><span class="w"> </span><span class="s2">"/companyA"</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="o">!</span><span class="k">(</span><span class="nv">$subject_dn</span><span class="w"> </span><span class="nv">contains</span><span class="w"> </span><span class="s2">"CN=Company A"</span><span class="k">)</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nv">reject</span>
+<span class="w">                </span><span class="k">}</span>
+<span class="w">        </span><span class="k">}</span><span class="w"> </span><span class="k">elseif</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>uri<span class="k">]</span><span class="w"> </span><span class="nv">starts_with</span><span class="w"> </span><span class="s2">"/companyB"</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="o">!</span><span class="k">(</span><span class="nv">$subject_dn</span><span class="w"> </span><span class="nv">contains</span><span class="w"> </span><span class="s2">"CN=Company B"</span><span class="k">)</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nv">reject</span>
+<span class="w">                </span><span class="k">}</span>
+<span class="w">        </span><span class="k">}</span>
+<span class="k">}</span>
+</pre></div>
+</div>
+<p><em>The BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor 
+or control community code contributions. We make no guarantees or warranties regarding the available code, 
+and it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any 
+code available in the BIG-IP API reference guides is solely at your own risk.</em></p>
+</div>
+</div>
+</article>
+</body></html>

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ltm rule event HTTP PROXY REQUEST</title><link rel="canonical" href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_event_HTTP_PROXY_REQUEST.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>ltm rule event HTTP PROXY REQUEST</h1><p>cli_reference · 17.0.0</p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_event_HTTP_PROXY_REQUEST.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="ltm-rule-event-http-proxy-request">
+<span id="id1"></span><h1>ltm rule event HTTP PROXY REQUEST</h1>
+<html>
+<pre>
+iRule(1)						BIG-IP TMSH Manual						  iRule(1)
+
+HTTP_PROXY_REQUEST
+       Triggered when a virtual server has proxy-mode explicit.
+
+DESCRIPTION
+       Triggered when a virtual server has proxy-mode explicit set and one of the following two scenarios are true:
+
+	   * the request has a full uri of the form http://hostname:port/path (much like HTTP_REQUEST, but with access to the original uri)
+	   * the request is a CONNECT request (e.g. CONNECT hostname:port HTTP/1.1)
+
+       This event allows manipulation of either the request URI, or control of whether the BIG-IP performs the proxy action.
+
+Examples
+	# Example 1: Simple Proxy Chaining
+
+	when HTTP_PROXY_REQUEST {
+	    if { (not [HTTP::method] == "CONNECT") &amp;&amp; [URI::host [HTTP::uri]] ends_with ".internal.domain.com" } {
+		  HTTP::proxy disable
+		  pool internal_proxy_3128
+	    } else {
+		  HTTP::proxy enable
+	    }
+	}
+
+	# Example 2: Advanced Proxy Chaining &amp; URI Rewriting
+
+	when HTTP_PROXY_REQUEST {
+	    log local0. "[HTTP::method] [HTTP::uri]"
+	    switch [string tolower [URI::host [HTTP::uri]]] {
+		"www.google.com" {
+		     # send request to default pool (aka proxy-chaining)
+		     HTTP::proxy disable
+		 }
+		 "www.abc.com" {
+		     # change request to a different host - remains a proxy request
+		     HTTP::uri http://www.google.com/
+		 }
+		 "www.def.com" {
+		     # change request to a normal (not proxy) request - goes to the default pool
+		     HTTP::uri /def.html
+		  }
+	     }
+	}
+
+	when HTTP_REQUEST {
+	    log local0. "[HTTP::method] [HTTP::uri]"
+	}
+
+	# Example 3: Proxy Chaining via Categorization (Requires either an SWG or URL Filtering Subscription)
+
+	when RULE_INIT {
+	    log local0. "Proxy Chain iRule"
+	    set static::Proxy_Chain_categories {
+	       /Common/Restaurants_and_Dining
+	    }
+	    set static::Proxy_Chain_debug 1
+	}
+
+	when HTTP_PROXY_REQUEST {
+	    set proxy_chain 0
+	    if { $static::Proxy_Chain_debug } { log local0. "URI: [HTTP::uri]" }
+
+	    # Check for a category match
+	    set reply [getfield [CATEGORY::lookup [HTTP::uri]] " " 1]
+	    if {[lsearch -exact $static::Proxy_Chain_categories $reply] &gt;= 0}{
+		if { $static::Proxy_Chain_debug } { log local0. "HIT: The category $reply should be bypassed for [HTTP::uri]" }
+		set proxy_chain 1
+	    }
+
+	    # Check for a URI::host for HTTP connections
+	    if {[URI::host [HTTP::uri]] == "www.cariboucoffee.com"} {
+		set proxy_chain 1
+	    }
+
+	    # Perform the prescibed action
+	    if { $proxy_chain } {
+		if { $static::Proxy_Chain_debug } { log local0. "Proxy Chain: [HTTP::method] URI:[HTTP::uri]" }
+		HTTP::proxy disable
+		snat 10.10.1.10
+		pool squid
+	    }
+	}
+
+HINTS
+SEE ALSO
+CHANGE LOG
+       @BIGIP-11.5.0 --First introduced the event.
+
+BIG-IP							    2022-04-12							  iRule(1)
+</pre>
+</html>
+</div>
+</div>
+</article>
+</body></html>

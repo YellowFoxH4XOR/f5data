@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ltm rule command XLAT src endpoint reservation</title><link rel="canonical" href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_XLAT_src_endpoint_reservation.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>ltm rule command XLAT src endpoint reservation</h1><p>cli_reference · 17.0.0</p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_XLAT_src_endpoint_reservation.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="ltm-rule-command-xlat-src-endpoint-reservation">
+<span id="id1"></span><h1>ltm rule command XLAT src endpoint reservation</h1>
+<html>
+<pre>
+iRule(1)						BIG-IP TMSH Manual						  iRule(1)
+
+XLAT::src_endpoint_reservation
+       XLAT:src_endpoint_reservation
+
+SYNOPSIS
+       XLAT::src_endpoint_reservation create
+			   (-no-persist)?
+			   (-dslite  DSLITE_LOCAL_ADDR DSLITE_REMOTE_ADDR)?
+			   (-pool LSN_POOL)?
+			   ((-translation-loose|-translation-strict) TRANS_ADDR TRANS_PORT)?
+			   CLIENT_IP CLIENT_PORT
+			   XLAT_PROTO XLAT_LIFETIME
+
+       XLAT::src_endpoint_reservation update_lifetime TRANS_ADDR TRANS_PORT LSN_POOL XLAT_PROTO XLAT_LIFETIME
+
+       XLAT::src_endpoint_reservation get TRANS_ADDR TRANS_PORT LSN_POOL XLAT_PROTO
+
+DESCRIPTION
+       Create, update, or get reserved entry values.
+
+       Syntax: XLAT::src_endpoint_reservation create [-no-persist] [-dslite  <local> <remote>] [-pool <source name="" object="" pool="" translation=""/>] [-translation-loose|-translation-strict <ip> <port>] <client ip=""> <client port=""> <protocol> <lifetime>;
+
+       Creates a reservation in the reservation table which can be viewed using the command "lsndb list endpoint-reservation" for
+       the lifetime specified by the user. The command has the following characteristics:
+	   1) The returned endpoint cannot be reserved for another client IP:port as long as it is active.
+	   2) An inbound-entry cannot be created for that endpoint.
+	   3) A listener which binds to the translation IP and port cannot be created unless it connects to the client IP:port
+       that it is reserved for.
+
+       When successful, the command returns the following information in a list: {trans_ip, trans_port, pool_name, lifetime}.
+
+       The translation IP and port is optional. If specified command will try to pick the specified endpoint, fail if
+       "-translation-strict" option is used OR pick another endpoint if "-translation-loose" option is used. If PBA zombie timeout
+       is configured the lifetime returned by the command can be less than the lifetime passed in. This is done to be compliant
+       with the PBA config.
+
+       Optional arguments:
+	   + -dslite: DS-Lite local and remote endpoint.
+	   + -no-persist: Specify the flag to skip the creation of the persist entry for the endpoint. In which case, the client
+       connection for the reservation would need to have a persistence entry created manually so it can use the reserved endpoint.
+	   + -pool: Specify the pool for the endpoint reservation. When calling XLAT::src_endpoint_reservation update_lifetime or
+       get, this should be the pool returned by the create command.
+	   + -translation-loose: The command will try to use the hint data provided. Command will not fail if the provided hints
+       cannot be used. The port can be zero, in which case it will be picked automatically.
+	   + -translation-strict: The command will try to use the hint data provided. Command will fail if the provided hints
+       cannot be used. The port can be zero, in which case it will be picked automatically.
+
+       Required arguments:
+	   + client (ip/port): Provide the client ip and port for the reservation.
+	   + protocol: The IP protocol number used in the connection. Currently only support LSN protocols (TCP, UDP, SCTP, ICMP,
+       ICMPv6). Usually 6 (TCP) or 17 (UDP). See also IP::protocol.
+	   + lifetime: The number of seconds to reserve the endpoint for. Between 0 and 31536000 (365 days).
+
+       Behavior if the requested endpoint is in use:
+	   1) An inbound-entry uses the same endpoint - Command picks a new reserved endpoint or fails if -translation-strict is
+       specified.
+	   2) A listener is present - Command picks a new reserved endpoint or fails if -translation-strict is specified.
+	   3) A reserved entry is present.
+	       a) If the reserved entry belong to the same client IP:port we reuse it and return it to the user.
+	       b) If the reserved entry belong to a different client IP:port then the command picks a new endpoint or fails if
+       -translation-strict is specified.
+
+       This command creates persistence address and address-port entries automatically, unless -no-persist is specified. If
+       -no-persist is specified, and you require the future connections from the same client IP:port to use the reserved endpoint
+       you can do it in two ways:
+	   1) Create a persistence-entry using the LSN:persistence-entry command. BIGIP will do a best effort to pick this
+       endpoint.
+	   2) Or when a connection is received use LSN::address and LSN::port command to force BIGIP to pick this endpoint and
+       fail if the endpoint is not available.  Note that using persistence entry to ensure future connections pick the reserved
+       endpoint only works when persistence mode is address-port on LSN pool or if mapping mode is set to address pooling paired
+       in security source translation config.
+
+       Behavior when a reserve endpoint is reused for a different client IP:port:
+	   1) When inbound-connections=automatic, the connection will fail if the iRule tries to reuse the reserved endpoint for a
+       different client IP:port.
+	   2) When inbound-connections=none, the connection will succeed if iRule tries to reuse the reserved endpoint for a
+       different client IP:port.(overloading, this is the expected behavior)
+	   3) Creating a flow using FLOW::created-related will succeed if the iRule tries to reuse the reserved endpoint for a
+       different client IP:port.(overloading this is the expected behavior)
+	   4) Creating a listener using XLAT::listen will fail if the iRule tries to reuse the reserved endpoint for a different
+       client IP:port.	Use case: This is useful to implement certain ALG connections (For e.g. SIP REGISTER) which require that
+       the translation endpoint used by one SIP client not be used by another SIP client for the duration of the registration.
+
+       XLAT::src_endpoint_reservation update_lifetime <translation addr=""> <translation port=""> <pool name=""> <protocol> <lifetime>;
+
+       Updates the lifetime on a reserved entry. If PBA zombie timeout is configure the lifetime returned by the command can be
+       less than the lifetime passed in. This is done to be compliant with the PBA config. If the specified reserved endpoint is
+       not found then an empty string is returned.
+
+       XLAT::src_endpoint_reservation get <translation addr=""> <translation port=""> <pool name=""> <protocol>;
+
+       Gets the reserved endpoint data. An empty string is returned if the reserved endpoint is not found.
+
+RETURN VALUE
+       create returns the translation endpoint used for the reservation.
+
+       get returns the full endpoint information as a list {client_ip, client_port, dslite_local, dslite_remote, pool name,
+       lifetime}
+
+       update_lifetime returns the lifetime assigned to the entry.
+
+       On failure, an empty TCL string is returned.
+
+VALID DURING
+       All events except RULE_INIT
+
+EXAMPLES
+HINTS
+SEE ALSO
+CHANGE LOG
+       @BIGIP-14.1.0 --First introduced the command.
+
+BIG-IP							    2022-04-12							  iRule(1)
+</protocol></pool></translation></translation></lifetime></protocol></pool></translation></translation></lifetime></protocol></client></client></port></ip></remote></local></pre>
+</html>
+</div>
+</div>
+</article>
+</body></html>

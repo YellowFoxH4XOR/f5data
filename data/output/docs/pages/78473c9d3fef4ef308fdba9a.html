@@ -1,0 +1,1299 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Network Security</title><link rel="canonical" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/network-security.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>Network Security</h1><p>automation_reference · 3.57.0</p><a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/network-security.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="network-security">
+<span id="net-sec-examples"></span><h1>Network Security</h1>
+<p>This section contains declarations that use F5’s network security and firewall features.</p>
+<p>Use the index on the right to locate specific examples.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">As of BIG-IP AS3 3.10.0, if the Firewall_Address_List contains zero addresses, a dummy IPv6 address of ::1:5ee:bad:c0de is added in order to maintain a valid Firewall_Address_List. If an address is added to the list, the dummy address is removed.</p>
+</div>
+<div class="admonition important">
+<p class="first admonition-title">Important</p>
+<p class="last">Most of the example declarations have been updated in the documentation for BIG-IP AS3 3.20 to remove any <strong>template</strong> that was specified, and rename any virtual services that used the name <strong>serviceMain</strong> to <strong>service</strong>. In BIG-IP AS3 3.20, the <strong>generic</strong> template is the default, which allows services to use any name.  <br/> <br/> This also means that many of these declarations on a version prior to 3.20 they will fail unless you add a template.  See <a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/faq.html#servmain-ref"><span class="std std-ref">this FAQ entry</span></a> and <a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/troubleshooting.html#exampleupdates"><span class="std std-ref">this Troubleshooting entry</span></a> for more information.</p>
+</div>
+<div class="section" id="using-firewall-rules-policies-and-logging">
+<span id="firewallex"></span><h2>Using Firewall Rules, Policies, and logging</h2>
+<p>This example shows how you can use the BIG-IP Advanced Firewall Manager (AFM) module in a declaration.  <a href="https://f5.com/products/big-ip/advanced-firewall-manager-afm" target="_blank">BIG-IP AFM</a> defends against threats to network layers 3-4, stopping them before they reach your data center.</p>
+<div class="admonition important">
+<p class="first admonition-title">Important</p>
+<p class="last">To use these features, you must have BIG-IP AFM licensed and provisioned on your BIG-IP system.</p>
+</div>
+<p>In this example, we create firewall rules which are used in our firewall policy.  We also create a security logging profile to define the events we want to log.</p>
+<p>The AFM features we use in this declaration are well-documented in the <a href="https://support.f5.com/kb/en-us/products/big-ip-afm/manuals/product/network-firewall-policies-implementations-13-1-0.html" target="_blank">AFM documentation</a> and <a href="https://support.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/bigip-external-monitoring-implementations-13-1-0.html" target="_blank">Logging documentation</a>.  See these manuals for more information on these features.  Also see the <a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#schema-reference"><span class="std std-ref">Schema Reference</span></a> for usage options for your BIG-IP AS3 declarations.</p>
+<p>This declaration creates the following objects on the BIG-IP:</p>
+<ul class="simple">
+<li>Partition (tenant) named <strong>Sample_net_sec_01</strong>.</li>
+<li>A virtual server named <strong>service</strong>.</li>
+<li>A pool named <strong>ex_pool</strong> monitored by the default <em>gateway_icmp</em> health monitor.</li>
+<li>A firewall rule list named <strong>fwRuleList</strong>, which references lists of allowed ports (<strong>fwAllowedPortList</strong>) and addresses (<strong>fwAllowedAddressList</strong>).</li>
+<li>A firewall policy named <strong>fwPolicy</strong> which references the firewall rule lists.</li>
+<li>A log publisher (<strong>fwLogPublisher</strong>), high speed logging destination (<strong>fwLowDestinationHsl</strong>) and pool (<strong>hs_pool</strong>), and syslog destination (<strong>fwLogDestinationSyslog</strong>).</li>
+</ul>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"AS3"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"deploy"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"persist"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"declaration"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ADC"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"schemaVersion"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3.0.0"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"firewall"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"label"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Sample Network Security 1"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"remark"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Firewall policy, rule, and logging example"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"controls"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"trace"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">        </span><span class="p">},</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"Sample_net_sec_01"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Tenant"</span><span class="p">,</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"fwFastL4"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Application"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"fwAllowedAddressList"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Firewall_Address_List"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"addresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                        </span><span class="s2">"10.0.0.0/8"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="s2">"172.20.0.0/16"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="s2">"192.168.0.0/16"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">]</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"fwLogDestinationSyslog"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Log_Destination"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"remote-syslog"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"remoteHighSpeedLog"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fwLogDestinationHsl"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"format"</span><span class="p">:</span><span class="w"> </span><span class="s2">"rfc5424"</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"fwLogDestinationHsl"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Log_Destination"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"remote-high-speed-log"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"tcp"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"pool"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"hsl_pool"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"fwRuleList"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Firewall_Rule_List"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"rules"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                        </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"tcp"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"tcpAllow"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"loggingEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"destination"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"portLists"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                        </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fwAllowedPortList"</span><span class="w"></span>
+<span class="w">                                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                                </span><span class="p">]</span><span class="w"></span>
+<span class="w">                            </span><span class="p">},</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"addressLists"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                        </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fwAllowedAddressList"</span><span class="w"></span>
+<span class="w">                                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                                </span><span class="p">]</span><span class="w"></span>
+<span class="w">                            </span><span class="p">},</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"accept"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">},</span><span class="w"></span>
+<span class="w">                        </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"accept"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"loggingEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"udp"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"udpAllow"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"addressLists"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                        </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fwAllowedAddressList"</span><span class="w"></span>
+<span class="w">                                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                                </span><span class="p">]</span><span class="w"></span>
+<span class="w">                            </span><span class="p">}</span><span class="w"></span>
+<span class="w">                        </span><span class="p">},</span><span class="w"></span>
+<span class="w">                        </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"drop"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"loggingEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"any"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"defaultDeny"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"addressLists"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                        </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fwDefaultDenyAddressList"</span><span class="w"></span>
+<span class="w">                                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                                </span><span class="p">]</span><span class="w"></span>
+<span class="w">                            </span><span class="p">}</span><span class="w"></span>
+<span class="w">                        </span><span class="p">}</span><span class="w"></span>
+<span class="w">                    </span><span class="p">]</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"hsl_pool"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Pool"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"members"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                        </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"serverAddresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                                </span><span class="s2">"192.168.120.6"</span><span class="w"></span>
+<span class="w">                            </span><span class="p">],</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"enable"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"servicePort"</span><span class="p">:</span><span class="w"> </span><span class="mi">514</span><span class="w"></span>
+<span class="w">                        </span><span class="p">}</span><span class="w"></span>
+<span class="w">                    </span><span class="p">],</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"monitors"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                        </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"bigip"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/Common/tcp"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">}</span><span class="w"></span>
+<span class="w">                    </span><span class="p">]</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"fwAllowedPortList"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Firewall_Port_List"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"ports"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                        </span><span class="mi">22</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="mi">53</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="mi">80</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="mi">443</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="s2">"8080-8081"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">]</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"fwSecurityLogProfile"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Security_Log_Profile"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"network"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"publisher"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fwLogPublisher"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">},</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"storageFormat"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"fields"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                                </span><span class="s2">"action"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="s2">"dest-ip"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="s2">"dest-port"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="s2">"src-ip"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="s2">"src-port"</span><span class="w"></span>
+<span class="w">                            </span><span class="p">]</span><span class="w"></span>
+<span class="w">                        </span><span class="p">},</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"logTranslationFields"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"logTcpEvents"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"logRuleMatchRejects"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"logTcpErrors"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"logIpErrors"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"logRuleMatchDrops"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"logRuleMatchAccepts"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"fwDefaultDenyAddressList"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Firewall_Address_List"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"addresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                        </span><span class="s2">"0.0.0.0/0"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">]</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"fwPolicy"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"rules"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                        </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fwRuleList"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">}</span><span class="w"></span>
+<span class="w">                    </span><span class="p">],</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Firewall_Policy"</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"ex_L4_Profile"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"L4_Profile"</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"ex_pool"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Pool"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"members"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                        </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"serverAddresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                                </span><span class="s2">"192.168.31.3"</span><span class="w"></span>
+<span class="w">                            </span><span class="p">],</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"enable"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"servicePort"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="w"></span>
+<span class="w">                        </span><span class="p">}</span><span class="w"></span>
+<span class="w">                    </span><span class="p">],</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"monitors"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                        </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"bigip"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/Common/gateway_icmp"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">}</span><span class="w"></span>
+<span class="w">                    </span><span class="p">]</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"service"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"translateServerAddress"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"securityLogProfiles"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                        </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fwSecurityLogProfile"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">}</span><span class="w"></span>
+<span class="w">                    </span><span class="p">],</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"virtualAddresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                        </span><span class="s2">"0.0.0.0"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">],</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"policyFirewallEnforced"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fwPolicy"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"translateServerPort"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"profileL4"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ex_L4_Profile"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"virtualPort"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"snat"</span><span class="p">:</span><span class="w"> </span><span class="s2">"none"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Service_L4"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"pool"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ex_pool"</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"fwLogPublisher"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Log_Publisher"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"destinations"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                        </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fwLogDestinationSyslog"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">}</span><span class="w"></span>
+<span class="w">                    </span><span class="p">]</span><span class="w"></span>
+<span class="w">                </span><span class="p">}</span><span class="w"></span>
+<span class="w">            </span><span class="p">}</span><span class="w"></span>
+<span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+<p><a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/network-security.html#net-sec-examples"><span class="std std-ref">Back to top</span></a></p>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="using-firewall-carrier-grade-nat-features-in-a-declaration">
+<span id="cgnatex"></span><h2>Using Firewall (Carrier Grade) NAT features in a declaration</h2>
+<p>This example shows how you can use some Carrier Grade NAT (CGNAT) features (NAT Policy, NAT Source Translation, Firewall lists) in a BIG-IP AS3 declaration.  For more information on CGNAT, see <a href="https://www.f5.com/products/big-ip-services/carrier-grade-nat" target="_blank">Carrier Grade Nat on f5.com</a>.  Also see the <a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#schema-reference"><span class="std std-ref">Schema Reference</span></a> for usage options for using these features in your BIG-IP AS3 declarations.</p>
+<p><strong>New in BIG-IP AS3 3.20</strong> <br/>
+In BIG-IP AS3 3.20 and later, you have the ability to add addresses to exclude for NAT source translation.  This allows you to specify a set of addresses excluded from the translation IP addresses available in the pool. The example below has been updated with the new lines highlighted in yellow.  <br/> <strong>Important</strong>: Because of this addition, the example declaration will fail in versions prior to 3.20. <br/> For more information on usage, see <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.htmel#nat-source-translation" target="_blank">NAT_Source_Translation</a> in the schema reference.</p>
+<p>This declaration creates the following objects on the BIG-IP:</p>
+<ul class="simple">
+<li>Partition (tenant) named <strong>Sample_net_sec_02</strong>.</li>
+<li>A Fast L4 virtual server named <strong>service</strong>.</li>
+<li>A NAT Policy (the ability to reference a security logging profile from a NAT rule was added in BIG-IP AS3 3.15, see <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#nat-rule" target="_blank">NAT_Rule</a> in the Schema Reference).</li>
+<li>A NAT Source Address Translation object (with excludeAddress added in BIG-IP AS3 3.20).</li>
+<li>Port and destination address lists (Firewall Address lists).</li>
+</ul>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ADC"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"cgnat"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"label"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Sample Network Security 2"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"remark"</span><span class="p">:</span><span class="w"> </span><span class="s2">"08"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"schemaVersion"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3.0.0"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"Sample_net_sec_02"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Tenant"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"A1"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Application"</span><span class="p">,</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"service"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Service_L4"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"layer4"</span><span class="p">:</span><span class="w"> </span><span class="s2">"any"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"policyNAT"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"natPolicy"</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"snat"</span><span class="p">:</span><span class="w"> </span><span class="s2">"none"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"translateServerAddress"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"translateServerPort"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"virtualAddresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="s2">"0.0.0.0"</span><span class="w"></span>
+<span class="w">                </span><span class="p">],</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"virtualPort"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="w"></span>
+<span class="w">            </span><span class="p">},</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"natDestinationAddressList"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"addresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="s2">"0.0.0.0/0"</span><span class="w"></span>
+<span class="w">                </span><span class="p">],</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Firewall_Address_List"</span><span class="w"></span>
+<span class="w">            </span><span class="p">},</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"natDestinationPortList"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Firewall_Port_List"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"ports"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="s2">"1-65535"</span><span class="w"></span>
+<span class="w">                </span><span class="p">]</span><span class="w"></span>
+<span class="w">            </span><span class="p">},</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"natPolicy"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"NAT_Policy"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"rules"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"destination"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"addressLists"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                                </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                    </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"natDestinationAddressList"</span><span class="w"></span>
+<span class="w">                                </span><span class="p">}</span><span class="w"></span>
+<span class="w">                            </span><span class="p">],</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"portLists"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                                </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                    </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"natDestinationPortList"</span><span class="w"></span>
+<span class="w">                                </span><span class="p">}</span><span class="w"></span>
+<span class="w">                            </span><span class="p">]</span><span class="w"></span>
+<span class="w">                        </span><span class="p">},</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"rule1"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"tcp"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"addressLists"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                                </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                    </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"natSourceAddressList"</span><span class="w"></span>
+<span class="w">                                </span><span class="p">}</span><span class="w"></span>
+<span class="w">                            </span><span class="p">],</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"portLists"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                                </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                    </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"natSourcePortList"</span><span class="w"></span>
+<span class="w">                                </span><span class="p">}</span><span class="w"></span>
+<span class="w">                            </span><span class="p">]</span><span class="w"></span>
+<span class="w">                        </span><span class="p">},</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"sourceTranslation"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"natSourceTranslation"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">},</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"securityLogProfile"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"secLogProfile"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">}</span><span class="w"></span>
+<span class="w">                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                </span><span class="p">]</span><span class="w"></span>
+<span class="w">            </span><span class="p">},</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"natSourceAddressList"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"addresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="s2">"192.168.0.0/16"</span><span class="w"></span>
+<span class="w">                </span><span class="p">],</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Firewall_Address_List"</span><span class="w"></span>
+<span class="w">            </span><span class="p">},</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"natSourcePortList"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Firewall_Port_List"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"ports"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="s2">"1-65535"</span><span class="w"></span>
+<span class="w">                </span><span class="p">]</span><span class="w"></span>
+<span class="w">            </span><span class="p">},</span><span class="w"></span>
+<span class="hll"><span class="w">            </span><span class="nt">"natSourceExcludeAddressList"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+</span><span class="hll"><span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Firewall_Address_List"</span><span class="p">,</span><span class="w"></span>
+</span><span class="hll"><span class="w">                </span><span class="nt">"addresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+</span><span class="hll"><span class="w">                    </span><span class="s2">"192.0.2.50"</span><span class="w"></span>
+</span><span class="hll"><span class="w">                </span><span class="p">]</span><span class="w"></span>
+</span><span class="hll"><span class="w">            </span><span class="p">},</span><span class="w"></span>
+</span><span class="w">            </span><span class="nt">"natSourceTranslation"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"addresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="s2">"192.0.2.0/25"</span><span class="w"></span>
+<span class="w">                </span><span class="p">],</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"NAT_Source_Translation"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"clientConnectionLimit"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"hairpinModeEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"inboundMode"</span><span class="p">:</span><span class="w"> </span><span class="s2">"explicit"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"mapping"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"mode"</span><span class="p">:</span><span class="w"> </span><span class="s2">"address-pooling-paired"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"timeout"</span><span class="p">:</span><span class="w"> </span><span class="mi">300</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"patMode"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pba"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"portBlockAllocation"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"blockIdleTimeout"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"blockLifetime"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"blockSize"</span><span class="p">:</span><span class="w"> </span><span class="mi">64</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"clientBlockLimit"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"zombieTimeout"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"ports"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="s2">"1-65535"</span><span class="w"></span>
+<span class="w">                </span><span class="p">],</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"routeAdvertisement"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dynamic-pat"</span><span class="p">,</span><span class="w"></span>
+<span class="hll"><span class="w">                </span><span class="nt">"excludeAddresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+</span><span class="hll"><span class="w">                    </span><span class="s2">"192.0.2.10"</span><span class="p">,</span><span class="w"></span>
+</span><span class="hll"><span class="w">                    </span><span class="s2">"192.0.2.20-192.0.2.30"</span><span class="p">,</span><span class="w"></span>
+</span><span class="hll"><span class="w">                    </span><span class="p">{</span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"natSourceExcludeAddressList"</span><span class="p">}</span><span class="w"></span>
+</span><span class="hll"><span class="w">                </span><span class="p">]</span><span class="w"></span>
+</span><span class="hll"><span class="w">            </span><span class="p">},</span><span class="w"></span>
+</span><span class="w">            </span><span class="nt">"secLogProfile"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Security_Log_Profile"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"application"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"storageFilter"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"logicalOperation"</span><span class="p">:</span><span class="w"> </span><span class="s2">"and"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"requestType"</span><span class="p">:</span><span class="w"> </span><span class="s2">"all"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"responseCodes"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"100"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"200"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"300"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"400"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">],</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"protocols"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"https"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"ws"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">],</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"httpMethods"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"ACL"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"GET"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"POLL"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"POST"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">],</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"requestContains"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"searchIn"</span><span class="p">:</span><span class="w"> </span><span class="s2">"search-in-headers"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"value"</span><span class="p">:</span><span class="w"> </span><span class="s2">"The header string to search for"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">},</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"loginResults"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"login-result-successful"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"login-result-failed"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">]</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"guaranteeLoggingEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"guaranteeResponseLoggingEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"maxHeaderSize"</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"maxQuerySize"</span><span class="p">:</span><span class="w"> </span><span class="mi">1040</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"maxRequestSize"</span><span class="p">:</span><span class="w"> </span><span class="mi">900</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"responseLogging"</span><span class="p">:</span><span class="w"> </span><span class="s2">"all"</span><span class="w"></span>
+<span class="w">                </span><span class="p">}</span><span class="w"></span>
+<span class="w">            </span><span class="p">}</span><span class="w"></span>
+<span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+<p><a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/network-security.html#net-sec-examples"><span class="std std-ref">Back to top</span></a></p>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="securing-ssh-traffic-with-the-ssh-proxy">
+<span id="sshproxyex"></span><h2>Securing SSH traffic with the SSH Proxy</h2>
+<p>This example shows how you can use the Advanced Firewall Manager (AFM) SSH Proxy profile in a BIG-IP AS3 declaration.  The SSH Proxy lets network administrators centrally manage the different uses of SSH, determining who can do what on which servers. Additionally, as the feature is a full proxy, terminating both the client and server sides of the connection, it is possible to inspect traffic before passing it on. This prevents attackers from hiding their activities while still providing legitimate users with secure communications. For more information on the SSH Proxy, see <a href="https://support.f5.com/kb/en-us/products/big-ip-afm/manuals/product/big-ip-network-firewall-policies-and-implementations-14-1-0/15.html" target="_blank">SSH Proxy</a> in the AFM documentation, and <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#ssh-proxy-profile" target="_blank">SSH_Proxy_Profile</a> in the Schema Reference for all BIG-IP AS3 usage options.</p>
+<p>This declaration creates the following objects on the BIG-IP:</p>
+<ul class="simple">
+<li>Partition (tenant) named <strong>SSH_Proxy_Profile</strong>.</li>
+<li>An SSH Proxy profile named <strong>sshProxyExample</strong> with actions, rules, and authentication information.</li>
+</ul>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ADC"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"schemaVersion"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3.10.0"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SSH_Proxy_Profile"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"Tenant"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Tenant"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"Application"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Application"</span><span class="p">,</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"sshProxyExample"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SSH_Proxy_Profile"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"sshProfileDefaultActions"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"action"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"agentAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"localForwardAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"disallow"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"otherAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"remoteForwardAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"rexecAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"scpUpAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"disallow"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"scpDownAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"sftpUpAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"disallow"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"sftpDownAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"shellAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"disallow"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"subSystemAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"x11ForwardAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"sshProfileRuleSet"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"rule1"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"remark"</span><span class="p">:</span><span class="w"> </span><span class="s2">"rule1 remark"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"sshProfileIdUsers"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"Good Boy"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"Test"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">],</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"sshProfileIdGroups"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"Group Test"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"TestG"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">],</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"sshProfileRuleActions"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"rulesAction"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"agentAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                            </span><span class="p">},</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"localForwardAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                            </span><span class="p">},</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"otherAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                            </span><span class="p">},</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"remoteForwardAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                            </span><span class="p">},</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"rexecAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                            </span><span class="p">},</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"scpUpAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"disallow"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                            </span><span class="p">},</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"scpDownAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                            </span><span class="p">},</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"sftpUpAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"disallow"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                            </span><span class="p">},</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"sftpDownAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                            </span><span class="p">},</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"shellAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                            </span><span class="p">},</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"subSystemAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                            </span><span class="p">},</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"x11ForwardAction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"control"</span><span class="p">:</span><span class="w"> </span><span class="s2">"terminate"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                            </span><span class="p">}</span><span class="w"></span>
+<span class="w">                        </span><span class="p">}</span><span class="w"></span>
+<span class="w">                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                </span><span class="p">],</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"timeout"</span><span class="p">:</span><span class="w"> </span><span class="mi">23</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"sshProfileAuthInfo"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"authInfo1"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"proxyServerAuth"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"privateKey"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"ciphertext"</span><span class="p">:</span><span class="w"> </span><span class="s2">"VGhpcyBpcyBhIFNFUlZFUiBwcml2YXRlIGtleQ=="</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"protected"</span><span class="p">:</span><span class="w"> </span><span class="s2">"eyJhbGciOiJkaXIiLCJlbmMiOiJub25lIn0"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"ignoreChanges"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                            </span><span class="p">},</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"publicKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"This is a SERVER public key"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">},</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"proxyClientAuth"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"privateKey"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"ciphertext"</span><span class="p">:</span><span class="w"> </span><span class="s2">"VGhpcyBpcyBhIENMSUVOVCBwcml2YXRlIGtleQ=="</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"protected"</span><span class="p">:</span><span class="w"> </span><span class="s2">"eyJhbGciOiJkaXIiLCJlbmMiOiJub25lIn0"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                </span><span class="nt">"ignoreChanges"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                            </span><span class="p">},</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"publicKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"This is a CLIENT public key"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">},</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"realServerAuth"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"publicKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"This is a REAL SERVER public key"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">}</span><span class="w"></span>
+<span class="w">                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                </span><span class="p">]</span><span class="w"></span>
+<span class="w">            </span><span class="p">}</span><span class="w"></span>
+<span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+<p><a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/network-security.html#net-sec-examples"><span class="std std-ref">Back to top</span></a></p>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="using-reject-and-accept-decisively-actions-and-vlan-source-in-a-firewall-rule">
+<span id="fwrule"></span><h2>Using reject and accept-decisively actions and VLAN source in a firewall rule</h2>
+<p>This example shows how you can use the <strong>reject</strong> and <strong>accept-decisively</strong> actions in a Firewall Rule. See the <a href="https://techdocs.f5.com/kb/en-us/products/big-ip-afm/manuals/product/big-ip-network-firewall-policies-and-implementations-14-1-0/05.html#GUID-3E2AE647-8569-4D1E-A692-DB8C79370C93" target="_blank">BIG-IP AFM: Network Firewall Policies and Implementations</a> for detailed information on these actions.</p>
+<ul class="simple">
+<li><dl class="first docutils">
+<dt><em>reject</em></dt>
+<dd>With this action, packets that match the rule are rejected. Using <strong>reject</strong> is a more graceful way to deny packets as it sends a destination unreachable message to the source system.</dd>
+</dl>
+</li>
+<li><dl class="first docutils">
+<dt><em>accept-decisively</em></dt>
+<dd>With this action, packets that match the rule are accepted decisively and traverse the system as if the firewall is not present. Packets are not processed by rules in any further context after the accept decisively action applies. See the AFM documentation for detailed information.</dd>
+</dl>
+</li>
+</ul>
+<p><strong>New in BIG-IP AS3 3.15.0</strong> <br/>
+Starting with BIG-IP AS3 3.15.0, you can use BIG-IP VLANs as sources for firewall Rules.  See the highlighted lines in the following declaration.  See <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#firewall-rule-source" target="_blank">Firewall_Rule_Source</a> in the schema reference for usage.</p>
+<p>See <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#firewall-rule" target="_blank">Firewall_Rule</a> in the Schema Reference for all BIG-IP AS3 usage options.</p>
+<p>This declaration creates the following objects on the BIG-IP:</p>
+<ul class="simple">
+<li>Partition (tenant) named <strong>Example_Firewall_Rule_List</strong>.</li>
+<li>A Firewall Rule list named <strong>exampleFWRuleList</strong> with two rules, one with an action of <strong>reject</strong> and one of <strong>accept-decisively</strong>.</li>
+<li>The second firewall rule has been updated to use the <strong>external</strong> VLAN on the BIG-IP as the source.</li>
+</ul>
+<p><strong>New in BIG-IP AS3 3.57.0</strong> <br/>
+Starting with BIG-IP AS3 3.57.0, you can include a <strong>uuid</strong> property on individual firewall rules. The UUID can be set to <code class="docutils literal notranslate"><span class="pre">auto-generate</span></code> (BIG-IP assigns a UUID automatically) or a specific UUID string. UUIDs are useful for uniquely identifying firewall rules in log entries and for correlation with external systems. See the highlighted lines in the following declaration.</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ADC"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"schemaVersion"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3.57.0"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Firewall_Rule_List"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"Example_Firewall_Rule_List"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Tenant"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"Application"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Application"</span><span class="p">,</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"exampleFWRuleList"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Firewall_Rule_List"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"remark"</span><span class="p">:</span><span class="w"> </span><span class="s2">"description"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"rules"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"remark"</span><span class="p">:</span><span class="w"> </span><span class="s2">"description"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"theRule1"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"accept-decisively"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"tcp"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"loggingEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="hll"><span class="w">                        </span><span class="nt">"uuid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"auto-generate"</span><span class="w"></span>
+</span><span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"remark"</span><span class="p">:</span><span class="w"> </span><span class="s2">"description"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"theRule2"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"reject"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"tcp"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"loggingEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"vlans"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                                </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                    </span><span class="nt">"bigip"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/Common/external"</span><span class="w"></span>
+<span class="w">                                </span><span class="p">}</span><span class="w"></span>
+<span class="w">                            </span><span class="p">]</span><span class="w"></span>
+<span class="w">                        </span><span class="p">},</span><span class="w"></span>
+<span class="hll"><span class="w">                        </span><span class="nt">"uuid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"7ea76fe4-8b52-4130-8ff1-95cf92448662"</span><span class="w"></span>
+</span><span class="w">                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                </span><span class="p">]</span><span class="w"></span>
+<span class="w">            </span><span class="p">}</span><span class="w"></span>
+<span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+<p><a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/network-security.html#net-sec-examples"><span class="std std-ref">Back to top</span></a></p>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="creating-protocol-inspection-profiles">
+<span id="pipprof"></span><h2>Creating Protocol Inspection profiles</h2>
+<div class="admonition important">
+<p class="first admonition-title">Important</p>
+<p class="last">Because the Protocol Inspection profile was designed around an experience that is better suited to using the BIG-IP web-based Configuration utility, we strongly recommend you configure, modify, or change Protocol Inspection profiles using the BIG-IP Configuration utility, and reference the profile in the AS3 declaration. Future releases of BIG-IP AS3 will not include any improvements to  Protocol Inspection profiles. <br/> The following example has been updated with an example of referencing a Protocol Inspection profile on the BIG-IP.</p>
+</div>
+<p>This example shows how you can create BIG-IP AFM Protocol Inspection profiles in a BIG-IP AS3 declaration.  A protocol inspection profile collects rules for protocol inspection using pre-installed signatures defined by the Snort project, or custom signatures defined using the Snort syntax.</p>
+<p>For detailed information, see <a href="https://techdocs.f5.com/en-us/bigip-15-0-0/big-ip-network-firewall-policies-and-implementations/afm-protocol-security/about-protocol-anomaly-inspection.html" target="_blank">AFM documentation</a>, as well as <a href="https://support.f5.com/csp/article/K44080215" target="_blank">Configuring protocol inspection profiles</a> on AskF5. For BIG-IP AS3 usage options, see <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#protocol-inspection-profile" target="_blank">Protocol_Inspection_Profile</a> in the Schema Reference.</p>
+<p>BIG-IP AS3 3.20 added the <strong>value</strong> property for Protocol Inspection compliance checks.  If a check accepts enumerable values, the values should be delimited by spaces.  The following example has been updated to show the <strong>value</strong> property.</p>
+<p>This declaration creates the following objects on the BIG-IP:</p>
+<ul class="simple">
+<li>Partition (tenant) named <strong>Example_PIP</strong>.</li>
+<li>A UDP virtual service named <strong>service</strong> which references the Protocol Inspection profile.</li>
+<li>A Protocol Inspection profile named <strong>DNSInspectionProfile</strong> which is specific to DNS in this example.<ul>
+<li>Example was updated in BIG-IP AS3 3.20 to include the <strong>value</strong> property in the compliance check.  If you are using a BIG-IP AS3 version prior to 3.20, this declaration will fail.</li>
+</ul>
+</li>
+</ul>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"AS3"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"declaration"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ADC"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"schemaVersion"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3.20.0"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"Example_PIP"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Tenant"</span><span class="p">,</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"A1"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Application"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"service"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Service_UDP"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"virtualPort"</span><span class="p">:</span><span class="w"> </span><span class="mi">53</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"virtualAddresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                        </span><span class="s2">"192.0.2.1"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">],</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"profileProtocolInspection"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"DNSInspectionProfile"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"DNSInspectionProfile"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Protocol_Inspection_Profile"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"remark"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Custom DNS Inspection Profile"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"collectAVRStats"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"enableComplianceChecks"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"enableSignatureChecks"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"autoAddNewInspections"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"autoPublish"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"services"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                        </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dns"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"compliance"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                                </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                    </span><span class="nt">"check"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dns_maximum_reply_length"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                    </span><span class="nt">"value"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1024"</span><span class="w"></span>
+<span class="w">                                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                                </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                    </span><span class="nt">"check"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dns_disallowed_query_type"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                    </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"accept"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                    </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                    </span><span class="nt">"value"</span><span class="p">:</span><span class="w"> </span><span class="s2">"STATUS QUERY"</span><span class="w"></span>
+<span class="w">                                </span><span class="p">}</span><span class="w"></span>
+<span class="w">                            </span><span class="p">],</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"signature"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                                </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                    </span><span class="nt">"check"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dns_dns_query_amplification_attempt"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                    </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"reject"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                                    </span><span class="nt">"log"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                                </span><span class="p">}</span><span class="w"></span>
+<span class="w">                            </span><span class="p">]</span><span class="w"></span>
+<span class="w">                        </span><span class="p">}</span><span class="w"></span>
+<span class="w">                    </span><span class="p">]</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"service2"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Service_UDP"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"virtualPort"</span><span class="p">:</span><span class="w"> </span><span class="mi">53</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"virtualAddresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                        </span><span class="s2">"192.0.2.2"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">],</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"profileProtocolInspection"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"bigip"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/Common/protocol_inspection_dns"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                </span><span class="p">}</span><span class="w"></span>
+<span class="w">            </span><span class="p">}</span><span class="w"></span>
+<span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+<p><a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/network-security.html#net-sec-examples"><span class="std std-ref">Back to top</span></a></p>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="setting-maximum-bandwidth-on-a-virtual-with-afm">
+<span id="bandwidth"></span><h2>Setting Maximum Bandwidth on a virtual with AFM</h2>
+<p>This example shows how you can set the maximum bandwidth on a virtual server when you are using <a href="https://f5.com/products/big-ip/advanced-firewall-manager-afm" target="_blank">BIG-IP AFM</a>. This allows you to set the maximum bandwidth allowed through the virtual service, in Mbps. For more information, see the BIG-IP documentation.</p>
+<p>For BIG-IP AS3 usage options, see <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#service-generic" target="_blank">Service_Generic</a> or another Service object in the Schema Reference.</p>
+<p>This declaration creates the following objects on the BIG-IP:</p>
+<ul class="simple">
+<li>Partition (tenant) named <strong>AFM_Tenant</strong>.</li>
+<li>A virtual server named <strong>AFMvip</strong> with maximum bandwidth set to 10Mbps.</li>
+</ul>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ADC"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"schemaVersion"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3.19.0"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"AFM_Tenant"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Tenant"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"Sample_App"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Application"</span><span class="p">,</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"AFMvip"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Service_Generic"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"virtualPort"</span><span class="p">:</span><span class="w"> </span><span class="mi">8080</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"virtualAddresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="s2">"192.0.2.0"</span><span class="w"></span>
+<span class="w">                </span><span class="p">],</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"maximumBandwidth"</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="w"></span>
+<span class="w">            </span><span class="p">}</span><span class="w"></span>
+<span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+<p><a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/network-security.html#net-sec-examples"><span class="std std-ref">Back to top</span></a></p>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="creating-an-idle-timeout-policy-in-a-declaration">
+<span id="timeoutpolicy"></span><h2>Creating an Idle Timeout policy in a declaration</h2>
+<p>This example shows how you can create Idle Timeout policy in a BIG-IP AS3 declaration. The Idle Timeout policy (which is attached to the virtual service as part of a Service policy) allows you to associate timeouts with specific protocols and ports. You can also reference an existing policy on the BIG-IP using the <strong>bigip</strong> pointer.</p>
+<p>See <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#idle-timeout-policy" target="_blank">Idle_Timeout_Policy</a> in the schema reference for BIG-IP AS3 usage.  For more information, see <a href="https://techdocs.f5.com/kb/en-us/products/big-ip-afm/manuals/product/network-firewall-policies-implementations-13-1-0/15.html" target="_blank">Service Policies</a> in the BIG-IP documentation.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">BIG-IP AS3 does not support the Port Misuse policy in a Service Policy at this time.</p>
+</div>
+<p>This declaration creates the following objects on the BIG-IP:</p>
+<ul class="simple">
+<li>Partition (tenant) named <strong>timeoutTenant</strong>.</li>
+<li>A virtual server named <strong>timeoutGeneric</strong> that references the idle timeout policy.</li>
+<li>A Service policy object (which BIG-IP AS3 creates automatically to hold the timeout policy; it is not part of the declaration) that contains the Idle Timeout policy named <strong>my_idle_timeout_policy</strong> that contains a number of rules.</li>
+</ul>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ADC"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"schemaVersion"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3.19.0"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Idle_Timeout_Policy"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"timeoutTenant"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Tenant"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"timeoutApp"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Application"</span><span class="p">,</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"timeoutGeneric"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Service_Generic"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"virtualPort"</span><span class="p">:</span><span class="w"> </span><span class="mi">8080</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"virtualAddresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="s2">"192.0.2.141"</span><span class="w"></span>
+<span class="w">                </span><span class="p">],</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"policyIdleTimeout"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"my_idle_timeout_policy"</span><span class="w"></span>
+<span class="w">                </span><span class="p">}</span><span class="w"></span>
+<span class="w">            </span><span class="p">},</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"my_idle_timeout_policy"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Idle_Timeout_Policy"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"remark"</span><span class="p">:</span><span class="w"> </span><span class="s2">"my policy remark"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"rules"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"rule1"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"remark"</span><span class="p">:</span><span class="w"> </span><span class="s2">"tcp all ports"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"tcp"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"destinationPorts"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"all-other"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">],</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"idleTimeout"</span><span class="p">:</span><span class="w"> </span><span class="mi">120</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"rule2"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"remark"</span><span class="p">:</span><span class="w"> </span><span class="s2">"udp port 9090"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"udp"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"destinationPorts"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                            </span><span class="mi">9090</span><span class="w"></span>
+<span class="w">                        </span><span class="p">],</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"idleTimeout"</span><span class="p">:</span><span class="w"> </span><span class="mi">300</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"rule3"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"remark"</span><span class="p">:</span><span class="w"> </span><span class="s2">"all other protocols"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"all-other"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"idleTimeout"</span><span class="p">:</span><span class="w"> </span><span class="mi">40</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"rule4"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"remark"</span><span class="p">:</span><span class="w"> </span><span class="s2">"non port 9090 udp"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"udp"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"destinationPorts"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                            </span><span class="s2">"all-other"</span><span class="w"></span>
+<span class="w">                        </span><span class="p">],</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"idleTimeout"</span><span class="p">:</span><span class="w"> </span><span class="mi">60</span><span class="w"></span>
+<span class="w">                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                </span><span class="p">]</span><span class="w"></span>
+<span class="w">            </span><span class="p">}</span><span class="w"></span>
+<span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+<p><a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/network-security.html#net-sec-examples"><span class="std std-ref">Back to top</span></a></p>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="adding-logging-for-protocol-inspection-events">
+<span id="pilog"></span><h2>Adding logging for protocol inspection events</h2>
+<p>This example shows how you can configure logging for protocol inspection events in a declaration. Logging is performed using a Log Publisher called from a Security Log profile. For detailed information on logging security events, see <a href="https://techdocs.f5.com/kb/en-us/products/big-ip-afm/manuals/product/big-ip-system-dos-protection-and-protocol-firewall-implementations-14-0-0/15.html" target="_blank">BIG-IP documentation</a>.</p>
+<p>For BIG-IP AS3 usage, see <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#log-publisher" target="_blank">Log_Publisher</a> and <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#security-log-profile" target="_blank">Security_Log_Profile</a> in the Schema Reference.</p>
+<p>This declaration creates the following objects on the BIG-IP:</p>
+<ul class="simple">
+<li>Partition (tenant) named <strong>Security_Log_Protocol_Inspection</strong>.</li>
+<li>A Security Log Profile named <strong>secLogProtocolInspection</strong> calls the log publisher.</li>
+<li>A Log Publisher named <strong>logPub</strong> references a destination on the BIG-IP.</li>
+</ul>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ADC"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"schemaVersion"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3.20.0"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Security_Log_Profile"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"Security_Log_Protocol_Inspection"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Tenant"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"Application"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Application"</span><span class="p">,</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"secLogProtocolInspection"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Security_Log_Profile"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"protocolInspection"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"publisher"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"logPub"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logPacketPayloadEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w"></span>
+<span class="w">                </span><span class="p">}</span><span class="w"></span>
+<span class="w">            </span><span class="p">},</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"logPub"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Log_Publisher"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"destinations"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"bigip"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/Common/local-db"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                </span><span class="p">]</span><span class="w"></span>
+<span class="w">            </span><span class="p">}</span><span class="w"></span>
+<span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+<p><a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/network-security.html#net-sec-examples"><span class="std std-ref">Back to top</span></a></p>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="adding-ports-to-a-protocol-inspection-profile">
+<span id="piport"></span><h2>Adding ports to a protocol inspection profile</h2>
+<p>This example shows how you can configure the <strong>ports</strong> property (introduced in BIG-IP AS3 3.23) in a protocol inspection profile. In prior versions of AS3, the ports property was not available.</p>
+<p>For BIG-IP AS3 usage, see <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.htmel#protocol-inspection-profile-services" target="_blank">Protocol_Inspection_Profile_Services</a> and <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#protocol-inspection-profile" target="_blank">Protocol_Inspection_Profile</a> in the Schema Reference.</p>
+<p>This declaration creates the following objects on the BIG-IP:</p>
+<ul class="simple">
+<li>Partition (tenant) named <strong>Example_PIP</strong>.</li>
+<li>A virtual server named <strong>service</strong> that references the protocol inspection profile.</li>
+<li>A protocol inspection profile, which includes the <strong>ports</strong> property.</li>
+</ul>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"AS3"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"declaration"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ADC"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"schemaVersion"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3.23.0"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"Example_PIP"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Tenant"</span><span class="p">,</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"A1"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Application"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"service"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Service_HTTP"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"virtualPort"</span><span class="p">:</span><span class="w"> </span><span class="mi">80</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"virtualAddresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                        </span><span class="s2">"192.0.2.1"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">],</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"profileProtocolInspection"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"InspectionProfile"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"InspectionProfile"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Protocol_Inspection_Profile"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"collectAVRStats"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"enableComplianceChecks"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"enableSignatureChecks"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"services"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                        </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"compliance"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                                </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                    </span><span class="nt">"check"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http_contains_colon"</span><span class="w"></span>
+<span class="w">                                </span><span class="p">}</span><span class="w"></span>
+<span class="w">                            </span><span class="p">],</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"signature"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                                </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                    </span><span class="nt">"check"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http_app_detect_absolute_software_computrace_outbound_connection_bh_namequery_com"</span><span class="w"></span>
+<span class="w">                                </span><span class="p">}</span><span class="w"></span>
+<span class="w">                            </span><span class="p">],</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"ports"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">80</span><span class="p">,</span><span class="w"> </span><span class="mi">8080</span><span class="p">]</span><span class="w"></span>
+<span class="w">                        </span><span class="p">}</span><span class="w"></span>
+<span class="w">                    </span><span class="p">]</span><span class="w"></span>
+<span class="w">                </span><span class="p">}</span><span class="w"></span>
+<span class="w">            </span><span class="p">}</span><span class="w"></span>
+<span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+<p><a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/network-security.html#net-sec-examples"><span class="std std-ref">Back to top</span></a></p>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="configuring-a-security-logging-profile-with-bot-defense">
+<span id="slbotdef"></span><h2>Configuring a Security Logging Profile with Bot defense</h2>
+<p>This example shows how you can use <em>bot defense</em> options in a Security Logging profile in BIG-IP 14.1 and later. This example does not create the bot defense configuration, but configures logging for it. Logging is performed using a Log Publisher, which is called from the Security Log profile as shown in the example.</p>
+<p>For more information on F5 bot defense, which can prevent layer 7 DoS attacks, web scraping, and brute force attacks from starting, see the <a href="https://techdocs.f5.com/en-us/bigip-15-0-0/big-ip-asm-implementations/configuring-bot-defense.html" target="_blank">Configuring Bot Defense</a> chapter of the ASM Implementations guide.</p>
+<p>We strongly recommend you visit <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.htmel#security-log-profile-bot-defense" target="_blank">Security_Log_Profile_Bot_Defense</a> in the Schema Reference for specific information on the bot defense properties, including <strong>minimum BIG-IP versions for some properties</strong>. Also see <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#security-log-profile" target="_blank">Security_Log_Profile</a> in the Schema Reference.</p>
+<p>For detailed information on logging security events, see <a href="https://techdocs.f5.com/kb/en-us/products/big-ip-afm/manuals/product/big-ip-system-dos-protection-and-protocol-firewall-implementations-14-0-0/15.html" target="_blank">BIG-IP documentation</a>. See <a href="https://support.f5.com/csp/article/K11412315" target="_blank">K11412315: Configuring Bot Defense logging</a> for information on manual configuration.</p>
+<p>This declaration creates the following objects on the BIG-IP (note the example does not create a virtual service):</p>
+<ul class="simple">
+<li>A partition (tenant) named <strong>AS3_Tenant</strong>.</li>
+<li>An Application named <strong>AS3_Application</strong></li>
+<li>A Security Log Profile named <strong>exampleBotDefense</strong> which includes bot defense.</li>
+<li>Bot defense which includes a log publisher and a number of bot defense properties.</li>
+</ul>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ADC"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"schemaVersion"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3.26.0"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"AS3_Tenant"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Tenant"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"AS3_Application"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Application"</span><span class="p">,</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"exampleBotDefense"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Security_Log_Profile"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"botDefense"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"localPublisher"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"bigip"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/Common/local-db-publisher"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logAlarm"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logBlock"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logBrowser"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logBrowserVerificationAction"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logCaptcha"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logDeviceIdCollectionRequest"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logMaliciousBot"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logMobileApplication"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logNone"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logRateLimit"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logSuspiciousBrowser"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logTcpReset"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logTrustedBot"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logUnknown"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logUntrustedBot"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logHoneyPotPage"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logRedirectToPool"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"logChallengeFailureRequest"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                </span><span class="p">}</span><span class="w"></span>
+<span class="w">            </span><span class="p">}</span><span class="w"></span>
+<span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+<p><a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/network-security.html#net-sec-examples"><span class="std std-ref">Back to top</span></a></p>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="referencing-an-ip-intelligence-policy-in-a-declaration">
+<span id="ipintell"></span><h2>Referencing an IP Intelligence policy in a declaration</h2>
+<p>This example shows how you can reference existing IP Intelligence policies in a BIG-IP AS3 declaration. IP Intelligence policies validate traffic against an IP intelligence database, allowing you to perform a number of actions based on the policy.  For detailed information on IP Intelligence policies and how to create them, see <a href="https://techdocs.f5.com/en-us/bigip-15-1-0/big-ip-network-firewall-policies-and-implementations/configuring-ip-address-intelligence-in-the-network-firewall.html" target="_blank">IP Intelligence chapter</a> in the BIG-IP AFM documentation.</p>
+<p>This declaration does not create an IP Intelligence policy, it allows you to reference an existing policy in a declaration.</p>
+<p>This declaration creates the following objects on the BIG-IP:</p>
+<ul class="simple">
+<li>A partition (tenant) named <strong>tenant</strong>.</li>
+<li>An Application named <strong>application</strong></li>
+<li>A virtual server named <strong>service</strong> that references an existing IP Intelligence policy on the BIG-IP</li>
+</ul>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ADC"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"schemaVersion"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3.35.0"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"tenant"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Tenant"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"application"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Application"</span><span class="p">,</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"service"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Service_HTTP"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"virtualAddresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"1.2.3.4"</span><span class="p">],</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"ipIntelligencePolicy"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"bigip"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/Common/ip-intelligence"</span><span class="w"></span>
+<span class="w">                </span><span class="p">}</span><span class="w"></span>
+<span class="w">            </span><span class="p">}</span><span class="w"></span>
+<span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+<p><a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/network-security.html#net-sec-examples"><span class="std std-ref">Back to top</span></a></p>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="using-a-network-address-list-in-a-declaration">
+<span id="netaddrlist"></span><h2>Using a network address list in a declaration</h2>
+<p>This example shows how you can use an address list in a declaration when using BIG-IP v14.0 or later.  When you use the <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.htmel#net-address-list" target="_blank">Net_Address_List</a> class, you can specify IP addresses or address ranges, and/or use a pointer (or BIG-IP pathname) to a list of address lists.</p>
+<p>This provides a way to specify IP addresses for a DoS profile (for example) without having to use a <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.htmel#firewall-address-list" target="_blank">Firewall_Address_List</a> which requires that you have BIG-IP AFM licensed and provisioned.</p>
+<div class="admonition important">
+<p class="first admonition-title">Important</p>
+<p class="last">Network address lists and firewall address lists are duplicates of each other (TMOS creates or updates both when either is updated or created). Network address lists are only available in BIG-IP 14.0+, and firewall address lists are only available when AFM is provisioned (or has been provisioned before). However, <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.htmel#firewall-address-list" target="_blank">Firewall_Address_List</a> has additional properties that <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.htmel#net-address-list" target="_blank">Net_Address_List</a> does not.</p>
+</div>
+<p>This declaration creates the following objects on the BIG-IP:</p>
+<ul class="simple">
+<li>A partition (tenant) named <strong>TEST_DOS_Profile</strong></li>
+<li>An Application named <strong>Application</strong></li>
+<li>A DoS Profile named <strong>exampleDosProfile</strong> with a pointer to an allow list</li>
+<li>An Network Address list named <strong>netAddressList</strong> with both an IP address, and a pointer to the next Address list</li>
+<li>Another Network address list named <strong>otherNetAddressList</strong> with one IP address.</li>
+</ul>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ADC"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"updateMode"</span><span class="p">:</span><span class="w"> </span><span class="s2">"selective"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"schemaVersion"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3.37.0"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"declarationId"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"label"</span><span class="p">:</span><span class="w"> </span><span class="s2">"theDeclaration"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"remark"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Net Address List declaration"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"TEST_DOS_Profile"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Tenant"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"Application"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Application"</span><span class="p">,</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"exampleDosProfile"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"DOS_Profile"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"remark"</span><span class="p">:</span><span class="w"> </span><span class="s2">"description"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"allowlist"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"netAddressList"</span><span class="w"></span>
+<span class="w">                </span><span class="p">}</span><span class="w"></span>
+<span class="w">            </span><span class="p">},</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"netAddressList"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Net_Address_List"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"addresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="s2">"192.0.2.0"</span><span class="w"></span>
+<span class="w">                </span><span class="p">],</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"addressLists"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"otherNetAddressList"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                </span><span class="p">]</span><span class="w"></span>
+<span class="w">            </span><span class="p">},</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"otherNetAddressList"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Net_Address_List"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"addresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="s2">"198.51.100.0"</span><span class="w"></span>
+<span class="w">                </span><span class="p">]</span><span class="w"></span>
+<span class="w">            </span><span class="p">}</span><span class="w"></span>
+<span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+<p><a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/network-security.html#net-sec-examples"><span class="std std-ref">Back to top</span></a></p>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="creating-an-alg-log-profile-in-a-declaration">
+<span id="alglog"></span><h2>Creating an ALG log profile in a declaration</h2>
+<p>This example shows how you can create an ALG (Application Layer Gateway) logging profile in an AS3 declaration in version 3.43 and later.</p>
+<p>An ALG log profile allows fine grain control of the logging for ALG events.  When attached to a supported ALG profile (NAT, FTP, RTSP, SIP, and PPTP), you can control the events, to log as well as optional elements in the log entry. For more information on ALG profiles, see <a href="https://techdocs.f5.com/en-us/bigip-15-0-0/big-ip-cgnat-implementations/using-alg-profiles.html" target="_blank">Using ALG profiles</a> in the BIG-IP documentation.</p>
+<p>For AS3 options and usage, see <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#alg-log-profile" target="_blank">ALG_Log_Profile</a>.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">The following example only creates the ALG logging profile, you need to configure additional objects to be able to use this profile.</p>
+</div>
+<p>This declaration creates only the following objects on the BIG-IP:</p>
+<ul class="simple">
+<li>A partition (tenant) named <strong>Tenant</strong></li>
+<li>An Application named <strong>Application</strong></li>
+<li>An ALG log profile named <strong>myProfile</strong> with a number of properties.</li>
+</ul>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ADC"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"schemaVersion"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3.43.0"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ALG_Log_Profile"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"Tenant"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Tenant"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"Application"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Application"</span><span class="p">,</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"myProfile"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ALG_Log_Profile"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"remark"</span><span class="p">:</span><span class="w"> </span><span class="s2">"My Remark"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"csvFormat"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"startControlChannel"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"enabled"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"includeDestination"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"endControlChannel"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"disabled"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"includeDestination"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"startDataChannel"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"backup-allocation-only"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"includeDestination"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"endDataChannel"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"enabled"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"includeDestination"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                </span><span class="p">},</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"inboundTransaction"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"enabled"</span><span class="w"></span>
+<span class="w">                </span><span class="p">}</span><span class="w"></span>
+<span class="w">            </span><span class="p">}</span><span class="w"></span>
+<span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+<p><a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/network-security.html#net-sec-examples"><span class="std std-ref">Back to top</span></a></p>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="apply-afm-policies-on-the-route-domains">
+<span id="afmp"></span><h2>Apply AFM Policies on the Route Domains</h2>
+<p>In this example, we show how you can enforce AFM Policies on a list of Route Domain objects in a BIG-IP AS3 declaration. In the example, we only show one Route Domain, but you can add as many Route Domains as you wish to the list.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">AS3 does not create Route Domains, hence only bigip pointer which references an existing object on the BIG-IP can be used. So, Route Domains should already be available.</p>
+</div>
+<p>See <a href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#firewall-policy" target="_blank">Firewall_Policy</a> in Appendix A: Schema Reference for BIG-IP AS3.</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ADC"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"schemaVersion"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3.49.0"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"declaration"</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"Common"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Tenant"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"Shared"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Application"</span><span class="p">,</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"template"</span><span class="p">:</span><span class="w"> </span><span class="s2">"shared"</span><span class="p">,</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"firewallPolicy"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Firewall_Policy"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"routeDomainEnforcement"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"bigip"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/Common/100"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                </span><span class="p">],</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"rules"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fwRuleList"</span><span class="w"></span>
+<span class="w">                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                </span><span class="p">]</span><span class="w"></span>
+<span class="w">            </span><span class="p">},</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"fwRuleList"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Firewall_Rule_List"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"rules"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"remark"</span><span class="p">:</span><span class="w"> </span><span class="s2">"description"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"rule1"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"accept-decisively"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"tcp"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"loggingEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"></span>
+<span class="w">                    </span><span class="p">},</span><span class="w"></span>
+<span class="w">                    </span><span class="p">{</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"remark"</span><span class="p">:</span><span class="w"> </span><span class="s2">"description"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"rule2"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"reject"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"tcp"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"loggingEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
+<span class="w">                        </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                            </span><span class="nt">"vlans"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                                </span><span class="p">{</span><span class="w"></span>
+<span class="w">                                    </span><span class="nt">"bigip"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/Common/external"</span><span class="w"></span>
+<span class="w">                                </span><span class="p">}</span><span class="w"></span>
+<span class="w">                            </span><span class="p">]</span><span class="w"></span>
+<span class="w">                        </span><span class="p">}</span><span class="w"></span>
+<span class="w">                    </span><span class="p">}</span><span class="w"></span>
+<span class="w">                </span><span class="p">]</span><span class="w"></span>
+<span class="w">            </span><span class="p">}</span><span class="w"></span>
+<span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="w">    </span><span class="p">},</span><span class="w"></span>
+<span class="w">    </span><span class="nt">"tenant"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Tenant"</span><span class="p">,</span><span class="w"></span>
+<span class="w">        </span><span class="nt">"app"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Application"</span><span class="p">,</span><span class="w"></span>
+<span class="w">            </span><span class="nt">"service"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"class"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Service_HTTP"</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"virtualAddresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
+<span class="w">                    </span><span class="s2">"192.0.2.0"</span><span class="w"></span>
+<span class="w">                </span><span class="p">],</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"virtualPort"</span><span class="p">:</span><span class="w"> </span><span class="mi">443</span><span class="p">,</span><span class="w"></span>
+<span class="w">                </span><span class="nt">"policyFirewallEnforced"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">                    </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/Common/Shared/firewallPolicy"</span><span class="w"></span>
+<span class="w">                </span><span class="p">}</span><span class="w"></span>
+<span class="w">            </span><span class="p">}</span><span class="w"></span>
+<span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+<p><a class="reference internal" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/network-security.html#net-sec-examples"><span class="std std-ref">Back to top</span></a></p>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+</div>
+</div>
+<div class="row next-prev-btn-row">
+<div class="col-lg-12">
+<a accesskey="p" class="btn btn-primary left" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/non-http-services.html" title="Non-HTTP Services"><i aria-hidden="true" class="fa fa-arrow-circle-left"></i> Previous</a>
+<a accesskey="n" class="btn btn-primary right" href="https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html" title="Application Security">Next <i aria-hidden="true" class="fa fa-arrow-circle-right"></i></a>
+</div>
+</div>
+</article>
+</body></html>

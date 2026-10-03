@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ltm rule command MQTT return code list</title><link rel="canonical" href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_MQTT_return_code_list.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>ltm rule command MQTT return code list</h1><p>cli_reference · 17.0.0</p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_MQTT_return_code_list.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="ltm-rule-command-mqtt-return-code-list">
+<span id="id1"></span><h1>ltm rule command MQTT return code list</h1>
+<html>
+<pre>
+iRule(1)						BIG-IP TMSH Manual						  iRule(1)
+
+MQTT::return_code_list
+       Get return-code-list of MQTT SUBACK message.
+
+SYNOPSIS
+       MQTT::return_code_list
+
+DESCRIPTION
+       This command can be used to get return-code-list of MQTT message.  Note that this command does not support a 'set'
+       operation.  In order to change the retun-code-list please use 'MQTT::replace type SUBACK'.  This command is valid only for
+       following MQTT message types:
+
+	   SUBACK
+
+       Syntax
+
+       MQTT::return_code_list
+
+	   * Get the return-code-list of MQTT SUBACK message.
+	     Each number in the list should be smaller than 256. Valid values are:
+	     0	   : Success - Maximum QoS 0.
+	     1	   : Success - Maximum QoS 1.
+	     2	   : Success - Maximum QoS 2.
+	     128   : Failure
+	     Other : Reserved for future use.
+
+RETURN VALUE
+       When called without an argument, this command returns the return-code-list of MQTT SUBACK message.
+
+VALID DURING
+       MQTT_CLIENT_INGRESS MQTT_SERVER_INGRESS MQTT_CLIENT_DATA MQTT_SERVER_DATA MQTT_CLIENT_EGRESS MQTT_SERVER_EGRESS
+
+EXAMPLES
+	#Example: Split SUBSCRIBE with multiple topics into separate SUBSCRIBE messages
+	when MQTT_CLIENT_INGRESS {
+	  set type [MQTT::type]
+	  switch $type {
+	     "SUBSCRIBE" {
+		 set count [MQTT::topic count]
+		 if { $count &gt; 1 } {
+		    set topiclist [MQTT::topic list]
+		    set qoslist [list]
+		    foreach topic $topiclist {
+		       lappend qoslist [MQTT::topic qos $topic]
+		    }
+		    set packetid [MQTT::packet_id]
+		    set i 0
+		    foreach topic $topiclist {
+			if { $i == 0 } {
+			    MQTT::replace type SUBSCRIBE packet_id $packetid topic_list $topic [lindex $qoslist $i]
+			    table add -subtable "outstanding_packetid_table" "[client_addr]_[client_port]_${packetid}" $count
+			} else {
+			    MQTT::insert after type SUBSCRIBE packet_id [expr { ($packetid + 1000 + $i)%65535}] topic_list $topic [lindex $qoslist $i]
+			}
+			set i [expr { $i + 1 }]
+		    }
+		 }
+	     }
+	  }
+	}
+
+	when SERVER_CONNECTED {
+	   set suback_count 0
+	   set rclist [list]
+	}
+
+	when MQTT_SERVER_INGRESS {
+	   set type [MQTT::type]
+	   switch $type {
+	      "SUBACK" {
+		 set packetid [MQTT::packet_id]
+		 if { $suback_count == 0 } {
+		     set count [table lookup -subtable "outstanding_packetid_table" "[client_addr]_[client_port]_${packetid}"]
+		     if { $count != "" } {
+			set suback_count $count
+		     } elseif { [llength $rclist] &gt; 0 } {
+			MQTT::replace type SUBACK return_code_list $rclist
+			set rclist [list]
+		     }
+		 }
+		 if { $suback_count &gt; 0 } {
+		     set suback_count [expr { $suback_count - 1}]
+		     lappend rclist [MQTT::return_code_list]
+		     MQTT::drop
+		 }
+	      }
+	   }
+	}
+
+HINTS
+SEE ALSO
+CHANGE LOG
+       @BIGIP-13.0.0 --First introduced the command.
+
+BIG-IP							    2022-04-12							  iRule(1)
+</pre>
+</html>
+</div>
+</div>
+</article>
+</body></html>

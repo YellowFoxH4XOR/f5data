@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ltm rule command TCP notify</title><link rel="canonical" href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_TCP_notify.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>ltm rule command TCP notify</h1><p>cli_reference · 17.0.0</p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_TCP_notify.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="ltm-rule-command-tcp-notify">
+<span id="id1"></span><h1>ltm rule command TCP notify</h1>
+<html>
+<pre>
+iRule(1)						BIG-IP TMSH Manual						  iRule(1)
+
+TCP::notify
+       Sends a message to upper layers of iRule processing.
+
+SYNOPSIS
+       TCP::notify (request | response | eom)
+
+DESCRIPTION
+       This command has two uses, which are unrelated to one another:
+	 1. to indicate the end of a message when TCP message-based load-balancing is in effect;
+	 2. to raise the USER_REQUEST or USER_RESPONSE event.
+
+       The BIG-IP LTM module supports TCP message-based load-balancing. This is enabled by applying an mblb profile to an LTM
+       Virtual Server that also has a tcp profile applied. Note that currently (up to and including 11.4.1), the mblb profile can
+       only be added using tmsh. There is no mechanism for adding it via the Web UI. When an mblb profile is applied, the Virtual
+       Server provides TCP message-based load-balancing. Normally, TCP is a stream-oriented protocol rather than a message-
+       oriented protocol (like UDP). When a single TCP connection is used to deliver multiple discreet messages, TMOS must be able
+       to distinguish individual messages in order to load-balance them. This requires TMOS to reliably find each message
+       boundary. Unless TMOS has built-in handling code for the underlying application protocol (as it does for Diameter and SIP,
+       for example), an iRule must be used to indicate to the connection handling code where message boundaries occur.
+
+       TCP::notify is used for this purpose. In particular, when TCP::collect is invoked, the system begins collecting incoming
+       TCP data into a buffer. The data in this buffer may may be accessed using TCP::payload, and it may be removed from the
+       buffer by invoking TCP::release. When TCP::notify is invoked in the same event as TCP::release, it notifies TMOS that the
+       data released constitutes a single message. NOTE: it is safest X and strongly recommended X that TCP::notify be called
+       immediately after TCP::release. For this purpose, TCP::release should also always be invoked with its <length> parameter,
+       since it is possible for the payload buffer to contain data beyond a single message boundary.
+
+       It is necessary to use TCP::notify request if the command is invoked in the client-side context (usually in CLIENT_DATA),
+       and TCP::notify response if the command is invoked in the server-side context (usually in SERVER_DATA). A compile\/load
+       error will be raised otherwise. Aside from this, for TCP message-based load-balancing, there is no functional difference
+       between the request and response sub-commands.
+
+       If TCP::notify is used in an iRule not associated with a TCP mblb Virtual Server, the command causes either the
+       USER_REQUEST or the USER_RESPONSE event to be raised. The event may or may not be raised immediately upon calling
+       TCP::notify. In particular, the USER_REQUEST event will not be raised until the server-side TCP connection is complete,
+       and, if there is data waiting to be sent to the server, it will not be raised until those data are sent. Similarly, if
+       there is data waiting to be sent to the client, the USER_RESPONSE event will not be raised until the data are sent. The
+       concept of "data waiting to be sent" is very difficult to precisely define; it refers to application data that has finished
+       client-side processing.
+
+       Syntax
+
+       TCP::notify [request | response | eom]
+
+       TCP::notify request
+
+	    * Causes the USER_REQUEST event to be raised; or
+	    * Indicates that data released from the payload buffer is a single
+	      message in the clientside context.
+
+       TCP::notify response
+
+	    * Causes the USER_RESPONSE event to be raised; or
+	    * Indicates that data released from the payload buffer is a single
+	      message in the serverside context.
+
+       TCP::notify eom
+
+	    * Introduced in v11.5
+	    * Indicates end of message to the proxy.
+
+RETURN VALUE
+       None.
+
+VALID DURING
+       CLIENT_ACCEPTED, CLIENT_CLOSED, CLIENT_DATA, SERVER_CLOSED, SERVER_CONNECTED, SERVER_DATA, SIP_REQUEST, SIP_REQUEST_SEND,
+       SIP_RESPONSE, STREAM_MATCHED
+
+EXAMPLES
+	Provide TCP message-based load-balancing for SUPL ILP messages.
+	In these messages, the first two bytes are an unsigned
+	integer that provides the message length in octets. The next three
+	bytes are the ILP message version. The four-bytes following are assumed
+	to be a session identifier (in ILP, it can be more complicated than
+	this for the session ID, but this simplifying assumption is made for
+	the purposes of this example). This code persists messages (rather than
+	connections) based on the message session ID:
+
+	when CLIENT_ACCEPTED {
+		set message_length		0
+		set collected_length		0
+		set at_msg_start		1
+
+		TCP::collect
+	}
+
+	when CLIENT_DATA {
+		set data [TCP::payload]
+
+		set collected_length [TCP::payload length]
+		if { $at_msg_start } {
+			# it is possible that not enough data have yet been collected to
+			# extract the message length and session ID.  If so, keep collecting
+			# until there is enough data in the payload buffer
+			if { $collected_length &lt; 11 } {
+				TCP::collect
+				return
+			}
+
+			binary scan $data "S1x3W" message_length slc_session
+
+			#log local0. "Start of message, length = $message_length, collected = ($collected_length), slc_session = $slc_session"
+
+			# notice that persistence is per-message (because of the mblb profile) rather
+			# than per-connection, as one would typically find with a tcp VS
+			persist uie $slc_session
+
+			# binary scan does not support unsigned types in the version of
+			# Tcl used by iRules, so the bitwise-and (&amp;) below casts the extracted
+			# value to an unsigned two-byte integer
+			set message_length [expr { $message_length &amp; 0xffff }]
+			set at_msg_start 0
+		}
+		#else {
+		#	 log local0. " ... collected = ($collected_length)"
+		#}
+
+		if { $collected_length &gt;= $message_length } {
+			#log local0. " ... end of message, collected = ($collected_length)"
+			set at_msg_start 1
+
+			TCP::release $message_length
+			TCP::notify request
+			#log local0. " ... after purge, length = ([TCP::payload length])"
+		}
+
+		TCP::collect
+	}
+
+	Detach the serverside connection after all the data has
+	been delivered to the client:
+
+	when SERVER_DATA {
+	    log local0.debug "Received SERVER response ... [TCP::payload]"
+	    if { [TCP::payload] ends_with $EOT } {
+		TCP::notify response
+	    }
+	    TCP::release
+	    TCP::collect
+	}
+
+	when USER_RESPONSE {
+	    LB::detach
+	    log local0.debug "Detaches server connection ... "
+	    if {[TCP::payload length] &gt; 0} {
+		# %TODO%
+		# Process additional client requests here ...
+	    }
+	}
+
+HINTS
+SEE ALSO
+CHANGE LOG
+       @BIGIP-9.0.0 --First introduced the command.  @BIGIP-11.5.0 --Added "eom" option.
+
+BIG-IP							    2022-04-12							  iRule(1)
+</length></pre>
+</html>
+</div>
+</div>
+</article>
+</body></html>

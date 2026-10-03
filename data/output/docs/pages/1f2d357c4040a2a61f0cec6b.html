@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Pool Member Status Page on a Virtual Server v9</title><link rel="canonical" href="https://clouddocs.f5.com/api/irules/Pool_Member_Status_Page_on_a_Virtual_Server.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>Pool Member Status Page on a Virtual Server v9</h1><p>programming_reference · See product applicability metadata</p><a href="https://clouddocs.f5.com/api/irules/Pool_Member_Status_Page_on_a_Virtual_Server.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!DOCTYPE html>
+
+<div class="section" id="pool-member-status-page-on-a-virtual-server-v9">
+<h1>Pool Member Status Page on a Virtual Server v9</h1>
+<div class="section" id="contributed-by-bhattman-based-off-samples-pool-status-page">
+<h2>Contributed by: Bhattman, based off Samples: pool_status_page</h2>
+<div class="section" id="description">
+<h3><strong>Description</strong></h3>
+<div class="line-block">
+<div class="line">This iRule will create a dynamic updated HTML page and/or xml rss page
+of all the pools and their members address and ports and indicate
+UP/DOWN or Disabled Status. It uses an external datagroup file, + cron
+to make the list dynamic.</div>
+<div class="line">You apply the iRule to a virtual server with the HTTP profile. This
+will allow clients or other IT personal see pools and their member
+status w/o logging into the LTM. The page is useful if you have
+separate monitors that can look at the content of the page.</div>
+<div class="line">Note: This was only tested on Version 9.3.x branch. v9.4.6 and .7 are
+listed below</div>
+<div class="line">Here are the instructions:</div>
+<div class="line">1. Create a file in the following path on the LTM</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="o">/</span><span class="nv">etc</span><span class="o">/</span>cron.daily<span class="o">/</span>pool_member_status_list.cron
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">which contains:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>#!/bin/bash
+# The command below is included because it was required when patched to 9.3.1 HF6
+b db bigpipe.displayservicenames false
+
+b pool all member all | grep pool_ | awk '{print "\""$3"\""}'&gt; | sort &gt;/var/class/pool_member_status_list.class
+
+### Only performs a b load when it's on the active unit.###
+if [ "`/bin/ps1`" == "Active" ]; then
+  b load
+fi
+
+exit 0
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">2. Change the permissions by entering:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">chmod</span><span class="w"> </span><span class="o">+</span><span class="mi">755</span><span class="w"> </span><span class="o">/</span>etc<span class="o">/</span>cron.daily<span class="o">/</span>pool_member_status_list.cron
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">3. Create a external datagroup</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">Main</span><span class="w"> </span><span class="o">&gt;&gt;</span><span class="w"> </span>Local<span class="w"> </span>Traffic<span class="w"> </span><span class="o">&gt;&gt;</span><span class="w"> </span>iRules
+<span class="nv">Select</span><span class="w"> </span>Data<span class="w"> </span>Group<span class="w"> </span>List
+<span class="nv">Click</span><span class="w"> </span>create
+<span class="nv">enter</span><span class="w"> </span>name:<span class="w"> </span>pool_member_status_list
+<span class="nv">enter</span><span class="w"> </span>Type:<span class="w"> </span>External
+<span class="nv">Path</span><span class="w"> </span><span class="o">/</span><span class="w"> </span>Filename:<span class="w"> </span><span class="o">/</span>var<span class="o">/</span>class<span class="o">/</span>pool_member_status_list.class
+<span class="nv">File</span><span class="w"> </span>Content:<span class="w"> </span>String
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+</div>
+<div class="section" id="irule-source">
+<h3>iRule Source</h3>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">when</span><span class="w"> </span>HTTP_REQUEST<span class="w"> </span><span class="k">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>uri<span class="k">]</span><span class="w"> </span><span class="nv">eq</span><span class="w"> </span><span class="s2">"/status"</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="k">set</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;html&gt;&lt;head&gt;&lt;title&gt;BIGIP Pool Member Status - \</span>
+<span class="s2">        [clock format [clock seconds]]&lt;/title&gt;&lt;meta http-equiv='refresh' content='300;\</span>
+<span class="s2">        url=http://[HTTP::host]/status'&gt;&lt;/head&gt;&lt;h1&gt;BIGIP Pool Member Status - [clock format [clock seconds]]&lt;/h1&gt;\</span>
+<span class="s2">        &lt;table border='1'&gt;&lt;tr&gt;&lt;th&gt;Status&lt;/th&gt;&lt;th&gt;Pool Name&lt;/th&gt;&lt;th&gt;Member&lt;/th&gt;&lt;th&gt;Port&lt;/th&gt;&lt;/tr&gt;"</span>
+
+<span class="w">        </span><span class="k">foreach</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">selectedpool</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="nv">$::pool_member_status_list</span><span class="w">  </span><span class="k">{</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[catch</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                </span><span class="nb">scan</span><span class="w"> </span><span class="nv">$selectedpool</span><span class="w"> </span><span class="k">{</span><span class="o">%</span><span class="k">[</span><span class="o">^/</span><span class="k">]</span><span class="o">/%</span><span class="k">[</span><span class="o">^:</span><span class="k">]</span><span class="o">:%</span><span class="nv">s</span><span class="k">}</span><span class="w"> </span>poolname<span class="w"> </span>addr<span class="w"> </span>port
+<span class="w">                </span><span class="k">switch</span><span class="w"> </span><span class="o">-</span>glob<span class="w"> </span><span class="k">[</span><span class="nv">LB</span><span class="o">::</span>status<span class="w"> </span>pool<span class="w"> </span><span class="nv">$poolname</span><span class="w"> </span>member<span class="w"> </span><span class="nv">$addr</span><span class="w"> </span><span class="nv">$port</span><span class="k">]</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                    </span><span class="s2">"up"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:green\"&gt;&lt;b&gt;UP&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\</span>
+<span class="s2">                        &lt;td&gt;[string tolower $poolname]&lt;/td&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                    </span><span class="s2">"down"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:red\"&gt;&lt;b&gt;DOWN&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\</span>
+<span class="s2">                        &lt;td&gt;[string tolower $poolname]&lt;/&lt;d&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                    </span><span class="s2">"session_enabled"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:blue\"&gt;&lt;b&gt;ENABLED&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\</span>
+<span class="s2">                        &lt;td&gt;[string tolower $poolname]&lt;/td&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                    </span><span class="s2">"session_disabled"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:black\"&gt;&lt;b&gt;DISABLED&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\</span>
+<span class="s2">                        &lt;td&gt;[string tolower $poolname]&lt;/td&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                    </span><span class="nv">Default</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:orange\"&gt;&lt;b&gt;INVALID&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\</span>
+<span class="s2">                        &lt;td&gt;[string tolower $poolname]&lt;/td&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                </span><span class="k">}</span>
+<span class="w">                </span><span class="c">#SWITCH END</span>
+<span class="w">            </span><span class="k">}</span><span class="w"> </span>errmsg<span class="k">]</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:orange\"&gt;&lt;b&gt;INVALID&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\</span>
+<span class="s2">                    &lt;td&gt;[string tolower $poolname]&lt;/td&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"</span>
+<span class="w">                </span><span class="k">}</span>
+<span class="w">        </span><span class="k">}</span>
+<span class="w">        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;/table&gt;&lt;/body&gt;&lt;/html&gt;"</span>
+<span class="w">        </span><span class="nv">HTTP</span><span class="o">::</span>respond<span class="w"> </span><span class="mi">200</span><span class="w"> </span>content<span class="w"> </span><span class="nv">$response</span><span class="w"> </span><span class="s2">"Content-Type"</span><span class="w"> </span><span class="s2">"text/html"</span><span class="w"> </span><span class="s2">"Cache-Control"</span><span class="w"> </span><span class="s2">"no-cache, must-revalidate"</span><span class="w"> </span><span class="s2">"Expires"</span><span class="w"> </span><span class="s2">"Mon, 26 Jul 1997 05&lt;!--:00:00 GMT"</span><span class="o">--&gt;</span>
+<span class="w">    </span><span class="k">}</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>uri<span class="k">]</span><span class="w"> </span><span class="nv">eq</span><span class="w"> </span><span class="s2">"/rss"</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="k">set</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;?xml version=\"1.0\" encoding=\"utf-8\"?&gt;&lt;rss version=\"2.0\"&gt;&lt;channel&gt; \</span>
+<span class="s2">        &lt;title&gt;BigIP Server Pool Status&lt;/title&gt;&lt;description&gt;Server Pool Status&lt;/description&gt; \</span>
+<span class="s2">        &lt;language&gt;en&lt;/language&gt;&lt;pubDate&gt;[clock format [clock seconds]]&lt;/pubDate&gt;\&lt;ttl&gt;60&lt;/ttl&gt;"</span>
+<span class="w">        </span><span class="k">foreach</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">selectedpool</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="nv">$::pool_member_status_list</span><span class="w"> </span><span class="k">{</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[catch</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                </span><span class="nb">scan</span><span class="w"> </span><span class="nv">$selectedpool</span><span class="w"> </span><span class="k">{</span><span class="o">%</span><span class="k">[</span><span class="o">^/</span><span class="k">]</span><span class="o">/%</span><span class="k">[</span><span class="o">^:</span><span class="k">]</span><span class="o">:%</span><span class="nv">s</span><span class="k">}</span><span class="w"> </span>poolname<span class="w"> </span>addr<span class="w"> </span>port
+<span class="w">                </span><span class="k">switch</span><span class="w"> </span><span class="o">-</span>glob<span class="w"> </span><span class="k">[</span><span class="nv">LB</span><span class="o">::</span>status<span class="w"> </span>pool<span class="w"> </span><span class="nv">$poolname</span><span class="w"> </span>member<span class="w"> </span><span class="nv">$addr</span><span class="w"> </span><span class="nv">$port</span><span class="k">]</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                    </span><span class="s2">"up"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt; \</span>
+<span class="s2">                        Member $addr:$port is &lt;b&gt;&lt;font style=\"color:green\"&gt;UP&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                    </span><span class="s2">"down"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt; \</span>
+<span class="s2">                        Member $addr:$port is &lt;b&gt;&lt;font style=\"color:red\"&gt;DOWN&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                    </span><span class="s2">"session_enabled"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt; \</span>
+<span class="s2">                        Member $addr:$port is &lt;b&gt;&lt;font style=\"color:blue\"&gt;ENABLED&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                    </span><span class="s2">"session_disabled"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt; \</span>
+<span class="s2">                        Member $addr:$port is &lt;b&gt;&lt;font style=\"color:black\"&gt;DISABLED&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                    </span><span class="nv">Default</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt; \</span>
+<span class="s2">                        Member $addr:$port is &lt;b&gt;&lt;font style=\"color:orange\"&gt;INVALID&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                </span><span class="k">}</span>
+<span class="w">                </span><span class="c">#SWITCH END</span>
+<span class="w">            </span><span class="k">}</span><span class="w"> </span>errmsg<span class="k">]</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt;Member $addr:$port is &lt;b&gt;\</span>
+<span class="s2">                &lt;font style=\"color:orange\"&gt;INVALID&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"</span>
+<span class="w">            </span><span class="k">}</span>
+<span class="w">        </span><span class="k">}</span>
+<span class="w">        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;/channel&gt;&lt;/rss&gt;"</span>
+<span class="w">        </span><span class="nv">HTTP</span><span class="o">::</span>respond<span class="w"> </span><span class="mi">200</span><span class="w"> </span>content<span class="w"> </span><span class="nv">$response</span><span class="w"> </span><span class="s2">"Content-Type"</span><span class="w"> </span><span class="s2">"text/xml"</span><span class="w"> </span><span class="s2">"Cache-Control"</span><span class="w"> </span><span class="s2">"no-cache, must-revalidate"</span><span class="w"> </span><span class="s2">"Expires"</span><span class="w"> </span><span class="s2">"Mon, 26 Jul 1997 05&lt;!--:00:00 GMT"</span><span class="o">--&gt;</span>
+<span class="w">    </span><span class="k">}</span>
+<span class="k">}</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">Note: This was verified to work version 9.4.6 and .7 releases</div>
+</div>
+</div>
+<div class="section" id="this-code-was-reworked-by-david-larsen">
+<h3><strong>This code was reworked by David Larsen</strong></h3>
+<div class="line-block">
+<div class="line">Here are the instructions:</div>
+<div class="line">1. Create a file in the following path on the LTM</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="o">/</span><span class="nv">etc</span><span class="o">/</span>cron.daily<span class="o">/</span>pool_member_status_list.cron
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">which contains:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>#!/bin/bash
+b db bigpipe.displayservicenames false
+b pool all |grep "POOL MEMBER" | awk '{sub(":any",":0",$4);print "\""$4"\","}' | sort &gt;/var/class/pool_member_status_list.class
+b load
+exit 0
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">2. Change the permissions by entering:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">chmod</span><span class="w"> </span><span class="o">+</span><span class="mi">755</span><span class="w"> </span><span class="o">/</span>etc<span class="o">/</span>cron.daily<span class="o">/</span>pool_member_status_list.cron
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">3. Create a external datagroup</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">Main</span><span class="w"> </span><span class="o">&gt;&gt;</span><span class="w"> </span>Local<span class="w"> </span>Traffic<span class="w"> </span><span class="o">&gt;&gt;</span><span class="w"> </span>iRules
+<span class="nv">Select</span><span class="w"> </span>Data<span class="w"> </span>Group<span class="w"> </span>List
+<span class="nv">Click</span><span class="w"> </span>create
+<span class="nv">enter</span><span class="w"> </span>name:<span class="w"> </span>pool_member_status_list
+<span class="nv">enter</span><span class="w"> </span>Type:<span class="w"> </span>External
+<span class="nv">Path</span><span class="w"> </span><span class="o">/</span><span class="w"> </span>Filename:<span class="w"> </span><span class="o">/</span>var<span class="o">/</span>class<span class="o">/</span>pool_member_status_list.class
+<span class="nv">File</span><span class="w"> </span>Content:<span class="w"> </span>String
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">4. change Bigpipe database “b db bigpipe.displayservicenames false” to
+false so that POOL MEMBERS will LIST PORT rather then display the
+service names such as HTTP, FTP, HTTPS.</div>
+</div>
+</div>
+<div class="section" id="irule-source-1">
+<span id="id1"></span><h3><strong>iRule Source</strong></h3>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">when</span><span class="w"> </span>HTTP_REQUEST<span class="w"> </span><span class="k">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>uri<span class="k">]</span><span class="w"> </span><span class="nv">eq</span><span class="w"> </span><span class="s2">"/status"</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="k">set</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;html&gt;&lt;head&gt;&lt;title&gt;BIGIP Pool Member Status - \</span>
+<span class="s2">        [clock format [clock seconds]]&lt;/title&gt;&lt;meta http-equiv='refresh' content='300;\</span>
+<span class="s2">        url=http://[HTTP::host]/status'&gt;&lt;/head&gt;&lt;h1&gt;BIGIP Pool Member Status - [clock format [clock seconds]]&lt;/h1&gt;\</span>
+<span class="s2">        &lt;table border='1'&gt;&lt;tr&gt;&lt;th&gt;Status&lt;/th&gt;&lt;th&gt;Pool Name&lt;/th&gt;&lt;th&gt;Member&lt;/th&gt;&lt;th&gt;Port&lt;/th&gt;&lt;/tr&gt;"</span>
+
+<span class="w">        </span><span class="k">foreach</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">selectedpool</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="nv">$::pool_member_status_list</span><span class="w">  </span><span class="k">{</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[catch</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                </span><span class="nb">scan</span><span class="w"> </span><span class="nv">$selectedpool</span><span class="w"> </span><span class="k">{</span><span class="o">%</span><span class="k">[</span><span class="o">^/</span><span class="k">]</span><span class="o">/%</span><span class="k">[</span><span class="o">^:</span><span class="k">]</span><span class="o">:%</span><span class="nv">s</span><span class="k">}</span><span class="w"> </span>poolname<span class="w"> </span>addr<span class="w"> </span>port
+<span class="w">                </span><span class="k">switch</span><span class="w"> </span><span class="o">-</span>glob<span class="w"> </span><span class="k">[</span><span class="nv">LB</span><span class="o">::</span>status<span class="w"> </span>pool<span class="w"> </span><span class="nv">$poolname</span><span class="w"> </span>member<span class="w"> </span><span class="nv">$addr</span><span class="w"> </span><span class="nv">$port</span><span class="k">]</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                    </span><span class="s2">"up"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:green\"&gt;&lt;b&gt;UP&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\</span>
+<span class="s2">                        &lt;td&gt;[string tolower $poolname]&lt;/td&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                    </span><span class="s2">"down"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:red\"&gt;&lt;b&gt;DOWN&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\</span>
+<span class="s2">                        &lt;td&gt;[string tolower $poolname]&lt;/&lt;d&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                    </span><span class="s2">"session_enabled"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:blue\"&gt;&lt;b&gt;ENABLED&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\</span>
+<span class="s2">                        &lt;td&gt;[string tolower $poolname]&lt;/td&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                    </span><span class="s2">"session_disabled"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:black\"&gt;&lt;b&gt;DISABLED&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\</span>
+<span class="s2">                        &lt;td&gt;[string tolower $poolname]&lt;/td&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                    </span><span class="nv">Default</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:orange\"&gt;&lt;b&gt;INVALID&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\</span>
+<span class="s2">                        &lt;td&gt;[string tolower $poolname]&lt;/td&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                </span><span class="k">}</span>
+<span class="w">                </span><span class="c">#SWITCH END</span>
+<span class="w">            </span><span class="k">}</span><span class="w"> </span>errmsg<span class="k">]</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:orange\"&gt;&lt;b&gt;INVALID&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\</span>
+<span class="s2">                    &lt;td&gt;[string tolower $poolname]&lt;/td&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"</span>
+<span class="w">                </span><span class="k">}</span>
+<span class="w">        </span><span class="k">}</span>
+<span class="w">        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;/table&gt;&lt;/body&gt;&lt;/html&gt;"</span>
+<span class="w">        </span><span class="nv">HTTP</span><span class="o">::</span>respond<span class="w"> </span><span class="mi">200</span><span class="w"> </span>content<span class="w"> </span><span class="nv">$response</span><span class="w"> </span><span class="s2">"Content-Type"</span><span class="w"> </span><span class="s2">"text/html"</span><span class="w"> </span><span class="s2">"Cache-Control"</span><span class="w"> </span><span class="s2">"no-cache, must-revalidate"</span><span class="w"> </span><span class="s2">"Expires"</span><span class="w"> </span><span class="s2">"Mon, 26 Jul 1997 05&lt;!--:00:00 GMT"</span><span class="o">--&gt;</span>
+<span class="w">    </span><span class="k">}</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>uri<span class="k">]</span><span class="w"> </span><span class="nv">eq</span><span class="w"> </span><span class="s2">"/rss"</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">        </span><span class="k">set</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;?xml version=\"1.0\" encoding=\"utf-8\"?&gt;&lt;rss version=\"2.0\"&gt;&lt;channel&gt; \</span>
+<span class="s2">        &lt;title&gt;BigIP Server Pool Status&lt;/title&gt;&lt;description&gt;Server Pool Status&lt;/description&gt; \</span>
+<span class="s2">        &lt;language&gt;en&lt;/language&gt;&lt;pubDate&gt;[clock format [clock seconds]]&lt;/pubDate&gt;\&lt;ttl&gt;60&lt;/ttl&gt;"</span>
+<span class="w">        </span><span class="k">foreach</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="nv">selectedpool</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="nv">$::pool_member_status_list</span><span class="w"> </span><span class="k">{</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="k">{</span><span class="w"> </span><span class="k">[catch</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                </span><span class="nb">scan</span><span class="w"> </span><span class="nv">$selectedpool</span><span class="w"> </span><span class="k">{</span><span class="o">%</span><span class="k">[</span><span class="o">^/</span><span class="k">]</span><span class="o">/%</span><span class="k">[</span><span class="o">^:</span><span class="k">]</span><span class="o">:%</span><span class="nv">s</span><span class="k">}</span><span class="w"> </span>poolname<span class="w"> </span>addr<span class="w"> </span>port
+<span class="w">                </span><span class="k">switch</span><span class="w"> </span><span class="o">-</span>glob<span class="w"> </span><span class="k">[</span><span class="nv">LB</span><span class="o">::</span>status<span class="w"> </span>pool<span class="w"> </span><span class="nv">$poolname</span><span class="w"> </span>member<span class="w"> </span><span class="nv">$addr</span><span class="w"> </span><span class="nv">$port</span><span class="k">]</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                    </span><span class="s2">"up"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt; \</span>
+<span class="s2">                        Member $addr:$port is &lt;b&gt;&lt;font style=\"color:green\"&gt;UP&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                    </span><span class="s2">"down"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt; \</span>
+<span class="s2">                        Member $addr:$port is &lt;b&gt;&lt;font style=\"color:red\"&gt;DOWN&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                    </span><span class="s2">"session_enabled"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt; \</span>
+<span class="s2">                        Member $addr:$port is &lt;b&gt;&lt;font style=\"color:blue\"&gt;ENABLED&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                    </span><span class="s2">"session_disabled"</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt; \</span>
+<span class="s2">                        Member $addr:$port is &lt;b&gt;&lt;font style=\"color:black\"&gt;DISABLED&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                    </span><span class="nv">Default</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt; \</span>
+<span class="s2">                        Member $addr:$port is &lt;b&gt;&lt;font style=\"color:orange\"&gt;INVALID&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"</span>
+<span class="w">                    </span><span class="k">}</span>
+<span class="w">                </span><span class="k">}</span>
+<span class="w">                </span><span class="c">#SWITCH END</span>
+<span class="w">            </span><span class="k">}</span><span class="w"> </span>errmsg<span class="k">]</span><span class="w"> </span><span class="k">}</span><span class="w"> </span><span class="k">{</span>
+<span class="w">                </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt;Member $addr:$port is &lt;b&gt;\</span>
+<span class="s2">                &lt;font style=\"color:orange\"&gt;INVALID&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"</span>
+<span class="w">            </span><span class="k">}</span>
+<span class="w">        </span><span class="k">}</span>
+<span class="w">        </span><span class="nb">append</span><span class="w"> </span>response<span class="w"> </span><span class="s2">"&lt;/channel&gt;&lt;/rss&gt;"</span>
+<span class="w">        </span><span class="nv">HTTP</span><span class="o">::</span>respond<span class="w"> </span><span class="mi">200</span><span class="w"> </span>content<span class="w"> </span><span class="nv">$response</span><span class="w"> </span><span class="s2">"Content-Type"</span><span class="w"> </span><span class="s2">"text/xml"</span><span class="w"> </span><span class="s2">"Cache-Control"</span><span class="w"> </span><span class="s2">"no-cache, must-revalidate"</span><span class="w"> </span><span class="s2">"Expires"</span><span class="w"> </span><span class="s2">"Mon, 26 Jul 1997 05&lt;!--:00:00 GMT"</span><span class="o">--&gt;</span>
+<span class="w">    </span><span class="k">}</span>
+<span class="k">}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="alternate-version">
+<h3><strong>ALTERNATE VERSION</strong></h3>
+<div class="line-block">
+<div class="line">NOTE: Modified a version by (joelmoses) taken from
+<a class="reference external" href="https://clouddocs.f5.com/api/irules/Pool__Member__Status__Page_on_a__Virtual__Server_v10.html">Pool__Member__Status__Page_on_a__Virtual__Server_v10</a>
+to work with the 9.x branch - Bhattman.</div>
+<div class="line">It adds parameter handling to allow a user to specify a filter for a
+particular pool (one at a time) by calling it with the p= parameter.
+It also has error handling for unknown calls and checking for
+cross-site scripting attempts via the generated error pages.</div>
+<div class="line">To call a particular pool, use this format:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>http://&lt;status_vip&gt;/status?p=poolname_here
+or
+http://&lt;status_vip&gt;/rss?p=poolname_here
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span>when RULE_INIT {
+
+        ######################################################
+        # BEGIN CONFIGURATION
+
+        # The name of your company.
+        set ::org_name "OrgName"
+
+        # Base login URL for your loadbalancer. This should be set to the floating IP in the case of HA BigIPs.
+        # It should be in URL form without trailing slash (e.g., "https://10.1.1.1").
+        set ::lb_address "https://10.10.10.10"
+
+        # The friendly name of this particular load balancer group.
+        set ::lb_name "Load Balancer Group One"
+
+
+        ######################################################
+        # PAGE CONTENT BELOW THIS POINT
+        # Note: All delivered pages are set to not cache at the browser and immediately expire.
+
+        # HTML page displayed when an error condition must be handled.
+
+        set error_404 {
+&lt;html&gt;&lt;head&gt;
+&lt;meta http-equiv="content-type" content="text/html;charset=utf-8"&gt;
+&lt;title&gt;404 Not Found&lt;/title&gt;
+&lt;style&gt;&lt;!--
+#body \{font-family: arial,sans-serif\}
+#div.nav \{margin-top: 1ex\}
+#div.nav A \{font-size: 10pt; font-family: arial,sans-serif\}
+#span.nav \{font-size: 10pt; font-family: arial,sans-serif; font-weight: bold\}
+#div.nav A,span.big \{font-size: 12pt; color: #0000cc\}
+#div.nav A \{font-size: 10pt; color: black\}
+#A.l:link \{color: #6f6f6f\}
+#A.u:link \{color: green\}
+//--&gt;&lt;/style&gt;
+&lt;/head&gt;
+&lt;body text=#000000 bgcolor=#ffffff&gt;
+&lt;table border=0 cellpadding=2 cellspacing=0 width="100%"&gt;&lt;tr&gt;&lt;td rowspan=3 width="1%" nowrap&gt;
+&lt;b&gt;&lt;font face=times color=#0039b6 size=10&gt;$::org_name&amp;nbsp;&lt;/font&gt;&lt;/b&gt;
+
+&lt;td&gt; &lt;/td&gt;&lt;/tr&gt;
+&lt;tr&gt;&lt;td bgcolor=#3366cc&gt;&lt;font face=arial,sans-serif color=#ffffff&gt;&amp;nbsp;&lt;b&gt;404 (Page not found) Error&lt;/b&gt;&lt;/td&gt;&lt;/tr&gt;
+&lt;tr&gt;&lt;td&gt; &lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;blockquote&gt;
+&lt;H1&gt;Not Found&lt;/H1&gt;
+The requested URL &lt;code&gt;$HTTP_URI&lt;/code&gt; was not found on this server.
+
+&lt;p&gt;
+&lt;/blockquote&gt;
+&lt;table width=100% cellpadding=0 cellspacing=0&gt;&lt;tr&gt;&lt;td bgcolor=#3366cc&gt;&lt;img alt="" width=1 height=4&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/body&gt;&lt;/html&gt;
+}
+
+
+        # HTML page displayed bookending the generated table of pool members.
+        set page_200 {
+&lt;html&gt;&lt;head&gt;
+&lt;meta http-equiv="content-type" content="text/html;charset=utf-8"&gt;
+&lt;title&gt;Pool Member Status - $::lb_name&lt;/title&gt;
+&lt;style&gt;&lt;!--
+#body \{font-family: arial,sans-serif\}
+#div.nav \{margin-top: 1ex\}
+#div.nav A \{font-size: 10pt; font-family: arial,sans-serif\}
+#span.nav \{font-size: 10pt; font-family: arial,sans-serif; font-weight: bold\}
+#div.nav A,span.big \{font-size: 12pt; color: #0000cc\}
+#div.nav A \{font-size: 10pt; color: black\}
+#A.l:link \{color: #6f6f6f\}
+#A.u:link \{color: green\}
+//--&gt;&lt;/style&gt;
+&lt;/head&gt;
+&lt;body text=#000000 bgcolor=#ffffff&gt;
+&lt;table border=0 cellpadding=2 cellspacing=0 width="100%"&gt;&lt;tr&gt;&lt;td rowspan=3 width="1%" nowrap&gt;
+&lt;b&gt;&lt;font face=times color=#0039b6 size=10&gt;$::org_name&amp;nbsp;&lt;/font&gt;&lt;/b&gt;
+
+&lt;td&gt; &lt;/td&gt;&lt;/tr&gt;
+&lt;tr&gt;&lt;td bgcolor=#3366cc&gt;&lt;font face=arial,sans-serif color=#ffffff&gt;&amp;nbsp;&lt;b&gt;Pool Node Status - ($::lb_name)&lt;/b&gt;&lt;/td&gt;&lt;/tr&gt;
+&lt;tr&gt;&lt;td&gt; &lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;blockquote&gt;
+&lt;h2&gt;$timestamp&lt;/h2&gt;
+&lt;p&gt;&lt;b&gt;Note:&lt;/b&gt; &lt;i&gt;Access to the pool links is restricted to load balancer administrators. Click &lt;a href=\"$::lb_address\"&gt;here&lt;/a&gt; to log in first.&lt;/i&gt;&lt;/p&gt;
+$response
+&lt;p&gt;
+&lt;/blockquote&gt;
+&lt;table width=100% cellpadding=0 cellspacing=0&gt;&lt;tr&gt;&lt;td bgcolor=#3366cc&gt;&lt;img alt="" width=1 height=4&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;
+&lt;/body&gt;&lt;/html&gt;
+}
+        # END CONFIGURATION
+        ######################################################
+
+}
+
+when HTTP_REQUEST {
+
+        ######################################################
+        # SETUP AND DATA COLLECTION
+
+        # Catch attempts to do cross-site scripting to our generated HTML. Hopefully
+        # you're not generating the status page in your trusted sites zone in IE... but
+        # if you are...
+        if { [HTTP::uri] matches_regex {((\%3C)|&lt;)[^\n]+((\%3E)|&gt;)} } {
+              set HTTP_URI " !! *withheld* - CSS attempt !! "
+        } else {
+              set HTTP_URI [HTTP::uri]
+        }
+
+        # Process the querystring from the HTML request if there is one. Ignore all but p=.
+        if { [HTTP::query] ne "" } {
+                set query 1
+                set namevals [split [HTTP::query] "&amp;"]
+                for {set i 0} {$i &lt; [llength $namevals]} {incr i} {
+                       set params [split [lindex $namevals $i] "="]
+                       set pnum [expr $i+1]
+                       if { ([lindex $params 0] eq "p") } {
+                               set manualpool "[URI::query [HTTP::uri] [lindex $params 0]]"
+                       }
+                }
+        } else {
+                set query 0
+        }
+
+
+        ######################################################
+        # PAGE GENERATION - HUMAN READABLE STATUS
+
+        # Generate the status page with either all content or content from a single pool.
+        if { ([HTTP::uri] eq "/status") || (([HTTP::uri] starts_with "/status?") &amp;&amp; ($query) &amp;&amp; [info exists manualpool]) } {
+                set timestamp "[clock format [clock seconds]]"
+                set response "&lt;table border='1'&gt;&lt;tr&gt;&lt;th&gt;Status&lt;/th&gt;&lt;th&gt;Pool Name&lt;/th&gt;&lt;th&gt;Member&lt;/th&gt;&lt;th&gt;Port&lt;/th&gt;&lt;/tr&gt;"
+
+                set count 0
+                foreach { selectedpool } $::pool_member_status_list {
+                        set display 1
+                        if { [catch {
+                                scan $selectedpool {%[^/]/%[^:]:%s} poolname addr port
+                                switch -glob [LB::status pool $poolname member $addr $port] {
+                                 "up" {
+                                        if { ($query) &amp;&amp; ($manualpool ne "") &amp;&amp; ($poolname ne $manualpool) } { set display 0 } else { set display 1 }
+                                        if {$display} { append response "&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:green\"&gt;&lt;b&gt;UP&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\
+                                        &lt;td&gt;&lt;a href=\"$::lb_address/tmui/Control/jspmap/tmui/locallb/pool/stats.jsp?name=[string tolower $poolname]\"&gt;[string tolower $poolname]&lt;/a&gt;&lt;/td&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"
+                                        incr count }
+                                      }
+                                 "down" {
+                                        if { ($query) &amp;&amp; ($manualpool ne "") &amp;&amp; ($poolname ne $manualpool) } { set display 0 } else { set display 1 }
+                                        if {$display} { append response "&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:red\"&gt;&lt;b&gt;DOWN&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\
+                                        &lt;td&gt;&lt;a href=\"$::lb_address/tmui/Control/jspmap/tmui/locallb/pool/stats.jsp?name=[string tolower $poolname]\"&gt;[string tolower $poolname]&lt;/a&gt;&lt;/td&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"
+                                        incr count }
+                                        }
+                                 "session_enabled" {
+                                        if { ($query) &amp;&amp; ($manualpool ne "") &amp;&amp; ($poolname ne $manualpool) } { set display 0 } else { set display 1 }
+                                        if {$display} { append response "&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:blue\"&gt;&lt;b&gt;ENABLED&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\
+                                        &lt;td&gt;&lt;a href=\"$::lb_address/tmui/Control/jspmap/tmui/locallb/pool/stats.jsp?name=[string tolower $poolname]\"&gt;[string tolower $poolname]&lt;/a&gt;&lt;/td&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"
+                                        incr count }
+                                        }
+                                 "session_disabled" {
+                                        if { ($query) &amp;&amp; ($manualpool ne "") &amp;&amp; ($poolname ne $manualpool) } { set display 0 } else { set display 1 }
+                                        if {$display} { append response "&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:black\"&gt;&lt;b&gt;DISABLED&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\
+                                        &lt;td&gt;&lt;a href=\"$::lb_address/tmui/Control/jspmap/tmui/locallb/pool/stats.jsp?name=[string tolower $poolname]\"&gt;[string tolower $poolname]&lt;/a&gt;&lt;/td&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"
+                                        incr count }
+                                        }
+                                  Default {
+                                        if { ($query) &amp;&amp; ($manualpool ne "") &amp;&amp; ($poolname ne $manualpool) } { set display 0 } else { set display 1 }
+                                        if {$display} { append response "&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:orange\"&gt;&lt;b&gt;INVALID&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\
+                                        &lt;td&gt;&lt;a href=\"$::lb_address/tmui/Control/jspmap/tmui/locallb/pool/stats.jsp?name=[string tolower $poolname]\"&gt;[string tolower $poolname]&lt;/a&gt;&lt;/td&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"
+                                        incr count }
+                                        }
+                                }
+                                #SWITCH END
+                        } errmsg] } {
+                        # All else has failed. Punt.
+                        if { ($query) &amp;&amp; ($manualpool ne "") &amp;&amp; ($poolname ne $manualpool) } { set display 0 } else { set display 1 }
+                        if {$display} { append response "&lt;tr&gt;&lt;td&gt;&lt;font style=\"color:orange\"&gt;&lt;b&gt;INVALID&lt;/b&gt;&lt;/font&gt;&lt;/td&gt;\
+                        &lt;td&gt;&lt;a href=\"$::lb_address/tmui/Control/jspmap/tmui/locallb/pool/stats.jsp?name=[string tolower $poolname]\"&gt;[string tolower $poolname]&lt;/a&gt;&lt;/td&gt;&lt;td&gt;$addr&lt;/td&gt;&lt;td&gt;$port&lt;/td&gt;&lt;tr&gt;"
+                        incr count }
+                        }
+                }
+
+                # If we made it all the way through the generation of the table and didn't display anything, there must
+                # have been no matching pool.
+                if { $count == 0 } {
+                        append response "&lt;tr&gt;&lt;td colspan=4&gt;&lt;center&gt;No pool members selected.&lt;/center&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;"
+                } else {
+                        append response "&lt;/table&gt;"
+                }
+                HTTP::respond 200 content [subst $::page_200] "Content-Type" "text/html" "Cache-Control" "no-cache, must-revalidate" "Expires" "Mon, 26 Jul 1997 05&lt;!--:00:00 GMT"--&gt;
+        }
+
+        ######################################################
+        # PAGE GENERATION - RSS FEED
+
+        # Generate an RSS feed element with either all content or content from a single pool.
+        if { ([HTTP::uri] eq "/rss")  || (([HTTP::uri] starts_with "/rss?") &amp;&amp; ($query) &amp;&amp; [info exists manualpool])  } {
+                set response "&lt;?xml version=\"1.0\" encoding=\"utf-8\"?&gt;&lt;rss version=\"2.0\"&gt;&lt;channel&gt; \
+                &lt;title&gt;Server Pool Status ($::lb_name)&lt;/title&gt;&lt;description&gt;Server Pool Status ($::lb_name)&lt;/description&gt; \
+                &lt;language&gt;en&lt;/language&gt;&lt;pubDate&gt;[clock format [clock seconds]]&lt;/pubDate&gt;\&lt;ttl&gt;60&lt;/ttl&gt;"
+
+                set count 0
+                foreach { selectedpool } $::pool_member_status_list {
+                        set display 1
+                        if { [catch {
+                                scan $selectedpool {%[^/]/%[^:]:%s} poolname addr port
+                                switch -glob [LB::status pool $poolname member $addr $port] {
+                                        "up" {
+                                        if { ($query) &amp;&amp; ($manualpool ne "") &amp;&amp; ($poolname ne $manualpool) } { set display 0 } else { set display 1 }
+                                        if {$display} { append response "&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt; \
+                                        Member $addr:$port is &lt;b&gt;&lt;font style=\"color:green\"&gt;UP&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"
+                                        incr count }
+                                        }
+                                        "down" {
+                                        if { ($query) &amp;&amp; ($manualpool ne "") &amp;&amp; ($poolname ne $manualpool) } { set display 0 } else { set display 1 }
+                                        if {$display} { append response "&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt; \
+                                        Member $addr:$port is &lt;b&gt;&lt;font style=\"color:red\"&gt;DOWN&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"
+                                        incr count }
+                                        }
+                                        "session_enabled" {
+                                        if { ($query) &amp;&amp; ($manualpool ne "") &amp;&amp; ($poolname ne $manualpool) } { set display 0 } else { set display 1 }
+                                        if {$display} { append response "&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt; \
+                                        Member $addr:$port is &lt;b&gt;&lt;font style=\"color:blue\"&gt;ENABLED&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"
+                                        incr count }
+                                        }
+                                        "session_disabled" {
+                                        if { ($query) &amp;&amp; ($manualpool ne "") &amp;&amp; ($poolname ne $manualpool) } { set display 0 } else { set display 1 }
+                                        if {$display} { append response "&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt; \
+                                        Member $addr:$port is &lt;b&gt;&lt;font style=\"color:black\"&gt;DISABLED&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"
+                                        incr count }
+                                        }
+                                        Default {
+                                        if { ($query) &amp;&amp; ($manualpool ne "") &amp;&amp; ($poolname ne $manualpool) } { set display 0 } else { set display 1 }
+                                        if {$display} { append response "&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt; \
+                                        Member $addr:$port is &lt;b&gt;&lt;font style=\"color:orange\"&gt;INVALID&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"
+                                        incr count }
+                                        }
+                                }
+                                #SWITCH END
+                        } errmsg] } {
+                        # All else has failed. Punt.
+                        if { ($query) &amp;&amp; ($manualpool ne "") &amp;&amp; ($poolname ne $manualpool) } { set display 0 } else { set display 1 }
+                        if {$display} { append response "&lt;item&gt;&lt;title&gt;[string tolower $poolname] Status&lt;/title&gt;&lt;description&gt;Member $addr:$port is &lt;b&gt;\
+                                &lt;font style=\"color:orange\"&gt;INVALID&lt;/font&gt;&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;"
+                                incr count }
+                        }
+                }
+                if { $count == 0 } {
+                        append response "&lt;item&gt;&lt;title&gt;No such pool&lt;/title&gt;&lt;description&gt; \
+                        &lt;b&gt;No such pool&lt;/b&gt;&lt;/description&gt;&lt;/item&gt;&lt;/channel&gt;&lt;/rss&gt;"
+                } else {
+                        append response "&lt;/channel&gt;&lt;/rss&gt;"
+                }
+                HTTP::respond 200 content $response "Content-Type" "text/xml" "Cache-Control" "no-cache, must-revalidate" "Expires" "Mon, 26 Jul 1997 05&lt;!--:00:00 GMT"--&gt;
+        }
+
+
+        ######################################################
+        # PAGE GENERATION - ERROR HANDLING AND CLEANUP
+
+        # Handle any errors (unknown page requests, bad query strings) and unset my status.
+        if { (([HTTP::uri] eq "/status") || (([HTTP::uri] starts_with "/status?") &amp;&amp; ($query) &amp;&amp; [info exists manualpool])) || (([HTTP::uri] eq "/rss")  || (([HTTP::uri] starts_with "/rss?") &amp;&amp; ($query) &amp;&amp; [info exists manualpool])) } {
+                unset display
+                unset query
+                if { [info exists manualpool] } { unset manualpool }
+        } else {
+                unset query
+                HTTP::respond 404 content [subst $::error_404] "Cache-Control" "no-cache, must-revalidate" "Expires" "Mon, 26 Jul 1997 05&lt;!--:00:00 GMT"--&gt;
+        }
+}
+</pre></div>
+</div>
+<p><em>The BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor 
+or control community code contributions. We make no guarantees or warranties regarding the available code, 
+and it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any 
+code available in the BIG-IP API reference guides is solely at your own risk.</em></p>
+</div>
+</div>
+</div>
+</article>
+</body></html>

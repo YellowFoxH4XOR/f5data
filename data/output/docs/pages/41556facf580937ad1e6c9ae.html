@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ltm rule command STREAM expression</title><link rel="canonical" href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_STREAM_expression.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>ltm rule command STREAM expression</h1><p>cli_reference · 17.0.0</p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_STREAM_expression.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="ltm-rule-command-stream-expression">
+<span id="id1"></span><h1>ltm rule command STREAM expression</h1>
+<html>
+<pre>
+iRule(1)						BIG-IP TMSH Manual						  iRule(1)
+
+STREAM::expression
+       Replaces the expression in a Stream profile with another expression.
+
+SYNOPSIS
+       STREAM::expression EXPRESSION
+
+DESCRIPTION
+       Replaces the stream expression in the Stream profile with the specified value. The syntax is identical to the profile
+       syntax.	Note that this change affects this connection only and is sticky for the duration of the connection.
+
+       Syntax
+
+       STREAM::expression <expression>
+
+	    * Replaces the stream expression in the Stream profile with the
+	      specified value. The syntax is identical to the profile syntax.
+
+	  The stream expression is constructed as a list of search/replacement
+	  pairs in the following format:
+
+	  <delim><search><delim>[<replace>]<delim> [<delim><search><delim>[<replace>]<delim>...]
+
+	  You must Start, Separate, AND End your search/replace string with an
+	  appropriate delimiter, per the pattern above. In addition note that
+	  there may NOT be space between the TCL argument delimiter and the
+	  argument . This will result in no error at all, but it will not match
+	  the "search" string and will appear to not work. Example is given just
+	  below to demonstrate this error.
+
+	     # This will work
+	     STREAM::expression {@IE@Apache@ @Windows@Linux@}
+
+	     # This will NOT work - notice the space between the 'curly brace' and the '@'
+	     STREAM::expression { @IE@Apache@ @Windows@Linux@ }
+
+	  The first character defines the delimiter. Most examples use the "@"
+	  character, but any of the following characters are allowed as a
+	  delimiter: .*/-:_?=@&amp; (period, asterisk, forward slash, dash, colon,
+	  underscore, question mark, equals, at sign, ampersand) The replacement
+	  value is optional, and may be omitted if you wish to delete the search
+	  value from the data stream. (The end delimiter is still required,
+	  resulting in 2 consecutive delimiters with no intervening whitespace.)
+	  Multiple replacements may be performed by a single expression by adding
+	  additional pairs.
+	  If you use variables in the stream expression, you must not use curly
+	  braces to enclose the expression as these prevent variable expansion
+	  and command execution:
+
+	     # This will work to replace the $find variable value with $replace variable value
+	     STREAM::expression "@$find@$replace@"
+
+	     # This will NOT work - curly braces prevent variable expansion and command execution
+	     STREAM::expression {@$find@$replace@}
+
+	  If the delimiter is present in the search or replace string, the
+	  instance in the string can be escaped (a preceding '\') so the
+	  expression will be parsed correctly.
+	  To perform the response data replacement, a stream profile must already
+	  be configured on the virtual server. (The default, unconfigured stream
+	  profile is recommended.)
+
+	  Version Specific Notes
+	      * LTM 9.2 - 9.2.4 The Stream filter uses TCL to parse and replace data.
+	      TCL has a 4Mb limit for a single allocation or connection. When this
+	      limit is exceeded, TMM may restart. See SOL6741 (CR55382 and
+	      CR70146) for details and a workaround. This issue was resolved in
+	      9.2.5, 9.3.0 and 9.4.0
+
+	      * LTM 9.0-10.x When performing stream replacements where the original and
+	      replacement strings are different lengths, you must force BIG-IP to
+	      discard the server's Content-Length header and chunk the data before
+	      sending the response onto the client. This can be done by applying a
+	      custom HTTP profile to the virtual server with Response Chunking set to
+	      "Rechunk". See SOL6422 for details.
+
+RETURN VALUE
+VALID DURING
+EXAMPLES
+	# Example which replaces http:// with https:// in response content
+	# Prevents server compression in responses
+	when HTTP_REQUEST {
+
+	   # Disable the stream filter for all requests
+	   STREAM::disable
+
+	   # LTM does not uncompress response content, so if the server has compressionenabled
+	   # and it cannot be disabled on the server, we can prevent the server from
+	   # sending a compressed response by removing the compression offerings from the client
+	   HTTP::header remove "Accept-Encoding"
+	}
+	when HTTP_RESPONSE {
+
+	   # Check if response type is text
+	   if {[HTTP::header value Content-Type] contains "text"}{
+
+	      # Replace http:// with https://
+	      STREAM::expression {@http://@https://@}
+
+	      # Enable the stream filter for this response only
+	      STREAM::enable
+	   }
+	}
+
+	Replace IE with Apache, Windows with Linux:
+
+	when HTTP_REQUEST {
+	   # Disable the stream filter for all requests
+	   STREAM::disable
+	}
+	when HTTP_RESPONSE {
+
+	   # Check if response type is text
+	   if {[HTTP::header value Content-Type] contains "text"}{
+
+	      # Replace IE with Apache, Windows with Linux
+	      STREAM::expression "@IE@Apache@ @Windows@Linux@"
+
+	      # Enable the stream filter for this response only
+	      STREAM::enable
+	   }
+	}
+
+	Replace IP addresses in response content with the string: 0.0.0.0:
+
+	when HTTP_REQUEST {
+	   # Disable the stream filter for all requests
+	   STREAM::disable
+	}
+	when HTTP_RESPONSE {
+
+	   # Check if response type is text
+	   if {[HTTP::header value Content-Type] contains "text"}{
+
+	      # Replace IP addresses in response content with the string: 0.0.0.0
+	      STREAM::expression \d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,30.0.0.0@}
+
+	      # Enable the stream filter for this response only
+	      STREAM::enable
+	   }
+	}
+
+	Replace any http:// instance with https://, unless the original string
+	is http://example.com:
+
+	when HTTP_REQUEST {
+	   # Disable the stream filter for all requests
+	   STREAM::disable
+	}
+	when HTTP_RESPONSE {
+
+	   # Check if response type is text
+	   if {[HTTP::header value Content-Type] contains "text"}{
+
+	      # Replace any http:// instance with https://, unless the original string is http://example.com
+	      STREAM::expression {@http:(?!//example\.com)@https://@}
+
+	      # Enable the stream filter for this response only
+	      STREAM::enable
+	   }
+	}
+
+	Note that the following examples use a lazy wildcard match .*? which
+	may use more resources than a non-wildcard stream expression. It would
+	be ideal to performance test this before using in production.
+	Replace any http:// instance with https://, unless the original string
+	is http://*example.com:
+
+	when HTTP_REQUEST {
+	   # Disable the stream filter for all requests
+	   STREAM::disable
+	}
+	when HTTP_RESPONSE {
+
+	   # Check if response type is text
+	   if {[HTTP::header value Content-Type] contains "text"}{
+
+	      # Replace any http:// instance with https://, unless the original string is http://*example.com:
+	      STREAM::expression {@http://(?!.*?example\.com)@https://@}
+
+	      # Enable the stream filter for this response only
+	      STREAM::enable
+	   }
+	}
+
+	This example shows how you can use STREAM::match in the
+	STREAM_MATCHED event to check if the matched string meets some
+	condition that can't easily be checked for using a single regex in
+	STREAM::expression.
+
+	when HTTP_REQUEST {
+	   # Disable the stream filter for all requests
+	   STREAM::disable
+	}
+	when HTTP_RESPONSE {
+
+	   # Check if response type is text
+	   if {[HTTP::header value Content-Type] contains "text"}{
+
+	      # Match an http://*example.com string and replace it with nothing yet
+	      STREAM::expression {&amp;http://.*?example\.com&amp;&amp;}
+
+	      # Enable the stream filter for this response only
+	      STREAM::enable
+	   }
+	}
+	when STREAM_MATCHED {
+
+	   # Check if the matched string meets some condition that can't easily be checked for using a single regex in STREAM::expression
+	   if {[STREAM::match] starts_with "host1"}{
+
+	      # Replace http:// with https:// and do the replacement
+	      STREAM::replace "[string map {http:// https://} [STREAM::match]]"
+	      log local0. "[IP::client_addr]:[TCP::local_port]: matched: [STREAM::match], replaced with: [string map {http:// https://} [STREAM::match]]"
+	   }
+	}
+
+	Log output:
+
+	Rule stream_expression_rule <stream_matched>: 10.0.0.1:3413: matched: http://test.example.com, replaced with: https://test.example.com
+	Rule stream_expression_rule <stream_matched>: 10.0.0.1:3413: matched: http://example.com, replaced with: https://example.com
+
+HINTS
+SEE ALSO
+CHANGE LOG
+       @BIGIP-9.2.0 --First introduced the command.
+
+BIG-IP							    2022-04-12							  iRule(1)
+</stream_matched></stream_matched></delim></replace></delim></search></delim></delim></replace></delim></search></delim></expression></pre>
+</html>
+</div>
+</div>
+</article>
+</body></html>

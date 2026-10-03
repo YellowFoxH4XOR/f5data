@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Creating an Active-Active Configuration Using the Setup Utility</title><link rel="canonical" href="https://techdocs.f5.com/en-us/bigip-14-1-0/big-ip-device-service-clustering-administration-14-1-0/creating-an-active-active-configuration-using-the-setup-utility.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>Creating an Active-Active Configuration Using the Setup Utility</h1><p>manual · See product applicability metadata</p><a href="https://techdocs.f5.com/en-us/bigip-14-1-0/big-ip-device-service-clustering-administration-14-1-0/creating-an-active-active-configuration-using-the-setup-utility.html">Original F5 documentation</a></header>
+<article class="manual-chapter" data-cms-edit="content">
+<div class="article-dates">
+<p><strong>Updated Date</strong>: 07/07/2026</p>
+</div>
+<h1 class="title">
+                    Creating an Active-Active Configuration Using the Setup Utility
+                </h1>
+<div class="content__reading-time">
+</div>
+<h2 id="overview-creating-a-basic-active-active-configuration">
+<div>
+</div>
+</h2><p>This implementation describes how to use the Setup utility to configure two new BIG-IP® devices that function as an active-active pair. An active-active pair is a pair of BIG-IP devices configured so that both devices are actively processing traffic and are ready to take over one another if failover occurs. The two devices synchronize their configuration data to one another.</p>
+<p><strong>Note:</strong> Access Policy Manager (APM) is not supported in an Active-Active configuration. APM is supported in an Active-Standby configuration with two BIG-IP systems only.</p>
+<p><strong>Note:</strong> Policy Enforcement Manager (PEM) is not supported in an Active-Active configuration. PEM is supported in an Active-Standby configuration with two BIG-IP systems only.</p>
+<p><strong>Important:</strong> The same version of BIG-IP system software must be running on all devices in the device group.</p>
+<p>Using this implementation, you begin by running the Setup utility on each device to configure its base network components. Base network components include a management port, administrative passwords, and default VLANs and their associated self IP addresses. You also use Setup to configure configuration synchronization and high availability.</p>
+<p>You then use the BIG-IP® Configuration utility to:</p>
+<ul>
+<li>Establish trust between the two devices</li>
+<li>Create a Sync-Failover type of device group that contains two member devices</li>
+<li>Create a second traffic group</li>
+<li>Create two iApp™ application services</li>
+</ul>
+<p>In this configuration, both devices actively process application traffic, each for a different application. One device processes its application traffic using the configuration objects associated with the default floating traffic group, <code>traffic-group-1</code>. By default, this traffic group contains the floating self IP addresses of the default VLANs. The other device processes its application traffic using a second traffic group that you create.</p>
+<p>If one of the devices becomes unavailable for any reason, the other device automatically begins processing traffic for the unavailable peer, while continuing to process the traffic for its own application.</p>
+<p>This illustration shows an example of the device group that this implementation creates, named <code>Device Group A</code>. This device group contains two BIG-IP devices, <code>Device 1</code> and <code>Device 2</code>.</p>
+<p>The configuration shows two traffic groups, <code>traffic-group-1</code> and <code>traffic-group-2</code>, each containing failover objects. For <code>traffic-group-1</code>, <code>Device 1</code> is the default device. For <code>traffic-group-2</code>, <code>Device 2</code> is the default device. If <code>Device 1</code> becomes unavailable, <code>traffic-group-1</code> floats to <code>Device 2</code>. If <code>Device 2</code> becomes unavailable, <code>traffic-group-2</code> floats to <code>Device 1</code>.</p>
+<figure data-grid="first-two-thirds"><img alt="Device group with active-active configuration" class="figure-bitmap" src="../assets/09d11fe4153cfc90cdd874d5.png"/>
+</figure>
+<p>By implementing this configuration, you ensure that:</p>
+<ul>
+<li>Each device has base network components configured.</li>
+<li>Any objects on a BIG-IP device that you configure for synchronization remain synchronized between the two devices.</li>
+<li>Failover capability and connection mirroring are enabled on each device.</li>
+</ul>
+<p><strong>Important:</strong> For active-active configurations, you must enable network failover instead of hard-wired serial failover.</p>
+<h3 id="licensing-and-provisioning-the-big-ip-system">
+<div>
+</div>
+</h3><p>Using the Setup utility, you can activate the license and provision the BIG-IP system.</p>
+<ol>
+<li>
+<p>From a workstation attached to the network on which you configured the management interface, type the following URL syntax where <code>&lt;management_IP_address&gt;</code> is the address you configured for device management:</p>
+<p><code>https://&lt;management_IP_address&gt;</code></p>
+</li>
+<li>
+<p>At the login prompt, type the default user name <code>admin</code>, and password <code>admin</code>, and click <strong>Log in</strong>.</p>
+<p>The Setup utility screen opens.</p>
+</li>
+<li>
+<p>Click <strong>Next</strong>.</p>
+</li>
+<li>
+<p>Click <strong>Activate</strong>.</p>
+<p>The License screen opens.</p>
+</li>
+<li>
+<p>In the <strong>Base Registration Key</strong> field, paste the registration key.</p>
+</li>
+<li>
+<p>Click <strong>Next</strong> and follow the process for licensing and provisioning the system.</p>
+<p><strong>Note:</strong> When you perform the licensing task so that you can run the F5 cloud ADC, you can accept the default provisioning values.</p>
+</li>
+<li>
+<p>Click <strong>Next</strong>.</p>
+<p>This displays the screen for configuring general properties and user administration settings.</p>
+</li>
+</ol>
+<p>The BIG-IP system license is now activated, and the relevant BIG-IP modules are provisioned.</p>
+<h3 id="configuring-a-device-certificate">
+<div>
+</div>
+</h3><p>Import or verify the certificate for the BIG-IP device.</p>
+<ol>
+<li>
+<p>Do one of the following:</p>
+<ul>
+<li>Click <strong>Import</strong>, import a certificate, click <strong>Import</strong>, and then click <strong>Next</strong>.</li>
+<li>Verify the displayed information for the certificate and click <strong>Next</strong>.</li>
+</ul>
+</li>
+</ol>
+<h3 id="configuring-the-management-port-and-administrative-user-accounts">
+<div>
+</div>
+</h3><p>Configure the management port, time zone, and the administrative user names and passwords.</p>
+<ol>
+<li>
+<p>On the screen for configuring general properties, for the <strong>Management Port Configuration</strong> setting, select <strong>Manual</strong>.</p>
+</li>
+<li>
+<p>For the <strong>Management Port 1</strong> setting, specify an IP address, network mask, and default gateway.</p>
+<p>You can leave the <strong>Management Port 2</strong> setting blank.</p>
+</li>
+<li>
+<p>In the <strong>Host Name</strong> field, type a fully-qualified domain name (FQDN) for the system.</p>
+<p>The FQDN can consist of letters, numbers, and/or the characters underscore ( _ ), dash ( - ), or period ( . ).</p>
+</li>
+<li>
+<p>For the <strong>Host IP Address</strong> setting, retain the default value <strong>Use Management Port IP Address</strong>.</p>
+</li>
+<li>
+<p>From the <strong>Time Zone</strong> list, select a time zone.</p>
+<p>The time zone you select typically reflects the location of the F5 system.</p>
+</li>
+<li>
+<p>For the <strong>Root Account</strong> setting, type and confirm a password for the <code>root</code> account.</p>
+<p>The <code>root</code> account provides console access only.</p>
+</li>
+<li>
+<p>For the <strong>Admin Account</strong> setting, type and confirm a password.</p>
+<p>Typing a password for the <code>admin</code> account causes the system to terminate the login session. When this happens, log in to the F5 Configuration utility again, using the new password. The system returns to the appropriate screen in the Setup utility.</p>
+</li>
+<li>
+<p>For the <strong>SSH Access</strong> setting, select or clear the check box.</p>
+</li>
+<li>
+<p>Click <strong>Next</strong>.</p>
+</li>
+<li>
+<p>In the Standard Network Configuration area of the screen, click <strong>Next</strong>.</p>
+<p>This displays the screen for enabling configuration synchronization and high availability.</p>
+</li>
+</ol>
+<h3 id="enabling-configsync-and-high-availability">
+<div>
+</div>
+</h3><p>When you perform this task, you set up config sync and connection mirroring, and you can specify the failover method (network, serial, or both).</p>
+<ol>
+<li>
+<p>For the <strong>Config Sync</strong> setting, select the <strong>Display configuration synchronization options</strong> check box.</p>
+<p>This causes an additional ConfigSync screen to be displayed later.</p>
+</li>
+<li>
+<p>For the <strong>High Availability</strong> setting, select the <strong>Display failover and mirroring options</strong> check box.</p>
+<p>This displays the <strong>Failover Method</strong> list and causes additional failover screens to be displayed later.</p>
+</li>
+<li>
+<p>From the <strong>Failover Method</strong> list, select <strong>Network and serial cable</strong>.</p>
+<p>If you have a VIPRION system, select <strong>Network</strong>.</p>
+</li>
+<li>
+<p>Click <strong>Next</strong>.</p>
+<p>This displays the screen for configuring the default VLAN <strong>internal</strong>.</p>
+</li>
+</ol>
+<h3 id="configuring-the-internal-network">
+<div>
+</div>
+</h3><p>You can use the Setup utility to specify self IP addresses and settings for a VLAN on the BIG-IP internal network. The default VLAN for the internal network is named <code>internal</code>.</p>
+<ol>
+<li>
+<p>Specify the <strong>Self IP</strong> setting for the internal network:</p>
+<ol>
+<li>
+<p>In the <strong>Address</strong> field, type a self IP address.</p>
+</li>
+<li>
+<p>In the <strong>Netmask</strong> field, type a network mask for the self IP address.</p>
+</li>
+<li>
+<p>For the <strong>Port Lockdown</strong> setting, retain the default value.</p>
+</li>
+</ol>
+</li>
+<li>
+<p>Specify the <strong>Floating IP</strong> setting:</p>
+<ol>
+<li>
+<p>In the <strong>Address</strong> field, type a floating IP address.</p>
+<p>This address should be distinct from the address you type for the <strong>Self IP</strong> setting.</p>
+<p><strong>Important:</strong> If the BIG-IP device you are configuring is accessed using Amazon Web Services and the device needs to failover to a device group peer, use the second, Secondary Private IP address for the floating IP address.</p>
+</li>
+<li>
+<p>For the <strong>Port Lockdown</strong> setting, retain the default value.</p>
+</li>
+</ol>
+</li>
+<li>
+<p>For the <strong>VLAN Tag ID</strong> setting, retain the default value, <strong>auto</strong>.</p>
+<p>This is the recommended value.</p>
+</li>
+<li>
+<p>For the <strong>Interfaces</strong> setting:</p>
+<ol>
+<li>
+<p>From the <strong>Interface</strong> list, select an interface number.</p>
+</li>
+<li>
+<p>From the <strong>Tagging</strong> list, select <strong>Tagged</strong> or <strong>Untagged</strong>.</p>
+<p>Select <strong>Tagged</strong> when you want traffic for that interface to be tagged with a VLAN ID.</p>
+</li>
+<li>
+<p>Click <strong>Add</strong>.</p>
+</li>
+</ol>
+</li>
+<li>
+<p>Click <strong>Next</strong>.</p>
+<p>This completes the configuration of the internal self IP addresses and VLAN, and displays the screen for configuring the default VLAN <strong>external</strong>.</p>
+</li>
+</ol>
+<h3 id="configuring-the-external-network">
+<div>
+</div>
+</h3><p>You can use the Setup utility to specify self IP addresses and settings for a VLAN on the BIG-IP external network. The default VLAN for the external network is named <code>external</code>.</p>
+<ol>
+<li>
+<p>Specify the <strong>Self IP</strong> setting for the external network:</p>
+<ol>
+<li>
+<p>In the <strong>Address</strong> field, type a self IP address.</p>
+</li>
+<li>
+<p>In the <strong>Netmask</strong> field, type a network mask for the self IP address.</p>
+</li>
+<li>
+<p>For the <strong>Port Lockdown</strong> setting, retain the default value.</p>
+</li>
+</ol>
+</li>
+<li>
+<p>In the <strong>Default Gateway</strong> field, type the IP address that you want to use as the default gateway to VLAN <strong>external</strong>.</p>
+</li>
+<li>
+<p>Specify the <strong>Floating IP</strong> setting:</p>
+<ol>
+<li>
+<p>In the <strong>Address</strong> field, type a floating IP address.</p>
+<p>This address should be distinct from the address you type for the <strong>Self IP</strong> setting.</p>
+<p><strong>Important:</strong> If the BIG-IP device you are configuring is accessed using Amazon Web Services and the device needs to failover to a device group peer, use the second, Secondary Private IP address for the floating IP address.</p>
+</li>
+<li>
+<p>For the <strong>Port Lockdown</strong> setting, retain the default value.</p>
+</li>
+</ol>
+</li>
+<li>
+<p>For the <strong>VLAN Tag ID</strong> setting, retain the default value, <strong>auto</strong>.</p>
+<p>This is the recommended value.</p>
+</li>
+<li>
+<p>For the <strong>Interfaces</strong> setting:</p>
+<ol>
+<li>
+<p>From the <strong>Interface</strong> list, select an interface number.</p>
+</li>
+<li>
+<p>From the <strong>Tagging</strong> list, select <strong>Tagged</strong> or <strong>Untagged</strong>.</p>
+<p>Select <strong>Tagged</strong> when you want traffic for that interface to be tagged with a VLAN ID.</p>
+</li>
+<li>
+<p>Click <strong>Add</strong>.</p>
+</li>
+</ol>
+</li>
+<li>
+<p>Click <strong>Next</strong>.</p>
+<p>This completes the configuration of the external self IP addresses and VLAN, and displays the screen for configuring the default VLAN <strong>HA</strong>.</p>
+</li>
+</ol>
+<h3 id="configuring-the-network-for-high-availability">
+<div>
+</div>
+</h3><p>To configure a network for high availability, specify self IP addresses and settings for VLAN <code>HA</code>, which is the VLAN that the system will use for failover and connection mirroring.</p>
+<ol>
+<li>
+<p>For the <strong>High Availability VLAN</strong> setting, retain the default value, <strong>Create VLAN HA</strong>.</p>
+</li>
+<li>
+<p>Specify the <strong>Self IP</strong> setting for VLAN <strong>HA</strong>:</p>
+<ol>
+<li>
+<p>In the <strong>Address</strong> field, type a self IP address.</p>
+</li>
+<li>
+<p>In the <strong>Netmask</strong> field, type a network mask for the self IP address.</p>
+</li>
+</ol>
+</li>
+<li>
+<p>For the <strong>VLAN Tag ID</strong> setting, retain the default value, <strong>auto</strong>.</p>
+<p>This is the recommended value.</p>
+</li>
+<li>
+<p>For the <strong>Interfaces</strong> setting,</p>
+<ol>
+<li>
+<p>From the <strong>Interface</strong> list, select an interface number.</p>
+</li>
+<li>
+<p>From the <strong>Tagging</strong> list, select <strong>Untagged</strong>.</p>
+</li>
+<li>
+<p>Click <strong>Add</strong>.</p>
+</li>
+</ol>
+</li>
+<li>
+<p>Click <strong>Next</strong>.</p>
+<p>This configures the self IP address and VLAN that the system will use for high availability and displays the default IP address that the system will use for configuration synchronization.</p>
+</li>
+</ol>
+<h3 id="configuring-a-configsync-address">
+<div>
+</div>
+</h3><p>Use this task to specify the address that you want the system to use for configuration synchronization.</p>
+<ol>
+<li>
+<p>From the <strong>Local Address</strong> list, select a self IP address.</p>
+<p>Do not select a management IP address.</p>
+</li>
+<li>
+<p>Click <strong>Next</strong>.</p>
+<p>This displays the screen for configuring unicast and multicast failover addresses.</p>
+</li>
+</ol>
+<h3 id="configuring-failover-and-mirroring-addresses">
+<div>
+</div>
+</h3><p>Follow these task steps to specify the unicast IP addresses of the local device that you want the system to use for failover. Typically, you specify the self IP address for the local VLAN <code>HA</code>, as well as the IP address for the management port of the local device. If you are configuring a VIPRION system, configure a multicast failover address as well.</p>
+<p><strong>Important:</strong> When configuring failover and mirroring IP addresses, you select addresses of the local device only. Later, during the process of device discovery, the two devices in the device group discover each other’s addresses.</p>
+<ol>
+<li>
+<p>Locate the Failover Unicast Configuration area of the screen.</p>
+</li>
+<li>
+<p>Under Local Address, confirm that there are entries for the self IP addresses that are assigned to the <strong>HA</strong> and <strong>internal</strong> VLANs and for the local management IP address for this device. If these entries are absent, click the <strong>Add</strong> button to add the missing entries to the list of Failover Unicast Addresses.</p>
+<ol>
+<li>
+<p>For the <strong>Address</strong> setting, select the address for the VLAN you need to add (either <code>HA</code> or <code>internal</code>).</p>
+</li>
+<li>
+<p>In the <strong>Port</strong> field, type a port number or retain the default port number, <code>1026</code>.</p>
+</li>
+<li>
+<p>Click <strong>Repeat</strong> to add additional self IP addresses, or click <strong>Finished</strong>.</p>
+</li>
+<li>
+<p>Repeat these steps to add a management IP address.</p>
+</li>
+</ol>
+</li>
+<li>
+<p>Click <strong>Next</strong>.</p>
+</li>
+<li>
+<p>From the <strong>Primary Local Mirror Address</strong> list, retain the default value, which is the self IP address for VLAN <code>HA</code>.</p>
+</li>
+<li>
+<p>From the <strong>Secondary Local Mirror Address</strong> list, select the address for VLAN <code>internal</code>.</p>
+</li>
+<li>
+<p>Click <strong>Finished</strong>.</p>
+<p>This causes you to leave the Setup utility.</p>
+</li>
+</ol>
+<h3 id="establishing-device-trust">
+<div>
+</div>
+</h3><p>Before you begin this task, verify that:</p>
+<ul>
+<li>Each BIG-IP device that is to be part of the local trust domain has a device certificate installed on it.</li>
+<li>The local device is designated as a certificate signing authority.</li>
+</ul>
+<p>You perform this task to establish trust among devices on one or more network segments. Devices that trust each other constitute the local trust domain. A device must be a member of the local trust domain prior to joining a device group.</p>
+<p>By default, the BIG-IP software includes a local trust domain with one member, which is the local device. You can choose any one of the BIG-IP devices slated for a device group and log into that device to add other devices to the local trust domain. For example, devices <code>Bigip_1</code>, <code>Bigip_2</code>, and <code>Bigip_3</code> each initially shows only itself as a member of the local trust domain. To configure the local trust domain to include all three devices, you can simply log into device <code>Bigip_1</code> and add devices <code>Bigip_2</code> and <code>Bigip_3</code> to the local trust domain; there is no need to repeat this process on devices <code>Bigip_2</code> and <code>Bigip_3</code>.</p>
+<ol>
+<li>
+<p>On the Main tab, click <strong>Device Management</strong> &gt; <strong>Device Trust</strong> &gt; <strong>Device Trust Members</strong>.</p>
+</li>
+<li>
+<p>Click <strong>Add</strong>.</p>
+</li>
+<li>
+<p>From the <strong>Device Type</strong> list, select <strong>Peer</strong> or <strong>Subordinate</strong>.</p>
+</li>
+<li>
+<p>Type a device IP address, administrator user name, and administrator password for the remote BIG-IP device with which you want to establish trust. The IP address you specify depends on the type of BIG-IP device:</p>
+<ul>
+<li>If the BIG-IP device is an appliance, type a management IP address (IPv4 or IPv6) for the device.</li>
+<li>If the BIG-IP device is a VIPRION device that is not licensed and provisioned for vCMP, type a primary cluster management IP address (IPv4 or IPv6) for the cluster.</li>
+<li>If the BIG-IP device is a VIPRION device that is licensed and provisioned for vCMP, then type a cluster management IP address (IPv4 or IPv6) for the guest.</li>
+<li>If the BIG-IP device is an Amazon Web Services EC2 device, type one of the Private IP addresses created for this EC2 instance.</li>
+</ul>
+</li>
+<li>
+<p>Click <strong>Retrieve Device Information</strong>.</p>
+</li>
+<li>
+<p>Verify that the certificate of the remote device is correct, and then click <strong>Device Certificate Matches</strong>.</p>
+</li>
+<li>
+<p>In the <strong>Name</strong> field, verify that the name of the remote device is correct.</p>
+</li>
+<li>
+<p>Click <strong>Add Device</strong>.</p>
+</li>
+</ol>
+<p>After you perform this task, the local device is now a member of the local trust domain. Also, the BIG-IP system automatically creates a special Sync-Only device group for the purpose of synchronizing trust information among the devices in the local trust domain, on an ongoing basis.</p>
+<p>Repeat this task to specify each device that you want to add to the local trust domain.</p>
+<h3 id="creating-a-sync-failover-device-group">
+<div>
+</div>
+</h3><p>This task establishes failover capability between two or more BIG-IP devices. If an active device in a Sync-Failover device group becomes unavailable, the configuration objects fail over to another member of the device group and traffic processing is unaffected. You perform this task on any one of the authority devices within the local trust domain.</p>
+<p>Repeat this task for each Sync-Failover device group that you want to create for your network configuration.</p>
+<ol>
+<li>
+<p>On the Main tab, click <strong>Device Management</strong> &gt; <strong>Device Groups</strong>.</p>
+</li>
+<li>
+<p>On the Device Groups list screen, click <strong>Create</strong>.</p>
+<p>The New Device Group screen opens.</p>
+</li>
+<li>
+<p>In the <strong>Name</strong> field, type a name for the device group.</p>
+</li>
+<li>
+<p>From the <strong>Group Type</strong> list, select <strong>Sync-Failover</strong>.</p>
+</li>
+<li>
+<p>In the <strong>Description</strong> field, type a description of the device group.</p>
+<p>This setting is optional.</p>
+</li>
+<li>
+<p>From the <strong>Configuration</strong> list, select <strong>Advanced</strong>.</p>
+</li>
+<li>
+<p>For the <strong>Members</strong> setting, select a host name from the <strong>Available</strong> list for each BIG-IP device that you want to include in the device group, including the local device. Use the Move button to move the host name to the <strong>Includes</strong> list.</p>
+<p>The <strong>Available</strong> list shows any devices that are members of the device’s local trust domain but not currently members of a Sync-Failover device group. A device can be a member of one Sync-Failover group only. Also, for vCMP-provisioned systems on platforms that contain a hardware security module (HSM) supporting FIPS multi-tenancy, the FIPS partitions on the guests in the device group must be identical with respect to the number of SSL cores allocated to the guest’s FIPS partition and the maximum number of private SSL keys that the guest can store on the HSM.</p>
+</li>
+<li>
+<p>From the <strong>Sync Type</strong> list:</p>
+<ul>
+<li>Select <strong>Automatic with Incremental Sync</strong> when you want the BIG-IP system to automatically sync the most recent BIG-IP configuration changes from a device to the other members of the device group. In this case, the BIG-IP system syncs the configuration data whenever the data changes on any device in the device group.</li>
+<li>Select <strong>Manual with Incremental Sync</strong> when you want to manually initiate a config sync operation. In this case, the BIG-IP system syncs the latest BIG-IP configuration changes from the device you choose to the other members of the device group. We strongly recommend that you perform a config sync operation whenever configuration data changes on one of the devices in the device group.</li>
+<li>Select <strong>Manual with Full Sync</strong> when you want to manually initiate a config sync operation. In this case, the BIG-IP system syncs the full set of BIG-IP configuration data from the device you choose to the other members of the device group. We strongly recommend that you perform a config sync operation whenever configuration data changes on one of the devices in the device group.</li>
+</ul>
+</li>
+<li>
+<p>In the <strong>Maximum Incremental Sync Size (KB)</strong> field, retain the default value of <code>1024</code>, or type a different value.</p>
+<p>This value specifies the total size of configuration changes that can reside in the incremental sync cache. If the total size of the configuration changes in the cache exceeds the specified value, the BIG-IP system performs a full sync whenever the next config sync operation occurs.</p>
+</li>
+<li>
+<p>For the <strong>Network Failover</strong> setting, select or clear the check box:</p>
+<ul>
+<li>Select the check box if you want device group members to handle failover communications by way of network connectivity. This is the default value and is required for active-active configurations.</li>
+<li>Clear the check box if you want device group members to handle failover communications by way of serial cable (hard-wired) connectivity.
+For active-active configurations, you must select network failover, as opposed to serial-cable (hard-wired) connectivity.</li>
+</ul>
+</li>
+<li>
+<p>In the <strong>Link Down Time on Failover</strong> field, use the default value of <code>0.0</code>, or specify a new value.</p>
+<p>This setting specifies the amount of time, in seconds, that interfaces for any external VLANs are down when a traffic group fails over and goes to the standby state. Specifying a value other than <code>0.0</code> for this setting causes other vendor switches to use the specified time to learn the MAC address of the newly-active device.</p>
+<p><strong>Important:</strong> This setting is a system-wide setting, and does not apply to this device group only. Specifying a value in this field causes the BIG-IP system to assign this value to the global bigdb variable <strong>failover.standby.linkdowntime</strong>.</p>
+</li>
+<li>
+<p>Click <strong>Finished</strong>.</p>
+</li>
+</ol>
+<h3 id="creating-an-iapp-application-for-the-local-device">
+<div>
+</div>
+</h3><p>Use this procedure to create a set of related configuration objects on the system (that is, an application).</p>
+<ol>
+<li>
+<p>On the Main tab, click <strong>iApp</strong> &gt; <strong>Application Services</strong>.</p>
+</li>
+<li>
+<p>Click <strong>Create</strong>.</p>
+</li>
+<li>
+<p>In the <strong>Name</strong> field, type the name for your application service.</p>
+</li>
+<li>
+<p>From the <strong>Template</strong> list, select a template.</p>
+</li>
+<li>
+<p>From the Template Selection list, select <strong>Advanced</strong>.</p>
+<p>This causes additional settings to appear.</p>
+</li>
+<li>
+<p>For the <code>Configure Sync and/or Failover for this application?</code> setting, select <strong>Yes</strong>.</p>
+</li>
+<li>
+<p>For the <code>Traffic Group</code> setting, ensure that the <strong>Inherit traffic group from current partition / path</strong> field and <strong>traffic-group-1</strong> are selected.</p>
+</li>
+<li>
+<p>Configure remaining settings as needed.</p>
+</li>
+<li>
+<p>At the bottom of the screen click <strong>Finished</strong> to save your changes.</p>
+</li>
+</ol>
+<p>You now have an iApp application service, which is associated with the traffic group assigned to the <strong>root</strong> folder, <code>traffic-group-1</code>.</p>
+<h3 id="creating-a-traffic-group-for-a-remote-device">
+<div>
+</div>
+</h3><p>If you intend to specify a MAC masquerade address when creating a traffic group, you must first create the address, using an industry-standard method for creating a locally-administered MAC address.</p>
+<p>Perform this procedure to create a traffic group to run on the remote BIG-IP device. You create this traffic group on the local device. Later, you move the traffic group to the remote device by forcing this traffic group on the local device to a standby state.</p>
+<ol>
+<li>
+<p>On the Main tab, click <strong>Device Management</strong> &gt; <strong>Traffic Groups</strong>.</p>
+</li>
+<li>
+<p>On the lower half of the screen, verify that the list shows the default floating traffic group (<code>traffic-group-1</code>) for the local device.</p>
+</li>
+<li>
+<p>On the Traffic Groups screen, click <strong>Create</strong>.</p>
+</li>
+<li>
+<p>Type the name <code>traffic-group-2</code> for the new traffic group.</p>
+</li>
+<li>
+<p>Type a description of the new traffic group.</p>
+</li>
+<li>
+<p>Click <strong>Next</strong>.</p>
+</li>
+<li>
+<p>In the <strong>MAC Masquerade Address</strong> field, type a MAC masquerade address.</p>
+<p>When you specify a MAC masquerade address, you reduce the risk of dropped connections when failover occurs. This setting is optional.</p>
+</li>
+<li>
+<p>Click <strong>Next</strong>.</p>
+</li>
+<li>
+<p>Select or clear the check box <strong>Always Failback to First Device if it is Available</strong>:</p>
+<ul>
+<li>Select the check box to cause the traffic group, after failover, to fail back to the first device in the traffic group’s ordered list when that device (and only that device) is available. If that device is unavailable, no failback occurs and the traffic group continues to run on the current device.</li>
+<li>Clear the check box to cause the traffic group, after failover, to remain active on its current device until failover occurs again.</li>
+</ul>
+</li>
+<li>
+<p>Click <strong>Next</strong>.</p>
+</li>
+<li>
+<p>Make sure that the displayed traffic group settings are correct.</p>
+</li>
+<li>
+<p>Click <strong>Finished</strong>.</p>
+</li>
+</ol>
+<p>You now have a floating traffic group for which the default device is the peer device.</p>
+<h3 id="creating-an-iapp-application-for-a-remote-device">
+<div>
+</div>
+</h3><p>Use this procedure when you want to create an application to run on a remote device and associate it with the traffic group named <code>traffic-group-2</code> that you previously created.</p>
+<ol>
+<li>
+<p>On the Main tab, click <strong>iApp</strong> &gt; <strong>Application Services</strong>.</p>
+</li>
+<li>
+<p>Click <strong>Create</strong>.</p>
+</li>
+<li>
+<p>From the <strong>Template</strong> list, select a template.</p>
+</li>
+<li>
+<p>From the Template Selection list, select <strong>Advanced</strong>.</p>
+<p>This causes additional settings to appear.</p>
+</li>
+<li>
+<p>In the <strong>Name</strong> field, type the name for your application service.</p>
+</li>
+<li>
+<p>For the <code>Configure Sync and/or Failover for this application?</code> setting, select <strong>Yes</strong>.</p>
+</li>
+<li>
+<p>For the <code>Traffic Group</code> setting, clear the <strong>Inherit traffic group from current partition / path</strong> field and from the list, select <strong>traffic-group-2</strong>.</p>
+</li>
+<li>
+<p>Configure remaining settings as needed.</p>
+</li>
+<li>
+<p>At the bottom of the screen click <strong>Finished</strong> to save your changes.</p>
+</li>
+</ol>
+<p>You now have an iApp application associated with <code>traffic-group-2</code>.</p>
+<h3 id="forcing-a-traffic-group-to-a-standby-state">
+<div>
+</div>
+</h3><p>You perform this task when you want the selected traffic group on the local device to fail over to another device (that is, switch to a <code>Standby</code> state). Users typically perform this task when no automated method is configured for a traffic group, such as auto-failback or an HA group. By forcing the traffic group into a <code>Standby</code> state, the traffic group becomes active on another device in the device group. For device groups with more than two members, you can choose the specific device to which the traffic group fails over.</p>
+<ol>
+<li>
+<p>Log in to the device on which the traffic group is currently active.</p>
+</li>
+<li>
+<p>On the Main tab, click <strong>Device Management</strong> &gt; <strong>Traffic Groups</strong>.</p>
+</li>
+<li>
+<p>In the Name column, locate the name of the traffic group that you want to run on the peer device.</p>
+</li>
+<li>
+<p>Select the check box to the left of the traffic group name.</p>
+<p>If the check box is unavailable, the traffic group is not active on the device to which you are currently logged in. Perform this task on the device on which the traffic group is active.</p>
+</li>
+<li>
+<p>Click <strong>Force to Standby</strong>.</p>
+<p>This displays target device options.</p>
+</li>
+<li>
+<p>Choose one of these actions:</p>
+<ul>
+<li>If the device group has two members only, click <strong>Force to Standby</strong>. This displays the list of traffic groups for the device group and causes the local device to appear in the Next Active Device column.</li>
+<li>If the device group has more than two members, then from the <strong>Target Device</strong> list, select a value and click <strong>Force to Standby</strong>.</li>
+</ul>
+</li>
+</ol>
+<p>The selected traffic group is now in a standby state on the local device and active on another device in the device group.</p>
+<h3 id="syncing-the-big-ip-configuration-to-the-device-group">
+<div>
+</div>
+</h3><p>Before you sync the configuration, verify that the devices targeted for config sync are members of a device group and that device trust is established.</p>
+<p>This task synchronizes the BIG-IP configuration data from the local device to the devices in the device group. This synchronization ensures that devices in the device group operate properly. When synchronizing self IP addresses, the BIG-IP system synchronizes floating self IP addresses only.</p>
+<p><strong>Important:</strong> You perform this task on either of the two devices, but not both.</p>
+<ol>
+<li>
+<p>On the Main tab, click <strong>Device Management</strong> &gt; <strong>Overview</strong>.</p>
+</li>
+<li>
+<p>In the Device Groups area of the screen, click the arrow next to the name of the relevant device group.</p>
+<p>The screen expands to show a summary and details of the sync status of the selected device group, as well as a list of the individual devices within the device group.</p>
+</li>
+<li>
+<p>In the Devices area of the screen, choose the device that shows a sync status of <code>Changes Pending</code>.</p>
+</li>
+<li>
+<p>In the Sync Options area of the screen, select <strong>Push the selected device configuration to the group</strong>.</p>
+</li>
+<li>
+<p>Click <strong>Sync</strong>.</p>
+<p>The BIG-IP system syncs the configuration data of the selected device to the other members of the device group.</p>
+</li>
+</ol>
+<div class="last-modified">
+</div>
+</article>
+</body></html>

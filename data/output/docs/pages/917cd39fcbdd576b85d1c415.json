@@ -1,0 +1,564 @@
+{
+  "applies_to": [
+    {
+      "product": "F5 BIG-IP iRules API",
+      "versions": []
+    }
+  ],
+  "breadcrumbs": [],
+  "code_examples": [
+    {
+      "section": "Syntax",
+      "text": "HTTP::cookie names\nHTTP::cookie count\nHTTP::cookie [value] <name> [<string>]\nHTTP::cookie version <name> [version]\nHTTP::cookie path <name> [path]\nHTTP::cookie domain <name> [domain]\nHTTP::cookie ports <name> [portlist]\nHTTP::cookie insert name <name> value <value> [path <path>] [domain <domain>] [version <0 | 1 | 2>]\nHTTP::cookie remove <name>\nHTTP::cookie sanitize <name> [attribute]+\nHTTP::cookie exists <name>\nHTTP::cookie maxage <name> [seconds]\nHTTP::cookie expires <name> [seconds] [absolute | relative]\nHTTP::cookie comment <name> [comment]\nHTTP::cookie secure <name> [enable|disable]\nHTTP::cookie commenturl <name> [commenturl]\nHTTP::cookie encrypt <name> <pass phrase> [\"128\" | \"192\" | \"256\"]\nHTTP::cookie decrypt <name> <pass phrase> [\"128\" | \"192\" | \"256\"]\n\nv11 Additions/Changes:\nHTTP::cookie httponly <name> [enable|disable]\nHTTP::cookie sanitize <-attributes|-names>\n\nv12 Additions:\nHTTP::cookie attribute <name> [insert <attribute> [value] | exists <attribute> | value <attribute> | remove <attribute> | names | count]\n"
+    },
+    {
+      "section": "Examples",
+      "text": "when HTTP_RESPONSE {\n\n    log local0. \"[IP::client_addr]:[TCP::client_port]:============================================\"\n\n    # Insert some test cookies in the response to the client to simulate cookies set by the application\n\n    # Insert a cookie with name=cookie_name and value=cookie_value, path=/, SameSite=None, Secure flag set\n    HTTP::cookie insert name \"cookie_name\" value \"cookie_value\" path \"/\"\n    HTTP::cookie attribute \"cookie_name\" insert \"SameSite\" \"None\"\n    HTTP::cookie secure \"cookie_name\" enable\n\n    # Insert a cookie with name=cookie_name_2 and value=cookie_value_2, path=/, SameSite=strict\n    HTTP::cookie insert name \"cookie_name_2\" value \"cookie_value_2\" path \"/\"\n    HTTP::cookie attribute \"cookie_name_2\" insert \"SameSite\" \"strict\"\n\n    # Insert a cookie with name=cookie_name_3 and value=cookie_value_3, path=/\n    #   without SameSite set so we can modify that later in the iRule\n    HTTP::cookie insert name \"cookie_name_3\" value \"cookie_value_3\" path \"/\"\n\n    # Log the example Set-Cookie headers as if we got them from the application\n    log local0. \"[IP::client_addr]:[TCP::client_port]: \\[HTTP::header values set-cookie\\]: [HTTP::header values {set-cookie}]\"\n\n    set cookie_names [HTTP::cookie names]\n    log local0. \"[IP::client_addr]:[TCP::client_port]: \\$cookie_names ([llength $cookie_names]): $cookie_names\"\n    foreach a_cookie $cookie_names {\n        log local0. \"[IP::client_addr]:[TCP::client_port]:\"\n        # Set the SameSite attribute to Strict if it's not set already\n        if {not [HTTP::cookie attribute $a_cookie exists {SameSite}] }{\n            log local0. \"[IP::client_addr]:[TCP::client_port]: name=$a_cookie, setting SameSite to Strict\"\n            HTTP::cookie attribute $a_cookie insert \"SameSite\" \"Strict\"\n        }\n\n        # Loop through the attributes for this cookie\n        set attr_names [HTTP::cookie attribute $a_cookie names]\n        if { $attr_names ne \"\" }{\n            log local0. \"[IP::client_addr]:[TCP::client_port]: name=$a_cookie, SameSite exists? [HTTP::cookie attribute $a_cookie exists {SameSite}]\"\n\n            # Log the cookie attribute names and values\n            foreach attr $attr_names {\n                log local0. \"[IP::client_addr]:[TCP::client_port]: name=$a_cookie, attribute $attr=[HTTP::cookie attribute $a_cookie value $attr]\"\n            }\n        }\n    }\n}\n\n# Example output of Set-Cookie headers from this iRule:\n#   Set-Cookie: cookie_name=cookie_value;Path=/;SameSite=None;Secure\n#   Set-Cookie: cookie_name_2=cookie_value_2;Path=/;SameSite=strict\n#   Set-Cookie: cookie_name_3=cookie_value_3;Path=/;SameSite=Strict\n\n# Log output from /var/log/ltm:\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: [HTTP::header values set-cookie]: {cookie_name=cookie_value;Path=/;SameSite=None;Secure}\n#             {cookie_name_2=cookie_value_2;Path=/;SameSite=strict} {cookie_name_3=cookie_value_3;Path=/}\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: $cookie_names (3): cookie_name_2 cookie_name_3 cookie_name\n#      <HTTP_RESPONSE>: 10.1.1.8:51313:\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name_2, SameSite exists? 1\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name_2, attribute Path=/\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name_2, attribute SameSite=strict\n#      <HTTP_RESPONSE>: 10.1.1.8:51313:\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name_3, setting SameSite to Strict\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name_3, SameSite exists? 1\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name_3, attribute Path=/\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name_3, attribute SameSite=Strict\n#      <HTTP_RESPONSE>: 10.1.1.8:51313:\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name, SameSite exists? 1\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name, attribute Path=/\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name, attribute SameSite=None\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name, attribute Secure=\n"
+    },
+    {
+      "section": "Examples",
+      "text": "# Rename a cookie by inserting a new cookie name with the same value as the original.  Then remove the old cookie.\nwhen HTTP_REQUEST {\n\n   # Check if old cookie exists in request\n   if { [HTTP::cookie exists \"old-cookie-name\"] } {\n\n      # Insert a new cookie with the new name and old cookie's value\n      HTTP::cookie insert name \"new-cookie-name\" value [HTTP::cookie value \"old-cookie-name\"]\n\n      # Remove the old cookie\n      HTTP::cookie remove \"old-cookie-name\"\n   }\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "# Set the version to 1 first because HttpOnly can only be set for cookies with version 1 or 2 and the default version is 0:\n\n# Set HttpOnly on all LTM and app generated cookies\nwhen HTTP_RESPONSE {\n   set cookieNames [HTTP::cookie names]\n   foreach aCookie $cookieNames {\n      HTTP::cookie version $aCookie 1\n      HTTP::cookie httponly $aCookie enable\n   }\n}\n\n# Or just for one statically defined cookie:\nwhen HTTP_RESPONSE {\n   HTTP::cookie version myCookie 1\n   HTTP::cookie httponly myCookie enable\n}\n"
+    }
+  ],
+  "content_hash": "2f45022a7e364d7a45894b76eb28e57875c1dfad982317fe3196866edabbe9eb",
+  "diagrams": [],
+  "documentation_version": null,
+  "headings": [
+    {
+      "anchor": "http-cookie",
+      "level": 1,
+      "path": [],
+      "title": "HTTP::cookie"
+    },
+    {
+      "anchor": "description",
+      "level": 2,
+      "path": [
+        "HTTP::cookie"
+      ],
+      "title": "Description"
+    },
+    {
+      "anchor": "syntax",
+      "level": 2,
+      "path": [
+        "HTTP::cookie"
+      ],
+      "title": "Syntax"
+    },
+    {
+      "anchor": "http-cookie-names",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie names"
+    },
+    {
+      "anchor": "http-cookie-count",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie count"
+    },
+    {
+      "anchor": "http-cookie-value-string",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie [value] [string]"
+    },
+    {
+      "anchor": "http-cookie-version-version",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie version [version]"
+    },
+    {
+      "anchor": "http-cookie-path-path",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie path [path]"
+    },
+    {
+      "anchor": "http-cookie-domain-domain",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie domain [domain]"
+    },
+    {
+      "anchor": "http-cookie-ports-portlist",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie ports [portlist]"
+    },
+    {
+      "anchor": "http-cookie-insert-name-value-path-domain-version-0-1-2",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie insert name value [path ] [domain ] [version <0 | 1 | 2>]"
+    },
+    {
+      "anchor": "http-cookie-remove",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie remove"
+    },
+    {
+      "anchor": "http-cookie-sanitize-attribute",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie sanitize [attribute]+"
+    },
+    {
+      "anchor": "http-cookie-sanitize-attributes-names",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie sanitize <-attributes|-names>"
+    },
+    {
+      "anchor": "http-cookie-exists",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie exists"
+    },
+    {
+      "anchor": "http-cookie-maxage-seconds",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie maxage [seconds]"
+    },
+    {
+      "anchor": "http-cookie-expires-seconds-absolute-relative",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie expires [seconds] [absolute | relative]"
+    },
+    {
+      "anchor": "http-cookie-comment-comment",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie comment [comment]"
+    },
+    {
+      "anchor": "http-cookie-secure-enable-disable",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie secure [enable | disable]"
+    },
+    {
+      "anchor": "http-cookie-commenturl-commenturl",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie commenturl [commenturl]"
+    },
+    {
+      "anchor": "http-cookie-encrypt-128-192-256",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie encrypt [“128” | “192” | “256”]"
+    },
+    {
+      "anchor": "http-cookie-decrypt-128-192-256",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie decrypt [“128” | “192” | “256”]"
+    },
+    {
+      "anchor": "http-cookie-httponly-enable-disable",
+      "level": 3,
+      "path": [
+        "HTTP::cookie",
+        "Syntax"
+      ],
+      "title": "HTTP::cookie httponly [enable | disable]"
+    },
+    {
+      "anchor": "examples",
+      "level": 2,
+      "path": [
+        "HTTP::cookie"
+      ],
+      "title": "Examples"
+    },
+    {
+      "anchor": "related-information",
+      "level": 2,
+      "path": [
+        "HTTP::cookie"
+      ],
+      "title": "Related Information"
+    }
+  ],
+  "id": "917cd39fcbdd576b85d1c415",
+  "images": [],
+  "kind": "programming_reference",
+  "links": [
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::header",
+      "url": "https://clouddocs.f5.com/api/irules/HTTP__header.html"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "EncryptingCookies",
+      "url": "https://devcentral.f5.com/s/articles/encrypting-cookies"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "AES::encrypt",
+      "url": "https://clouddocs.f5.com/api/irules/AES__encrypt.html"
+    },
+    {
+      "title": "AES::decrypt",
+      "url": "https://clouddocs.f5.com/api/irules/AES__decrypt.html"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "EncryptingCookies",
+      "url": "https://devcentral.f5.com/s/articles/encrypting-cookies"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "AES::encrypt",
+      "url": "https://clouddocs.f5.com/api/irules/AES__encrypt.html"
+    },
+    {
+      "title": "AES::decrypt",
+      "url": "https://clouddocs.f5.com/api/irules/AES%3Cu%3Edecrypt.html"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "HTTP::cookie",
+      "url": "HTTP::cookie"
+    },
+    {
+      "title": "CACHE_REQUEST",
+      "url": "https://clouddocs.f5.com/api/irules/CACHE_REQUEST.html"
+    },
+    {
+      "title": "CACHE_RESPONSE",
+      "url": "https://clouddocs.f5.com/api/irules/CACHE_RESPONSE.html"
+    },
+    {
+      "title": "HTTP_REQUEST",
+      "url": "https://clouddocs.f5.com/api/irules/HTTP_REQUEST.html"
+    },
+    {
+      "title": "HTTP_REQUEST_DATA",
+      "url": "https://clouddocs.f5.com/api/irules/HTTP_REQUEST_DATA.html"
+    },
+    {
+      "title": "HTTP_REQUEST_SEND",
+      "url": "https://clouddocs.f5.com/api/irules/HTTP_REQUEST_SEND.html"
+    },
+    {
+      "title": "HTTP_RESPONSE",
+      "url": "https://clouddocs.f5.com/api/irules/HTTP_RESPONSE.html"
+    },
+    {
+      "title": "HTTP_RESPONSE_CONTINUE",
+      "url": "https://clouddocs.f5.com/api/irules/HTTP_RESPONSE_CONTINUE.html"
+    },
+    {
+      "title": "HTTP_RESPONSE_DATA",
+      "url": "https://clouddocs.f5.com/api/irules/HTTP_RESPONSE_DATA.html"
+    },
+    {
+      "title": "Apache mod_auth_tkt_ single sign\non",
+      "url": "https://devcentral.f5.com/s/articles/apache-mod-auth-tkt-single-sign-on"
+    },
+    {
+      "title": "Client Auth Using HTTP\nCookie",
+      "url": "https://devcentral.f5.com/s/articles/client-auth-using-http-cookie"
+    },
+    {
+      "title": "Cookie Encryption Across Pools and\nServices",
+      "url": "https://devcentral.f5.com/s/articles/cookie-encryption-across-pools-and-services-1"
+    },
+    {
+      "title": "Cookie Persistence Without The\nPort",
+      "url": "https://devcentral.f5.com/s/articles/cookie-persistence-without-the-port"
+    },
+    {
+      "title": "Custom Apache-style logging for Java-based\napplications",
+      "url": "https://devcentral.f5.com/s/articles/custom-apache-style-logging-for-java-based-applications"
+    },
+    {
+      "title": "Delete Cookie From Request By\nRegex",
+      "url": "https://devcentral.f5.com/s/articles/delete-cookie-from-request-by-regex"
+    },
+    {
+      "title": "Encrypt HTTP cookies with dynamic\nnames",
+      "url": "https://devcentral.f5.com/s/articles/encrypt-http-cookies-with-dynamic-names"
+    },
+    {
+      "title": "Encrypting\nCookies",
+      "url": "https://devcentral.f5.com/s/articles/encrypting-cookies"
+    },
+    {
+      "title": "Google Authenticator iRule For Two-Factor Auth With\nLDAP",
+      "url": "https://devcentral.f5.com/s/articles/google-authenticator-irule-for-two-factor-auth-with-ldap"
+    },
+    {
+      "title": "HTTP delay and validate clients using javascript cookies when CPU\noverloaded",
+      "url": "https://devcentral.f5.com/s/articles/http-delay-and-validate-clients-using-javascript-cookies-when-cpu-overloaded"
+    },
+    {
+      "title": "HTTP prefetch\ninsertion",
+      "url": "https://devcentral.f5.com/s/articles/http-prefetch-insertion"
+    },
+    {
+      "title": "HTTP redirect to HTTPS with pool down\ndetection",
+      "url": "https://devcentral.f5.com/s/articles/http-redirect-to-https-with-pool-down-detection"
+    },
+    {
+      "title": "HTTP session\nlimit",
+      "url": "https://devcentral.f5.com/s/articles/http-session-limit-1"
+    },
+    {
+      "title": "HTTP retry on 404\npre-9.2.0",
+      "url": "https://devcentral.f5.com/s/articles/http-retry-on-404-pre-920"
+    },
+    {
+      "title": "HTTP Session\nLimit",
+      "url": "https://devcentral.f5.com/s/articles/http-session-limit"
+    },
+    {
+      "title": "Load balancing based on ASP\nSessionID",
+      "url": "https://devcentral.f5.com/s/articles/load-balancing-based-on-asp-sessionid"
+    },
+    {
+      "title": "Manual cookie\npersistence",
+      "url": "https://devcentral.f5.com/s/articles/manual-cookie-persistence"
+    },
+    {
+      "title": "Open SSO\nAuthentication",
+      "url": "https://devcentral.f5.com/s/articles/open-sso-authentication"
+    },
+    {
+      "title": "Outlook Anywhere Persistence with Cookie\nBackup",
+      "url": "https://devcentral.f5.com/s/articles/outlook-anywhere-persistence-with-cookie-backup"
+    },
+    {
+      "title": "http://www.f5.com/",
+      "url": "http://www.f5.com/"
+    },
+    {
+      "title": "Persistence Cookie\nLogger",
+      "url": "https://devcentral.f5.com/s/articles/persistence-cookie-logger"
+    },
+    {
+      "title": "Proxy\nAuth",
+      "url": "https://devcentral.f5.com/s/articles/proxy-auth-new419"
+    },
+    {
+      "title": "Reorder Http\nCookies",
+      "url": "https://devcentral.f5.com/s/articles/reorder-http-cookies"
+    },
+    {
+      "title": "Reverse Proxy With Basic\nSSO",
+      "url": "https://devcentral.f5.com/s/articles/reverse-proxy-with-basic-sso"
+    },
+    {
+      "title": "Select pool member based on HTTP query string\nparameter",
+      "url": "https://devcentral.f5.com/s/articles/select-pool-member-based-on-http-query-string-parameter"
+    },
+    {
+      "title": "Set the SameSite Attribute for LTM Persistence\nCookies",
+      "url": "https://devcentral.f5.com/s/articles/Set-the-SameSite-Attribute-for-LTM-Persistence-Cookies"
+    },
+    {
+      "title": "Set the SameSite Cookie Attribute for Web Application and\nBIG-IP Module Cookies",
+      "url": "https://devcentral.f5.com/s/articles/Set-the-SameSite-Cookie-Attribute-for-Web-Application-and-BIG-IP-Module-Cookies"
+    },
+    {
+      "title": "Validate String Characters In Cookie\nRule",
+      "url": "https://devcentral.f5.com/s/articles/validate-string-characters-in-cookie-rule"
+    },
+    {
+      "title": "Version 9.x session\nlimiting",
+      "url": "https://devcentral.f5.com/s/articles/version-9x-session-limiting"
+    },
+    {
+      "title": "Weblogic JSessionID\nPersistence",
+      "url": "https://devcentral.f5.com/s/articles/weblogic-jsessionid-persistence"
+    },
+    {
+      "title": "Weblogic JSessionID Persistence for Session\nReplication",
+      "url": "https://devcentral.f5.com/s/articles/weblogic-jsessionid-persistence-for-session-replication"
+    }
+  ],
+  "publisher_product_labels": [
+    "F5 BIG-IP iRules API"
+  ],
+  "source": "irules",
+  "text": "HTTP::cookie\nDescription\nQueries for or manipulates cookies in HTTP requests and responses.\nThis command replaces the BIG-IP 4.X variable\nhttp_cookie\n.\nSyntax\nHTTP\n::\ncookie\nnames\nHTTP\n::\ncookie\ncount\nHTTP\n::\ncookie\n[\nvalue\n]\n<\nname\n>\n[\n<\nstring\n>\n]\nHTTP\n::\ncookie\nversion\n<\nname\n>\n[\nversion\n]\nHTTP\n::\ncookie\npath\n<\nname\n>\n[\npath\n]\nHTTP\n::\ncookie\ndomain\n<\nname\n>\n[\ndomain\n]\nHTTP\n::\ncookie\nports\n<\nname\n>\n[\nportlist\n]\nHTTP\n::\ncookie\ninsert\nname\n<\nname\n>\nvalue\n<\nvalue\n>\n[\npath\n<\npath\n>\n]\n[\ndomain\n<\ndomain\n>\n]\n[\nversion\n<\n0\n|\n1\n|\n2\n>\n]\nHTTP\n::\ncookie\nremove\n<\nname\n>\nHTTP\n::\ncookie\nsanitize\n<\nname\n>\n[\nattribute\n]\n+\nHTTP\n::\ncookie\nexists\n<\nname\n>\nHTTP\n::\ncookie\nmaxage\n<\nname\n>\n[\nseconds\n]\nHTTP\n::\ncookie\nexpires\n<\nname\n>\n[\nseconds\n]\n[\nabsolute\n|\nrelative\n]\nHTTP\n::\ncookie\ncomment\n<\nname\n>\n[\ncomment\n]\nHTTP\n::\ncookie\nsecure\n<\nname\n>\n[\nenable\n|\ndisable\n]\nHTTP\n::\ncookie\ncommenturl\n<\nname\n>\n[\ncommenturl\n]\nHTTP\n::\ncookie\nencrypt\n<\nname\n>\n<\npass\nphrase\n>\n[\n\"128\"\n|\n\"192\"\n|\n\"256\"\n]\nHTTP\n::\ncookie\ndecrypt\n<\nname\n>\n<\npass\nphrase\n>\n[\n\"128\"\n|\n\"192\"\n|\n\"256\"\n]\nv11\nAdditions\n/\nChanges:\nHTTP\n::\ncookie\nhttponly\n<\nname\n>\n[\nenable\n|\ndisable\n]\nHTTP\n::\ncookie\nsanitize\n<-\nattributes\n|-\nnames\n>\nv12\nAdditions:\nHTTP\n::\ncookie\nattribute\n<\nname\n>\n[\ninsert\n<\nattribute\n>\n[\nvalue\n]\n|\nexists\n<\nattribute\n>\n|\nvalue\n<\nattribute\n>\n|\nremove\n<\nattribute\n>\n|\nnames\n|\ncount\n]\nHTTP::cookie\nnames\nReturns a TCL list containing the names of all the cookies present in\nthe HTTP headers.\nHTTP::cookie\ncount\nReturns the number of cookies present in the HTTP headers.\nHTTP::cookie\n[value] [string]\nSets or gets the value of an existing cookie with the given name. You\ncan omit the keyword “value” from this command if the cookie name\ndoes not collide with any of the other commands. If the cookie does\nnot exist when retrieving a cookie value, a null string will be\nreturned.\nHTTP::cookie\nversion [version]\nGets or sets the version of the cookie. If a version 0 cookie is\ncreated using\nHTTP::cookie\ninsert with attributes, attempting to set\nthe version with this command will generate a TCL error.\nHTTP::cookie\npath [path]\nSets or gets the cookie path.\nHTTP::cookie\ndomain [domain]\nSets or gets the cookie domain.\nNOTE: When setting a domain value, the attribute set by the F5 is\n“domain” instead of the RFC 6265 compliant “Domain” and is ignored by\nseveral browsers. If setting the “Domain” attribute is for the\npurpose of browser recognition, it is recommended that the header be\nmodified directly instead of using the\nHTTP::cookie\ndomain command.\nThis behavior is by design.\nHTTP::cookie\nports [portlist]\nSets or gets the cookie port lists for Version 2 cookies.\nHTTP::cookie\ninsert name value [path ] [domain ] [version <0 | 1 | 2>]\nIn an HTTP response, adds an additional Set-Cookie header. The\ndefault value for the version is\n0\n. If the cookie already\nexists, a second cookie will be inserted (tested in 9.2.4).\nWithin the HTTP_REQUEST event, this command adds an additional Cookie\nheader (tested in 10.2.4) which is not RFC compliant and is known to\ncause issues on certain web servers. Although the behavior renders\nthe command useless within a request, the behavior is not a bug and\nis by design. To correctly insert a cookie in a request, compliant\nwith RFC 6265, use\nHTTP::header\nto modify the\nvalue of the cookie header directly.\nHTTP::cookie\nremove\nRemoves a cookie.\nHTTP::cookie\nsanitize [attribute]+\nHTTP::cookie\nsanitize <-attributes|-names>\nRemoves all but the specified attributes from the specified cookie.\nIf no attributes are specified, then the cookie attributes are not\nmodified. The second format above is strictly for versions 11.0 and\ngreater.\nHTTP::cookie\nexists\nReturns a true value if the cookie exists.\nHTTP::cookie\nmaxage [seconds]\nSets or gets the max-age. Applies to Version 1 and 2 cookies only,\nand applies to responses only.\nHTTP::cookie\nexpires [seconds] [absolute | relative]\nSets or gets the expires attribute. Applies to Version 0 cookies\nonly. If you specify the\nabsolute\nargument, the\nseconds\nvalue\nrepresents number of seconds since the UNIX epoch (January 1, 1970).\nThe default number of seconds is\nrelative\n, which is the number of\nseconds from the current time. Applies to responses only.\nHTTP::cookie\ncomment [comment]\nSets or gets the cookie comment. Applies to Version 1 and 2 cookies\nonly, and applies to responses only.\nHTTP::cookie\nsecure [enable | disable]\nSets or gets the value of the “secure” attribute. Applies to\nresponses only. ‘\nHTTP::cookie\nsecure ‘ returns “enable” or “disable”\ndepending on whether the secure flag is set. If ‘\nHTTP::cookie\nsecure\nenable’ is used on a cookie which already has the secure flag set, no\nchange is made to the cookie.\nHTTP::cookie\ncommenturl [commenturl]\nSets or gets the comment URL. Applies only to Version 2 cookies, and\napplies to responses only.\nHTTP::cookie\nencrypt [“128” | “192” | “256”]\nEncrypts the value for the given cookie using a key generated from\nthe pass phrase. The default key length is 128. The encryption method\nis AES. For an example, check the Codeshare rule,\nEncryptingCookies\n.\nNote that the performance of\nHTTP::cookie\nencrypt|decrypt is\nsignificantly lower than encrypting|decrypting cookies via a custom\nHTTP profile’s cookie encryption option or using\nAES::encrypt\n|\nAES::decrypt\nto manually encrypt|decrypt the cookie values. This is due to\ndifferences in the encryption key generation.\nHTTP::cookie\ndecrypt [“128” | “192” | “256”]\nDecrypts the value for the given cookie using a key generated from\nthe pass phrase. The default key length is 128. The encryption method\nis AES. For an example, check the Codeshare rule,\nEncryptingCookies\n.\nNote that the performance of\nHTTP::cookie\nencrypt|decrypt is\nsignificantly lower than encrypting|decrypting cookies via a custom\nHTTP profile’s cookie encryption option or using\nAES::encrypt\n|\nAES::decrypt\nto manually encrypt|decrypt the cookie values. This is due to\ndifferences in the encryption key generation.\nFunction returns the decrypted value.\nHTTP::cookie\nhttponly [enable | disable]\nSets or gets the value of the “httponly” attribute. Available only in\nv11+. Applies to responses only, applies to version 1 and 2 cookies\nonly. ‘\nHTTP::cookie\nhttponly ‘ returns “enable” or “disable”\ndepending on whether the httponly flag is set.\nIf ‘\nHTTP::cookie\nhttponly enable’ is used on a cookie which already\nhas the httponly flag set, no change is made to the cookie.\nNOTE: if the cookie is not a valid version 1 or 2 cookie, this\ncommand will generate a TCL error and reset the connection.\nUnfortunately, because cookie versions was made obsolete in RFC6265,\nit is unlikely servers will set cookie values following the strict\nversion requirements built into this command. For those needing the\nHttpOnly property on a cookie and a connection reset is not desired,\nit is recommended that it be set manually.\nExamples\nTesting the SameSite cookie attribute\nwhen\nHTTP_RESPONSE\n{\nlog\nlocal0.\n\"[IP::client_addr]:[TCP::client_port]:============================================\"\n# Insert some test cookies in the response to the client to simulate cookies set by the application\n# Insert a cookie with name=cookie_name and value=cookie_value, path=/, SameSite=None, Secure flag set\nHTTP\n::\ncookie\ninsert\nname\n\"cookie_name\"\nvalue\n\"cookie_value\"\npath\n\"/\"\nHTTP\n::\ncookie\nattribute\n\"cookie_name\"\ninsert\n\"SameSite\"\n\"None\"\nHTTP\n::\ncookie\nsecure\n\"cookie_name\"\nenable\n# Insert a cookie with name=cookie_name_2 and value=cookie_value_2, path=/, SameSite=strict\nHTTP\n::\ncookie\ninsert\nname\n\"cookie_name_2\"\nvalue\n\"cookie_value_2\"\npath\n\"/\"\nHTTP\n::\ncookie\nattribute\n\"cookie_name_2\"\ninsert\n\"SameSite\"\n\"strict\"\n# Insert a cookie with name=cookie_name_3 and value=cookie_value_3, path=/\n#   without SameSite set so we can modify that later in the iRule\nHTTP\n::\ncookie\ninsert\nname\n\"cookie_name_3\"\nvalue\n\"cookie_value_3\"\npath\n\"/\"\n# Log the example Set-Cookie headers as if we got them from the application\nlog\nlocal0.\n\"[IP::client_addr]:[TCP::client_port]: \\[HTTP::header values set-cookie\\]: [HTTP::header values {set-cookie}]\"\nset\ncookie_names\n[\nHTTP\n::\ncookie\nnames\n]\nlog\nlocal0.\n\"[IP::client_addr]:[TCP::client_port]: \\$cookie_names ([llength $cookie_names]): $cookie_names\"\nforeach\na_cookie\n$cookie_names\n{\nlog\nlocal0.\n\"[IP::client_addr]:[TCP::client_port]:\"\n# Set the SameSite attribute to Strict if it's not set already\nif\n{\nnot\n[\nHTTP\n::\ncookie\nattribute\n$a_cookie\nexists\n{\nSameSite\n}]\n}{\nlog\nlocal0.\n\"[IP::client_addr]:[TCP::client_port]: name=$a_cookie, setting SameSite to Strict\"\nHTTP\n::\ncookie\nattribute\n$a_cookie\ninsert\n\"SameSite\"\n\"Strict\"\n}\n# Loop through the attributes for this cookie\nset\nattr_names\n[\nHTTP\n::\ncookie\nattribute\n$a_cookie\nnames\n]\nif\n{\n$attr_names\nne\n\"\"\n}{\nlog\nlocal0.\n\"[IP::client_addr]:[TCP::client_port]: name=$a_cookie, SameSite exists? [HTTP::cookie attribute $a_cookie exists {SameSite}]\"\n# Log the cookie attribute names and values\nforeach\nattr\n$attr_names\n{\nlog\nlocal0.\n\"[IP::client_addr]:[TCP::client_port]: name=$a_cookie, attribute $attr=[HTTP::cookie attribute $a_cookie value $attr]\"\n}\n}\n}\n}\n# Example output of Set-Cookie headers from this iRule:\n#   Set-Cookie: cookie_name=cookie_value;Path=/;SameSite=None;Secure\n#   Set-Cookie: cookie_name_2=cookie_value_2;Path=/;SameSite=strict\n#   Set-Cookie: cookie_name_3=cookie_value_3;Path=/;SameSite=Strict\n# Log output from /var/log/ltm:\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: [HTTP::header values set-cookie]: {cookie_name=cookie_value;Path=/;SameSite=None;Secure}\n#             {cookie_name_2=cookie_value_2;Path=/;SameSite=strict} {cookie_name_3=cookie_value_3;Path=/}\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: $cookie_names (3): cookie_name_2 cookie_name_3 cookie_name\n#      <HTTP_RESPONSE>: 10.1.1.8:51313:\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name_2, SameSite exists? 1\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name_2, attribute Path=/\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name_2, attribute SameSite=strict\n#      <HTTP_RESPONSE>: 10.1.1.8:51313:\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name_3, setting SameSite to Strict\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name_3, SameSite exists? 1\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name_3, attribute Path=/\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name_3, attribute SameSite=Strict\n#      <HTTP_RESPONSE>: 10.1.1.8:51313:\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name, SameSite exists? 1\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name, attribute Path=/\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name, attribute SameSite=None\n#      <HTTP_RESPONSE>: 10.1.1.8:51313: name=cookie_name, attribute Secure=\n# Rename a cookie by inserting a new cookie name with the same value as the original.  Then remove the old cookie.\nwhen\nHTTP_REQUEST\n{\n# Check if old cookie exists in request\nif\n{\n[\nHTTP\n::\ncookie\nexists\n\"old-cookie-name\"\n]\n}\n{\n# Insert a new cookie with the new name and old cookie's value\nHTTP\n::\ncookie\ninsert\nname\n\"new-cookie-name\"\nvalue\n[\nHTTP\n::\ncookie\nvalue\n\"old-cookie-name\"\n]\n# Remove the old cookie\nHTTP\n::\ncookie\nremove\n\"old-cookie-name\"\n}\n}\n# Set the version to 1 first because HttpOnly can only be set for cookies with version 1 or 2 and the default version is 0:\n# Set HttpOnly on all LTM and app generated cookies\nwhen\nHTTP_RESPONSE\n{\nset\ncookieNames\n[\nHTTP\n::\ncookie\nnames\n]\nforeach\naCookie\n$cookieNames\n{\nHTTP\n::\ncookie\nversion\n$aCookie\n1\nHTTP\n::\ncookie\nhttponly\n$aCookie\nenable\n}\n}\n# Or just for one statically defined cookie:\nwhen\nHTTP_RESPONSE\n{\nHTTP\n::\ncookie\nversion\nmyCookie\n1\nHTTP\n::\ncookie\nhttponly\nmyCookie\nenable\n}\nRelated Information\nValid Events:\nCACHE_REQUEST\n,\nCACHE_RESPONSE\n,\nHTTP_REQUEST\n,\nHTTP_REQUEST_DATA\n,\nHTTP_REQUEST_SEND\n,\nHTTP_RESPONSE\n,\nHTTP_RESPONSE_CONTINUE\n,\nHTTP_RESPONSE_DATA\nSample Code:\nApache mod_auth_tkt_ single sign\non\n- Parse and verify an Apache mod auth_tkt single sign on (SSO)\ncookie.\nClient Auth Using HTTP\nCookie\n- This iRule illustrates how to use HTTP Cookies for client based\nauthentcation.\nCookie Encryption Across Pools and\nServices\n- Implements cookie persistence based on node IP address. not\nmember IP/port….\nCookie Persistence Without The\nPort\n- This rule was written in response to a requirement in which a\nclient had connections to multiple virtual services. each with\nmultiple ports. We wanted a light weight cookie based\npersistence…\nCustom Apache-style logging for Java-based\napplications\n- I had a requirement to have the F5 BigIP produce logs which\nreplicated our …\nDelete Cookie From Request By\nRegex\n- This iRule allows an administrator to delete cookies from a\nrequest which match a defined class of regular expressions.\nEncrypt HTTP cookies with dynamic\nnames\n- Encrypt all of the BIG-IP persistence cookies regardless of\ntheir specific name\nEncrypting\nCookies\n- This example shows how to encrypt and decrypt a HTTP cookie from\nwithin an iRule.\nGoogle Authenticator iRule For Two-Factor Auth With\nLDAP\n- This iRule adds two-factor authentication to a virtual server by\ncombining an LDAP account with a Google Authenticator token\nHTTP delay and validate clients using javascript cookies when CPU\noverloaded\n- If CPU usage high. delay clients and validate they’re real by\nmaking sure they can execute javascript.\nHTTP prefetch\ninsertion\n- This iRule demonstrate how to use BIG-IP to insert prefetch\nhint/force to http response from server.\nHTTP redirect to HTTPS with pool down\ndetection\n- I pieced this together from several rules because I couldn’t\nfind a rule th…\nHTTP session\nlimit\n- HTTP Session limiting for LTM v10.1 using tables.\nHTTP retry on 404\npre-9.2.0\n- Mimic LB::reselect and HTTP::retry for pre-9.2.0 boxes\nHTTP Session\nLimit\n- Limits total concurrent HTTP sessions to a pre-defined\nthreshhold. allowing those clients with a session cookie to\ncontinue once the limit is reached. while redirecting new clients\nuntil con…\nLoad balancing based on ASP\nSessionID\n- The code separates into 2 irules. one for request and one for\nresponse. T…\nManual cookie\npersistence\n- I had an app admin ask me for a way to temporarily force node\nassignment. f…\nOpen SSO\nAuthentication\n- A simple “Policy Agent” iRule that ensures that all incoming\nHTTP requests …\nOutlook Anywhere Persistence with Cookie\nBackup\n- The deployment guide for Microsoft Exchange Server 2007\n(\nhttp://www.f5.com/\n…\nPersistence Cookie\nLogger\n- Extracts the cookie value from a persistence cookie inserted by\nLTM’s “cookie insert” persistence method\nProxy\nAuth\n-\nProvides Authentication offload onto an service such as LDAP.\nReorder Http\nCookies\n- This iRule will reorder all the HTTP cookies going to the\nbackend server.\nReverse Proxy With Basic\nSSO\n- The iRule implements a authenticated HTTPS reverse proxy.\nSelect pool member based on HTTP query string\nparameter\n- Allow clients to manually select a pool member based on a\nparameter set in the HTTP query string. with persistence.\nSet the SameSite Attribute for LTM Persistence\nCookies\n- iRule to apply SameSite attribute to persistence cookies\nSet the SameSite Cookie Attribute for Web Application and\nBIG-IP Module Cookies\n- iRule to apply SameSite attribute to all cookies\nValidate String Characters In Cookie\nRule\n- This rule demonstrates how to efficiently validate whether a\ngiven string contains illegal characters.\nVersion 9.x session\nlimiting\n- Contributed by: David Homoney - Senior Consultant F5 Networks -\nd.homoney (…\nWeblogic JSessionID\nPersistence\n- Provides persistence on the jsessionid value found in either the\nURI or a cookie.\nWeblogic JSessionID Persistence for Session\nReplication\n- Persists HTTP requests on the primary and secondary server\nvalues found in the JSESSIONID cookie when the WebLogic servers\nimplement session replication across two servers\nIntroduced: BIGIP-9.0.0\nEnhanced: BIGIP-11.0.0\nEnhanced: BIGIP-12.0.0\nThe BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor \nor control community code contributions. We make no guarantees or warranties regarding the available code, \nand it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any \ncode available in the BIG-IP API reference guides is solely at your own risk.",
+  "title": "HTTP::cookie",
+  "updated": "2026-07-13 12:27:40",
+  "url": "https://clouddocs.f5.com/api/irules/HTTP__cookie.html",
+  "url_version": null
+}

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ltm rule command HTTP collect</title><link rel="canonical" href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_HTTP_collect.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>ltm rule command HTTP collect</h1><p>cli_reference · 17.0.0</p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_HTTP_collect.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="ltm-rule-command-http-collect">
+<span id="id1"></span><h1>ltm rule command HTTP collect</h1>
+<html>
+<pre>
+iRule(1)						BIG-IP TMSH Manual						  iRule(1)
+
+HTTP::collect
+       Collects an amount of HTTP body data that you specify.
+
+SYNOPSIS
+       HTTP::collect (CONTENT_LENGTH)?
+
+DESCRIPTION
+       Collects an amount of HTTP body data, optionally specified with the <length> argument. When the system collects the
+       specified amount of data, it calls the Tcl event HTTP_REQUEST_DATA or HTTP_RESPONSE_DATA. The collected data can be
+       accessed via the HTTP::payload command.
+
+       Note that this command cannot be called after any Tcl command that sends an HTTP response (e.g. redirect, HTTP::redirect,
+       and HTTP::respond). A run-time error will result.
+
+       Care must be taken when using HTTP::collect to not stall the connection. For example, some clients expect a response (such
+       as a "100 Continue" header) from the server before they will send data. To avoid a delay, you would need to send such a
+       response (possibly via TCP::respond) in your iRule. Also, if you use HTTP::collect without specifying a length, you must
+       have some non-HTTP event (e.g.  AUTH_RESULT or NAME_RESOLVED) run HTTP::release, or HTTP processing will not continue, and
+       the collected data will be discarded when the connection times out.
+
+       It is important to note that these semantics are different than those of the TCP::collect and TCP::release commands. With
+       TCP::collect, the event for processing the data (CLIENT_DATA) will fire without TCP::release being called, whereas with
+       HTTP::collect, the event (HTTP_REQUEST_DATA or HTTP_RESPONSE_DATA) will not fire without HTTP::release being called. Again,
+       this is referring to using HTTP::collect without specifying a length. If you do specify a length, then the
+       HTTP_REQUEST_DATA or HTTP_RESPONSE_DATA event will fire without calling HTTP::release.
+
+       Note that although any size payload can theoretically be collected, the maximum size of a Tcl variable in v9 and v10 is 4MB
+       with a smaller functional maximum after charset expansion of approximately 1Mb. In v11, the maximum variable size was
+       increased to 32Mb. Any payload manipulation outside of calls to HTTP::payload should obey that limit.
+
+       The second example below includes the best practice logic to enforce that limit, including the suppression of response
+       chunking to allow more accurate determination of collect length.  Even though it is possible to collect up to store up to
+       32Mb of data in a variable, it is not recommended to do this without careful consideration. If each connection can use 32Mb
+       of memory, TMM can quickly run out of memory.
+
+       Note that if multiple iRules invoke HTTP::collect simultaneously, (perhaps by being called by the same event in multiple
+       iRule scripts) then the result is undefined.  This is because the amount of payload collected for the HTTP_REQUEST_DATA or
+       HTTP_RESPONSE_DATA event cannot satisfy the perhaps differing amounts wanted by the callers. iRules should arbitrate
+       amoungst themselves to prevent this situation from occuring, and have only one HTTP::collect call outstanding at a time.
+
+       Syntax
+
+       HTTP::collect
+
+	    * Collects the entire HTTP body. Use caution when omitting the value
+	      of the content length.
+
+       HTTP::collect <length>
+
+	    * Collects the amount of data that you specify with the <length>
+	      argument. Use caution when specifying a value larger than the size
+	      of the actual length. Doing so can stall the connection. If the
+	      specified amount of data exceeds the amount in the Content-Length
+	      response header, only the smaller amount will be collected.
+
+RETURN VALUE
+VALID DURING
+       AUTH_ERROR, AUTH_FAILURE, AUTH_RESULT, AUTH_SUCCESS, AUTH_WANTCREDENTIAL, CACHE_REQUEST, CACHE_RESPONSE, HTTP_REQUEST,
+       HTTP_REQUEST_DATA, HTTP_REQUEST_SEND, HTTP_RESPONSE, HTTP_RESPONSE_DATA
+
+EXAMPLES
+	when HTTP_RESPONSE {
+	if {[HTTP::status] == 205}{
+	      HTTP::collect [HTTP::header Content-Length]
+	   }
+	}
+
+	# Collect a request payload
+	when HTTP_REQUEST {
+
+	  if {[HTTP::method] eq "POST"}{
+	    # Trigger collection for up to 1MB of data
+	    if {[HTTP::header "Content-Length"] ne "" &amp;&amp; [HTTP::header "Content-Length"] &lt;= 1048576}{
+	      set content_length [HTTP::header "Content-Length"]
+	    } else {
+		set content_length 1048576
+	    }
+	    # Check if $content_length is not set to 0
+	    if { $content_length &gt; 0} {
+	      HTTP::collect $content_length
+	    }
+	  }
+	}
+	when HTTP_REQUEST_DATA {
+	  # do stuff with the payload
+	  set payload [HTTP::payload]
+	}
+
+	# Collect a response payload
+	when HTTP_REQUEST {
+	   # Prevent the server from sending a compressed response
+	   # remove the compression offerings from the client
+	HTTP::header remove "Accept-Encoding"
+
+	   # Don't allow data to be chunked
+	if { [HTTP::version] eq "1.1" } {
+
+	      # Force downgrade to HTTP 1.0, but still allow keep-alive connections.
+	      # Since 1.1 is keep-alive by default, and 1.0 isn't,
+	      # we need make sure the headers reflect the keep-alive status.
+
+	      # Check if this is a keep alive connection
+	      if { [HTTP::header is_keepalive] } {
+
+		 # Replace the connection header value with "Keep-Alive"
+		 HTTP::header replace "Connection" "Keep-Alive"
+	      }
+
+	      # Set server side request version to 1.0
+	      # This forces the server to respond without chunking
+	      HTTP::version "1.0"
+	   }
+	}
+	when HTTP_RESPONSE {
+
+	  # Trigger collection for up to 1MB of data
+	  if {[HTTP::header exists "Content-Length"] &amp;&amp; [HTTP::header "Content-Length"]&lt;= 1048576}{
+	    set content_length [HTTP::header "Content-Length"]
+	  } else {
+	      set content_length 1048576
+	  }
+	  # Check if $content_length is not set to 0
+	  if { content_length &gt; 0} {
+	    HTTP::collect $content_length
+	  }
+	}
+	when HTTP_RESPONSE_DATA {
+	  # do stuff with the payload
+	  set payload [HTTP::payload]
+	}
+
+HINTS
+SEE ALSO
+CHANGE LOG
+       @BIGIP-9.0.0 --First introduced the command.
+
+BIG-IP							    2022-04-12							  iRule(1)
+</length></length></length></pre>
+</html>
+</div>
+</div>
+</article>
+</body></html>

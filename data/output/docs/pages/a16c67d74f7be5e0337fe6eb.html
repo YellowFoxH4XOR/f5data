@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ltm rule command HTTP respond</title><link rel="canonical" href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_HTTP_respond.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>ltm rule command HTTP respond</h1><p>cli_reference · 17.0.0</p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_HTTP_respond.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="ltm-rule-command-http-respond">
+<span id="id1"></span><h1>ltm rule command HTTP respond</h1>
+<html>
+<pre>
+iRule(1)						BIG-IP TMSH Manual						  iRule(1)
+
+HTTP::respond
+       Generates a response to the client as if it came from the server.
+
+SYNOPSIS
+       HTTP::respond HTTP_STATUS_CODE
+					       ('-version' ('1.0' | '1.1' | 'auto'))?
+					       (('content' | '-content') CONTENT)?
+					       (  ('ifile' | '-ifile')	 IFILE_OBJ)?
+					       ('noserver' | '-noserver')?
+						  ('reset' | '-reset')?
+					       (HTTP_HEADER_NAME HTTP_HEADER_VALUE)*
+
+DESCRIPTION
+       Generates a response to the client as if it came from the server. If the command runs on the client side, it sends the
+       response to the client without any load balancing taking place. If the command runs on the server side, the content from
+       the actual server is discarded and replaced with the information provided.
+
+       Note that because the system sends the response data immediately after this iRule runs, we recommend that you not run any
+       more iRules after it. Also, this command cannot be called if another response has already been sent to the client (e.g. via
+       HTTP::redirect).
+
+       By default, the response generated is an HTTP/1.0 response; use the "-version" flag (introduced in 11.2.0) to explicitly
+       set the response to HTTP/1.0 or HTTP/1.1. The HTTP status code is determined by the supplied parameter. The response has a
+       "Server: BIG-IP" header, to differentiate replies generated from the BIG-IP versus those from actual servers. The "Content-
+       Length" header is computed and supplied automatically; a user-specified one is overridden.
+
+       Syntax
+
+       HTTP::respond <status code=""> [-version [1.0|1.1|auto] ] [content <content value="">] [noserver] [<header name=""> <header value="">]+
+
+	    * Generates a response to the client as if it came from the server,
+	      with the supplied content and header values.
+
+       v11.5+ HTTP::respond [-reset] <status code=""> [-version [1.0|1.1|auto] ] [content <content value="">] [noserver] [<header name="">
+       <header value="">]+
+
+	    * Generates a response to the client as if it came from the server,
+	      with the supplied content and header values and resets serverside
+	      connection instead of sinking the data.
+
+	  Note: The noserver flag was added in 9.4.2. It suppresses the insertion
+	  of the 'Server: BigIP' header. The noserver flag must be included after
+	  the content (if any).
+
+	  Note: The -version flag was added in 11.2.0. It must immediately follow
+	  the status code and precede the content (if any) and any other flags.
+
+	  Note: An 'auto' option was added for the '-version' flag in 11.4.0.
+
+RETURN VALUE
+VALID DURING
+       AUTH_ERROR, AUTH_FAILURE, AUTH_RESULT, AUTH_SUCCESS, AUTH_WANTCREDENTIAL, CACHE_RESPONSE, HTTP_PROXY_REQUEST, HTTP_REQUEST,
+       HTTP_REQUEST_DATA, HTTP_REQUEST_RELEASE, HTTP_REQUEST_SEND, HTTP_RESPONSE, HTTP_RESPONSE_DATA, HTTP_RESPONSE_RELEASE,
+       LB_FAILED, NAME_RESOLVED, MR_FAILED, MR_EGRESS
+
+EXAMPLES
+	Send a redirect with a cookie set.
+
+	when HTTP_REQUEST {
+	    set ckname "app"
+	    set ckvalue "893"
+	    set cookie [format "%s=%s; path=/; domain=%s" $ckname $ckvalue ".domain.org"]
+	    HTTP::respond 302 Location "http://www.domain.org" "Set-Cookie" $cookie
+	}
+
+	Or you can generate an apology page from within the iRule. The
+	curly braces prevent variable expansion and should eliminate the
+	need to escape meta-characters within the response content.
+
+	when HTTP_REQUEST {
+	   HTTP::respond 200 content {
+	      <html>
+		 <head>
+		    <title>Apology Page</title>
+		 </head>
+		 <body>
+		    We are sorry, but the site you are looking for is temporarily out of service<br/>
+		    If you feel you have reached this page in error, please try again.
+		 </body>
+	      </html>
+	   }
+	}
+
+	Rewrite a redirect with the original cookies
+	from the HTTP response of the server:
+
+	when HTTP_RESPONSE {
+	   if { [HTTP::is_redirect] } {
+	      foreach aCookieName [HTTP::cookie names] {
+		 set currentCookie "$aCookieName=[HTTP::cookie value  $aCookieName]"
+		 set cookies "$cookies\r\nSet-Cookie: $currentCookie"
+	      }
+	      HTTP::respond 200 content "<html><head><title>Forbidden Redirect From Remote Server</title></head>\
+	<body>The server is trying to redirect the client to an external site, but it is forbidden</body></html>" Set-Cookie $cookies
+	   }
+	}
+
+	Another example with multiple cookies, but without excessive empty
+	cookie - returns original cookies to the client:
+
+	when HTTP_REQUEST {
+	   set cookies ""
+	   foreach next_cookie [HTTP::cookie names] {
+	      set cookies "$cookies\"Set-Cookie\" \"$next_cookie=[HTTP::cookie value $next_cookie]\" "
+	   }
+	   log local0. "Sending back $cookies"
+	   eval HTTP::respond 200 "$cookies"
+	}
+
+	   An example of a plain redirect - equivalent to using HTTP::redirect,
+	   but with the Server BigIP header suppressed. In this example we're
+	   redirecting our http:// request to the https:// version.
+
+	when HTTP_REQUEST {
+	   HTTP::respond 302 noserver Location "https://[HTTP::host][HTTP::uri]"
+	}
+
+HINTS
+SEE ALSO
+CHANGE LOG
+       @BIGIP-9.0.0 --First introduced the command.  @BIGIP-9.4.2 --Added "-noserver" option @BIGIP-11.2.0 --Added "-version"
+       option @BIGIP-11.4.0 --Added 'auto' to "-version" option @BIGIP-11.5.0 --Added "-reset" option
+
+BIG-IP							    2022-04-12							  iRule(1)
+</header></header></content></status></header></header></content></status></pre>
+</html>
+</div>
+</div>
+</article>
+</body></html>

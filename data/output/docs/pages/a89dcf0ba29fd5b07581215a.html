@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ltm rule command AUTH response data</title><link rel="canonical" href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_AUTH_response_data.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>ltm rule command AUTH response data</h1><p>cli_reference · 17.0.0</p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_AUTH_response_data.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="ltm-rule-command-auth-response-data">
+<span id="id1"></span><h1>ltm rule command AUTH response data</h1>
+<html>
+<pre>
+iRule(1)						BIG-IP TMSH Manual						  iRule(1)
+
+AUTH::response_data
+       Returns pairwise auth query results.
+
+SYNOPSIS
+       AUTH::response_data (AUTH_ID)?
+
+DESCRIPTION
+       AUTH::response_data returns the a set of name/value query results from the most recent query. This command would normally
+       be called from the AUTH_RESULT event. The format of the data returned is suitable for setting as the value of a TCL array.
+       AUTH::subscribe must first be called to register interest in query results prior to calling AUTH::authenticate. As a
+       convenience when using the builtin system auth rules, these rules will call AUTH::subscribe if the variable
+       tmm_auth_subscription is set. Instead of calling AUTH::subscribe directly, we recommend setting tmm_auth_subscription to ""
+       as a local variable when using the builtin system auth rules in the interest of forward-compatibility. This can be done in
+       a non- RULE_INIT event like CLIENT_ACCEPTED using 'set tmm_auth_subscription "*"'.  Typically, response data is only useful
+       if the result of the auth query was success. As of v9.4.0, the following modules provide response data:
+
+       LDAP (username/password-based):
+	  All name/value pairs from the LDAP query response returned by the
+	  server from a successful query, returned in the form of
+	  ldap:attr:<name> <value>. Unsuccessful LDAP queries will not return
+	  response data.
+
+       RADIUS
+	  All name/value pairs from the RADIUS query response returned by the
+	  server from a successful query, returned in the form of
+	  radius:attr:<name> <value>. Unsuccessful RADIUS queries will not return
+	  response data.
+
+       TACACS
+	  All name/value pairs from the TACACS query response returned by the
+	  server from a successful query, returned in the form of
+	  tacplus:attr:<name> <value>. Unsuccessful TACACS queries will not
+	  return response data.
+
+       Kerberos
+	  All name/value pairs from the Kerberos query response returned by the
+	  server from a successful query, returned in the form of
+	  krbdelegate:attr:<name> <value>. Unsuccessful Kerberos queries will not
+	  return response data.
+
+       LDAP (client certificate-based):
+	  ccldap:reply:status <status>
+	  where <status> is one of the following strings (without quotation
+	  marks):
+	   "OK"
+	   "Error (No such user)"
+	   "Error (Non-unique user (db integrity))"
+	   "Error (Internal Error)"
+	   "Error (LDAP Error)"
+	   "Error (No Certificate Supplied)"
+	   "Error (Error Accessing Certificate)"
+	   "Error (User not in required group(s))"
+	   "Error (User does not have required role(s))"
+	   "Error (In Deny-All mode)"
+	   "Error (Error out of range)"
+
+       OCSP (client certificate-based):
+	  ocsp:reply:status <status>
+	  where <status> is one of the following strings (without quotation
+	  marks):
+	   "OK"
+	   "Error (Could not connect to server)"
+	   "Error (Unknown client certificate)"
+	  ccldap:reply:username <username>
+	  where <username> is the query username corresponding to the BIG-IP 4.x
+	  "set auth hdr enable" feature.
+
+       AUTH::response_data [<authid>]
+
+	    * Returns the a set of name/value query results from the most recent
+	      query.
+
+RETURN VALUE
+VALID DURING
+EXAMPLES
+	Example 1
+	The rule below mimics the behavior of a BIG-IP 4.x authz configuration
+	   "set auth hdr enable" and "onfailure username defaultuser". This rule
+	would be used in conjunction with client certificate LDAP auth.
+
+	rule http_insert_cc_ldap_username {
+	    when CLIENT_ACCEPTED {
+		set cc_ldap_username "defaultuser"
+		set tmm_auth_subscription "*"
+	    }
+	    when AUTH_RESULT {
+		array set auth_response_data [AUTH::response_data]
+		set username [lindex [array get auth_response_data ccldap<!--:reply:username] 1]-->
+		if {username ne ""} {
+		    set cc_ldap_username $username
+		}
+	    }
+	    when HTTP_REQUEST {
+		HTTP::header insert "Authorization: [b64encode $cc_ldap_username:password]"
+	    }
+	}
+
+	Similar rule logic to the above example would be used with this data to
+	mimic the 4.x authz configuration "insert client status enable".
+	Example 2
+	The rule below demonstrates how group membership might be used to
+	influence a load balancing decision. This rule would be used in
+	conjunction with username/password LDAP auth.
+
+	rule http_lb_ldap_group {
+	    when CLIENT_ACCEPTED {
+		set tmm_auth_subscription "*"
+	    }
+	    when AUTH_RESULT {
+		array set auth_response_data [AUTH::response_data]
+		set ldap_group [lindex [array get auth_response_data ldap<!--:attr:isMemberOf] 1]-->
+		if {ldap_group eq "admin"} {
+		    use pool admin_pool
+		}
+	    }
+	}
+
+	Example 3
+	The rule below demonstrates how multi-pass auth might be performed.
+	Additional error checking of the group name would be necessary in a
+	production-ready rule.
+
+	rule multi_pass_auth {
+	    when HTTP_REQUEST {
+		if {not [info exists auth_pass]} {
+		    set auth_sid [AUTH::start pam auth_method_user]
+		    AUTH::subscribe $auth_sid
+		    set auth_username [HTTP::username]
+		    set auth_password [HTTP::password]
+		    AUTH::username_credential $auth_sid $auth_username
+		    AUTH::password_credential $auth_sid $auth_password
+		    AUTH::authenticate $auth_sid
+		    set auth_pass 1
+		}
+	    }
+	    when AUTH_RESULT {
+		if {[AUTH::status] != 1} {
+		    if {$auth_pass == 1} {
+			HTTP::respond 401
+		    } else {
+			reject
+		    }
+		}
+		if {$auth_pass == 1} {
+		    array set auth_response_data [AUTH::response_data]
+		    set auth_group [lindex [array get auth_response_data ldap<!--:attr:isMemberOf] 1]-->
+		    AUTH::abort $auth_sid
+		    set auth_sid [AUTH::start pam $auth_group]
+		    AUTH::username_credential $auth_sid $auth_username
+		    AUTH::password_credential $auth_sid $auth_password
+		    AUTH::unsubscribe $auth_sid
+		    AUTH::authenticate $auth_sid
+		    set auth_pass 2
+		} else {
+		    HTTP::release
+		    set auth_pass 3
+		}
+	    }
+	}
+
+	Example 4
+	The rule below demonstrates how to grant access based on a combination
+	of source network and LDAP group membership. This rule would need to be
+	used in conjunction with an LDAP auth profile.
+
+	rule ldap_auth_by_net_and_group {
+	when RULE_INIT {
+	      array set ::auth_conf {
+		 {default_mask}       {255.0.0.0}
+		 {group_attribute}    {ldap<!--:attr:isMemberOf}-->
+	      }
+	      array set ::auth_class {
+		 {10.0.0.0}	   {Marketing Sales}
+		 {20.0.0.0}	   {Engineers Developers}
+		 {30.0.0.0}	   {Engineers}
+	      }
+	   }
+	when CLIENT_ACCEPTED {
+	      set tmm_auth_subscription "*"
+	      set auth_client_addr [IP::addr [IP::client_addr] mask $::auth_conf(default_mask)]
+	   }
+	when AUTH_RESULT {
+	      if { [AUTH::status] != 0 } {
+		 HTTP::respond 401
+		 return
+	      }
+	      if { not [info exists ::auth_class($auth_client_addr)] } {
+		 HTTP::respond 401
+		 return
+	      }
+	      array set auth_data [AUTH::response_data]
+
+	      foreach group $::auth_class($auth_client_addr) {
+		 if { $auth_data($::auth_conf(group_attribute)) eq $group } {
+		    use pool validated
+		 }
+	      }
+	      HTTP::respond 401
+	   }
+	}
+
+HINTS
+SEE ALSO
+CHANGE LOG
+       @BIGIP-9.0.0 --First introduced the command.
+
+BIG-IP							    2022-04-12							  iRule(1)
+</authid></username></username></status></status></status></status></value></name></value></name></value></name></value></name></pre>
+</html>
+</div>
+</div>
+</article>
+</body></html>

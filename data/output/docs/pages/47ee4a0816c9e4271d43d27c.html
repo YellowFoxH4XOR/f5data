@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ilx plugin</title><link rel="canonical" href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ilx/ilx_plugin.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>ilx plugin</h1><p>cli_reference · 17.0.0</p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ilx/ilx_plugin.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="ilx-plugin">
+<span id="id1"></span><h1>ilx plugin</h1>
+<html>
+<pre>
+ilx plugin(1)						BIG-IP TMSH Manual					     ilx plugin(1)
+
+NAME
+       plugin - Configures an iRules Language Extension (ILX) Plugin.
+
+MODULE
+       ilx
+
+SYNTAX
+       Configure the plugin component within the ilx module using the syntax shown in the following sections.
+
+   CREATE/MODIFY
+	create plugin [name]
+	 options:
+	  app-service [name]
+	  description [string]
+	  disabled
+	  enabled
+	  from-workspace [name]
+	  log-publisher [name]
+
+	modify plugin [name]
+	 options:
+	  app-service [name]
+	  description [string]
+	  disabled
+	  enabled
+	  extensions {
+	    [name] {
+	      command-arguments [ list of strings ]
+	      command-options [ list of strings ]
+	      concurrency-mode [ dedicated | single ]
+	      data-groups [ [ [name ] ...] | none ]
+	      debug-port-range-high [port]
+	      debug-port-range-low [port]
+	      description [string]
+	      heartbeat-interval [seconds]
+	      ilx-logging [ disabled | enabled ]
+	      log-publisher [name]
+	      max-restarts [integer]
+	      restart-interval [integer]
+	      trace-level [integer]
+	    }
+	  }
+
+	  from-workspace [name]
+	  log-publisher [name]
+
+	reset-stats plugin [ [ [name] | [glob] | [regex] ] ... ]
+	 options:
+	  extensions { [name] ... }
+
+   DISPLAY
+	list plugin
+	list plugin [ [ [name] | [glob] | [regex] ] ... ]
+	show running-config plugin
+	show running-config plugin [ [ [name] | [glob] | [regex] ] ... ]
+	 options:
+	  all
+	  all-properties
+	  disk-space
+	  node-version
+	  non-default-properties
+	  one-line
+	  partition
+	  recursive
+	  staged-directory
+
+	show plugin
+	show plugin [ [name] ... ]
+	 options:
+	  all
+	  all-properties (default | exa | gig | kil | meg | peta | raw | tera |
+			  yotta | zetta)
+	  extensions { [name] ... }
+	  field-fmt
+	  recursive
+
+   DELETE
+	delete plugin [name]
+	 options:
+	  all
+	  recursive
+
+   START
+	start plugin [name]
+
+   STOP/RESTART
+	restart plugin [name]
+	stop plugin [name]
+	 options:
+	  drain-existing-connections
+	  immediate
+	  stop-draining
+
+DESCRIPTION
+       An iRules Language Extension (ILX) plugin provides the following functionality:
+	   An RPC interface that allows an iRule to communicate with an ILX Node.js(tm) process.
+	   A Streaming interface that allows an ILX Node.js(tm) process to manage Virtual
+	   Server connections and payload data.
+
+       A plugin is created from an ilx workspace.  Files from the workspace are copied into a system area and run from the system
+       area.  iRule files contained in the workspace are read into the system as ltm rule configuration.  The ltm rule
+       configuration objects are created in a sys folder that has the same name as the plugin.
+
+       The system will start one or more Node.js(tm) process for each extension (see also concurrency-mode below). Node.js(tm)
+       will look in the extension directory for the file package.json. Node.js(tm) will look in package.json for a main field that
+       identifies the main entry point of the plugin. If the main field is not present node will look for the file index.js.
+
+       The status of plugin processes can be viewed with the show command.
+	  show plugin my_plugin
+
+       A plugin can be started, stopped and restarted. When a plugin is initially created the system will start processes for each
+       extension. When a plugin is stopped existing plugin processes associated with active tmm connections are allowed to drain.
+       Draining processes continue to run until the connections are closed. There are several options that control how processes
+       are stopped, drain-existing-connections, immediate and stop-draining, and are describe below.
+
+       There are several ILX commands that an iRule may use to communicate with a Node.js(tm) extension process: ILX::init,
+       ILX::call and ILX::notify.
+
+	    ILX::init [plugin name] [extension name] establishes a communication path from an iRule to the node process. It
+	    returns a handle that must be passed to ILX::call and ILX::notify.
+
+	    ILX::call [ILX handle] [method] [optional arg 1]  [optional arg 2] ......  invokes the specified node method in the
+	    extension associated with the ILX handle.  If the node method returns a javascript array or dictionary then a Tcl list
+	    object is returned from ILX::call, otherwise a Tcl string object is returned.
+
+	    ILX::notify [ILX handle] [method] [optional arg 1]	[optional arg 2] ...... sends a message to the node method but
+	    does not wait for the method to complete before returning. TCL_OK is returned if the message was successfully queued.
+	    Any other return value indicates the message could not be queued.
+
+RPC
+       The RPC API consists of two primary components, Node.js and Tcl.
+
+       The Node.js API contains an ILXServer class. Methods are added to the server using ILXServer.addMethod("method name",
+       function(req, res) { ... }). "req" is an ILXRequest object and "res" is an ILXResponse object. ILXServer.listen will start
+       the server.
+
+       A Tcl iRule connects to the Node.js process using the Tcl command
+	  set plugin [ILX::init "plugin name" "extension name"]
+
+       The Javascript methods are invoked from a Tcl iRule using either ILX::call or ILX::notify. The args are user defined and
+       passed to the Node.js method via the ILXRequest object.
+	  set response [ILX::call $plugin "method name" args...]
+
+       ILX::notify is similar to ILX::call except that the iRule will not wait for a response from the Node.js process.
+	  ILX::call $plugin "method name" args...]
+
+       Here is a Hello World Node.js script
+
+	    var f5 = require('f5-nodejs');
+	    var server = new f5.ILXServer();
+	    server.addMethod("hello_world", function(req, res) {
+		console.log("request args: " + JSON.stringify(req));
+		res.reply('hello_world');
+	    });
+	    server.listen();
+
+       Here is the Hello World Tcl iRule that passes some data to the Node.js process, waits for a response and logs the response
+       to /var/log/ltm. The iRule must be associated with an ltm virtual-server.
+
+	    when CLIENT_ACCEPTED {
+		set plugin [ILX::init rpc example]
+		set rv [ILX::call $plugin hello_world arg1 val1 arg2 val2]
+		log local0.debug $rv
+	    }
+
+       Run the following tmsh commands to create the ilx workspace and ilx plugin configuration for the RPC example above. See
+       also help ilx workspace for more examples describing how to manage a workspace.
+
+	    create ilx workspace rpc
+
+	    create ilx workspace rpc extension example
+
+	    edit ilx workspace rpc extension example
+
+		A file named index.js will be created. Replace the content of
+		index.js with the Node.js Hello World script above. If you
+		have bash shell access you can directly edit the file
+		/var/ilx/workspaces/Common/rpc/extensions/example/index.js.
+
+	    edit ilx workspace rpc rule example
+
+		A file named rpc_example.tcl will be created. Replace the
+		content of rpc_example.tcl with the Tcl iRule Hello World
+		example above. If you have bash shell access you can directly
+		edit the file
+		/var/ilx/workspaces/Common/rpc/rules/hello_world.tcl.
+
+	    create ilx plugin rpc from-workspace rpc
+
+	    modify ltm virtual [name] rules { rpc/example }
+
+		You must create a Virtual Server and associate the rpc_example
+		rule with the Virtual Server. When a client connects to the
+		Virtual Server you should see the output from both the
+		Node.js process and Tcl iRule in /var/log/ltm.
+
+       See also the BIG-IP iRulesLX User Guide located in the Programmability Wiki at devcentral.f5.com.
+
+Streaming
+       The Streaming API allows a Node.js Plugin process to act as a proxy for connections through a Virtual Server. When a client
+       connects to a Virtual Server an ILXFlow object is created and passed to the plugin. The ILXFlow object contains two Node.js
+       sockets. ILXFlow.client represents the connection from the client to the plugin. ILXFlow.server represents the connection
+       from the plugin to a server.  The plugin will use ILXFlow.client to receive or send data to the client. The plugin will use
+       ILXFlow.server to send or receive data from the server. The plugin may inspect or modify any/all client or server data. The
+       ILXFlow.client and ILXFlow.server objects behave as native Node.js sockets. The plugin can also be configured to act as a
+       server and respond directly to the client without completing a connection to a server. The plugin can also be configured as
+       a native Node.js HTTP server.
+
+       [Client] &lt;-&gt; [Virtual Server] &lt;-&gt; [TMM]
+					   ^
+					   |
+					   v
+				    [ILXFlow.client]
+					[Plugin]
+				    [ILXFlow.server]
+					   ^
+					   |
+					   v
+					 [TMM] &lt;-&gt; [Server]
+
+       Note that the plugin sees TCP payload. TCP headers are stripped by the TMM and are not visible to the plugin.
+
+       The following is a brief overview of the Javascript classes that make up the Streaming API. These classes contain many more
+       features and options as described in the BIG-IP iRulesLX User Guide located in the Programmability Wiki at
+       devcentral.f5.com.
+
+       ILXPlugin - Connects to the TMM to accept Virtual Server client connections.  When a connection is made an ILXFlow object
+       is passed to the plugin via the "connect" event: plugin.on("connect", function(flow) { ... }).
+
+       ILXPluginOptions - Options that configure the events and data that a plugin will received.
+
+       ILXFlow - An object that represents a client socket to Virtual Server and server socket to a server.
+
+       ILXStream - An object that represents the client side connection from a client to a Virtual Server (ILXFlow.client), the
+       server side connection from a Virtual Server to a server (ILXFlow.server), or a plugin initiated connection to a server
+       (created using ILXStream.connect).
+
+       ILXLbOptions - Options that allow the plugin to specify which server the client will connect to by calling
+       ILXFlow.lbSelect(ILXLbOptions).
+
+       ILXTable - Functions for reading and writing the TMM Session DB. Very similar interface to the Tcl iRule table command.
+
+       ILXBufferUtil - Functions for searching and modifying a Node.js Buffer object.
+
+       ILXDatagroup - Functions for accessing ltm data-group configuration.  The set of data-groups available to a plugin must be
+       specified using the ILXPluginOptions when the plugin is started.
+
+       ILXTransaction - If HTTP and ILX profiles are attached to a virtual server then all header and data inspection and
+       modification are done in the context of request and response transaction. An ILXTransaction object is passed to the
+       following events: requestStart, requestComplete, responseStart and responseComplete. The ILXTransaction object contains
+       things like request headers, URI and method, and response headers and status.
+
+       The following is a sample streaming plugin that acts as a pass through.	Data is read from the client and sent to the
+       server. Data is read from the server and sent to the client. Note that it is important to handle "error" events as the
+       Node.js plugin process will exit if they are not handled.
+
+	   var f5 = require("f5-nodejs");
+	   var plugin = new f5.ILXPlugin();
+	   plugin.on("connect", function(flow) {
+	       flow.client.on("readable", function() {
+		   var buffer;
+		   while (true) {
+		       buffer = flow.client.read();
+		       if (buffer === null) {
+			   break;
+		       }
+		       console.log("Client Data");
+		       console.log(buffer.toString());
+		       flow.server.write(buffer);
+		   }
+	       });
+	       flow.client.on("error", function(err) {
+		   console.log("client socket error: " + err);
+	       });
+	       flow.server.on("readable", function() {
+		   var buffer;
+		   while (true) {
+		       buffer = flow.server.read();
+		       if (buffer === null) {
+			   break;
+		       }
+		       console.log("Server Data");
+		       console.log(buffer.toString());
+		       flow.client.write(buffer);
+		   }
+	       });
+	       flow.server.on("error", function(err) {
+		   console.log("server socket error: " + err);
+	       });
+	       flow.on("error", function(err) {
+		   console.log("flow error: " + err);
+	       });
+	   });
+	   var options = new f5.ILXPluginOptions(); // use defaults
+	   plugin.start(options);
+
+       The following is a sample streaming HTTP plugin that acts as a pass through.  Note that the example above can also be used
+       to manage HTTP traffic.	This example requires a Virtual Server with both HTTP and ILX profiles.
+
+	   var f5 = require('f5-nodejs');
+	   var plugin = new f5.ILXPlugin();
+	   plugin.on("connect", function(flow)
+	   {
+	       flow.client.on("requestStart", function(request) {
+		   // HTTP request URI, headers and more
+		   console.log(
+		       "requestStart: " + JSON.stringify(request.params));
+	       });
+	       flow.client.on("readable", function() {
+		   // HTTP request body, if present
+		   var buf;
+		   while (true) {
+		       buf = flow.client.read();
+		       if (buf !== null) {
+			   console.log("request body:" + buf.length + " bytes");
+			   console.log(buf.toString());
+			   flow.server.write(buf);
+		       }
+		       else {
+			   break;
+		       }
+		   }
+	       });
+	       flow.client.on("requestComplete", function(request) {
+		   // Entire HTTP request received
+		   console.log(
+		       "requestComplete: " + JSON.stringify(request.params));
+		   request.complete();
+	       });
+	       flow.client.on("error", function(err) {
+		   console.error("flow.client error:" + err);
+	       });
+
+	       flow.server.on("responseStart", function(response) {
+		   // HTTP response headers, status and more
+		   console.log(
+		       "responseStart: " + JSON.stringify(response.params));
+	       });
+	       flow.server.on("readable", function() {
+		   // HTTP response body, if present
+		   var buf;
+		   while (true) {
+		       buf = flow.server.read();
+		       if (buf !== null) {
+			   console.log(
+			       "response body:" + buf.length + " bytes");
+			   console.log(buf.toString());
+			   flow.client.write(buf);
+		       }
+		       else {
+			   break;
+		       }
+		   }
+	       });
+	       flow.server.on("responseComplete", function(response) {
+		   // Entire HTTP response received
+		   console.log(
+		       "responseComplete: " + JSON.stringify(response.params));
+		   response.complete();
+	       });
+	       flow.server.on("error", function(err) {
+		   console.error("flow.server error:" + err);
+	       });
+	       flow.on("error", function(err) {
+		   console.error("flow.error:" + err);
+	       });
+	   });
+	   var options = new f5.ILXPluginOptions(); // use defaults
+	   plugin.start(options);
+
+       Run the following tmsh commands to create ilx workspace and ilx plugin configuration for a streaming plugin using either of
+       the sample plugins above.
+
+	    create ilx workspace streaming
+
+	    create ilx workspace streaming extension example
+
+	    edit ilx workspace streaming extension example
+
+		A file named index.js will be created. Replace the content of
+		index.js with the Node.js streaming example from above. If
+		you have bash shell access you can directly edit the file
+		/var/ilx/workspaces/Common/streaming/extensions/example/index.js.
+
+	    create ilx plugin streaming from-workspace streaming
+
+	    modify ilx plugin streaming extensions { example { ilx-logging
+			    enabled concurrency-mode single } }
+
+		When ilx-logging is enabled all stdout and stderr from the
+		plugin is sent to
+		/var/log/ilx/<partition>.<plugin>.<extension><cpu>,
+		in this case /var/log/ilx/Common.streaming.example.
+
+	    create ltm profile ilx streaming-profile plugin streaming
+
+	    modify ltm virtual [name] profiles replace-all-with {
+			    tcp streaming-profile }
+
+		You must create a Virtual Server and associate the
+		streaming-profile with the Virtual Server. When a client
+		connects to the Virtual Server the client should receive the
+		server data. The plugin also logs the client and server data
+		that is received to /var/log/ilx/Common.streaming.example.
+		If you are using the HTTP sample you will need to assign an HTTP
+		profile to the virtual server.
+
+EXAMPLES
+       create plugin my_plugin from-workspace my_workspace
+
+       Creates a plugin named my_plugin. Rule files from the workspace are read into the system configuration and placed in the
+       sys folder my_plugin.
+
+       modify plugin my_plugin from-workspace my_workspace
+
+       Restart the plugin using the current files in my_workspace.
+
+       modify plugin my_plugin extensions { my_extension { concurrency-mode dedicated } }
+
+       Modify the concurrency-mode for a specific extension.
+
+       delete plugin my_plugin
+
+       Deletes the plugin named my_plugin. The iRule configuration in the sys folder named my_plugin will also be deleted. The sys
+       folder my_plugin will be deleted if there are no remaining (non-plugin related) configuration items in the folder.
+
+       list plugin
+
+       List the configuration for all plugins in the current sys folder.
+
+       list plugin my_plugin
+
+       List the configuration for my_plugin.
+
+       show plugin my_plugin
+
+       Displays the status of all extension processes running as part of my_plugin.
+
+       show plugin my_plugin extensions { my_extension }
+
+       Displays the status of processes in extension my_extension running as part of my_plugin.
+
+       reset-stats plugin my_plugin
+
+       Reset all statistics for my_plugin.
+
+       reset-stats plugin my_plugin extensions { my_extension }
+
+       Reset statistics for the extension my_extension in my_plugin.
+
+       start plugin my_plugin
+
+       Starts all extensions in my_plugin.
+
+       stop plugin my_plugin
+
+       Stops all extensions in my_plugin. Active processes and connections are allowed to drain.
+
+       stop plugin my_plugin drain-existing-connections
+
+       Stops all extension processes in my_plugin. Active connections that are currently using the plugin are allowed to drain.
+       The plugin processes will be stopped when all associated active connections are closed.
+
+       stop plugin my_plugin immediate
+
+       Immediately stops all extension processes associated with my_plugin. New and existing connections to Virtual Servers that
+       have iRules that interact with the plugin will receive a Tcl error when using the Tcl functions ILX::init and ILX::call.
+
+       stop plugin my_plugin stop-draining
+
+       Immediately stops all extension processes in my_plugin that are draining. Existing connections that have iRules that
+       interact with the plugin and were attached to the draining processes will receive a Tcl error when using the Tcl functions
+       ILX::init and ILX::call.
+
+OPTIONS
+       app-service
+	    Specifies the name of the application service to which the pool belongs. The default value is none. Note: If the
+	    strict-updates option is enabled on the application service that owns the object, you cannot modify or delete the
+	    plugin. Only the application service can modify or delete the plugin.
+
+       description
+	    User defined description.
+
+       disabled
+	    Disable the plugin. All node processes associated with the plugin that are associated with active tmm connections are
+	    allowed to continue until the connections close. To immediately stop all processes use the stop command.
+
+       enabled
+	    Enable the plugin. Node processes will be started for each plugin extension.
+
+       extensions
+	    Modify attributes of plugin extensions.
+
+	    command-arguments
+		 The optional list of arguments to be passed to the nodejs (after the extension).
+
+		     Eg.:
+		     command-arguments { arg1 arg2 }
+
+		     will result in nodejs process started like this:
+		     /usr/bin/nodejs <plugin>/extensions/<ext> arg1 arg2
+
+		 The plugin must be restarted for this setting to take affect.
+
+	    command-options
+		 The list of options passed to Node.js before the name of the extension script. These must be valid Node.js
+		 options. The Node.js process will fail to start if it is provided with invalid options.
+
+		     Example:
+		     command-options { --debug-brk=12345 }
+
+		     will result in nodejs process started like this:
+		     /usr/bin/nodejs --debug-brk=12345 <plugin>/extensions/<ext>
+
+		 Please note the choice of the specified port is not guaranteed. If the specified port is not available, the
+		 system will choose another consecutive port (see Debugging section for more details).
+
+		 The plugin must be restarted for this setting to take affect.
+
+	    concurrency-mode
+		 Specifies a concurrency mode for the extension.
+
+		 The value dedicated specifies that a node process should be started for each tmm that has been provisioned (see
+		 sys db provision.tmmcountactual). Each node process will be dedicated to servicing requests from a single tmm.
+
+		 The value single specifies that a single node process should be started. This node process will service requests
+		 from all tmm processes in the system.
+
+	    data-groups
+		 The set of data-groups that will be made available to the plugin through the ILXDatagroup JavaScript class. The
+		 default value is none.
+
+	    debug-port-range-high
+		 When debugging is enabled and the debug port is not specified in command-options, ILX will assign the port,
+		 searching for an available port to attach the node inspector, see the section on Debugging. It will start
+		 searching at the debug-port-range-low value and try each port until it reaches the debug-port-range-high value.
+
+	    debug-port-range-low
+		 When debugging is enabled and the debug port is not specified in command-options, ILX will assign the port,
+		 searching for an available port to attach the node inspector, see the section on Debugging. It will start
+		 searching at the debug-port-range-low value and try each port until it reaches the debug-port-range-high value.
+
+	    description
+		 User defined description.
+
+	    heartbeat-interval
+		 Specifies the maximum number of seconds between extension process heartbeats.	The extension process heartbeat is
+		 updated by the BIG-IP version of libuv.  The BIG-IP monitors the heartbeat of each extension process. When
+		 enabled the system will restart an extension process if the extension does not update its heartbeat over the
+		 configured interval. A value of 0 (zero) disables heartbeat checking.	The heartbeat should be disabled when the
+		 extension is being debugged.
+
+	    ilx-logging
+		 Specifies where standard out and standard error generated by the plugin will be logged.  A value of disabled will
+		 cause output to be logged to /var/log/ltm. A value of enabled will cause output to be logged to
+		 /var/log/ilx/[plugin].[extension] (enabled). A CPU identifier will be appended to the log file name if the
+		 concurrency-mode is dedicated.  Setting the value to enabled is intended to aid in debugging a plugin and not
+		 overrun /var/log/ltm with debug logs. The default value is disabled.
+
+	    log-publisher
+		 Specifies the log destination for messages generated by the ILXLogger nodejs object in an extension.  See sys
+		 log-config publisher.
+
+	    node-version
+		 Display the Node.js version that is used to run the plugin.
+
+	    max-restarts
+		 Specifies the maximum number of times an extension process may fail before the system will no longer
+		 automatically restart the process. See also restart-interval. The default value is 5.
+
+	    restart-interval
+		 Specifies the interval, in seconds, over which max-restarts may occur.  The default value is 60 seconds.
+
+	    trace-level
+		 Specifies the global trace level for an extension. This can also be controlled by an extension using the
+		 Javascript function ILXPlugin.setGlobalTraceLevel (note that this does not update the extension configuration,
+		 only the running extension). An extension may use this setting in Javascript by calling
+		 ILXPlugin.globalTraceLevel(). F5 extension internals also use this setting to log interaction between the
+		 configuration system, the TMM and the plugin extension. A value of zero will stop trace logging. A value of 1
+		 will log configuration messages. A value of 10 will log general function call location information. A value of 20
+		 will include function call information in the packet path. A value of 30 will include packet content that is sent
+		 and received to and from the TMM. Note that if the trace level has been set by Javascript code in the plugin
+		 using ILXPlugin.setGlobalTraceLevel and the extension trace-level setting is zero then to disable tracing in the
+		 plugin you must update the plugin code.  See also ilx-logging.
+
+       from-workspace
+	    Create or modify a plugin using the set of files in the specified workspace. The workspace files are copied into a
+	    system are. New node process are started using the latest copy of workspace files. Existing node processes continue to
+	    run until all tmm connections associated with those processes have closed.
+
+       log-publisher
+	    Specifies the log destination for messages generated by the ILXLogger nodejs object without an extension level log-
+	    publisher.	See sys log-config publisher.
+
+       name Specifies a unique name for the component.	This option is required for the commands create and modify.
+
+       staged-directory
+	    Display the workspace directory that was used to create the plugin.
+
+Debugging
+       In order to debug an ILX extension the user must enable debugging via command-options and restart the plugin. Node.js
+       provides three options for enabling remote debugging: --debug[=<port>], --debug-port=<port> and --debug-brk=<port>.
+
+       If a debug port is specified the system will search for an available port starting with the specified port. Please note
+       that the debugging can only be enabled in single concurrency mode.
+
+	  modify ilx plugin my_plugin extension { my_extension { command_options add { --debug } } }
+	  restart ilx plugin my_plugin
+
+       If a debug port is not specified with either --debug=<port>, --debug-brk=<port> or --debug-port=<port>, the system will
+       search for an available port within the configured debug-port-range-low and debug-port-range-high range.  If a port is
+       specified the system will perform a search for an available port using the specified port instead of the debug-port-range-
+       low value. The assignment of the specified port is best-effort and is not guaranteed.  In both cases the search for ports
+       is consecutive.
+
+       There is a system-wide list of ports that will be skipped during the debug port search:
+	   Eg.
+	   # list ilx global-settings
+	   ilx global-settings {
+	       debug-port-blacklist { 47019 54321 60000 }
+	   }
+
+       The node-inspector process must be started at the bash command line, specifying a valid IP address that is either a self-ip
+       (net self-ip) or the management IP address (sys management-ip).
+
+	  /usr/local/node/v6/lib/node_modules/.bin/node-inspector --web-host <ip address=""> --no-inject
+
+       It will then be possible to connect to the IP address using the port that the system chose.  The debug port that the system
+       chose can be seen by running the command show plugin my_plugin.
+
+	   show plugin my_plugin extensions { my_extension }
+
+	    ...
+	    -------------------------------
+	    | Extension Process: my_extension
+	    -------------------------------
+	    | Status		    running
+	    | PID		    1190
+	    | TMM		    0
+	    | CPU Utilization (%)   0
+	    | Debug Port	    20000
+	    | Memory (bytes)
+	    |	Total Virtual Size  0
+	    |	Resident Set Size   0
+	    | RPC Info
+	    ...
+
+       It is then possible to connect with a suitable debugging client, such as the Chrome(tm) browser via:
+	   https://<ip address="">:8080/debug?port=20000
+
+       The externally reachable port opened by node-inspector is ":8080". Port "20000" is the port displayed by the show ilx
+       plugin command.
+
+Statistics
+       Provided the ILX-RPC and ILX Streaming can be used simultaneously there are designated sections for each in the stats.
+
+       The plugin statistics are reset every time the plugin is restarted. Additionally the statistics can be reset from the tmsh
+       (see EXAMPLES above).
+
+       The output looks like the following:
+
+	   ---------------------------------
+	   ILX::Plugin: my_plugin
+	   ---------------------------------
+	   State	  enabled
+	   Log Publisher  local-db-publisher
+
+	     -------------------------------
+	     | Extension: my_extension
+	     -------------------------------
+	     | Status		     running
+	     | CPU Utilization (%)   0
+	     | Memory (bytes)
+	     |	 Total Virtual Size  0
+	     |	 Resident Set Size   0
+	     | RPC Info 		   - ILX-RPC Specific information
+	     |	 RPC Connections
+	     |	   Active	     0	   - active RPC connections
+	     |	   Total	     0	   - total RPC connections (ILX::init calls)
+	     |	 Total Calls	     0	   - total RPC calls (ILX::call calls)
+	     |	 Notifies	     0
+	     |	 Timeouts	     0	   - number of expired connections
+	     |	 Errors 	     0	   - number of connection errors
+	     |	 Octets In	     0	   - number of octets received
+	     |	 Octets Out	     0	   - number of octets sent
+	     |	 Average Latency     0	   - average time that it takes node to respond to an iRule ILX::call
+	     |	 Max Latency	     0	   - max response time it took node to respond to an iRule ILX::call
+	     | Streaming Info		   - ILX Streaming specific information
+	     |	 Flow Connections	   - virtual server initiated connections.
+	     |	   Clientside
+	     |	     Active	     0	   - active clientside connections
+	     |	     Total	     0	   - total connections
+	     |	   Serverside
+	     |	     Active	     0	   - active serverside connections
+	     |	     Total	     0	   - total connections
+	     |	 Sideband Connections	   - connections initiated with .connect() call
+	     |	   Active	     0	   - active connections
+	     |	   Total	     0	   - total connections
+	     |	 Aborts 	     0	   - number of aborted connections
+	     |	 Timeouts	     0	   - number of expired connections
+	     |	 Errors 	     0	   - number of connection errors
+	     |	 Octets In	     0	   - number of octets received
+	     |	 Octets Out	     0	   - number of octets sent
+	     |	 Table Calls	     0	   - number of API calls to SessionDB (ILXTable)
+	     |	 Datagroup Calls     0	   - number of API calls to Datagroups (ILXDatagroup)
+	     | Restarts 	     0	   - number of plugin restarts
+	     | Failures 	     0	   - number of plugin failures
+
+		-----------------------------------------
+		| Extension Process: my_extension
+		-----------------------------------------
+		| Status		running
+		| PID			20626
+		| TMM			0
+		| CPU Utilization (%)	0
+		| Debug Port		20001
+		| Memory (bytes)
+		|   Total Virtual Size	735.6M
+		|   Resident Set Size	15.2K
+		| RPC Info
+		|   MPI channel 	mem://ilx:1:0	- communication channel between node.js process and TMM
+		|   RPC Connections
+		|   ...
+		|   Process specific fields for ILX-RPC similar to those in the Extension output
+		|   ...
+		| Streaming Info
+		|   MPI channel 	mem://ilsx:2:0	- communication channel between node.js process and TMM
+		|   Flow Connections
+		|   ...
+		|   Process specific fields for ILX-Streaming similar to those in the Extension output
+		|   ...
+
+		-----------------------------------------
+		| Extension Process: my_extension
+		-----------------------------------------
+		| Status		running
+		| PID			20627
+		| TMM			1
+		| CPU Utilization (%)	0
+		...
+
+       For ILX-Streaming, more information is available from the ILX profile statistics.
+
+SEE ALSO
+       create, delete, edit, ilx workspace, list, ltm data-group, ltm virtual-server, modify, sys folder, sys log-config
+       publisher, tmsh
+
+COPYRIGHT
+       No part of this program may be reproduced or transmitted in any form or by any means, electronic or mechanical, including
+       photocopying, recording, or information storage and retrieval systems, for any purpose other than the purchaser's personal
+       use, without the express written permission of F5 Networks, Inc.
+
+       F5 Networks and BIG-IP (c) Copyright 2008-2017. All rights reserved.
+
+BIG-IP							    2017-04-06						     ilx plugin(1)
+</ip></ip></port></port></port></port></port></port></ext></plugin></ext></plugin></cpu></extension></plugin></partition></pre>
+</html>
+</div>
+</div>
+</article>
+</body></html>

@@ -1,0 +1,306 @@
+{
+  "applies_to": [
+    {
+      "product": "F5 BIG-IP iRules API",
+      "versions": []
+    }
+  ],
+  "breadcrumbs": [],
+  "code_examples": [
+    {
+      "section": "Syntax",
+      "text": "whereis <ip> [country | continent | state | abbrev | city | zip | area_code |\n   latitude | longitude | isp | org | country_cf | state_cf | city_cf | proxy_type]+\n"
+    },
+    {
+      "section": "whereis <ip> latitude",
+      "text": "set lat_deg [expr {[whereis [IP::client_addr] latitude] / 10000.0}]\n"
+    },
+    {
+      "section": "whereis <ip> longitude",
+      "text": "set lon_deg [expr {[whereis [IP::client_addr] longitude] / 10000.0}]\n"
+    },
+    {
+      "section": "Examples",
+      "text": "when DNS_REQUEST {\n  if {[whereis [IP::client_addr]] contains \"Asia\"} {\n    pool asia_pool\n  } else {\n    pool general_pool\n  }\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "when DNS_REQUEST {\n   log local0. \"IP [IP::client_addr] is in \\\n      continent [lindex [whereis [IP::client_addr]] 0] and \\\n      country [lindex [whereis [IP::client_addr]] 1]\"\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "IP x.x.x.x is in continent North America and country US\n"
+    },
+    {
+      "section": "Examples",
+      "text": "when DNS_REQUEST {\n   log local0. \"IP [IP::client_addr] is in \\\n      continent [whereis [IP::client_addr] continent] \\\n      and country [whereis [IP::client_addr] country]\"\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "IP x.x.x.x is in continent North America and country US\n"
+    },
+    {
+      "section": "Examples",
+      "text": "proc geoloc_mod {latitude longitude} {\n  return [list [expr {$latitude / 10000.}] [expr {$longitude / 10000.}]]\n}\nwhen HTTP_REQUEST {\n  set lat [whereis [IP::client_addr] latitude]\n  set lon [whereis [IP::client_addr] longitude]\n  if { [string is integer $lat] && [string is integer $lon] } {\n    #use proc to convert geolocation from strings to degrees, store in a list\n    set geoloc_deg [call geoloc_mod $lat $lon]\n  }\n  log local0. \"Latitude: [lindex $geoloc_deg 0], Longititude: [lindex $geoloc_deg 1]\"\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "when CLIENT_ACCEPTED {\n   log local0. \"Got client: [whereis [IP::client_addr] country continent state city zip]\"\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "# ========================================================================================\n# For clients coming from a country in a greylist data group,\n# Limit each client IP address to 1800 concurrent connections over a 180 second window\n# If the client closes the connection, the count is immediately decremented.\n# Else the count is decremented after the window times out for that connection.\n#\n# Greylist countries must be listed in the data group as the ISO3166 2 character\n# http://www.iso.org/iso/country_codes/iso_3166_code_lists/country_names_and_code_elements.htm\nwhen RULE_INIT {\n\n    # Max number of connections for a client over an interval\n    set static::max_conns 1800\n\n    # Timeout for still counting a connection that has not been closed yet\n    set static::interval 180\n\n    # Name of data group containing 2 character ISO3166 country codes to limit connections for\n    set static::greylist_dg \"greylist_country_codes_dg\"\n\n    # Syslog pool\n    set static::syslog_pool \"udp_syslog_pool\"\n\n    # Syslog protocol (must be exactly TCP or UDP in uppercase)\n    set static::syslog_proto \"UDP\"\n}\nwhen CLIENT_ACCEPTED {\n\n    # Exit the iRule and do not check the connection rate if the client is not from a greylist country\n    set country [whereis [IP::client_addr] country]\n    if {$country ne \"\"}{\n\n        # Check if the country is not in the grelist data group\n        if {[class match $country equals $static::greylist_dg]}{\n\n            # Exit this iRule event to prevent non-greylist IPs from being limited\n            return\n        }\n    }\n\n    # Set a subtable name with a standard prefix and the client IP\n    set tbl \"connlimit:[IP::client_addr]\"\n\n    # Check if the subtable has over X entries\n    if { [table keys -subtable $tbl -count] >= $static::max_conns } {\n\n        # Send a remote syslog message using local0.notice <133>\n        # see RFC 3164 Section 4.1.1 - \"PRI Part\" for more info\n        #HSL::send [HSL::open -proto $static::syslog_proto -pool $static::syslog_pool] \"<190> [info hostname] [IP::local_addr]: Hit connection limit: [IP::client_addr]\"\n\n        # Drop the connection\n        # drop\n\n        # Or apply a rateclass\n        # rateclass rateclass1\n\n    } else {\n\n        # Add the client IP:port to the client IP-specific subtable\n        #   with a max lifetime of X seconds.\n        # Use a key of the client IP:port\n        set key \"[IP::client_addr][TCP::client_port]\"\n        table set -subtable $tbl $key \"ignored\" $static::interval\n    }\n}\n\nwhen CLIENT_CLOSED {\n    # When the client connection is closed, remove the table entry\n    table delete -subtable $tbl $key\n}\n"
+    }
+  ],
+  "content_hash": "cb85cda6f512fea94e1075136e83c52b9e8acdf4cb1048f27d63e2d6563f1f1e",
+  "diagrams": [],
+  "documentation_version": null,
+  "headings": [
+    {
+      "anchor": "whereis",
+      "level": 1,
+      "path": [],
+      "title": "whereis"
+    },
+    {
+      "anchor": "description",
+      "level": 2,
+      "path": [
+        "whereis"
+      ],
+      "title": "Description"
+    },
+    {
+      "anchor": "legal-usage-notes",
+      "level": 2,
+      "path": [
+        "whereis"
+      ],
+      "title": "Legal usage notes"
+    },
+    {
+      "anchor": "syntax",
+      "level": 2,
+      "path": [
+        "whereis"
+      ],
+      "title": "Syntax"
+    },
+    {
+      "anchor": "whereis-ip",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip>"
+    },
+    {
+      "anchor": "whereis-ip-country",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip> country"
+    },
+    {
+      "anchor": "whereis-ip-continent",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip> continent"
+    },
+    {
+      "anchor": "whereis-ip-state",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip> state"
+    },
+    {
+      "anchor": "whereis-ip-abbrev",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip> abbrev"
+    },
+    {
+      "anchor": "whereis-ip-city",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip> city"
+    },
+    {
+      "anchor": "whereis-ip-zip",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip> zip"
+    },
+    {
+      "anchor": "whereis-ip-area-code",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip> area_code"
+    },
+    {
+      "anchor": "whereis-ip-latitude",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip> latitude"
+    },
+    {
+      "anchor": "whereis-ip-longitude",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip> longitude"
+    },
+    {
+      "anchor": "whereis-ip-isp",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip> isp"
+    },
+    {
+      "anchor": "whereis-ip-org",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip> org"
+    },
+    {
+      "anchor": "whereis-ip-country-cf",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip> country_cf"
+    },
+    {
+      "anchor": "whereis-ip-state-cf",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip> state_cf"
+    },
+    {
+      "anchor": "whereis-ip-city-cf",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip> city_cf"
+    },
+    {
+      "anchor": "whereis-ip-proxy-type",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip> proxy_type"
+    },
+    {
+      "anchor": "whereis-ip-continent-country-state",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip> continent country state"
+    },
+    {
+      "anchor": "whereis-ip-continent-isp-state-latitude",
+      "level": 3,
+      "path": [
+        "whereis",
+        "Syntax"
+      ],
+      "title": "whereis <ip> continent ISP state latitude"
+    },
+    {
+      "anchor": "examples",
+      "level": 2,
+      "path": [
+        "whereis"
+      ],
+      "title": "Examples"
+    },
+    {
+      "anchor": "related-information",
+      "level": 2,
+      "path": [
+        "whereis"
+      ],
+      "title": "Related Information"
+    }
+  ],
+  "id": "24ee6cac343ec824030d04f2",
+  "images": [],
+  "kind": "programming_reference",
+  "links": [
+    {
+      "title": "Jason Rahm’s article",
+      "url": "https://community.f5.com/t5/technical-articles/new-geolocation-capabilities-in-v10-1/ta-p/287720"
+    },
+    {
+      "title": "Country Decoding Table",
+      "url": "https://www.iso.org/obp/ui/#search/code/"
+    },
+    {
+      "title": "GLOBAL_GTM",
+      "url": "https://clouddocs.f5.com/api/irules/GLOBAL_GTM.html"
+    },
+    {
+      "title": "Heatmaps Part 1",
+      "url": "https://community.f5.com/t5/technical-articles/heatmaps-irules-style-part-1/ta-p/275877"
+    },
+    {
+      "title": "Heatmaps Part 2",
+      "url": "https://community.f5.com/t5/technical-articles/heatmaps-irules-style-part2/ta-p/275892"
+    },
+    {
+      "title": "Heatmaps Part 4",
+      "url": "https://community.f5.com/t5/technical-articles/heatmaps-irules-style-part-4-meaningful-numbers/ta-p/275938"
+    }
+  ],
+  "publisher_product_labels": [
+    "F5 BIG-IP iRules API"
+  ],
+  "source": "irules",
+  "text": "whereis\nDescription\nReturns the geographic location of a specific IP address.\nFor more information on using whereis in LTM, you can check\nJason Rahm’s article\nLegal usage notes\nThe data is purchased by F5 for use on BIG-IP systems and products for\ntraffic management. The key to understanding EULA compliance is to\nfigure out where the geolocation decision is being made. It is a\ndirect violation of the EULA to use F5’s data to embed geolocation\ninformation or codes representing geolocation information into the\nrequests such that another application or server could make the\ndecision on what to do with that data. Customers wishing to use\ngeolocation data on their webservers or in their applications to make\ndecisions in those products should reach out to their account team.\nF5’s traffic management products have a lot of power and flexibility\nand can make lots of decisions about traffic using the geolocation\ndata on the BIG-IP. For example, a geolocation lookup can be used to\nroute traffic requests to a different site, different server,\ndifferent URL, or even substitute a different image, object, etc in\nthe stream. The key is that the BIG-IP is making use of the data to\nmake a decision to take some action. These are all allowed and in\nfact, intended usage of the geolocation data. Passing the data looked\nup to another system or displaying it back publicly is a violation of\nthe basic data EULA. To summarize, all usage of the data must remain\nlocal to the system with the following two exceptions:\nLocation can be placed in an encrypted cookie for reference ONLY by\nother BIG-IP devices\nLogging data can contain location info and collected into a central\nlogging solution for analysis of F5 logs.\nUse of geolocation data that falls outside of the use cases described\nin this article may be permitted under a separate license agreement\nbetween you and our third party licensor. In the future, F5 expects\nto make expanded data sets available with fewer restrictions on\ndirect use cases. If you are unsure if your use case is permitted\nunder your license, please contact your sales engineer.\nSyntax\nAs of 10.1.0, the maximum length of the returned list is 8 fields. If\nmore than 8 fields are needed, call whereis a second time with the\nremaining parameters.\nNote: In GTM, prior to version 10, even when the country and continent\nkeywords are specified the list of {Continent Country} is still\nreturned. In earlier versions just use whereis and lindex to extract\nthe appropriate field for your use case. An example is provided below.\nNote: In GTM, as of version 11.0, the ldns option can be used instead\nof an IP address.\nNote: Prior to version 10.1, only “country” and “continent” parameters\nare valid.\nwhereis\n<\nip\n>\n[\ncountry\n|\ncontinent\n|\nstate\n|\nabbrev\n|\ncity\n|\nzip\n|\narea_code\n|\nlatitude\n|\nlongitude\n|\nisp\n|\norg\n|\ncountry_cf\n|\nstate_cf\n|\ncity_cf\n|\nproxy_type\n]\n+\nwhereis <ip>\nIn GTM, returns a Tcl list containing continent followed by country\ncode. In LTM, returns a Tcl list containing continent, country code,\nregion name (if available), and city (if available).\nGTM: {Asia JP}\nLTM: {NA US Washington {}}\nwhereis <ip> country\nReturns a string containing the two-letter country code (JP)\nCountry codes are defined in ISO-3166:\nCountry Decoding Table\nwhereis <ip> continent\nReturns a string containing the continent (Asia)\nwhereis <ip> state\nReturns a string containing the state (Washington)\nwhereis <ip> abbrev\nReturns a string containing the state abbreviation (WA) -\nnotice\nthis does not work on 12.1.x BZ621374 - “abbrev” argument in\n“whereis” iRule returns nothing\nwhereis <ip> city\nReturns a string containing the city\nwhereis <ip> zip\nReturns a string containing the zip code\nwhereis <ip> area_code\nReturns a string containing the area code\nwhereis <ip> latitude\nReturns a string (not a floating point) containing the latitude. To\nconvert this value to degrees, divide it by 10000.0 (include the\ndecimal point to avert truncation of the result:\nset\nlat_deg\n[\nexpr\n{[\nwhereis\n[\nIP\n::\nclient_addr\n]\nlatitude\n]\n/\n10000.0\n}]\n)\nwhereis <ip> longitude\nReturns a string (not a floating point) containing the longitude. To\nconvert this value to degrees, divide it by 10000.0 (include the\ndecimal point to avert truncation of the result:\nset\nlon_deg\n[\nexpr\n{[\nwhereis\n[\nIP\n::\nclient_addr\n]\nlongitude\n]\n/\n10000.0\n}]\n)\nwhereis <ip> isp\nReturns a string containing the ISP\nwhereis <ip> org\nReturns a string containing the organization\nwhereis <ip> country_cf\nwhereis <ip> state_cf\nwhereis <ip> city_cf\nwhereis <ip> proxy_type\nReturns a string containing the proxy type, or “unknown” if no\ninformation is available.\nwhereis <ip> continent country state\nReturns a list containing the continent, country and state in that\norder.\nwhereis <ip> continent ISP state latitude\nReturns a string continent, ISP, state and latitude, in that order.\nNote: Any combination or order of place parameters is valid, however\nonly 8 values will be returned at once. Note: Some or all of these\ndata may not be available for a given IP address. Unless otherwise\nspecified, in such an event an empty string is returned for a string\nvalue, or a zero is returned for a numeric value. Note: Some of these\ndata are not available unless a geographic IP database has been loaded\nonto your system. Please contact F5 Networks to obtain this database.\nExamples\nChecks the geographical location of each new DNS request, choosing\n“asia_pool” for requests from LDNS’s with an address homed in Asia and\nsending all other requests to “general_pool”:\nwhen\nDNS_REQUEST\n{\nif\n{[\nwhereis\n[\nIP\n::\nclient_addr\n]]\ncontains\n\"Asia\"\n}\n{\npool\nasia_pool\n}\nelse\n{\npool\ngeneral_pool\n}\n}\nVersion 9.x continent / country extraction:\nwhen\nDNS_REQUEST\n{\nlog\nlocal0.\n\"IP [IP::client_addr] is in \\\ncontinent [lindex [whereis [IP::client_addr]] 0] and \\\ncountry [lindex [whereis [IP::client_addr]] 1]\"\n}\nWhich logs the following:\nIP\nx.x.x.x\nis\nin\ncontinent\nNorth\nAmerica\nand\ncountry\nUS\nVersion 10.x continent / country extraction:\nwhen\nDNS_REQUEST\n{\nlog\nlocal0.\n\"IP [IP::client_addr] is in \\\ncontinent [whereis [IP::client_addr] continent] \\\nand country [whereis [IP::client_addr] country]\"\n}\nWhich logs the following:\nIP\nx.x.x.x\nis\nin\ncontinent\nNorth\nAmerica\nand\ncountry\nUS\nProcedure to convert the latitude/longitude returned integers to\ndegrees, with example iRule calling it.\nproc\ngeoloc_mod\n{\nlatitude\nlongitude\n}\n{\nreturn\n[\nlist\n[expr\n{\n$latitude\n/\n10000.\n}]\n[expr\n{\n$longitude\n/\n10000.\n}]]\n}\nwhen\nHTTP_REQUEST\n{\nset\nlat\n[\nwhereis\n[\nIP\n::\nclient_addr\n]\nlatitude\n]\nset\nlon\n[\nwhereis\n[\nIP\n::\nclient_addr\n]\nlongitude\n]\nif\n{\n[\nstring\nis\ninteger\n$lat\n]\n&&\n[\nstring\nis\ninteger\n$lon\n]\n}\n{\n#use proc to convert geolocation from strings to degrees, store in a list\nset\ngeoloc_deg\n[\ncall\ngeoloc_mod\n$lat\n$lon\n]\n}\nlog\nlocal0.\n\"Latitude: [lindex $geoloc_deg 0], Longititude: [lindex $geoloc_deg 1]\"\n}\nVersion 10.1 LTM:\nwhen\nCLIENT_ACCEPTED\n{\nlog\nlocal0.\n\"Got client: [whereis [IP::client_addr] country continent state city zip]\"\n}\nVersion 10.1+ LTM country based greylisting\n# ========================================================================================\n# For clients coming from a country in a greylist data group,\n# Limit each client IP address to 1800 concurrent connections over a 180 second window\n# If the client closes the connection, the count is immediately decremented.\n# Else the count is decremented after the window times out for that connection.\n#\n# Greylist countries must be listed in the data group as the ISO3166 2 character\n# http://www.iso.org/iso/country_codes/iso_3166_code_lists/country_names_and_code_elements.htm\nwhen\nRULE_INIT\n{\n# Max number of connections for a client over an interval\nset\nstatic::max_conns\n1800\n# Timeout for still counting a connection that has not been closed yet\nset\nstatic::interval\n180\n# Name of data group containing 2 character ISO3166 country codes to limit connections for\nset\nstatic::greylist_dg\n\"greylist_country_codes_dg\"\n# Syslog pool\nset\nstatic::syslog_pool\n\"udp_syslog_pool\"\n# Syslog protocol (must be exactly TCP or UDP in uppercase)\nset\nstatic::syslog_proto\n\"UDP\"\n}\nwhen\nCLIENT_ACCEPTED\n{\n# Exit the iRule and do not check the connection rate if the client is not from a greylist country\nset\ncountry\n[\nwhereis\n[\nIP\n::\nclient_addr\n]\ncountry\n]\nif\n{\n$country\nne\n\"\"\n}{\n# Check if the country is not in the grelist data group\nif\n{[\nclass\nmatch\n$country\nequals\n$static::greylist_dg\n]}{\n# Exit this iRule event to prevent non-greylist IPs from being limited\nreturn\n}\n}\n# Set a subtable name with a standard prefix and the client IP\nset\ntbl\n\"connlimit:[IP::client_addr]\"\n# Check if the subtable has over X entries\nif\n{\n[\ntable\nkeys\n-\nsubtable\n$tbl\n-\ncount\n]\n>=\n$static::max_conns\n}\n{\n# Send a remote syslog message using local0.notice <133>\n# see RFC 3164 Section 4.1.1 - \"PRI Part\" for more info\n#HSL::send [HSL::open -proto $static::syslog_proto -pool $static::syslog_pool] \"<190> [info hostname] [IP::local_addr]: Hit connection limit: [IP::client_addr]\"\n# Drop the connection\n# drop\n# Or apply a rateclass\n# rateclass rateclass1\n}\nelse\n{\n# Add the client IP:port to the client IP-specific subtable\n#   with a max lifetime of X seconds.\n# Use a key of the client IP:port\nset\nkey\n\"[IP::client_addr][TCP::client_port]\"\ntable\nset\n-\nsubtable\n$tbl\n$key\n\"ignored\"\n$static::interval\n}\n}\nwhen\nCLIENT_CLOSED\n{\n# When the client connection is closed, remove the table entry\ntable\ndelete\n-\nsubtable\n$tbl\n$key\n}\nRelated Information\nValid Events:\nGLOBAL_GTM\nWarning\nThe links to the sample code below are remnants of the old DevCentral wiki and will result in a 404 error. For best results, please copy the link text and search the codeshare directly on DevCentral.\nSample Code:\nHeatmaps Part 1\n- Create a heat map view of your HTTP requests. mapped to the locations around the United States.\nHeatmaps Part 2\n- Create a heat map view of your HTTP requests. mapped to the locations around the world.\nHeatmaps Part 4\n- Create a heat map view of your HTTP requests. mapped to the locations around the World with hard numbers to back up the pretty pictures.\nIntroduced: GTM 9.2.0, BIGIP-10.1.0\nThe BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor \nor control community code contributions. We make no guarantees or warranties regarding the available code, \nand it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any \ncode available in the BIG-IP API reference guides is solely at your own risk.",
+  "title": "whereis",
+  "updated": "2026-07-13 12:27:40",
+  "url": "https://clouddocs.f5.com/api/irules/whereis.html",
+  "url_version": null
+}

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Log Http Tcp Udp To Syslogng</title><link rel="canonical" href="https://clouddocs.f5.com/api/irules/LogHttpTcpUdpToSyslogng.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>Log Http Tcp Udp To Syslogng</h1><p>programming_reference · See product applicability metadata</p><a href="https://clouddocs.f5.com/api/irules/LogHttpTcpUdpToSyslogng.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!DOCTYPE html>
+
+<div class="section" id="log-http-tcp-udp-to-syslogng">
+<h1>Log Http Tcp Udp To Syslogng</h1>
+<div class="section" id="description">
+<h2><strong>Description</strong></h2>
+<div class="line-block">
+<div class="line">You can use iRules to log a summary of each request and its response,
+and send the data to a remote syslog server using BIG-IP’s syslog-ng
+daemon. Here are some example rules based from posts in the 9.x forum,
+and corresponding syslog-ng changes which can be used to send a
+summary of each request and response to a remote syslog server:</div>
+</div>
+</div>
+<div class="section" id="irule-source">
+<h2><strong>iRule Source</strong></h2>
+<div class="line-block">
+<div class="line">1. HTTP logging rule:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">when</span><span class="w"> </span>HTTP_REQUEST<span class="w"> </span><span class="k">{</span>
+<span class="w">   </span><span class="c"># set the URL here, log it on the response</span>
+<span class="w">   </span><span class="k">set</span><span class="w"> </span>url<span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>host<span class="k">][</span><span class="nv">HTTP</span><span class="o">::</span>uri<span class="k">]</span>
+<span class="w">   </span><span class="k">set</span><span class="w"> </span>vip<span class="w"> </span><span class="k">[</span><span class="nv">IP</span><span class="o">::</span>local_addr<span class="k">]</span><span class="o">:</span><span class="k">[</span><span class="nv">TCP</span><span class="o">::</span>local_port<span class="k">]</span>
+<span class="k">}</span>
+
+<span class="nv">when</span><span class="w"> </span>HTTP_RESPONSE<span class="w"> </span><span class="k">{</span>
+<span class="w">   </span><span class="k">set</span><span class="w"> </span>client<span class="w"> </span><span class="k">[</span><span class="nv">IP</span><span class="o">::</span>client_addr<span class="k">]</span><span class="o">:</span><span class="k">[</span><span class="nv">TCP</span><span class="o">::</span>client_port<span class="k">]</span>
+<span class="w">   </span><span class="k">set</span><span class="w"> </span>node<span class="w"> </span><span class="k">[</span><span class="nv">IP</span><span class="o">::</span>server_addr<span class="k">]</span><span class="o">:</span><span class="k">[</span><span class="nv">TCP</span><span class="o">::</span>server_port<span class="k">]</span>
+<span class="w">   </span><span class="k">set</span><span class="w"> </span>nodeResp<span class="w"> </span><span class="k">[</span><span class="nv">HTTP</span><span class="o">::</span>status<span class="k">]</span>
+
+<span class="w">   </span><span class="c"># log connection info</span>
+<span class="w">   </span><span class="nv">log</span><span class="w"> </span>local0.info<span class="w"> </span><span class="s2">"Client: $client -&gt; VIP:$vip$url -&gt; Node: $node with response $nodeResp"</span>
+<span class="k">}</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">2. TCP logging rule:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">when</span><span class="w"> </span>CLIENT_ACCEPTED<span class="w"> </span><span class="k">{</span>
+<span class="w">   </span><span class="k">set</span><span class="w"> </span>vip<span class="w"> </span><span class="k">[</span><span class="nv">IP</span><span class="o">::</span>local_addr<span class="k">]</span><span class="o">:</span><span class="k">[</span><span class="nv">TCP</span><span class="o">::</span>local_port<span class="k">]</span>
+<span class="k">}</span>
+
+<span class="nv">when</span><span class="w"> </span>SERVER_CONNECTED<span class="w"> </span><span class="k">{</span>
+<span class="w">   </span><span class="k">set</span><span class="w"> </span>client<span class="w"> </span><span class="s2">"[IP::client_addr]:[TCP::client_port]"</span>
+<span class="w">   </span><span class="k">set</span><span class="w"> </span>node<span class="w"> </span><span class="s2">"[IP::server_addr]:[TCP::server_port]"</span>
+<span class="k">}</span>
+
+<span class="nv">when</span><span class="w"> </span>CLIENT_CLOSED<span class="w"> </span><span class="k">{</span>
+<span class="w">   </span><span class="c"># log connection info</span>
+<span class="w">   </span><span class="nv">log</span><span class="w"> </span>local0.info<span class="w"> </span><span class="s2">"Client $client -&gt; VIP: $vip -&gt; Node: $node"</span>
+<span class="k">}</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">3. UDP logging rule:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">when</span><span class="w"> </span>CLIENT_ACCEPTED<span class="w"> </span><span class="k">{</span>
+<span class="w">   </span><span class="k">set</span><span class="w"> </span>vip<span class="w"> </span><span class="k">[</span><span class="nv">IP</span><span class="o">::</span>local_addr<span class="k">]</span><span class="o">:</span><span class="k">[</span><span class="nv">UDP</span><span class="o">::</span>local_port<span class="k">]</span>
+<span class="k">}</span>
+
+<span class="nv">when</span><span class="w"> </span>SERVER_CONNECTED<span class="w"> </span><span class="k">{</span>
+<span class="w">   </span><span class="k">set</span><span class="w"> </span>client<span class="w"> </span><span class="s2">"[IP::client_addr]:[UDP::client_port]"</span>
+<span class="w">   </span><span class="k">set</span><span class="w"> </span>node<span class="w"> </span><span class="s2">"[IP::server_addr]:[UDP::server_port]"</span>
+<span class="k">}</span>
+
+<span class="nv">when</span><span class="w"> </span>CLIENT_CLOSED<span class="w"> </span><span class="k">{</span>
+<span class="w">   </span><span class="c"># log connection info</span>
+<span class="w">   </span><span class="nv">log</span><span class="w"> </span>local0.info<span class="w"> </span><span class="s2">"Client $client -&gt; VIP: $vip -&gt; Node: $node"</span>
+<span class="k">}</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">Associate the TCP, UDP and HTTP rules with the respective virtual
+servers that you want to log connections for. You can enable a rule
+for a virtual server under the Resources tab for each virtual server.
+You will need to make sure that the rule matches the type for each
+virtual server. For example, you can use the TCP or HTTP rules on an
+HTTP virtual server. However, you cannot associate a UDP rule unless
+there is a UDP profile associated with the virtual server.</div>
+<div class="line">These rules will log to syslog-ng’s local0 facility with the following
+format:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">Mar</span><span class="w">  </span><span class="mi">1</span><span class="w"> </span><span class="mi">08</span><span class="o">:</span><span class="mi">34</span><span class="o">:</span><span class="mo">01</span><span class="w"> </span>tmm<span class="w"> </span>tmm<span class="k">[</span><span class="nv">730</span><span class="k">]</span><span class="o">:</span><span class="w"> </span>Rule<span class="w"> </span>HTTP_logging<span class="w"> </span><span class="o">&lt;</span>HTTP_RESPONSE<span class="o">&gt;:</span><span class="w"> </span>Client:<span class="w"> </span><span class="mf">192.168</span>.42.26:4746<span class="w"> </span>VIP:172.25.2.12:80<span class="w"> </span>to<span class="w"> </span>server:<span class="w"> </span><span class="mf">172.25</span>.2.233:80<span class="w"> </span>for<span class="w"> </span><span class="mf">172.25</span>.2.12<span class="o">/</span><span class="w"> </span>with<span class="w"> </span>response<span class="w"> </span><span class="mi">200</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">You can then configure syslog-ng to parse local0.info entries that
+contain “logging” and send them to a remote syslog server by making
+the following changes to the /etc/syslog-ng/syslog-ng.conf file.</div>
+<div class="line">1. Add: local0.info filter, destination and log statements:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="c"># local0.info                                   send logging entries to remote syslog server</span>
+<span class="nv">filter</span><span class="w"> </span>f_local0.info<span class="w"> </span><span class="k">{</span>
+<span class="w">   </span><span class="nv">facility</span><span class="k">(</span><span class="nv">local0</span><span class="k">)</span><span class="w"> </span>and<span class="w"> </span>level<span class="k">(</span><span class="nb">info</span><span class="k">)</span><span class="w"> </span>and<span class="w"> </span>match<span class="k">(</span><span class="s2">"logging"</span><span class="k">);</span>
+<span class="k">};</span>
+
+<span class="c"># destination can be a hostname or IP address</span>
+<span class="nv">destination</span><span class="w"> </span>d_logging<span class="w"> </span><span class="k">{</span>
+<span class="w">   </span><span class="nv">tcp</span><span class="k">(</span><span class="s2">"syslog.myhost.com"</span><span class="w"> </span><span class="nv">port</span><span class="w"> </span><span class="k">(</span><span class="nv">5000</span><span class="k">));</span>
+<span class="k">};</span>
+
+<span class="nv">log</span><span class="w"> </span><span class="k">{</span>
+<span class="w">   </span><span class="nb">source</span><span class="k">(</span><span class="nv">local</span><span class="k">);</span>
+<span class="w">   </span><span class="nv">filter</span><span class="k">(</span><span class="nv">f_local0.info</span><span class="k">);</span>
+<span class="w">   </span><span class="nv">destination</span><span class="k">(</span><span class="nv">d_logging</span><span class="k">);</span>
+<span class="k">};</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">2. Add: and not match(“logging”) to local0.* to exclude the logging
+entries from being written to file</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="c"># local0.*                                      /var/log/ltm</span>
+<span class="nv">filter</span><span class="w"> </span>f_local0<span class="w"> </span><span class="k">{</span>
+<span class="w">   </span><span class="nv">facility</span><span class="k">(</span><span class="nv">local0</span><span class="k">)</span><span class="w"> </span>and<span class="w"> </span>level<span class="k">(</span><span class="nb">info</span>..emerg<span class="k">)</span><span class="w"> </span>and<span class="w"> </span>not<span class="w"> </span>match<span class="k">(</span><span class="s2">"logging"</span><span class="k">);</span>
+<span class="k">};</span>
+
+<span class="nv">destination</span><span class="w"> </span>d_ltm<span class="w"> </span><span class="k">{</span>
+<span class="w">   </span><span class="nb">file</span><span class="k">(</span><span class="s2">"/var/log/ltm"</span><span class="w"> </span><span class="nv">create_dirs</span><span class="k">(</span><span class="nv">yes</span><span class="k">));</span>
+<span class="k">};</span>
+
+<span class="nv">log</span><span class="w"> </span><span class="k">{</span>
+<span class="w">   </span><span class="nb">source</span><span class="k">(</span><span class="nv">local</span><span class="k">);</span>
+<span class="w">   </span><span class="nv">filter</span><span class="k">(</span><span class="nv">f_local0</span><span class="k">);</span>
+<span class="w">   </span><span class="nv">destination</span><span class="k">(</span><span class="nv">d_ltm</span><span class="k">);</span>
+<span class="k">};</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">3. Restart syslog-ng to initialize the changes:</div>
+</div>
+<div class="highlight-Tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">bigstart</span><span class="w"> </span>restart<span class="w"> </span>syslog-ng
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">For more complete documentation on syslog-ng, you can refer to their
+site:</div>
+</div>
+<ul class="simple">
+<li><a class="reference external" href="http://www.balabit.com/products/support/syslog-ng/">http://www.balabit.com/products/support/syslog-ng/</a></li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">Or here:</div>
+</div>
+<ul class="simple">
+<li><a class="reference external" href="http://www.iso.port.ac.uk/docs/downloaded/syslog-ng.html/book1.html">http://www.iso.port.ac.uk/docs/downloaded/syslog-ng.html/book1.html</a></li>
+</ul>
+<div class="line-block">
+<div class="line"><br/></div>
+<div class="line">–Aaron</div>
+</div>
+<p><em>The BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor 
+or control community code contributions. We make no guarantees or warranties regarding the available code, 
+and it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any 
+code available in the BIG-IP API reference guides is solely at your own risk.</em></p>
+</div>
+</div>
+</article>
+</body></html>

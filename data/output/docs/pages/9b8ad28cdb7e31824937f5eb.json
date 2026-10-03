@@ -1,0 +1,863 @@
+{
+  "applies_to": [
+    {
+      "product": "F5 BIG-IP AS3",
+      "versions": [
+        "3.57.0"
+      ]
+    }
+  ],
+  "breadcrumbs": [],
+  "code_examples": [
+    {
+      "section": "Virtual service referencing an existing security policy",
+      "text": "{\n  \"class\": \"ADC\",\n  \"schemaVersion\": \"3.0.0\",\n  \"id\": \"5489432\",\n  \"label\": \"ASM_policy_existing\",\n  \"remark\": \"ASM_policy_existing\",\n  \"Sample_app_sec_01\": {\n    \"class\": \"Tenant\",\n    \"HTTP_Service\": {\n      \"class\": \"Application\",\n      \"service\": {\n        \"class\": \"Service_HTTP\",\n        \"virtualAddresses\": [\n          \"192.0.10.107\"\n        ],\n        \"snat\": \"auto\",\n        \"pool\": \"Pool1\",\n        \"policyWAF\": {\n          \"bigip\": \"/Common/test-policy\"\n        }\n      },\n      \"Pool1\": {\n        \"class\": \"Pool\",\n        \"monitors\": [\n          \"http\"\n        ],\n        \"members\": [\n          {\n            \"servicePort\": 8001,\n            \"serverAddresses\": [\n              \"10.10.10.143\"\n            ]\n          },\n          {\n            \"servicePort\": 8002,\n            \"serverAddresses\": [\n              \"10.10.10.144\"\n            ]\n          }\n        ]\n      }\n    }\n  }\n }\n"
+    },
+    {
+      "section": "Virtual service referencing an external security policy",
+      "text": "{\n  \"class\": \"ADC\",\n  \"schemaVersion\": \"3.2.0\",\n  \"id\": \"5489432\",\n  \"label\": \"ASM_policy_external_URL\",\n  \"remark\": \"ASM_policy_external_URL\",\n  \"Sample_app_sec_02\": {\n    \"class\": \"Tenant\",\n    \"HTTP_Service\": {\n      \"class\": \"Application\",\n      \"service\": {\n        \"class\": \"Service_HTTP\",\n        \"virtualAddresses\": [\n          \"192.0.10.107\"\n        ],\n        \"snat\": \"auto\",\n        \"pool\": \"Pool1\",\n        \"policyWAF\": {\n          \"use\": \"My_ASM_Policy\"\n        }\n      },\n      \"Pool1\": {\n        \"class\": \"Pool\",\n        \"monitors\": [\n          \"http\"\n        ],\n        \"members\": [\n          {\n            \"servicePort\": 8001,\n            \"serverAddresses\": [\n              \"10.10.10.143\"\n            ]\n          },\n          {\n            \"servicePort\": 8002,\n            \"serverAddresses\": [\n              \"10.10.10.144\"\n            ]\n          }\n        ]\n      },\n      \"My_ASM_Policy\": {\n        \"class\": \"WAF_Policy\",\n        \"url\": \"https://example.com/asm-policy.xml\",\n        \"ignoreChanges\": true\n      }\n    }\n  }\n}\n"
+    },
+    {
+      "section": "Endpoint policy with default rule to disable WAF",
+      "text": "{\n  \"class\": \"ADC\",\n  \"schemaVersion\": \"3.7.0\",\n  \"id\": \"Service_HTTP\",\n  \"Sample_app_sec_03\": {\n      \"class\": \"Tenant\",\n      \"Application\": {\n          \"class\": \"Application\",\n          \"testItem\": {\n              \"class\": \"Service_HTTP\",\n              \"policyEndpoint\": \"endpointPolicy\",\n              \"virtualAddresses\": [\"10.1.40.50\"]\n          },\n          \"endpointPolicy\": {\n              \"class\": \"Endpoint_Policy\",\n              \"rules\": [\n                  {\n                    \"name\": \"enableWAF\",\n                        \"conditions\": [{\n                            \"type\": \"httpUri\",\n                            \"path\": {\n                                \"values\": [\"example.com\"]\n                            }\n                        }\n                    ],\n                    \"actions\": [{\n                            \"type\": \"waf\",\n                            \"policy\": {\n                                \"use\": \"wafPolicy\"\n                            }\n                        }\n                    ]\n                  },\n                  {\n                    \"name\": \"disableWAF\",\n                    \"conditions\": [],\n                    \"actions\": [{\n                            \"type\": \"waf\"\n                        }\n                    ]\n                  }\n              ]\n          },\n          \"wafPolicy\": {\n              \"class\": \"WAF_Policy\",\n              \"url\": \"http://example.com/orchestration-as3-test/resources/asm_policy/policy.xml\",\n              \"ignoreChanges\": true\n          }\n      }\n   }\n}\n"
+    },
+    {
+      "section": "Endpoint policy with SSL SNI Match conditions and HTTP action",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.8.0\",\n    \"id\": \"Endpoint_Policy\",\n    \"Sample_app_sec_04\": {\n        \"class\": \"Tenant\",\n        \"Application\": {\n            \"class\": \"Application\",\n            \"test1\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"sni0\",\n                        \"actions\": [\n                            {\n                                \"type\": \"forward\",\n                                \"select\": {\n                                    \"pool\": {\n                                        \"bigip\": \"/Common/sni1\"\n                                    }\n                                }\n                            },\n                            {\n                                \"type\": \"http\",\n                                \"enabled\": false\n                            }\n                        ],\n                        \"conditions\": [\n                            {\n                                \"type\": \"sslExtension\",\n                                \"event\": \"ssl-client-hello\",\n                                \"serverName\": {\n                                    \"operand\": \"equals\",\n                                    \"values\": [\n                                        \"test1.com\"\n                                    ]\n                                }\n                            }\n                        ]\n                    },\n                    {\n                        \"name\": \"sni1\",\n                        \"actions\": [\n                            {\n                                \"type\": \"forward\",\n                                \"select\": {\n                                    \"pool\": {\n                                        \"bigip\": \"/Common/sni2\"\n                                    }\n                                }\n                            },\n                            {\n                                \"type\": \"http\",\n                                \"enabled\": false\n                            }\n                        ],\n                        \"conditions\": [\n                            {\n                                \"type\": \"sslExtension\",\n                                \"event\": \"ssl-client-hello\",\n                                \"serverName\": {\n                                    \"operand\": \"equals\",\n                                    \"values\": [\n                                        \"test2.com\"\n                                    ]\n                                }\n                            }\n                        ]\n                    },\n                    {\n                        \"name\": \"default\",\n                        \"actions\": [\n                            {\n                                \"type\": \"drop\",\n                                \"event\": \"request\"\n                            }\n                        ]\n                    }\n                ]\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Local storage",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.10.0\",\n    \"id\": \"Security_Log_Profile_local\",\n    \"Security_Log_local\": {\n        \"class\": \"Tenant\",\n        \"Application\": {\n            \"class\": \"Application\",\n            \"secLogLocal\": {\n                \"class\": \"Security_Log_Profile\",\n                \"application\": {\n                    \"storageFilter\": {\n                        \"logicalOperation\": \"and\",\n                        \"requestType\": \"all\",\n                        \"responseCodes\": [\n                            \"100\",\n                            \"200\",\n                            \"300\",\n                            \"400\"\n                        ],\n                        \"protocols\": [\n                            \"https\",\n                            \"ws\"\n                        ],\n                        \"httpMethods\": [\n                            \"ACL\",\n                            \"GET\",\n                            \"POLL\",\n                            \"POST\"\n                        ],\n                        \"requestContains\": {\n                            \"searchIn\": \"search-in-headers\",\n                            \"value\": \"The header string to search for\"\n                        },\n                        \"loginResults\": [\n                            \"login-result-successful\",\n                            \"login-result-failed\"\n                        ]\n                    },\n                    \"guaranteeLoggingEnabled\": true,\n                    \"guaranteeResponseLoggingEnabled\": true,\n                    \"maxHeaderSize\": 200,\n                    \"maxQuerySize\": 1040,\n                    \"maxRequestSize\": 900,\n                    \"responseLogging\": \"all\"\n                }\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Remote storage",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.10.0\",\n    \"id\": \"Security_Log_Profile\",\n    \"Security_Log_Remote\": {\n        \"class\": \"Tenant\",\n        \"Application\": {\n            \"class\": \"Application\",\n            \"secLogRemote\": {\n                \"class\": \"Security_Log_Profile\",\n                \"application\": {\n                    \"facility\": \"local3\",\n                    \"storageFilter\": {\n                        \"requestType\": \"illegal-including-staged-signatures\",\n                        \"responseCodes\": [\n                            \"404\",\n                            \"201\"\n                        ],\n                        \"protocols\": [\n                            \"http\"\n                        ],\n                        \"httpMethods\": [\n                            \"PATCH\",\n                            \"DELETE\"\n                        ],\n                        \"requestContains\": {\n                            \"searchIn\": \"search-in-request\",\n                            \"value\": \"The new value\"\n                        },\n                        \"loginResults\": [\n                            \"login-result-unknown\"\n                        ]\n                    },\n                    \"storageFormat\": {\n                        \"fields\": [\n                            \"attack_type\",\n                            \"avr_id\",\n                            \"headers\",\n                            \"is_truncated\"\n                        ],\n                        \"delimiter\": \".\"\n                    },\n                    \"localStorage\": false,\n                    \"maxEntryLength\": \"10k\",\n                    \"protocol\": \"udp\",\n                    \"remoteStorage\": \"remote\",\n                    \"reportAnomaliesEnabled\": true,\n                    \"servers\": [\n                        {\n                            \"address\": \"9.8.7.6\",\n                            \"port\": \"9876\"\n                        }\n                    ]\n                }\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Using Persist Actions in an Endpoint Policy",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.11.0\",\n    \"id\": \"Endpoint_Policy\",\n    \"Example_Endpoint_Policy\": {\n        \"class\": \"Tenant\",\n        \"Application\": {\n            \"class\": \"Application\",\n            \"testPolicy\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"rule\",\n                        \"conditions\": [],\n                        \"actions\": [\n                            {\n                                \"type\": \"persist\",\n                                \"event\": \"request\",\n                                \"sourceAddress\": {\n                                    \"netmask\": \"255.255.255.255\",\n                                    \"timeout\": 60\n                                }\n                            },\n                            {\n                                \"type\": \"persist\",\n                                \"event\": \"request\",\n                                \"destinationAddress\": {\n                                    \"netmask\": \"255.255.255.255\",\n                                    \"timeout\": 60\n                                }\n                            },\n                            {\n                                \"type\": \"persist\",\n                                \"event\": \"request\",\n                                \"cookieInsert\": {\n                                    \"name\": \"foo_bar\",\n                                    \"expiry\": \"1d01:01:01\"\n                                }\n                            },\n                            {\n                                \"type\": \"persist\",\n                                \"event\": \"request\",\n                                \"cookieRewrite\": {\n                                    \"name\": \"bar_foo\",\n                                    \"expiry\": \"2d02:02:02\"\n                                }\n                            },\n                            {\n                                \"type\": \"persist\",\n                                \"event\": \"request\",\n                                \"cookiePassive\": {\n                                    \"name\": \"theFooBaring\"\n                                }\n                            },\n                            {\n                                \"type\": \"persist\",\n                                \"event\": \"request\",\n                                \"cookieHash\": {\n                                    \"name\": \"leFooBar\",\n                                    \"offset\": 5,\n                                    \"length\": 50,\n                                    \"timeout\": 60\n                                }\n                            },\n                            {\n                                \"type\": \"persist\",\n                                \"event\": \"request\",\n                                \"universal\": {\n                                    \"key\": \"insertFooBar\",\n                                    \"timeout\": 65\n                                }\n                            },\n                            {\n                                \"type\": \"persist\",\n                                \"event\": \"request\",\n                                \"hash\": {\n                                    \"key\": \"hashFooBar\",\n                                    \"timeout\": 55\n                                }\n                            },\n                            {\n                                \"type\": \"persist\",\n                                \"event\": \"request\",\n                                \"carp\": {\n                                    \"key\": \"carpFooBar\",\n                                    \"timeout\": 50\n                                }\n                            }\n                        ]\n                    }\n                ]\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Changing the enforcement mode of a WAF policy retrieved from a URL",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.13.0\",\n    \"Example_WAF_Policy\": {\n        \"class\": \"Tenant\",\n        \"Application\": {\n            \"class\": \"Application\",\n            \"exampleWAF\": {\n                \"class\": \"WAF_Policy\",\n                \"url\": \"https://example.com/files/wordpress_template_12.0.xml\",\n                \"ignoreChanges\": false,\n                \"enforcementMode\": \"transparent\"\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Using an Anti-Fraud (FPS) profile in a declaration",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.13.0\",\n    \"id\": \"Service_HTTP\",\n    \"Example_FPS\": {\n        \"class\": \"Tenant\",\n        \"Application\": {\n            \"class\": \"Application\",\n            \"FPSvs\": {\n                \"class\": \"Service_HTTP\",\n                \"virtualPort\": 100,\n                \"virtualAddresses\": [\n                    \"10.10.20.20\"\n                ],\n                \"profileFPS\": {\n                \t\"bigip\": \"/Common/antifraud\"\n                }\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Defining server technologies in a WAF policy",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.16.0\",\n    \"Example_WAF_Policy\": {\n        \"class\": \"Tenant\",\n        \"Application\": {\n            \"class\": \"Application\",\n            \"exampleWAF\": {\n                \"class\": \"WAF_Policy\",\n                \"url\": \"https://example.com/files/wordpress_template_12.0.xml\",\n                \"ignoreChanges\": false,\n                \"enforcementMode\": \"transparent\",\n                \"serverTechnologies\": [\n                    \"Java Servlets/JSP\",\n                    \"Apache Struts\"\n                ]\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Disabling an attack signature in a WAF policy",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.16.0\",\n    \"Example_WAF_Sig_Disable\": {\n        \"class\": \"Tenant\",\n        \"Application\": {\n            \"class\": \"Application\",\n            \"exampleWAF\": {\n                \"class\": \"WAF_Policy\",\n                \"url\": \"https://example.com/files/wordpress_template_12.0.xml\",\n                \"ignoreChanges\": false,\n                \"enforcementMode\": \"transparent\",\n                \"disabledSignatures\": [\n                    200000001,\n                    200000002\n                ]\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Using negative string conditions in Endpoint policies",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.17.0\",\n    \"id\": \"Endpoint_Policy\",\n    \"Example_negative_op\": {\n        \"class\": \"Tenant\",\n        \"Application1\": {\n            \"class\": \"Application\",\n            \"EP_Virtual\": {\n                \"class\": \"Service_HTTPS\",\n                \"virtualAddresses\": [\n                    \"10.0.9.10\"\n                ],\n                \"virtualPort\": 443,\n                \"pool\": \"web_pool\",\n                \"serverTLS\": \"webtls\",\n                \"policyEndpoint\": {\n                    \"use\": \"test_EP\"\n                }\n            },\n            \"test_EP\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"rule1\",\n                        \"actions\": [],\n                        \"conditions\": [\n                            {\n                                \"type\": \"sslExtension\",\n                                \"event\": \"ssl-client-hello\",\n                                \"serverName\": {\n                                    \"operand\": \"does-not-contain\",\n                                    \"values\": [\n                                        \"test1.com\"\n                                    ]\n                                }\n                            }, {\n                                \"type\": \"httpUri\",\n                                \"unnamedQueryParameter\": {\n                                    \"operand\": \"does-not-equal\",\n                                    \"values\": [\n                                        \"13\"\n                                    ]\n                                },\n                                \"index\": 1\n                            },\n                            {\n                                \"type\": \"httpUri\",\n                                \"path\": {\n                                    \"operand\": \"does-not-end-with\",\n                                    \"values\": [\n                                        \"/\"\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"httpUri\",\n                                \"host\": {\n                                    \"operand\": \"does-not-start-with\",\n                                    \"values\": [\n                                        \"site.com\"\n                                    ]\n                                }\n                            }\n                        ]\n                    },\n                    {\n                        \"name\": \"default\",\n                        \"actions\": [\n                            {\n                                \"type\": \"drop\",\n                                \"event\": \"request\"\n                            }\n                        ]\n                    }\n                ]\n            },\n            \"webtls\": {\n\t          \"class\": \"TLS_Server\",\n\t          \"certificates\": [{\n\t            \"certificate\": \"webcert\"\n\t          }]\n\t        },\n\t        \"webcert\": {\n\t          \"class\": \"Certificate\",\n\t          \"remark\": \"in practice we recommend using a passphrase\",\n              \"certificate\": \"-----BEGIN CERTIFICATE-----\\nMIICnDCCAgWgAwIBAgIJAJ5n2b0OCEjwMA0GCSqGSIb3DQEBCwUAMGcxCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApXYXNoaW5ndG9uMRAwDgYDVQQHDAdTZWF0dGxlMRQwEgYDVQQKDAtmNV9OZXR3b3JrczEbMBkGA1UEAwwSc2FtcGxlLmV4YW1wbGUubmV0MB4XDTE3MTEyNjE5NTAyNFoXDTE4MDIyNTE5NTAyNFowZzELMAkGA1UEBhMCVVMxEzARBgNVBAgMCldhc2hpbmd0b24xEDAOBgNVBAcMB1NlYXR0bGUxFDASBgNVBAoMC2Y1X05ldHdvcmtzMRswGQYDVQQDDBJzYW1wbGUuZXhhbXBsZS5uZXQwgZ8wDQYJKoZIhvcNAQEBBQADgY0AMIGJAoGBALEsuXmSXVQpYjrZPW+WiTBjn491mwZYT7Q92V1HlSBtM6WdWlK1aZN5sovfKtOX7Yrm8xa+e4o/zJ2QYLyyv5O+t2EGN/4qUEjEAPY9mwJdfzRQy6Hyzm84J0QkTuUJ/EjNuPji3D0QJRALUTzu1UqqDCEtiN9OGyXEkh7uvb7BAgMBAAGjUDBOMB0GA1UdDgQWBBSVHPNrGWrjWyZvckQxFYWO59FRFjAfBgNVHSMEGDAWgBSVHPNrGWrjWyZvckQxFYWO59FRFjAMBgNVHRMEBTADAQH/MA0GCSqGSIb3DQEBCwUAA4GBAJeJ9SEckEwPhkXOm+IuqfbUS/RcziifBCTmVyE+Fa/j9pKSYTgiEBNdbJeBEa+gPMlQtbV7Y2dy8TKx/8axVBHiXC5geDML7caxOrAyHYBpnx690xJTh5OIORBBM/a/NvaR+P3CoVebr/NPRh9oRNxnntnqvqD7SW0U3ZPe3tJc\\n-----END CERTIFICATE-----\",\n              \"chainCA\": \"-----BEGIN CERTIFICATE-----\\nMIID9TCCAt2gAwIBAgIJALxQA/NW2bpRMA0GCSqGSIb3DQEBCwUAMIGQMQswCQYDVQQGEwJVUzETMBEGA1UECAwKV2FzaGluZ3RvbjEQMA4GA1UEBwwHU2VhdHRsZTELMAkGA1UECgwCRjUxDTALBgNVBAsMBFRlc3QxFzAVBgNVBAMMDnRlc3RfQ0FfYnVuZGxlMSUwIwYJKoZIhvcNAQkBFhZzb21lYm9keUBzb21ld2hlcmUub3JnMB4XDTE4MDIyNzE5MjEyNVoXDTE4MDMyOTE5MjEyNVowgZAxCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApXYXNoaW5ndG9uMRAwDgYDVQQHDAdTZWF0dGxlMQswCQYDVQQKDAJGNTENMAsGA1UECwwEVGVzdDEXMBUGA1UEAwwOdGVzdF9DQV9idW5kbGUxJTAjBgkqhkiG9w0BCQEWFnNvbWVib2R5QHNvbWV3aGVyZS5vcmcwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCjhUZmbwwuMMFTNic73t0mfJ/pyM3BnEs0riv6lbrF5znFKBlAM2pxWBfkQvr92gUwitij7BqMagnR26/C7GcJJNJQGNK482vgSPhUpGeN0t4W71Dv5SpwJN+0do6gV0eXPwvcgA/XZxXqZAePwXTp36YMrNTgw49OWZpHoNXfYCZ+1KUL032RdQ/Ik2wO/UwV0csL1Rwuu2L8/NI9VtrThCAr8dsMsDJ53jDh7xQdP3K2V9NYtAHk66697kk7TpzR1moqTJxSVaPKo2eDuKNke1BRbjYWoamu0hfC5YG6l5P9i8QaVklbtmDcmoLpU9fLVSSW6CWHkrtdifQiCOChAgMBAAGjUDBOMB0GA1UdDgQWBBRv7/Q0VoBgDYzgJOKLz4GsgXP27zAfBgNVHSMEGDAWgBRv7/Q0VoBgDYzgJOKLz4GsgXP27zAMBgNVHRMEBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQA9r6+6hGVlQ188l+wLFJ1wI83y27BdtE0ZsZGdFv98qi9kcUm17Z0tprEwypODZ1/syt9b1JhD4RgU30qwgeF4kec8UpoG49UkQImRD3AqfsiYSdjZeBpcpEl3n8lkjKGoVY7GB2lMGoWDxv/1A0CSjVTmWgQSFGHoMtzOW1tCr9yGXVEdy691l7PVC1kK5ekwkO8YbSO6hvV/u83KuUiGcIoY1PIzAK301i9YXWUNxybIVfHregoQ11QzjhfdfpOLBTtW1B4QZqZz8qFGIr1remmQK3ljEcct9bWjMLOx2QYMvk6uRFzh+V5L2UnhldNy5wQYMXRDz6SU3LdTJ2OA\\n-----END CERTIFICATE-----\",\n              \"privateKey\": \"-----BEGIN RSA PRIVATE KEY-----\\nProc-Type: 4,ENCRYPTED\\nDEK-Info: AES-256-CBC,D8FFCE6B255601587CB54EC29B737D31\\n\\nkv4Fc3Jn0Ujkj0yRjt+gQQfBLSNF2aRLUENXnlr7Xpzqu0Ahr3jS1bAAnd8IWnsR\\nyILqVmKsYF2DoHh0tWiEAQ7/y/fe5DTFhK7N4Wml6kp2yVMkP6KC4ssyYPw27kjK\\nDBwBZ5O8Ioej08A5sgsLCmglbmtSPHJUn14pQnMTmLOpEtOsu6S+2ibPgSNpdg0b\\nCAJNG/KHe+Vkx59qNDyDeKb7FZOlsX30+y67zUq9GQqJEDuysPJ2BUNP0IJXAjst\\nFIt1qNoZew+5KDYs7u/lPxcMGTirUhgI84Jy4WcDvSOsP/tKlxj04TbIE3epmSKy\\n+TihHkwY7ngIGtcm3Sfqk5jz2RXoj1/Ac3SW8kVTYaOUogBhn7zAq4Wju6Et4hQG\\nRGapsJp1aCeZ/a4RCDTxspcKoMaRa97/URQb0hBRGx3DGUhzpmX9zl7JI2Xa5D3R\\nmdBXtjLKYJTdIMdd27prBEKhMUpae2rz5Mw4J907wZeBq/wu+zp8LAnecfTe2nGY\\nE32x1U7gSEdYOGqnwxsOexb1jKgCa67Nw9TmcMPV8zmH7R9qdvgxAbAtwBl1F9OS\\nfcGaC7epf1AjJLtaX7krWmzgASHl28Ynh9lmGMdv+5QYMZvKG0LOg/n3m8uJ6sKy\\nIzzvaJswwn0j5P5+czyoV5CvvdCfKnNb+3jUEN8I0PPwjBGKr4B1ojwhogTM248V\\nHR69D6TxFVMfGpyJhCPkbGEGbpEpcffpgKuC/mEtMqyDQXJNaV5HO6HgAJ9F1P6v\\n5ehHHTMRvzCCFiwndHdlMXUjqSNjww6me6dr6LiAPbejdzhL2vWx1YqebOcwQx3G\\n-----END RSA PRIVATE KEY-----\",\n              \"passphrase\": {\n                \"ciphertext\": \"ZjVmNQ==\",\n                \"protected\": \"eyJhbGciOiJkaXIiLCJlbmMiOiJub25lIn0\"\n              }\n           },\n           \"web_pool\": {\n            \"class\": \"Pool\",\n            \"monitors\": [\n                \"http\"\n            ],\n            \"members\": [{\n                \"servicePort\": 80,\n                \"serverAddresses\": [\n                    \"192.0.9.10\",\n                    \"192.0.9.11\"\n                    ]\n                }]\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Adding Basic Auth when retrieving a WAF policy from a URL",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.18.0\",\n    \"Example_WAF_Policy\": {\n        \"class\": \"Tenant\",\n        \"Example_App\": {\n            \"class\": \"Application\",\n            \"exampleWAF\": {\n                \"class\": \"WAF_Policy\",\n                \"url\": {\n                    \"url\": \"https://bigiq.example.com/mgmt/cm/asm/policy-files/download/0da5cae6-f106-3790-a72c-c58fb6b7a512/13.1.0\",\n                    \"authentication\": {\n                        \"method\": \"basic\",\n                        \"username\": \"testUser\",\n                        \"passphrase\": {\n                            \"ciphertext\": \"ZjVmNQ==\",\n                            \"protected\": \"eyJhbGciOiJkaXIiLCJlbmMiOiJub25lIn0\"\n                        }\n                    }\n                },\n                \"ignoreChanges\": false,\n                \"enforcementMode\": \"transparent\"\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Configuring the status code used during a redirect with an Endpoint policy",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.20.0\",\n    \"id\": \"Endpoint_Policy\",\n    \"AS3_Tenant\": {\n        \"class\": \"Tenant\",\n        \"AS3_Application\": {\n            \"class\": \"Application\",\n            \"test_EP\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"default\",\n                        \"actions\": [\n                            {\n                                \"type\": \"httpRedirect\",\n                                \"event\": \"request\",\n                                \"location\": \"http://localhost\",\n                                \"code\": 300\n                            }\n                        ]\n                    }\n                ]\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Using TCP address and port conditions in an Endpoint policy",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.20.0\",\n    \"id\": \"Endpoint_Policy\",\n    \"AS3_Tenant\": {\n        \"class\": \"Tenant\",\n        \"AS3_Application\": {\n            \"class\": \"Application\",\n            \"ipDataGroup\": {\n                \"class\": \"Data_Group\",\n                \"remark\": \"description\",\n                \"keyDataType\": \"ip\",\n                \"records\": [\n                    {\n                        \"key\": \"10.10.1.1\"\n                    }\n                ]\n            },\n            \"myPolicy\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"default\",\n                        \"conditions\": [\n                            {\n                                \"type\": \"tcp\",\n                                \"address\": {\n                                    \"values\": [\n                                        \"10.10.10.10\"\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"tcp\",\n                                \"port\": {\n                                    \"values\": [\n                                        8080\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"tcp\",\n                                \"address\": {\n                                    \"datagroup\": {\n                                        \"bigip\": \"/Common/private_net\"\n                                    }\n                                }\n                            },\n                            {\n                                \"type\": \"tcp\",\n                                \"address\": {\n                                    \"operand\": \"does-not-match\",\n                                    \"datagroup\": {\n                                        \"use\": \"/AS3_Tenant/AS3_Application/ipDataGroup\"\n                                    }\n                                }\n                            }\n                        ]\n                    }\n                ]\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Referencing an Advanced WAF policy in a declaration",
+      "text": "{\n  \"class\": \"ADC\",\n  \"schemaVersion\": \"3.24.0\",\n  \"owaspTenant\": {\n    \"class\": \"Tenant\",\n    \"owaspApp\": {\n      \"class\": \"Application\",\n      \"service\": {\n        \"class\": \"Service_HTTP\",\n        \"virtualAddresses\": [\n          \"192.0.2.0\"\n        ],\n        \"policyWAF\": {\n          \"use\": \"asmPolicy\"\n        }\n      },\n      \"asmPolicy\": {\n        \"class\": \"WAF_Policy\",\n        \"url\": \"https://raw.githubusercontent.com/f5devcentral/f5-asm-policy-templates/v1.1/owasp_ready_template/owasp_policy_v1.0.json\",\n        \"ignoreChanges\": false\n      }\n    }\n  }\n}\n"
+    },
+    {
+      "section": "Base64 example",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.26.0\",\n    \"id\": \"WAF_Policy\",\n    \"Tenant\": {\n        \"class\": \"Tenant\",\n        \"Application\": {\n            \"class\": \"Application\",\n            \"service\": {\n                \"class\": \"Service_HTTP\",\n                \"virtualAddresses\": [\"10.10.20.20\"],\n                \"policyWAF\": {\n                    \"use\": \"wafPolicy\"\n                }\n            },\n            \"wafPolicy\": {\n                \"class\": \"WAF_Policy\",\n                \"policy\": {\n                    \"base64\": \"ewogICAgInBvbGljeSI6IHsKICAgICAgICAibmFtZSI6IkFwcFBvbGljeTAxIiwKICAgICAgICAiZGVzY3JpcHRpb24iOiJlbWJlZGRlZCBXQUYgUG9saWN5IiwKICAgICAgICAidGVtcGxhdGUiOiB7CiAgICAgICAgICAgICJuYW1lIjoiUE9MSUNZX1RFTVBMQVRFX1JBUElEX0RFUExPWU1FTlQiCiAgICAgICAgfQogICAgfQp9\"\n                },\n                \"ignoreChanges\": false\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Text example",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.26.0\",\n    \"id\": \"WAF_Policy\",\n    \"Tenant\": {\n        \"class\": \"Tenant\",\n        \"Application\": {\n            \"class\": \"Application\",\n            \"service\": {\n                \"class\": \"Service_HTTP\",\n                \"virtualAddresses\": [\"10.10.20.20\"],\n                \"policyWAF\": {\n                    \"use\": \"wafPolicy\"\n                }\n            },\n            \"wafPolicy\": {\n                \"class\": \"WAF_Policy\",\n                \"policy\": {\n                    \"text\": \"{\\n  \\\"policy\\\": {\\n    \\\"name\\\":\\\"AppPolicy01\\\",\\n    \\\"description\\\":\\\"embedded WAF Policy\\\",\\n    \\\"template\\\": {\\n    \\\"name\\\":\\\"POLICY_TEMPLATE_RAPID_DEPLOYMENT\\\"\\n    }\\n    }\\n  }\"\n                },\n                \"ignoreChanges\": false\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "URL example",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.26.0\",\n    \"id\": \"WAF_Policy\",\n    \"Tenant\": {\n        \"class\": \"Tenant\",\n        \"Application\": {\n            \"class\": \"Application\",\n            \"service\": {\n                \"class\": \"Service_HTTP\",\n                \"virtualAddresses\": [\"10.10.20.20\"],\n                \"policyWAF\": {\n                    \"use\": \"wafPolicy\"\n                }\n            },\n            \"wafPolicy\": {\n                \"class\": \"WAF_Policy\",\n                \"policy\": {\n                    \"url\": \"https://example.xml\"\n                },\n                \"ignoreChanges\": false\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Referencing an API Protection profile in a declaration",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.26.0\",\n    \"id\": \"Service_HTTP\",\n    \"API_Protection_Service_HTTP\": {\n        \"class\": \"Tenant\",\n        \"apiProtectionApp\": {\n            \"class\": \"Application\",\n            \"service\": {\n                \"class\": \"Service_HTTP\",\n                \"virtualPort\": 8080,\n                \"virtualAddresses\": [\n                    \"1.2.3.4\"\n                ],\n                \"profileApiProtection\": {\n                    \"bigip\": \"/Common/apiProtectionProfile\"\n                }\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Using Tcl set-variable actions in an Endpoint policy",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.27.0\",\n    \"id\": \"Endpoint_Policy\",\n    \"AS3_Tenant\": {\n        \"class\": \"Tenant\",\n        \"AS3_Application\": {\n            \"class\": \"Application\",\n            \"service\": {\n                \"class\": \"Service_HTTP\",\n                \"virtualAddresses\": [\n                    \"1.2.3.4\"\n                ],\n                \"policyEndpoint\": {\n                    \"use\": \"endpointPolicy\"\n                }\n            },\n            \"endpointPolicy\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"rule\",\n                        \"actions\": [\n                            {\n                                \"type\": \"tcl\",\n                                \"event\": \"request\",\n                                \"setVariable\": {\n                                    \"expression\": \"tclExpression\",\n                                    \"name\": \"variableName\"\n                                }\n                            }\n                        ]\n                    }\n                ]\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Retrieving a WAF Policy from a URL using token-based authentication",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.28.0\",\n    \"Example_WAF_Policy\": {\n        \"class\": \"Tenant\",\n        \"Example_App\": {\n            \"class\": \"Application\",\n            \"exampleWAF\": {\n                \"class\": \"WAF_Policy\",\n                \"url\": {\n                    \"url\": \"https://bigiq.example.com/mgmt/cm/asm/policy-files/download/0da5cae6-f106-3790-a72c-c58fb6b7a512/13.1.0\",\n                    \"authentication\": {\n                        \"method\": \"bearer-token\",\n                        \"token\": {\n                            \"ciphertext\": \"ZjVmNQ==\",\n                            \"protected\": \"eyJhbGciOiJkaXIiLCJlbmMiOiJub25lIn0\"\n                        }\n                    }\n                },\n                \"ignoreChanges\": false,\n                \"enforcementMode\": \"transparent\"\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Using the HTTP method condition in an Endpoint policy",
+      "text": "{\n  \"class\": \"ADC\",\n  \"schemaVersion\": \"3.32.0\",\n  \"id\": \"Endpoint_Policy\",\n  \"AS3_Tenant\": {\n      \"class\": \"Tenant\",\n      \"AS3_Application\": {\n          \"class\": \"Application\",\n          \"service\": {\n              \"class\": \"Service_HTTP\",\n              \"virtualAddresses\": [\n                  \"1.2.3.4\"\n              ],\n              \"policyEndpoint\": {\n                  \"use\": \"test_EP\"\n              }\n          },\n          \"uriDataGroup\": {\n              \"class\": \"Data_Group\",\n              \"label\": \"URI Example\",\n              \"storageType\": \"internal\",\n              \"name\": \"URI Example\",\n              \"keyDataType\": \"string\",\n              \"records\": [\n                  {\n                      \"key\": \"test.com\"\n                  }\n              ]\n          },\n          \"test_EP\": {\n              \"class\": \"Endpoint_Policy\",\n              \"rules\": [\n                  {\n                      \"name\": \"replace\",\n                      \"actions\": [\n                          {\n                              \"type\": \"httpUri\",\n                              \"event\": \"request\",\n                              \"replace\": {\n                                  \"value\": \"http://127.0.0.1\"\n                              }\n                          }\n                      ],\n                      \"conditions\": [\n                          {\n                              \"type\": \"httpMethod\",\n                              \"event\": \"request\",\n                              \"all\": {\n                                  \"operand\": \"equals\",\n                                  \"values\": [\n                                      \"GET\",\n                                      \"POST\",\n                                      \"PATCH\"\n                                  ]\n                              }\n                          },\n                          {\n                              \"type\": \"httpUri\",\n                              \"event\": \"request\",\n                              \"host\": {\n                                  \"operand\": \"contains\",\n                                  \"datagroup\": {\n                                      \"use\": \"uriDataGroup\"\n                                  }\n                              }\n                          }\n                      ]\n                  },\n                  {\n                      \"name\": \"default\",\n                      \"actions\": [\n                          {\n                              \"type\": \"drop\",\n                              \"event\": \"request\"\n                          }\n                      ]\n                  }\n              ]\n          }\n      }\n  }\n}\n"
+    },
+    {
+      "section": "Using “exist” and “does not exist” string comparison operands in an Endpoint policy",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.29.0\",\n    \"id\": \"Service_HTTP\",\n    \"Sample_ep_operands\": {\n        \"class\": \"Tenant\",\n        \"Application\": {\n            \"class\": \"Application\",\n            \"service\": {\n                \"class\": \"Service_HTTP\",\n                \"policyEndpoint\": \"endpointPolicy\",\n                \"virtualAddresses\": [\n                    \"10.1.40.50\"\n                ]\n            },\n            \"endpointPolicy\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"default\",\n                        \"conditions\": [\n                            {\n                                \"type\": \"httpCookie\",\n                                \"all\": {\n                                    \"operand\": \"exists\"\n                                },\n                                \"name\": \"test\"\n                            },\n                            {\n                                \"type\": \"httpCookie\",\n                                \"all\": {\n                                    \"operand\": \"does-not-exist\"\n                                },\n                                \"name\": \"test2\"\n                            }\n                        ]\n                    }\n                ]\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Configuring TCP Endpoint Policy Conditions in a declaration",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.29.0\",\n    \"id\": \"Endpoint_Policy\",\n    \"AS3_Tenant\": {\n        \"class\": \"Tenant\",\n        \"AS3_Application\": {\n            \"class\": \"Application\",\n            \"tcpItem\": {\n                \"class\": \"Service_HTTP\",\n                \"policyEndpoint\": \"tcpPolicy\",\n                \"virtualAddresses\": [\n                    \"10.1.40.50\"\n                ]\n            },\n            \"tcpPolicy\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"tcpDefault\",\n                        \"conditions\": [\n                            {\n                                \"type\": \"tcp\",\n                                \"event\": \"request\",\n                                \"address\": {\n                                    \"operand\": \"matches\",\n                                    \"values\": [\n                                        \"10.10.10.11\"\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"tcp\",\n                                \"event\": \"response\",\n                                \"address\": {\n                                    \"operand\": \"does-not-match\",\n                                    \"values\": [\n                                        \"10.10.10.12\"\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"tcp\",\n                                \"event\": \"client-accepted\",\n                                \"address\": {\n                                    \"operand\": \"does-not-match\",\n                                    \"values\": [\n                                        \"10.10.10.14\"\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"tcp\",\n                                \"event\": \"server-connected\",\n                                \"address\": {\n                                    \"operand\": \"does-not-match\",\n                                    \"values\": [\n                                        \"10.10.10.18\"\n                                    ]\n                                }\n                            }\n                        ]\n                    }\n                ]\n            },\n            \"httpConnectPolicy\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"httpConnectPolicy\",\n                        \"conditions\": [\n                            {\n                                \"type\": \"tcp\",\n                                \"event\": \"proxy-response\",\n                                \"address\": {\n                                    \"values\": [\n                                        \"10.10.10.17\"\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"tcp\",\n                                \"event\": \"proxy-connect\",\n                                \"address\": {\n                                    \"values\": [\n                                        \"10.10.10.15\"\n                                    ]\n                                }\n                            }\n                        ]\n                    }\n                ]\n            },\n            \"httpExplicitPolicy\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"httpExplicitPolicy\",\n                        \"conditions\": [\n                            {\n                                \"type\": \"tcp\",\n                                \"event\": \"proxy-request\",\n                                \"address\": {\n                                    \"values\": [\n                                        \"10.10.10.16\"\n                                    ]\n                                }\n                            }\n                        ]\n                    }\n                ]\n            },\n            \"classificationPolicy\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"classificationPolicy\",\n                        \"conditions\": [\n                            {\n                                \"type\": \"tcp\",\n                                \"event\": \"classification-detected\",\n                                \"address\": {\n                                    \"values\": [\n                                        \"10.10.10.13\"\n                                    ]\n                                }\n                            }\n                        ]\n                    }\n                ]\n            },\n            \"clientSslPolicy\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"clientSslPolicy\",\n                        \"conditions\": [\n                            {\n                                \"type\": \"tcp\",\n                                \"event\": \"ssl-client-hello\",\n                                \"address\": {\n                                    \"values\": [\n                                        \"10.10.10.19\"\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"tcp\",\n                                \"event\": \"ssl-client-serverhello-send\",\n                                \"address\": {\n                                    \"values\": [\n                                        \"10.10.10.20\"\n                                    ]\n                                }\n                            }\n                        ]\n                    }\n                ]\n            },\n            \"serverSslPolicy\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"serverSslPolicy\",\n                        \"conditions\": [\n                            {\n                                \"type\": \"tcp\",\n                                \"event\": \"ssl-server-handshake\",\n                                \"address\": {\n                                    \"values\": [\n                                        \"10.10.10.21\"\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"tcp\",\n                                \"event\": \"ssl-server-hello\",\n                                \"address\": {\n                                    \"values\": [\n                                        \"10.10.10.22\"\n                                    ]\n                                }\n                            }\n                        ]\n                    }\n                ]\n            },\n            \"websocketPolicy\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"websocketPolicy\",\n                        \"conditions\": [\n                            {\n                                \"type\": \"tcp\",\n                                \"event\": \"ws-request\",\n                                \"address\": {\n                                    \"values\": [\n                                        \"10.10.10.23\"\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"tcp\",\n                                \"event\": \"ws-response\",\n                                \"address\": {\n                                    \"values\": [\n                                        \"10.10.10.24\"\n                                    ]\n                                }\n                            }\n                        ]\n                    }\n                ]\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Using the log Endpoint Policy Rule action",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.34.0\",\n    \"id\": \"Endpoint_Policy\",\n    \"AS3_Tenant\": {\n        \"class\": \"Tenant\",\n        \"AS3_Application\": {\n            \"class\": \"Application\",\n            \"service\": {\n                \"class\": \"Service_HTTP\",\n                \"virtualAddresses\": [\n                    \"1.2.3.4\"\n                ],\n                \"policyEndpoint\": {\n                    \"use\": \"endpointPolicy\"\n                }\n            },\n            \"endpointPolicy\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"rule\",\n                        \"actions\": [\n                            {\n                                \"type\": \"log\",\n                                \"event\": \"request\",\n                                \"write\": {\n                                    \"message\": \"The message\",\n                                    \"facility\": \"local1\",\n                                    \"priority\": \"warning\",\n                                    \"ipAddress\": \"5.6.7.8\",\n                                    \"port\": 123\n                                }\n                            }\n                        ]\n                    }\n                ]\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Referencing a WAF policy from a file on the BIG-IP",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.37.0\",\n    \"WAF_Policy_File\": {\n        \"class\": \"Tenant\",\n        \"Application\": {\n            \"class\": \"Application\",\n            \"service\": {\n                \"class\": \"Service_HTTP\",\n                \"virtualAddresses\": [\n                    \"192.0.2.0\"\n                ],\n                \"policyWAF\": {\n                    \"use\": \"wafPolicy\"\n                }\n            },\n            \"wafPolicy\": {\n                \"class\": \"WAF_Policy\",\n                \"file\": \"/path/to/file\",\n                \"enforcementMode\": \"transparent\"\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Using GeoIP Conditions in an Endpoint policy",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.42.0\",\n    \"id\": \"Endpoint_Policy\",\n    \"AS3_Tenant\": {\n        \"class\": \"Tenant\",\n        \"AS3_Application\": {\n            \"class\": \"Application\",\n            \"tcpItem\": {\n                \"class\": \"Service_HTTP\",\n                \"policyEndpoint\": \"geoIPPolicy\",\n                \"virtualAddresses\": [\n                    \"10.1.0.1\"\n                ]\n            },\n            \"geoIPPolicy\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"geoIPDefault\",\n                        \"conditions\": [\n                            {\n                                \"type\": \"geoip\",\n                                \"event\": \"request\",\n                                \"continent\": {\n                                    \"operand\": \"matches\",\n                                    \"values\": [\n                                        \"AF\"\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"geoip\",\n                                \"event\": \"request\",\n                                \"countryCode\": {\n                                    \"operand\": \"matches\",\n                                    \"values\": [\n                                        \"AT\"\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"geoip\",\n                                \"event\": \"request\",\n                                \"countryName\": {\n                                    \"operand\": \"matches\",\n                                    \"values\": [\n                                        \"Germany\"\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"geoip\",\n                                \"event\": \"request\",\n                                \"isp\": {\n                                    \"operand\": \"matches\",\n                                    \"values\": [\n                                        \"AT&T\"\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"geoip\",\n                                \"event\": \"request\",\n                                \"org\": {\n                                    \"operand\": \"matches\",\n                                    \"values\": [\n                                        \"myORG\"\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"geoip\",\n                                \"event\": \"request\",\n                                \"regionCode\": {\n                                    \"operand\": \"matches\",\n                                    \"values\": [\n                                        \"OR\"\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"geoip\",\n                                \"event\": \"request\",\n                                \"regionName\": {\n                                    \"operand\": \"matches\",\n                                    \"values\": [\n                                        \"Ohio\"\n                                    ]\n                                }\n                            }\n                        ]\n                    }\n                ]\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Configuring Security Log Profile NAT settings",
+      "text": "{\n    \"class\": \"ADC\",\n    \"label\": \"Sample Security Log Profile NAT\",\n    \"schemaVersion\": \"3.43.0\",\n    \"id\": \"Security_Log_Profile_NAT\",\n    \"Sample_sec_log_profile_nat\": {\n        \"class\": \"Tenant\",\n        \"A1\": {\n            \"class\": \"Application\",\n            \"secLogNAT\": {\n                \"class\": \"Security_Log_Profile\",\n                \"nat\": {\n                    \"publisher\": {\n                        \"bigip\": \"/Common/default-ipsec-log-publisher\"\n                    },\n                    \"logErrors\": true,\n                    \"logSubscriberId\": true,\n                    \"logQuotaExceeded\": true,\n                    \"logStartInboundSession\": true,\n                    \"logEndInboundSession\": true,\n                    \"logStartOutboundSession\": true,\n                    \"logStartOutboundSessionDestination\": false,\n                    \"logEndOutboundSession\": true,\n                    \"logEndOutboundSessionDestination\": false,\n                    \"lsnLegacyMode\": false,\n                    \"rateLimitAggregate\": 100,\n                    \"rateLimitErrors\": 10,\n                    \"rateLimitQuotaExceeded\": 20,\n                    \"rateLimitStartInboundSession\": 30,\n                    \"rateLimitEndInboundSession\": 40,\n                    \"rateLimitStartOutboundSession\": 50,\n                    \"rateLimitEndOutboundSession\": 60,\n                    \"formatErrors\": {\n                        \"fields\": [\n                            \"context-name\",\n                            \"event-name\",\n                            \"dest-ip\"\n                        ],\n                        \"delimiter\": \".\"\n                    }\n                }\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Enabling and disabling a bot defense profile in an Endpoint policy",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.46.0\",\n    \"id\": \"Service_HTTP\",\n    \"Endpoint_Policy_BotDefense\": {\n        \"class\": \"Tenant\",\n        \"Application\": {\n            \"class\": \"Application\",\n            \"testItem\": {\n                \"class\": \"Service_HTTP\",\n                \"virtualAddresses\": [\n                    \"10.1.40.50\"\n                ],\n                \"policyEndpoint\": \"endpointPolicy\",\n                \"profileBotDefense\": {\n                    \"bigip\": \"/Common/bot-defense\"\n                }\n            },\n            \"endpointPolicy\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"enableBotDefense\",\n                        \"conditions\": [\n                            {\n                                \"type\": \"httpUri\",\n                                \"path\": {\n                                    \"values\": [\n                                        \"example.com\"\n                                    ]\n                                }\n                            }\n                        ],\n                        \"actions\": [\n                            {\n                                \"type\": \"botDefense\",\n                                \"profile\": {\n                                    \"bigip\": \"/Common/bot-defense\"\n                                }\n                            }\n                        ]\n                    },\n                    {\n                        \"name\": \"disableBotDefense\",\n                        \"conditions\": [],\n                        \"actions\": [\n                            {\n                                \"type\": \"botDefense\"\n                            }\n                        ]\n                    }\n                ]\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Using expand for values in a WAF policy",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.46.0\",\n    \"id\": \"WAF_Policy\",\n    \"Tenant\": {\n        \"class\": \"Tenant\",\n        \"Application\": {\n            \"class\": \"Application\",\n            \"service\": {\n                \"class\": \"Service_HTTP\",\n                \"virtualAddresses\": [\"192.0.2.10\"],\n                \"policyWAF\": {\n                    \"use\": \"wafPolicy\"\n                }\n            },\n            \"wafPolicy\": {\n                \"class\": \"WAF_Policy\",\n                \"policy\": {\n                    \"text\": \"{\\n  \\\"policy\\\": {\\n    \\\"name\\\": \\\"AppPolicy01\\\",\\n    \\\"description\\\": \\\"embedded WAF Policy\\\",\\n    \\\"template\\\": {\\n      \\\"name\\\": \\\"POLICY_TEMPLATE_RAPID_DEPLOYMENT\\\"\\n    },\\n    \\\"open-api-files\\\": [\\n      {\\n        \\\"link\\\": \\\"https:\\/\\/example.com\\/files\\/`A`\\/openapi.yaml\\\"\\n      }\\n    ]\\n  }\\n}\\n\"\n                },\n                \"expand\": [\n                    \"/policy/open-api-files/0/link\"\n                ]\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Using the httpHost condition in an Endpoint policy rule",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.47.0\",\n    \"remark\": \"HTTP Host condition with LTM policy\",\n    \"Tenant\": {\n        \"class\": \"Tenant\",\n        \"Application\": {            \n            \"class\": \"Application\",\n            \"http_host_service\": {\n                \"class\": \"Service_HTTP\",\n                \"virtualAddresses\": [\n                    \"10.0.1.10\"\n                ],\n                \"policyEndpoint\": \"http_host_policy\",\n                \"profileHTTP\": {\n                    \"use\": \"httpProfile\"\n                }\n            },\n            \"httpProfile\": {\n                \"class\": \"HTTP_Profile\",\n                \"proxyConnectEnabled\": true,\n                \"proxyType\": \"explicit\",\n                \"resolver\": {\n                    \"bigip\": \"/Common/f5-aws-dns\"\n                }\n            },\n            \"hostnames\": {\n                \"class\": \"Data_Group\",\n                \"keyDataType\": \"string\",\n                \"records\": [\n                    {\n                        \"key\": \"testKey\",\n                        \"value\": \"test.com\"\n                    },\n                    {\n                        \"key\": \"exampleKey\",\n                        \"value\": \"example.com\"\n                    }\n                ]\n            },\n            \"http_host_policy\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"http_host_1\",\n                        \"conditions\": [\n                            {\n                                \"type\": \"httpHost\",\n                                \"event\": \"proxy-request\",\n                                \"all\": {\n                                    \"operand\": \"contains\",\n                                    \"datagroup\": {\n                                        \"bigip\": \"/Common/hostnames\"\n                                    }\n                                }\n                            }\n                        ]\n                    },\n                    {\n                        \"name\": \"http_host_2\",\n                        \"conditions\": [\n                            {\n                                \"type\": \"httpHost\",\n                                \"event\": \"request\",\n                                \"host\": {\n                                    \"operand\": \"ends-with\",\n                                    \"values\": [\n                                        \"test.com\",\n                                        \"example.com\"\n                                    ]\n                                },\n                                \"caseSensitive\": true\n                            }\n                        ]\n                    },\n                    {\n                        \"name\": \"http_host_3\",\n                        \"conditions\": [\n                            {\n                                \"type\": \"httpHost\",\n                                \"event\": \"proxy-connect\",\n                                \"port\": {\n                                    \"operand\": \"equals\",\n                                    \"values\": [\n                                        8080,\n                                        8443\n                                    ]\n                                }\n                            }\n                        ]\n                    }\n                ]\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Using HTTP Status condition in an Endpoint policy rule",
+      "text": "{\n    \"class\": \"ADC\",\n    \"schemaVersion\": \"3.48.0\",\n    \"id\": \"Endpoint_Policy\",\n    \"AS3_Tenant\": {\n        \"class\": \"Tenant\",\n        \"AS3_Application\": {\n            \"class\": \"Application\",\n            \"service\": {\n                \"class\": \"Service_HTTP\",\n                \"virtualAddresses\": [\n                    \"1.2.3.4\"\n                ],\n                \"policyEndpoint\": {\n                    \"use\": \"test_EP\"\n                }\n            },\n            \"allDataGroup\": {\n                \"class\": \"Data_Group\",\n                \"label\": \"HTTP Status All\",\n                \"storageType\": \"internal\",\n                \"name\": \"HTTP Status All\",\n                \"keyDataType\": \"string\",\n                \"records\": [\n                    {\n                        \"key\": \"403 Forbidden\"\n                    },\n                    {\n                        \"key\": \"404 Not Found\"\n                    }\n                ]\n            },\n            \"textDataGroup\": {\n                \"class\": \"Data_Group\",\n                \"label\": \"HTTP Status Text\",\n                \"storageType\": \"internal\",\n                \"name\": \"HTTP Status Text\",\n                \"keyDataType\": \"string\",\n                \"records\": [\n                    {\n                        \"key\": \"Bad Request\"\n                    },\n                    {\n                        \"key\": \"Unauthorized\"\n                    }\n                ]\n            },\n            \"codeDataGroup\": {\n                \"class\": \"Data_Group\",\n                \"label\": \"HTTP Status Codes\",\n                \"storageType\": \"internal\",\n                \"name\": \"HTTP Status Codes\",\n                \"keyDataType\": \"integer\",\n                \"records\": [\n                    {\n                        \"key\": 400\n                    },\n                    {\n                        \"key\": 500\n                    }\n                ]\n            },\n            \"test_EP\": {\n                \"class\": \"Endpoint_Policy\",\n                \"rules\": [\n                    {\n                        \"name\": \"log\",\n                        \"actions\": [\n                            {\n                                \"type\": \"log\",\n                                \"event\": \"response\",\n                                \"write\": {\n                                    \"message\": \"The message\",\n                                    \"facility\": \"local1\",\n                                    \"priority\": \"warning\",\n                                    \"ipAddress\": \"5.6.7.8\",\n                                    \"port\": 123\n                                }\n                            }\n                        ],\n                        \"conditions\": [\n                            {\n                                \"type\": \"httpStatus\",\n                                \"event\": \"response\",\n                                \"all\": {\n                                    \"operand\": \"equals\",\n                                    \"values\": [\n                                        \"204 No Content\",\n                                        \"205 Reset Content\",\n                                        \"206 Partial Content\"\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"httpStatus\",\n                                \"event\": \"response\",\n                                \"all\": {\n                                    \"operand\": \"equals\",\n                                    \"datagroup\": {\n                                        \"use\": \"allDataGroup\"\n                                    }\n                                }\n                            },\n                            {\n                                \"type\": \"httpStatus\",\n                                \"event\": \"response\",\n                                \"text\": {\n                                    \"operand\": \"contains\",\n                                    \"values\": [\n                                        \"Unauthorized\",\n                                        \"Payment Required\"\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"httpStatus\",\n                                \"event\": \"response\",\n                                \"text\": {\n                                    \"operand\": \"ends-with\",\n                                    \"datagroup\": {\n                                        \"use\": \"textDataGroup\"\n                                    }\n                                }\n                            },\n                            {\n                                \"type\": \"httpStatus\",\n                                \"event\": \"response\",\n                                \"code\": {\n                                    \"operand\": \"greater\",\n                                    \"values\": [\n                                        500\n                                    ]\n                                }\n                            },\n                            {\n                                \"type\": \"httpStatus\",\n                                \"event\": \"response\",\n                                \"code\": {\n                                    \"operand\": \"equals\",\n                                    \"datagroup\": {\n                                        \"use\": \"codeDataGroup\"\n                                    }\n                                }\n                            }\n                        ]\n                    }\n                ]\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "section": "Using the logUuidField property in a Security Log Profile network section",
+      "text": "{\n    \"schemaVersion\": \"3.57.0\",\n    \"class\": \"ADC\",\n    \"exampleTenant\": {\n        \"class\": \"Tenant\",\n        \"exampleApplication\": {\n            \"class\": \"Application\",\n            \"network_log_profile\": {\n                \"class\": \"Security_Log_Profile\",\n                \"network\": {\n                    \"logRuleMatchAccepts\": true,\n                    \"logUuidField\": true,\n                    \"storageFormat\": \"Example Format ${date_time} ${bigip_hostname} ${acl_policy_name},${acl_policy_type},${acl_rule_name},${action},${context_name},${context_type},${dest_ip},${dest_port},${drop_reason},${protocol},${sa_translation_pool},${sa_translation_type},${src_ip},${src_port},${translated_dest_ip},${translated_dest_port},${translated_ip_protocol},${translated_src_ip},${translated_src_port},${translated_vlan},${vlan}\"\n                }\n            }\n        }\n    }\n}\n"
+    }
+  ],
+  "content_hash": "7164791e062e3d2bd0e03500d0908d492b3737b955899e4fe2267576b6ce0c9a",
+  "diagrams": [],
+  "documentation_version": "3.57.0",
+  "headings": [
+    {
+      "anchor": "application-security",
+      "level": 1,
+      "path": [],
+      "title": "Application Security"
+    },
+    {
+      "anchor": "virtual-service-referencing-an-existing-security-policy",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Virtual service referencing an existing security policy"
+    },
+    {
+      "anchor": "virtual-service-referencing-an-external-security-policy",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Virtual service referencing an external security policy"
+    },
+    {
+      "anchor": "endpoint-policy-with-default-rule-to-disable-waf",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Endpoint policy with default rule to disable WAF"
+    },
+    {
+      "anchor": "endpoint-policy-with-ssl-sni-match-conditions-and-http-action",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Endpoint policy with SSL SNI Match conditions and HTTP action"
+    },
+    {
+      "anchor": "using-a-security-log-profile-with-application-security",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Using a Security log profile with Application Security"
+    },
+    {
+      "anchor": "local-storage",
+      "level": 3,
+      "path": [
+        "Application Security",
+        "Using a Security log profile with Application Security"
+      ],
+      "title": "Local storage"
+    },
+    {
+      "anchor": "remote-storage",
+      "level": 3,
+      "path": [
+        "Application Security",
+        "Using a Security log profile with Application Security"
+      ],
+      "title": "Remote storage"
+    },
+    {
+      "anchor": "using-persist-actions-in-an-endpoint-policy",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Using Persist Actions in an Endpoint Policy"
+    },
+    {
+      "anchor": "changing-the-enforcement-mode-of-a-waf-policy-retrieved-from-a-url",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Changing the enforcement mode of a WAF policy retrieved from a URL"
+    },
+    {
+      "anchor": "using-an-anti-fraud-fps-profile-in-a-declaration",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Using an Anti-Fraud (FPS) profile in a declaration"
+    },
+    {
+      "anchor": "defining-server-technologies-in-a-waf-policy",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Defining server technologies in a WAF policy"
+    },
+    {
+      "anchor": "disabling-an-attack-signature-in-a-waf-policy",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Disabling an attack signature in a WAF policy"
+    },
+    {
+      "anchor": "using-negative-string-conditions-in-endpoint-policies",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Using negative string conditions in Endpoint policies"
+    },
+    {
+      "anchor": "adding-basic-auth-when-retrieving-a-waf-policy-from-a-url",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Adding Basic Auth when retrieving a WAF policy from a URL"
+    },
+    {
+      "anchor": "configuring-the-status-code-used-during-a-redirect-with-an-endpoint-policy",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Configuring the status code used during a redirect with an Endpoint policy"
+    },
+    {
+      "anchor": "using-tcp-address-and-port-conditions-in-an-endpoint-policy",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Using TCP address and port conditions in an Endpoint policy"
+    },
+    {
+      "anchor": "referencing-an-advanced-waf-policy-in-a-declaration",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Referencing an Advanced WAF policy in a declaration"
+    },
+    {
+      "anchor": "embedding-a-waf-policy-in-a-declaration",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Embedding a WAF policy in a declaration"
+    },
+    {
+      "anchor": "base64-example",
+      "level": 3,
+      "path": [
+        "Application Security",
+        "Embedding a WAF policy in a declaration"
+      ],
+      "title": "Base64 example"
+    },
+    {
+      "anchor": "text-example",
+      "level": 3,
+      "path": [
+        "Application Security",
+        "Embedding a WAF policy in a declaration"
+      ],
+      "title": "Text example"
+    },
+    {
+      "anchor": "url-example",
+      "level": 3,
+      "path": [
+        "Application Security",
+        "Embedding a WAF policy in a declaration"
+      ],
+      "title": "URL example"
+    },
+    {
+      "anchor": "referencing-an-api-protection-profile-in-a-declaration",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Referencing an API Protection profile in a declaration"
+    },
+    {
+      "anchor": "using-tcl-set-variable-actions-in-an-endpoint-policy",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Using Tcl set-variable actions in an Endpoint policy"
+    },
+    {
+      "anchor": "retrieving-a-waf-policy-from-a-url-using-token-based-authentication",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Retrieving a WAF Policy from a URL using token-based authentication"
+    },
+    {
+      "anchor": "using-the-http-method-condition-in-an-endpoint-policy",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Using the HTTP method condition in an Endpoint policy"
+    },
+    {
+      "anchor": "using-exist-and-does-not-exist-string-comparison-operands-in-an-endpoint-policy",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Using “exist” and “does not exist” string comparison operands in an Endpoint policy"
+    },
+    {
+      "anchor": "configuring-tcp-endpoint-policy-conditions-in-a-declaration",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Configuring TCP Endpoint Policy Conditions in a declaration"
+    },
+    {
+      "anchor": "using-the-log-endpoint-policy-rule-action",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Using the log Endpoint Policy Rule action"
+    },
+    {
+      "anchor": "referencing-a-waf-policy-from-a-file-on-the-big-ip",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Referencing a WAF policy from a file on the BIG-IP"
+    },
+    {
+      "anchor": "using-geoip-conditions-in-an-endpoint-policy",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Using GeoIP Conditions in an Endpoint policy"
+    },
+    {
+      "anchor": "configuring-security-log-profile-nat-settings",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Configuring Security Log Profile NAT settings"
+    },
+    {
+      "anchor": "enabling-and-disabling-a-bot-defense-profile-in-an-endpoint-policy",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Enabling and disabling a bot defense profile in an Endpoint policy"
+    },
+    {
+      "anchor": "using-expand-for-values-in-a-waf-policy",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Using expand for values in a WAF policy"
+    },
+    {
+      "anchor": "using-the-httphost-condition-in-an-endpoint-policy-rule",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Using the httpHost condition in an Endpoint policy rule"
+    },
+    {
+      "anchor": "using-http-status-condition-in-an-endpoint-policy-rule",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Using HTTP Status condition in an Endpoint policy rule"
+    },
+    {
+      "anchor": "using-the-loguuidfield-property-in-a-security-log-profile-network-section",
+      "level": 2,
+      "path": [
+        "Application Security"
+      ],
+      "title": "Using the logUuidField property in a Security Log Profile network section"
+    }
+  ],
+  "id": "9b8ad28cdb7e31824937f5eb",
+  "images": [],
+  "kind": "automation_reference",
+  "links": [
+    {
+      "title": "this FAQ entry",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/faq.html#servmain-ref"
+    },
+    {
+      "title": "this Troubleshooting entry",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/troubleshooting.html#exampleupdates"
+    },
+    {
+      "title": "Policy_Action_TCL",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-action-tcl"
+    },
+    {
+      "title": "Policy_Action_Drop",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-action-drop"
+    },
+    {
+      "title": "Policy_Condition_HTTP_URI",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-condition-http-uri"
+    },
+    {
+      "title": "BIG-IP ASM Implementations Guide",
+      "url": "https://support.f5.com/kb/en-us/products/big-ip_asm/manuals/product/asm-implementations-13-1-0.html"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "BIG-IP ASM Implementations Guide",
+      "url": "https://support.f5.com/kb/en-us/products/big-ip_asm/manuals/product/asm-implementations-13-1-0.html"
+    },
+    {
+      "title": "Exporting ASM Policies",
+      "url": "https://support.f5.com/kb/en-us/products/big-ip_asm/manuals/product/asm-implementations-13-1-0/34.html#guid-827de25f-5091-4002-bc1b-342e4451b409"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Schema Reference",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#schema-reference"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Policy_Condition",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-condition"
+    },
+    {
+      "title": "Policy_Condition_SSL_extension_HTTP",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-condition-ssl-extension"
+    },
+    {
+      "title": "Policy_Action_HTTP",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-action-http"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "ASM Logging Profiles",
+      "url": "https://support.f5.com/kb/en-us/products/big-ip_asm/manuals/product/asm-implementations-13-1-0/14.html"
+    },
+    {
+      "title": "Security Log Profile class",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#security-log-profile"
+    },
+    {
+      "title": "Remote storage",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#remote"
+    },
+    {
+      "title": "Local storage",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#local"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Policy_Action_Persist",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-action-persist"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "WAF_Policy",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#waf-policy"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Web Fraud protection",
+      "url": "https://www.f5.com/products/security/websafe-and-mobilesafe"
+    },
+    {
+      "title": "Pointer_FPS",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#pointer-fps-profile"
+    },
+    {
+      "title": "Schema Reference",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#schema-reference"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Adding Server Technologies to a Policy",
+      "url": "https://techdocs.f5.com/kb/en-us/products/big-ip_asm/manuals/product/asm-implementations-13-1-0/23.html"
+    },
+    {
+      "title": "WAF_Policy",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#waf-policy"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Managing BIG-IP ASM attach signatures",
+      "url": "https://support.f5.com/csp/article/K8217"
+    },
+    {
+      "title": "WAF_Policy",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#waf-policy"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Local Traffic Policies",
+      "url": "https://techdocs.f5.com/en-us/bigip-15-1-0/big-ip-local-traffic-management-getting-started-with-policies.html"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Policy_Action",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-action"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Local Traffic Policies",
+      "url": "https://techdocs.f5.com/en-us/bigip-15-1-0/big-ip-local-traffic-management-getting-started-with-policies.html"
+    },
+    {
+      "title": "Policy_Condition_TCP",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-condition-tcp"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Securing against the OWASP Top 10",
+      "url": "https://support.f5.com/csp/article/K52596282"
+    },
+    {
+      "title": "Advanced WAF",
+      "url": "https://www.f5.com/products/security/advanced-waf"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "WAF_Policy",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#waf-policy"
+    },
+    {
+      "title": "base64",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#base64ex"
+    },
+    {
+      "title": "text",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#textex"
+    },
+    {
+      "title": "url",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#urlex"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "APM API Protection",
+      "url": "https://techdocs.f5.com/en-us/bigip-15-1-0/big-ip-access-policy-manager-api-protection/api-protection-concepts.html#acm-introducing-api-protection"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Policy_Action_TCL_setVariable",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-action-tcl-setvariable"
+    },
+    {
+      "title": "Policy_Action_TCL",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-action-tcl"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-client-creds-grant-flow",
+      "url": "https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-client-creds-grant-flow"
+    },
+    {
+      "title": "Bearer Token",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#bearer-token-token"
+    },
+    {
+      "title": "WAF_Policy",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#waf-policy"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Local Traffic Policies",
+      "url": "https://techdocs.f5.com/en-us/bigip-15-1-0/big-ip-local-traffic-management-getting-started-with-policies.html"
+    },
+    {
+      "title": "Policy_Condition",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-condition"
+    },
+    {
+      "title": "Policy_Condition_HTTP_Method",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-condition-http-method"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Policy_Compare_String",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-compare-string"
+    },
+    {
+      "title": "Local Traffic Policies",
+      "url": "https://techdocs.f5.com/en-us/bigip-15-1-0/big-ip-local-traffic-management-getting-started-with-policies.html"
+    },
+    {
+      "title": "Endpoint_Policy",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#endpoint-policy"
+    },
+    {
+      "title": "Policy_Compare_String",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-compare-string"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Policy_Condition_TCP",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-condition-tcp"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Policy_Action_Log",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-action-log"
+    },
+    {
+      "title": "Policy_Action_Log_Write",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-action-log-write"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Local Traffic Policies",
+      "url": "https://techdocs.f5.com/en-us/bigip-15-1-0/big-ip-local-traffic-management-getting-started-with-policies.html"
+    },
+    {
+      "title": "Policy_Condition_GeoIP",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-condition-geoip"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Security Log Profile class",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#security-log-profile"
+    },
+    {
+      "title": "Security_Log_Profile.nat",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#security-log-profile-nat-object"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Endpoint_Policy",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#endpoint-policy"
+    },
+    {
+      "title": "DOS_Profile_Application_Bot_Defense",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#dos-profile-application-bot-defense"
+    },
+    {
+      "title": "Bot defense overview",
+      "url": "https://www.f5.com/cloud/products/bot-defense"
+    },
+    {
+      "title": "Configuring Bot defense",
+      "url": "https://techdocs.f5.com/en-us/bigip-16-1-0/big-ip-asm-implementations/configuring-bot-defense.html"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "WAF_Policy",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#waf-policy"
+    },
+    {
+      "title": "String Expansion in URLs, iRules, and Other Values",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/declaration-purpose-function.html#string-expansion-in-urls-irules-and-other-values"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Local Traffic Policies",
+      "url": "https://techdocs.f5.com/en-us/bigip-15-1-0/big-ip-local-traffic-management-getting-started-with-policies.html"
+    },
+    {
+      "title": "Policy_Condition_HTTP_Host",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-condition-http-host"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Local Traffic Policies",
+      "url": "https://techdocs.f5.com/en-us/bigip-15-1-0/big-ip-local-traffic-management-getting-started-with-policies.html"
+    },
+    {
+      "title": "Policy_Condition",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#policy-condition"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Security Log Profile class",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/refguide/schema-reference.html#security-log-profile"
+    },
+    {
+      "title": "Back to top",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html#app-sec-examples"
+    },
+    {
+      "title": "Previous",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/network-security.html"
+    },
+    {
+      "title": "Next",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/dos-protection.html"
+    }
+  ],
+  "publisher_product_labels": [
+    "F5 BIG-IP AS3"
+  ],
+  "source": "as3",
+  "text": "PDF\nApplication Security\nThis section contains declarations that aim to secure your deployment.\nUse the index on the right to locate specific examples.\nImportant\nMost of the example declarations have been updated in the documentation for BIG-IP AS3 3.20 to remove any\ntemplate\nthat was specified, and rename any virtual services that used the name\nserviceMain\nto\nservice\n. In BIG-IP AS3 3.20, the\ngeneric\ntemplate is the default, which allows services to use any name.\nThis also means that many of these declarations on a version prior to 3.20 they will fail unless you add a template.  See\nthis FAQ entry\nand\nthis Troubleshooting entry\nfor more information.\nNew in BIG-IP AS3 3.34\nBIG-IP AS3 3.34 added support for the\nproxy-request\nevent on the following Endpoint Policy items.\nPolicy_Action_TCL\nPolicy_Action_Drop\nPolicy_Condition_HTTP_URI\nVirtual service referencing an existing security policy\nThis example creates an HTTP service, and attaches an existing Web Application\nFirewall (WAF) security policy created with the BIG-IP Application Security\nManager (ASM) module.  See the\nBIG-IP ASM Implementations Guide\nfor information on configuring security policies.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nSample_app_sec_01\n.\nA virtual server named\nservice\n.\nA pool named\nPool1\nmonitored by the default\nhttp\nhealth monitor.\nAn LTM policy named\n_WAF__HTTP_Service\nwhich references the existing ASM policy named\ntest-policy\n.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.0.0\"\n,\n\"id\"\n:\n\"5489432\"\n,\n\"label\"\n:\n\"ASM_policy_existing\"\n,\n\"remark\"\n:\n\"ASM_policy_existing\"\n,\n\"Sample_app_sec_01\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"HTTP_Service\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"service\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"virtualAddresses\"\n:\n[\n\"192.0.10.107\"\n],\n\"snat\"\n:\n\"auto\"\n,\n\"pool\"\n:\n\"Pool1\"\n,\n\"policyWAF\"\n:\n{\n\"bigip\"\n:\n\"/Common/test-policy\"\n}\n},\n\"Pool1\"\n:\n{\n\"class\"\n:\n\"Pool\"\n,\n\"monitors\"\n:\n[\n\"http\"\n],\n\"members\"\n:\n[\n{\n\"servicePort\"\n:\n8001\n,\n\"serverAddresses\"\n:\n[\n\"10.10.10.143\"\n]\n},\n{\n\"servicePort\"\n:\n8002\n,\n\"serverAddresses\"\n:\n[\n\"10.10.10.144\"\n]\n}\n]\n}\n}\n}\n}\nBack to top\nVirtual service referencing an external security policy\nThis example creates an HTTP service, and attaches a Web Application Firewall\n(WAF) security policy hosted in an external location.  See the\nBIG-IP ASM Implementations Guide\nfor information on configuring security policies, and the\nExporting ASM Policies\nchapter for\ninformation on exporting policies.\nNote the URL in the following declaration does not resolve, you need to use a\nvalid URL where you have uploaded the ASM policy you exported from a BIG-IP system.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nSample_app_sec_02\n.\nA virtual server named\nservice\n.\nA pool named\nPool1\nmonitored by the default\nhttp\nhealth monitor.\nAn LTM policy named\n_WAF__HTTP_Service\nwhich references the external ASM policy via URL.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.2.0\"\n,\n\"id\"\n:\n\"5489432\"\n,\n\"label\"\n:\n\"ASM_policy_external_URL\"\n,\n\"remark\"\n:\n\"ASM_policy_external_URL\"\n,\n\"Sample_app_sec_02\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"HTTP_Service\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"service\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"virtualAddresses\"\n:\n[\n\"192.0.10.107\"\n],\n\"snat\"\n:\n\"auto\"\n,\n\"pool\"\n:\n\"Pool1\"\n,\n\"policyWAF\"\n:\n{\n\"use\"\n:\n\"My_ASM_Policy\"\n}\n},\n\"Pool1\"\n:\n{\n\"class\"\n:\n\"Pool\"\n,\n\"monitors\"\n:\n[\n\"http\"\n],\n\"members\"\n:\n[\n{\n\"servicePort\"\n:\n8001\n,\n\"serverAddresses\"\n:\n[\n\"10.10.10.143\"\n]\n},\n{\n\"servicePort\"\n:\n8002\n,\n\"serverAddresses\"\n:\n[\n\"10.10.10.144\"\n]\n}\n]\n},\n\"My_ASM_Policy\"\n:\n{\n\"class\"\n:\n\"WAF_Policy\"\n,\n\"url\"\n:\n\"https://example.com/asm-policy.xml\"\n,\n\"ignoreChanges\"\n:\ntrue\n}\n}\n}\n}\nBack to top\nEndpoint policy with default rule to disable WAF\nThis example shows an Endpoint policy that includes two rules, one that attempts to match a URI and then enables the WAF policy, and a default rule to disable the Web Application Firewall (WAF) if the first doesn’t match.  See the\nSchema Reference\nfor usage options and information on Endpoint policies.  You can also see this page for example policy declarations.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nSample_app_sec_03\n.\nAn Endpoint policy named\ntestItem\n.\nTwo rules, one to enable the WAF and the other to disable it.\nA WAF policy named\nwafPolicy\nwhich references an external policy (via URL).\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.7.0\"\n,\n\"id\"\n:\n\"Service_HTTP\"\n,\n\"Sample_app_sec_03\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"testItem\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"policyEndpoint\"\n:\n\"endpointPolicy\"\n,\n\"virtualAddresses\"\n:\n[\n\"10.1.40.50\"\n]\n},\n\"endpointPolicy\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"enableWAF\"\n,\n\"conditions\"\n:\n[{\n\"type\"\n:\n\"httpUri\"\n,\n\"path\"\n:\n{\n\"values\"\n:\n[\n\"example.com\"\n]\n}\n}\n],\n\"actions\"\n:\n[{\n\"type\"\n:\n\"waf\"\n,\n\"policy\"\n:\n{\n\"use\"\n:\n\"wafPolicy\"\n}\n}\n]\n},\n{\n\"name\"\n:\n\"disableWAF\"\n,\n\"conditions\"\n:\n[],\n\"actions\"\n:\n[{\n\"type\"\n:\n\"waf\"\n}\n]\n}\n]\n},\n\"wafPolicy\"\n:\n{\n\"class\"\n:\n\"WAF_Policy\"\n,\n\"url\"\n:\n\"http://example.com/orchestration-as3-test/resources/asm_policy/policy.xml\"\n,\n\"ignoreChanges\"\n:\ntrue\n}\n}\n}\n}\nBack to top\nEndpoint policy with SSL SNI Match conditions and HTTP action\nThis example shows an Endpoint policy that includes SSL SNI Match conditions (sslExtension) and the ability to use HTTP actions in a declaration. The SSL extension property inspects SSL extensions being negotiated during the HELLO phase. See\nPolicy_Condition\nand\nPolicy_Condition_SSL_extension_HTTP\nin the Schema Reference for usage and options.\nThe HTTP actions property provides the ability to enable or disable the BIG-IP system’s HTTP filter processing. See\nPolicy_Action_HTTP\nin the Schema Reference for usage and options.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nSample_app_sec_04\n.\nAn Endpoint policy named\ntest1\n.\nAn Endpoint policy rule (sni0) which, if during the SSL client HELLO the server name (test1.com) is in the SSL extension, will forward to an existing pool (sni1) on the BIG-IP (with HTTP actions set to false).\nA second rule (sni1) which, if during the SSL client HELLO the server name (test2.com) is in the SSL extension, will forward to an existing pool (sni2) on the BIG-IP (with HTTP actions set to false).\nA default rule that drops the request if neither of the other two rules are matched.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.8.0\"\n,\n\"id\"\n:\n\"Endpoint_Policy\"\n,\n\"Sample_app_sec_04\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"test1\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"sni0\"\n,\n\"actions\"\n:\n[\n{\n\"type\"\n:\n\"forward\"\n,\n\"select\"\n:\n{\n\"pool\"\n:\n{\n\"bigip\"\n:\n\"/Common/sni1\"\n}\n}\n},\n{\n\"type\"\n:\n\"http\"\n,\n\"enabled\"\n:\nfalse\n}\n],\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"sslExtension\"\n,\n\"event\"\n:\n\"ssl-client-hello\"\n,\n\"serverName\"\n:\n{\n\"operand\"\n:\n\"equals\"\n,\n\"values\"\n:\n[\n\"test1.com\"\n]\n}\n}\n]\n},\n{\n\"name\"\n:\n\"sni1\"\n,\n\"actions\"\n:\n[\n{\n\"type\"\n:\n\"forward\"\n,\n\"select\"\n:\n{\n\"pool\"\n:\n{\n\"bigip\"\n:\n\"/Common/sni2\"\n}\n}\n},\n{\n\"type\"\n:\n\"http\"\n,\n\"enabled\"\n:\nfalse\n}\n],\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"sslExtension\"\n,\n\"event\"\n:\n\"ssl-client-hello\"\n,\n\"serverName\"\n:\n{\n\"operand\"\n:\n\"equals\"\n,\n\"values\"\n:\n[\n\"test2.com\"\n]\n}\n}\n]\n},\n{\n\"name\"\n:\n\"default\"\n,\n\"actions\"\n:\n[\n{\n\"type\"\n:\n\"drop\"\n,\n\"event\"\n:\n\"request\"\n}\n]\n}\n]\n}\n}\n}\n}\nBack to top\nUsing a Security log profile with Application Security\nThis example shows how you can use a BIG-IP ASM Security Logging profile with application security in a declaration (you must have ASM licensed and provisioned to use this profile). Logging profiles determine where events are logged, and which items (such as which parts of requests, or which type of errors) are logged. For more information on ASM logging profiles, see\nASM Logging Profiles\n, and\nSecurity Log Profile class\nin the Schema Reference for BIG-IP AS3 usage options and information.\nThere are two declarations in this example, one that uses local storage for the logs, and one that uses remote storage.\nLocal storage\nThis declaration creates a security log profile that uses local storage (for the remote storage example, click\nRemote storage\n).  This declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nSecurity_Log_Local\n.\nA Security Log Profile named\nsecLogLocal\nwith Application Security enabled which stores logs locally.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.10.0\"\n,\n\"id\"\n:\n\"Security_Log_Profile_local\"\n,\n\"Security_Log_local\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"secLogLocal\"\n:\n{\n\"class\"\n:\n\"Security_Log_Profile\"\n,\n\"application\"\n:\n{\n\"storageFilter\"\n:\n{\n\"logicalOperation\"\n:\n\"and\"\n,\n\"requestType\"\n:\n\"all\"\n,\n\"responseCodes\"\n:\n[\n\"100\"\n,\n\"200\"\n,\n\"300\"\n,\n\"400\"\n],\n\"protocols\"\n:\n[\n\"https\"\n,\n\"ws\"\n],\n\"httpMethods\"\n:\n[\n\"ACL\"\n,\n\"GET\"\n,\n\"POLL\"\n,\n\"POST\"\n],\n\"requestContains\"\n:\n{\n\"searchIn\"\n:\n\"search-in-headers\"\n,\n\"value\"\n:\n\"The header string to search for\"\n},\n\"loginResults\"\n:\n[\n\"login-result-successful\"\n,\n\"login-result-failed\"\n]\n},\n\"guaranteeLoggingEnabled\"\n:\ntrue\n,\n\"guaranteeResponseLoggingEnabled\"\n:\ntrue\n,\n\"maxHeaderSize\"\n:\n200\n,\n\"maxQuerySize\"\n:\n1040\n,\n\"maxRequestSize\"\n:\n900\n,\n\"responseLogging\"\n:\n\"all\"\n}\n}\n}\n}\n}\nRemote storage\nThis declaration creates a security log profile that uses remote storage (for the local storage example, click\nLocal storage\n).  This declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nSecurity_Log_Remote\n.\nA Security Log Profile named\nsecLogRemote\nwith Application Security enabled, which sends logs to a remote logging server on port 9876.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.10.0\"\n,\n\"id\"\n:\n\"Security_Log_Profile\"\n,\n\"Security_Log_Remote\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"secLogRemote\"\n:\n{\n\"class\"\n:\n\"Security_Log_Profile\"\n,\n\"application\"\n:\n{\n\"facility\"\n:\n\"local3\"\n,\n\"storageFilter\"\n:\n{\n\"requestType\"\n:\n\"illegal-including-staged-signatures\"\n,\n\"responseCodes\"\n:\n[\n\"404\"\n,\n\"201\"\n],\n\"protocols\"\n:\n[\n\"http\"\n],\n\"httpMethods\"\n:\n[\n\"PATCH\"\n,\n\"DELETE\"\n],\n\"requestContains\"\n:\n{\n\"searchIn\"\n:\n\"search-in-request\"\n,\n\"value\"\n:\n\"The new value\"\n},\n\"loginResults\"\n:\n[\n\"login-result-unknown\"\n]\n},\n\"storageFormat\"\n:\n{\n\"fields\"\n:\n[\n\"attack_type\"\n,\n\"avr_id\"\n,\n\"headers\"\n,\n\"is_truncated\"\n],\n\"delimiter\"\n:\n\".\"\n},\n\"localStorage\"\n:\nfalse\n,\n\"maxEntryLength\"\n:\n\"10k\"\n,\n\"protocol\"\n:\n\"udp\"\n,\n\"remoteStorage\"\n:\n\"remote\"\n,\n\"reportAnomaliesEnabled\"\n:\ntrue\n,\n\"servers\"\n:\n[\n{\n\"address\"\n:\n\"9.8.7.6\"\n,\n\"port\"\n:\n\"9876\"\n}\n]\n}\n}\n}\n}\n}\nBack to top\nUsing Persist Actions in an Endpoint Policy\nThis example shows an Endpoint policy that includes Persist actions in a declaration. The Persist actions give you control over how connections are persisted. You can use the following Persist actions: carp, cookie-insert, cookie-rewrite, disable, source-address, cookie-hash, cookie-passive, destination-address, hash, and universal (the example declaration includes an example of each).  See\nPolicy_Action_Persist\nin the Schema Reference for usage and options.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nExample_Endpoint_Policy\n.\nAn Endpoint policy named\ntestPolicy\n.\nAn Endpoint policy rule with examples of each Persist action.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.11.0\"\n,\n\"id\"\n:\n\"Endpoint_Policy\"\n,\n\"Example_Endpoint_Policy\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"testPolicy\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"rule\"\n,\n\"conditions\"\n:\n[],\n\"actions\"\n:\n[\n{\n\"type\"\n:\n\"persist\"\n,\n\"event\"\n:\n\"request\"\n,\n\"sourceAddress\"\n:\n{\n\"netmask\"\n:\n\"255.255.255.255\"\n,\n\"timeout\"\n:\n60\n}\n},\n{\n\"type\"\n:\n\"persist\"\n,\n\"event\"\n:\n\"request\"\n,\n\"destinationAddress\"\n:\n{\n\"netmask\"\n:\n\"255.255.255.255\"\n,\n\"timeout\"\n:\n60\n}\n},\n{\n\"type\"\n:\n\"persist\"\n,\n\"event\"\n:\n\"request\"\n,\n\"cookieInsert\"\n:\n{\n\"name\"\n:\n\"foo_bar\"\n,\n\"expiry\"\n:\n\"1d01:01:01\"\n}\n},\n{\n\"type\"\n:\n\"persist\"\n,\n\"event\"\n:\n\"request\"\n,\n\"cookieRewrite\"\n:\n{\n\"name\"\n:\n\"bar_foo\"\n,\n\"expiry\"\n:\n\"2d02:02:02\"\n}\n},\n{\n\"type\"\n:\n\"persist\"\n,\n\"event\"\n:\n\"request\"\n,\n\"cookiePassive\"\n:\n{\n\"name\"\n:\n\"theFooBaring\"\n}\n},\n{\n\"type\"\n:\n\"persist\"\n,\n\"event\"\n:\n\"request\"\n,\n\"cookieHash\"\n:\n{\n\"name\"\n:\n\"leFooBar\"\n,\n\"offset\"\n:\n5\n,\n\"length\"\n:\n50\n,\n\"timeout\"\n:\n60\n}\n},\n{\n\"type\"\n:\n\"persist\"\n,\n\"event\"\n:\n\"request\"\n,\n\"universal\"\n:\n{\n\"key\"\n:\n\"insertFooBar\"\n,\n\"timeout\"\n:\n65\n}\n},\n{\n\"type\"\n:\n\"persist\"\n,\n\"event\"\n:\n\"request\"\n,\n\"hash\"\n:\n{\n\"key\"\n:\n\"hashFooBar\"\n,\n\"timeout\"\n:\n55\n}\n},\n{\n\"type\"\n:\n\"persist\"\n,\n\"event\"\n:\n\"request\"\n,\n\"carp\"\n:\n{\n\"key\"\n:\n\"carpFooBar\"\n,\n\"timeout\"\n:\n50\n}\n}\n]\n}\n]\n}\n}\n}\n}\nBack to top\nChanging the enforcement mode of a WAF policy retrieved from a URL\nThis example shows how you can change the enforcement mode of a WAF policy that was retrieved from a URL.  This declaration uses a new property in the WAF_Policy class called\nenforcementMode\n, which overrides the enforcement mode that is set in the policy itself.\nThis can be useful when you want to change the enforcement mode, but do not want to (or cannot) modify the WAF Policy. See\nWAF_Policy\nin the Schema Reference for usage and options.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nExample_WAF_Policy\n.\nA WAF policy named\nexampleWAF\n, which pulls the policy from a URL.\nThe enforcement mode of the policy is set to transparent, which overrides the setting in the policy itself.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.13.0\"\n,\n\"Example_WAF_Policy\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"exampleWAF\"\n:\n{\n\"class\"\n:\n\"WAF_Policy\"\n,\n\"url\"\n:\n\"https://example.com/files/wordpress_template_12.0.xml\"\n,\n\"ignoreChanges\"\n:\nfalse\n,\n\"enforcementMode\"\n:\n\"transparent\"\n}\n}\n}\n}\nBack to top\nUsing an Anti-Fraud (FPS) profile in a declaration\nThis example shows how can use an Anti-Fraud profile (part of Fraud Protection Services (FPS)) that already exists on your BIG-IP system in a BIG-IP AS3 declaration.   The Anti-Fraud profile includes logging settings that enable reporting of login attempts to third party platforms such as Splunk. See the\nWeb Fraud protection\npage on F5.com for information about Fraud Protection Services.\nSee\nPointer_FPS\nin the\nSchema Reference\nfor usage options.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nExample_FPS\n.\nA virtual service named\nFPSvs\nthat references an existing anti-fraud profile on the BIG-IP system.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.13.0\"\n,\n\"id\"\n:\n\"Service_HTTP\"\n,\n\"Example_FPS\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"FPSvs\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"virtualPort\"\n:\n100\n,\n\"virtualAddresses\"\n:\n[\n\"10.10.20.20\"\n],\n\"profileFPS\"\n:\n{\n\"bigip\"\n:\n\"/Common/antifraud\"\n}\n}\n}\n}\n}\nBack to top\nDefining server technologies in a WAF policy\nThis example shows how you can define server technologies (such as Java Servlets or Apache Struts) for a WAF policy in a BIG-IP AS3 declaration.  This allows you to assign signatures that specifically apply to the technologies used in the application being protected.\nFor more information on WAF server technologies, see\nAdding Server Technologies to a Policy\nin the ASM manual. See\nWAF_Policy\nin the Schema Reference for usage and options.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nExample_WAF_Policy\n.\nA WAF policy named\nexampleWAF\n, which pulls the policy from a URL.\nThe enforcement mode of the policy is set to transparent, which overrides the setting in the policy itself.\nTwo server technologies attached to the policy, Java Servlets/JSP and Apache Struts.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.16.0\"\n,\n\"Example_WAF_Policy\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"exampleWAF\"\n:\n{\n\"class\"\n:\n\"WAF_Policy\"\n,\n\"url\"\n:\n\"https://example.com/files/wordpress_template_12.0.xml\"\n,\n\"ignoreChanges\"\n:\nfalse\n,\n\"enforcementMode\"\n:\n\"transparent\"\n,\n\"serverTechnologies\"\n:\n[\n\"Java Servlets/JSP\"\n,\n\"Apache Struts\"\n]\n}\n}\n}\n}\nBack to top\nDisabling an attack signature in a WAF policy\nThis example shows how you can disable an attack signature(s) in a WAF policy which is referenced via a URL.  This can be useful if you have an established WAF policy and don’t want to modify it, but want to disable specific signatures for a particular virtual service.\nFor more information on attack signatures, see\nManaging BIG-IP ASM attach signatures\n. See\nWAF_Policy\nin the Schema Reference for usage and options.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nExample_WAF_Sig_Disable\n.\nA WAF policy named\nexampleWAF\n, which pulls the policy from a URL.\nThe enforcement mode of the policy is set to transparent, which overrides the setting in the policy itself.\nTwo disabled attack signature IDs.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.16.0\"\n,\n\"Example_WAF_Sig_Disable\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"exampleWAF\"\n:\n{\n\"class\"\n:\n\"WAF_Policy\"\n,\n\"url\"\n:\n\"https://example.com/files/wordpress_template_12.0.xml\"\n,\n\"ignoreChanges\"\n:\nfalse\n,\n\"enforcementMode\"\n:\n\"transparent\"\n,\n\"disabledSignatures\"\n:\n[\n200000001\n,\n200000002\n]\n}\n}\n}\n}\nBack to top\nUsing negative string conditions in Endpoint policies\nThis example shows how you can use negative string conditions (such as “is not” or “does not contain”) in Endpoint policies (Local Traffic (LTM) policies on the BIG-IP). Use of negative operands has been available when configured directly on the BIG-IP, but added to BIG-IP AS3 in 3.17.0.  For more information, see\nLocal Traffic Policies\nin the BIG-IP documentation.\nThis declaration also shows the\nuse\npointer for the Endpoint policy, also introduced in BIG-IP AS3 3.17.0.\nNote\nThe example declaration has been updated with the BIG-IP AS3 3.24 release to include a\nchainCA\n(a bundle of one or more CA certificates in trust-chain from root CA to certificate).\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nExample_negative_op\n.\nA virtual service named\nEP_Virtual\nwhich references the Endpoint (Local Traffic) policy, as well as a pool and TLS certificate.\nAn Endpoint policy named\ntest_EP\n, which contains rules with negative operands.\nA Client SSL profile (TLS_Server in BIG-IP AS3) with a certificate and key.\nA pool named\nweb_pool\nwith two members monitored by the default HTTP monitor.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.17.0\"\n,\n\"id\"\n:\n\"Endpoint_Policy\"\n,\n\"Example_negative_op\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application1\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"EP_Virtual\"\n:\n{\n\"class\"\n:\n\"Service_HTTPS\"\n,\n\"virtualAddresses\"\n:\n[\n\"10.0.9.10\"\n],\n\"virtualPort\"\n:\n443\n,\n\"pool\"\n:\n\"web_pool\"\n,\n\"serverTLS\"\n:\n\"webtls\"\n,\n\"policyEndpoint\"\n:\n{\n\"use\"\n:\n\"test_EP\"\n}\n},\n\"test_EP\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"rule1\"\n,\n\"actions\"\n:\n[],\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"sslExtension\"\n,\n\"event\"\n:\n\"ssl-client-hello\"\n,\n\"serverName\"\n:\n{\n\"operand\"\n:\n\"does-not-contain\"\n,\n\"values\"\n:\n[\n\"test1.com\"\n]\n}\n},\n{\n\"type\"\n:\n\"httpUri\"\n,\n\"unnamedQueryParameter\"\n:\n{\n\"operand\"\n:\n\"does-not-equal\"\n,\n\"values\"\n:\n[\n\"13\"\n]\n},\n\"index\"\n:\n1\n},\n{\n\"type\"\n:\n\"httpUri\"\n,\n\"path\"\n:\n{\n\"operand\"\n:\n\"does-not-end-with\"\n,\n\"values\"\n:\n[\n\"/\"\n]\n}\n},\n{\n\"type\"\n:\n\"httpUri\"\n,\n\"host\"\n:\n{\n\"operand\"\n:\n\"does-not-start-with\"\n,\n\"values\"\n:\n[\n\"site.com\"\n]\n}\n}\n]\n},\n{\n\"name\"\n:\n\"default\"\n,\n\"actions\"\n:\n[\n{\n\"type\"\n:\n\"drop\"\n,\n\"event\"\n:\n\"request\"\n}\n]\n}\n]\n},\n\"webtls\"\n:\n{\n\"class\"\n:\n\"TLS_Server\"\n,\n\"certificates\"\n:\n[{\n\"certificate\"\n:\n\"webcert\"\n}]\n},\n\"webcert\"\n:\n{\n\"class\"\n:\n\"Certificate\"\n,\n\"remark\"\n:\n\"in practice we recommend using a passphrase\"\n,\n\"certificate\"\n:\n\"-----BEGIN CERTIFICATE-----\\nMIICnDCCAgWgAwIBAgIJAJ5n2b0OCEjwMA0GCSqGSIb3DQEBCwUAMGcxCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApXYXNoaW5ndG9uMRAwDgYDVQQHDAdTZWF0dGxlMRQwEgYDVQQKDAtmNV9OZXR3b3JrczEbMBkGA1UEAwwSc2FtcGxlLmV4YW1wbGUubmV0MB4XDTE3MTEyNjE5NTAyNFoXDTE4MDIyNTE5NTAyNFowZzELMAkGA1UEBhMCVVMxEzARBgNVBAgMCldhc2hpbmd0b24xEDAOBgNVBAcMB1NlYXR0bGUxFDASBgNVBAoMC2Y1X05ldHdvcmtzMRswGQYDVQQDDBJzYW1wbGUuZXhhbXBsZS5uZXQwgZ8wDQYJKoZIhvcNAQEBBQADgY0AMIGJAoGBALEsuXmSXVQpYjrZPW+WiTBjn491mwZYT7Q92V1HlSBtM6WdWlK1aZN5sovfKtOX7Yrm8xa+e4o/zJ2QYLyyv5O+t2EGN/4qUEjEAPY9mwJdfzRQy6Hyzm84J0QkTuUJ/EjNuPji3D0QJRALUTzu1UqqDCEtiN9OGyXEkh7uvb7BAgMBAAGjUDBOMB0GA1UdDgQWBBSVHPNrGWrjWyZvckQxFYWO59FRFjAfBgNVHSMEGDAWgBSVHPNrGWrjWyZvckQxFYWO59FRFjAMBgNVHRMEBTADAQH/MA0GCSqGSIb3DQEBCwUAA4GBAJeJ9SEckEwPhkXOm+IuqfbUS/RcziifBCTmVyE+Fa/j9pKSYTgiEBNdbJeBEa+gPMlQtbV7Y2dy8TKx/8axVBHiXC5geDML7caxOrAyHYBpnx690xJTh5OIORBBM/a/NvaR+P3CoVebr/NPRh9oRNxnntnqvqD7SW0U3ZPe3tJc\\n-----END CERTIFICATE-----\"\n,\n\"chainCA\"\n:\n\"-----BEGIN CERTIFICATE-----\\nMIID9TCCAt2gAwIBAgIJALxQA/NW2bpRMA0GCSqGSIb3DQEBCwUAMIGQMQswCQYDVQQGEwJVUzETMBEGA1UECAwKV2FzaGluZ3RvbjEQMA4GA1UEBwwHU2VhdHRsZTELMAkGA1UECgwCRjUxDTALBgNVBAsMBFRlc3QxFzAVBgNVBAMMDnRlc3RfQ0FfYnVuZGxlMSUwIwYJKoZIhvcNAQkBFhZzb21lYm9keUBzb21ld2hlcmUub3JnMB4XDTE4MDIyNzE5MjEyNVoXDTE4MDMyOTE5MjEyNVowgZAxCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApXYXNoaW5ndG9uMRAwDgYDVQQHDAdTZWF0dGxlMQswCQYDVQQKDAJGNTENMAsGA1UECwwEVGVzdDEXMBUGA1UEAwwOdGVzdF9DQV9idW5kbGUxJTAjBgkqhkiG9w0BCQEWFnNvbWVib2R5QHNvbWV3aGVyZS5vcmcwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCjhUZmbwwuMMFTNic73t0mfJ/pyM3BnEs0riv6lbrF5znFKBlAM2pxWBfkQvr92gUwitij7BqMagnR26/C7GcJJNJQGNK482vgSPhUpGeN0t4W71Dv5SpwJN+0do6gV0eXPwvcgA/XZxXqZAePwXTp36YMrNTgw49OWZpHoNXfYCZ+1KUL032RdQ/Ik2wO/UwV0csL1Rwuu2L8/NI9VtrThCAr8dsMsDJ53jDh7xQdP3K2V9NYtAHk66697kk7TpzR1moqTJxSVaPKo2eDuKNke1BRbjYWoamu0hfC5YG6l5P9i8QaVklbtmDcmoLpU9fLVSSW6CWHkrtdifQiCOChAgMBAAGjUDBOMB0GA1UdDgQWBBRv7/Q0VoBgDYzgJOKLz4GsgXP27zAfBgNVHSMEGDAWgBRv7/Q0VoBgDYzgJOKLz4GsgXP27zAMBgNVHRMEBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQA9r6+6hGVlQ188l+wLFJ1wI83y27BdtE0ZsZGdFv98qi9kcUm17Z0tprEwypODZ1/syt9b1JhD4RgU30qwgeF4kec8UpoG49UkQImRD3AqfsiYSdjZeBpcpEl3n8lkjKGoVY7GB2lMGoWDxv/1A0CSjVTmWgQSFGHoMtzOW1tCr9yGXVEdy691l7PVC1kK5ekwkO8YbSO6hvV/u83KuUiGcIoY1PIzAK301i9YXWUNxybIVfHregoQ11QzjhfdfpOLBTtW1B4QZqZz8qFGIr1remmQK3ljEcct9bWjMLOx2QYMvk6uRFzh+V5L2UnhldNy5wQYMXRDz6SU3LdTJ2OA\\n-----END CERTIFICATE-----\"\n,\n\"privateKey\"\n:\n\"-----BEGIN RSA PRIVATE KEY-----\\nProc-Type: 4,ENCRYPTED\\nDEK-Info: AES-256-CBC,D8FFCE6B255601587CB54EC29B737D31\\n\\nkv4Fc3Jn0Ujkj0yRjt+gQQfBLSNF2aRLUENXnlr7Xpzqu0Ahr3jS1bAAnd8IWnsR\\nyILqVmKsYF2DoHh0tWiEAQ7/y/fe5DTFhK7N4Wml6kp2yVMkP6KC4ssyYPw27kjK\\nDBwBZ5O8Ioej08A5sgsLCmglbmtSPHJUn14pQnMTmLOpEtOsu6S+2ibPgSNpdg0b\\nCAJNG/KHe+Vkx59qNDyDeKb7FZOlsX30+y67zUq9GQqJEDuysPJ2BUNP0IJXAjst\\nFIt1qNoZew+5KDYs7u/lPxcMGTirUhgI84Jy4WcDvSOsP/tKlxj04TbIE3epmSKy\\n+TihHkwY7ngIGtcm3Sfqk5jz2RXoj1/Ac3SW8kVTYaOUogBhn7zAq4Wju6Et4hQG\\nRGapsJp1aCeZ/a4RCDTxspcKoMaRa97/URQb0hBRGx3DGUhzpmX9zl7JI2Xa5D3R\\nmdBXtjLKYJTdIMdd27prBEKhMUpae2rz5Mw4J907wZeBq/wu+zp8LAnecfTe2nGY\\nE32x1U7gSEdYOGqnwxsOexb1jKgCa67Nw9TmcMPV8zmH7R9qdvgxAbAtwBl1F9OS\\nfcGaC7epf1AjJLtaX7krWmzgASHl28Ynh9lmGMdv+5QYMZvKG0LOg/n3m8uJ6sKy\\nIzzvaJswwn0j5P5+czyoV5CvvdCfKnNb+3jUEN8I0PPwjBGKr4B1ojwhogTM248V\\nHR69D6TxFVMfGpyJhCPkbGEGbpEpcffpgKuC/mEtMqyDQXJNaV5HO6HgAJ9F1P6v\\n5ehHHTMRvzCCFiwndHdlMXUjqSNjww6me6dr6LiAPbejdzhL2vWx1YqebOcwQx3G\\n-----END RSA PRIVATE KEY-----\"\n,\n\"passphrase\"\n:\n{\n\"ciphertext\"\n:\n\"ZjVmNQ==\"\n,\n\"protected\"\n:\n\"eyJhbGciOiJkaXIiLCJlbmMiOiJub25lIn0\"\n}\n},\n\"web_pool\"\n:\n{\n\"class\"\n:\n\"Pool\"\n,\n\"monitors\"\n:\n[\n\"http\"\n],\n\"members\"\n:\n[{\n\"servicePort\"\n:\n80\n,\n\"serverAddresses\"\n:\n[\n\"192.0.9.10\"\n,\n\"192.0.9.11\"\n]\n}]\n}\n}\n}\n}\nBack to top\nAdding Basic Auth when retrieving a WAF policy from a URL\nThis example shows you can add Basic Authentication when referencing a remote object, such as a WAF policy, from a URL in a BIG-IP AS3 declaration.  This allows you to reference a URL that is protected by Basic Authentication, which was not possible in BIG-IP AS3 versions prior to 3.18.\nNote\nCurrently only Basic Authentication is supported, other authentication methods may be added in future releases.\nIn this example, we are referencing a WAF policy that exists on a BIG-IQ device that is protected by Basic Auth.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nExample_WAF_Policy\n.\nA Application named\nExample_App\n.\nA WAF policy named\nexampleWAF\nthat is retrieved from a URL located on a BIG-IQ behind Basic Authentication.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.18.0\"\n,\n\"Example_WAF_Policy\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Example_App\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"exampleWAF\"\n:\n{\n\"class\"\n:\n\"WAF_Policy\"\n,\n\"url\"\n:\n{\n\"url\"\n:\n\"https://bigiq.example.com/mgmt/cm/asm/policy-files/download/0da5cae6-f106-3790-a72c-c58fb6b7a512/13.1.0\"\n,\n\"authentication\"\n:\n{\n\"method\"\n:\n\"basic\"\n,\n\"username\"\n:\n\"testUser\"\n,\n\"passphrase\"\n:\n{\n\"ciphertext\"\n:\n\"ZjVmNQ==\"\n,\n\"protected\"\n:\n\"eyJhbGciOiJkaXIiLCJlbmMiOiJub25lIn0\"\n}\n}\n},\n\"ignoreChanges\"\n:\nfalse\n,\n\"enforcementMode\"\n:\n\"transparent\"\n}\n}\n}\n}\nBack to top\nConfiguring the status code used during a redirect with an Endpoint policy\nThis example shows you can use BIG-IP AS3 to configure the HTTP status code of an LTM Endpoint policy redirect in BIG-IP (TMOS) versions 14.0 and later.\nSee\nPolicy_Action\nin the Schema Reference for BIG-IP AS3 usage.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nAS3_Tenant\n.\nA Application named\nAS3_Application\n.\nAn Endpoint policy named\ntest_EP\nwhich includes a rule with an HTTP redirect action and an HTTP status code of 300.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.20.0\"\n,\n\"id\"\n:\n\"Endpoint_Policy\"\n,\n\"AS3_Tenant\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"AS3_Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"test_EP\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"default\"\n,\n\"actions\"\n:\n[\n{\n\"type\"\n:\n\"httpRedirect\"\n,\n\"event\"\n:\n\"request\"\n,\n\"location\"\n:\n\"http://localhost\"\n,\n\"code\"\n:\n300\n}\n]\n}\n]\n}\n}\n}\n}\nBack to top\nUsing TCP address and port conditions in an Endpoint policy\nThis example shows how you can use TCP address and port conditions in an LTM Endpoint Policy. For more information on LTM Endpoint Policies, see\nLocal Traffic Policies\nin the BIG-IP documentation.\nSee\nPolicy_Condition_TCP\nin the Schema Reference for BIG-IP AS3 usage.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nAS3_Tenant\n.\nA Application named\nAS3_Application\n.\nA data group named\nipDataGroup\n.\nAn Endpoint policy named\nmyPolicy\nwhich includes a rule with multiple TCP conditions.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.20.0\"\n,\n\"id\"\n:\n\"Endpoint_Policy\"\n,\n\"AS3_Tenant\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"AS3_Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"ipDataGroup\"\n:\n{\n\"class\"\n:\n\"Data_Group\"\n,\n\"remark\"\n:\n\"description\"\n,\n\"keyDataType\"\n:\n\"ip\"\n,\n\"records\"\n:\n[\n{\n\"key\"\n:\n\"10.10.1.1\"\n}\n]\n},\n\"myPolicy\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"default\"\n,\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"tcp\"\n,\n\"address\"\n:\n{\n\"values\"\n:\n[\n\"10.10.10.10\"\n]\n}\n},\n{\n\"type\"\n:\n\"tcp\"\n,\n\"port\"\n:\n{\n\"values\"\n:\n[\n8080\n]\n}\n},\n{\n\"type\"\n:\n\"tcp\"\n,\n\"address\"\n:\n{\n\"datagroup\"\n:\n{\n\"bigip\"\n:\n\"/Common/private_net\"\n}\n}\n},\n{\n\"type\"\n:\n\"tcp\"\n,\n\"address\"\n:\n{\n\"operand\"\n:\n\"does-not-match\"\n,\n\"datagroup\"\n:\n{\n\"use\"\n:\n\"/AS3_Tenant/AS3_Application/ipDataGroup\"\n}\n}\n}\n]\n}\n]\n}\n}\n}\n}\nBack to top\nReferencing an Advanced WAF policy in a declaration\nThis example shows how you can reference an Advanced Web Application Policy (AWAF) hosted in an external location in a BIG-IP AS3 declaration. The AWAF policies are declarative, JSON files.\nIn the following example, we reference an Open Web Application Security Project (OWASP) Top Ten protection policy from a URL hosted on GitHub. The OWASP Top 10 defines the most serious web application security risks, and it is a baseline standard for application security.\nImportant\nYou must be using BIG-IP (TMOS) version 16.0 or later to reference AWAF policies. You must also have the BIG-IP ASM module licensed and provisioned.\nBIG-IP AS3 does not support overriding policy settings on AWAF policies. You should use the adjustments section of a AWAF policy instead.\nFor more information on F5 and OWASP, see\nSecuring against the OWASP Top 10\n. For more information on F5 AWAF, see\nAdvanced WAF\non F5.com.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nowaspTenant\n.\nA Application named\nowaspApp\nA virtual server named\nservice\nthat references a WAF policy.\nAn WAF policy named\nasmPolicy\nwhich references the OWASP top ten AWAF policy via URL.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.24.0\"\n,\n\"owaspTenant\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"owaspApp\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"service\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"virtualAddresses\"\n:\n[\n\"192.0.2.0\"\n],\n\"policyWAF\"\n:\n{\n\"use\"\n:\n\"asmPolicy\"\n}\n},\n\"asmPolicy\"\n:\n{\n\"class\"\n:\n\"WAF_Policy\"\n,\n\"url\"\n:\n\"https://raw.githubusercontent.com/f5devcentral/f5-asm-policy-templates/v1.1/owasp_ready_template/owasp_policy_v1.0.json\"\n,\n\"ignoreChanges\"\n:\nfalse\n}\n}\n}\n}\nBack to top\nEmbedding a WAF policy in a declaration\nBIG-IP AS3 3.26 introduced the ability to embed JSON/XML WAF policies directly in a declaration, using the new\npolicy\nproperty in the\nWAF_Policy\nclass. This example includes three declarations for including WAF policies, one that is base64 encoded, one that text, and one using a URL.  Each of declarations uses the same WAF policy.\nSee\nWAF_Policy\nfor more information and BIG-IP AS3 usage.\nAll of the declarations create the following objects on the BIG-IP:\nPartition (tenant) named\nTenant\n.\nA Application named\nApplication\nA virtual server named\nservice\nthat references a WAF policy.\nA WAF policy that uses the\npolicy\nproperty to specify the way the policy is included (options for\nbase64\n,\ntext\n, and\nurl\n).\nBase64 example\nIn this declaration, the WAF policy is embedded in base64 encoding.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.26.0\"\n,\n\"id\"\n:\n\"WAF_Policy\"\n,\n\"Tenant\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"service\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"virtualAddresses\"\n:\n[\n\"10.10.20.20\"\n],\n\"policyWAF\"\n:\n{\n\"use\"\n:\n\"wafPolicy\"\n}\n},\n\"wafPolicy\"\n:\n{\n\"class\"\n:\n\"WAF_Policy\"\n,\n\"policy\"\n:\n{\n\"base64\"\n:\n\"ewogICAgInBvbGljeSI6IHsKICAgICAgICAibmFtZSI6IkFwcFBvbGljeTAxIiwKICAgICAgICAiZGVzY3JpcHRpb24iOiJlbWJlZGRlZCBXQUYgUG9saWN5IiwKICAgICAgICAidGVtcGxhdGUiOiB7CiAgICAgICAgICAgICJuYW1lIjoiUE9MSUNZX1RFTVBMQVRFX1JBUElEX0RFUExPWU1FTlQiCiAgICAgICAgfQogICAgfQp9\"\n},\n\"ignoreChanges\"\n:\nfalse\n}\n}\n}\n}\nText example\nIn this declaration, the WAF policy is embedded in text.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.26.0\"\n,\n\"id\"\n:\n\"WAF_Policy\"\n,\n\"Tenant\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"service\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"virtualAddresses\"\n:\n[\n\"10.10.20.20\"\n],\n\"policyWAF\"\n:\n{\n\"use\"\n:\n\"wafPolicy\"\n}\n},\n\"wafPolicy\"\n:\n{\n\"class\"\n:\n\"WAF_Policy\"\n,\n\"policy\"\n:\n{\n\"text\"\n:\n\"{\\n  \\\"policy\\\": {\\n    \\\"name\\\":\\\"AppPolicy01\\\",\\n    \\\"description\\\":\\\"embedded WAF Policy\\\",\\n    \\\"template\\\": {\\n    \\\"name\\\":\\\"POLICY_TEMPLATE_RAPID_DEPLOYMENT\\\"\\n    }\\n    }\\n  }\"\n},\n\"ignoreChanges\"\n:\nfalse\n}\n}\n}\n}\nURL example\nIn this declaration, the WAF policy is referenced from a URL.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.26.0\"\n,\n\"id\"\n:\n\"WAF_Policy\"\n,\n\"Tenant\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"service\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"virtualAddresses\"\n:\n[\n\"10.10.20.20\"\n],\n\"policyWAF\"\n:\n{\n\"use\"\n:\n\"wafPolicy\"\n}\n},\n\"wafPolicy\"\n:\n{\n\"class\"\n:\n\"WAF_Policy\"\n,\n\"policy\"\n:\n{\n\"url\"\n:\n\"https://example.xml\"\n},\n\"ignoreChanges\"\n:\nfalse\n}\n}\n}\n}\nBack to top\nReferencing an API Protection profile in a declaration\nThis example shows how you can reference an API Protection profile in a BIG-IP AS3 declaration, which safeguards your API servers. Protection profiles define groups of related RESTful APIs used by applications. The protection profile contains a list of paths that may appear in a request, and the system classifies requests and sends them to specific API servers.\nFor more information, including how to manually create an API Protection profile that can be referenced in a BIG-IP AS3 declaration, see\nAPM API Protection\n. This example does not create an API Protection profile, only references profiles that already exist on the BIG-IP.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nAPI_Protection_Service_HTTP\n.\nA Application named\napiProtectionApp\nA virtual server named\nservice\nwith a virtual address and a reference to an existing API Protection profile named\napiProtectionProfile\n.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.26.0\"\n,\n\"id\"\n:\n\"Service_HTTP\"\n,\n\"API_Protection_Service_HTTP\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"apiProtectionApp\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"service\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"virtualPort\"\n:\n8080\n,\n\"virtualAddresses\"\n:\n[\n\"1.2.3.4\"\n],\n\"profileApiProtection\"\n:\n{\n\"bigip\"\n:\n\"/Common/apiProtectionProfile\"\n}\n}\n}\n}\n}\nBack to top\nUsing Tcl set-variable actions in an Endpoint policy\nThis example shows how you use Tcl set-variable actions in an Endpoint policy, which allows you to set a Tcl variable in the runtime environment.  In the declaration, you need to specify the name of variable, and the Tcl expression to evaluate.\nFor BIG-IP AS3 options and usage, see\nPolicy_Action_TCL_setVariable\nand\nPolicy_Action_TCL\n.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nAS3_Tenant\n.\nA Application named\nAS3_Application\nA virtual server named\nservice\nwith a virtual address and a reference to an Endpoint policy.\nAn Endpoint policy named\nendpointPolicy\nwith a rule and an action of type Tcl that sets a variable named\nvariableName\nand an expression to evaluate.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.27.0\"\n,\n\"id\"\n:\n\"Endpoint_Policy\"\n,\n\"AS3_Tenant\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"AS3_Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"service\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"virtualAddresses\"\n:\n[\n\"1.2.3.4\"\n],\n\"policyEndpoint\"\n:\n{\n\"use\"\n:\n\"endpointPolicy\"\n}\n},\n\"endpointPolicy\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"rule\"\n,\n\"actions\"\n:\n[\n{\n\"type\"\n:\n\"tcl\"\n,\n\"event\"\n:\n\"request\"\n,\n\"setVariable\"\n:\n{\n\"expression\"\n:\n\"tclExpression\"\n,\n\"name\"\n:\n\"variableName\"\n}\n}\n]\n}\n]\n}\n}\n}\n}\nBack to top\nRetrieving a WAF Policy from a URL using token-based authentication\nIn this example, we show how you can retrieve a WAF Policy from secured URLs that do not use Basic Authentication, using token (bearer token) authentication (OAuth2 in this example).  This is necessary when trying to retrieve data from URLs from locations such as Microsoft Azure Dev Ops, and GitHub (after 11/13/2020) that do not support Basic authentication.\nThis functionality is enabled by using the new\nbearer-token\nauthentication method introduced in BIG-IP AS3 3.28. Currently, you must provide the token in the declaration.  Future versions may include the ability to retrieve the token.\nYour application must be configured appropriately so BIG-IP AS3 can retrieve data from the URLs.  For example, if using Azure Dev Ops, see\nhttps://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-client-creds-grant-flow\n.  If using GitHub, see the\nBasics of Authentication\nguide on GitHub. If using other applications, see the appropriate documentation.\nSee\nBearer Token\nand\nWAF_Policy\nin the Schema Reference for more information and BIG-IP AS3 usage.\nNote\nThis example retrieves a URL as a part of a WAF policy, but bearer token authentication works with any BIG-IP AS3 class that can retrieve data from a URL.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nExample_WAF_Policy\n.\nAn Application named\nExample_App\n.\nA WAF policy named\nexampleWAF\nthat retrieves the policy via URL using bearer token authentication, and the token is included in the declaration.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.28.0\"\n,\n\"Example_WAF_Policy\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Example_App\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"exampleWAF\"\n:\n{\n\"class\"\n:\n\"WAF_Policy\"\n,\n\"url\"\n:\n{\n\"url\"\n:\n\"https://bigiq.example.com/mgmt/cm/asm/policy-files/download/0da5cae6-f106-3790-a72c-c58fb6b7a512/13.1.0\"\n,\n\"authentication\"\n:\n{\n\"method\"\n:\n\"bearer-token\"\n,\n\"token\"\n:\n{\n\"ciphertext\"\n:\n\"ZjVmNQ==\"\n,\n\"protected\"\n:\n\"eyJhbGciOiJkaXIiLCJlbmMiOiJub25lIn0\"\n}\n}\n},\n\"ignoreChanges\"\n:\nfalse\n,\n\"enforcementMode\"\n:\n\"transparent\"\n}\n}\n}\n}\nBack to top\nUsing the HTTP method condition in an Endpoint policy\nIn this example, we show how you can use the\nhttpMethod\ncondition in your Endpoint policy rules. This allows you to match against any HTTP method.\nFor more information on LTM Endpoint Policies, see\nLocal Traffic Policies\nin the BIG-IP documentation.\nWhen using\nhttpMethod\n, you must also decide when to evaluate this condition in the request-response cycle. You can specify\nrequest\nor\nproxy-request\n.\nSee\nPolicy_Condition\nand\nPolicy_Condition_HTTP_Method\nin the schema reference for more information and BIG-IP AS3 usage.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nAS3_Tenant\n.\nAn Application named\nAS3_Application\n.\nAn Endpoint policy named\ntest_EP\nthat contains rules with actions and the\nhttpMethod\ncondition.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.32.0\"\n,\n\"id\"\n:\n\"Endpoint_Policy\"\n,\n\"AS3_Tenant\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"AS3_Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"service\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"virtualAddresses\"\n:\n[\n\"1.2.3.4\"\n],\n\"policyEndpoint\"\n:\n{\n\"use\"\n:\n\"test_EP\"\n}\n},\n\"uriDataGroup\"\n:\n{\n\"class\"\n:\n\"Data_Group\"\n,\n\"label\"\n:\n\"URI Example\"\n,\n\"storageType\"\n:\n\"internal\"\n,\n\"name\"\n:\n\"URI Example\"\n,\n\"keyDataType\"\n:\n\"string\"\n,\n\"records\"\n:\n[\n{\n\"key\"\n:\n\"test.com\"\n}\n]\n},\n\"test_EP\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"replace\"\n,\n\"actions\"\n:\n[\n{\n\"type\"\n:\n\"httpUri\"\n,\n\"event\"\n:\n\"request\"\n,\n\"replace\"\n:\n{\n\"value\"\n:\n\"http://127.0.0.1\"\n}\n}\n],\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"httpMethod\"\n,\n\"event\"\n:\n\"request\"\n,\n\"all\"\n:\n{\n\"operand\"\n:\n\"equals\"\n,\n\"values\"\n:\n[\n\"GET\"\n,\n\"POST\"\n,\n\"PATCH\"\n]\n}\n},\n{\n\"type\"\n:\n\"httpUri\"\n,\n\"event\"\n:\n\"request\"\n,\n\"host\"\n:\n{\n\"operand\"\n:\n\"contains\"\n,\n\"datagroup\"\n:\n{\n\"use\"\n:\n\"uriDataGroup\"\n}\n}\n}\n]\n},\n{\n\"name\"\n:\n\"default\"\n,\n\"actions\"\n:\n[\n{\n\"type\"\n:\n\"drop\"\n,\n\"event\"\n:\n\"request\"\n}\n]\n}\n]\n}\n}\n}\n}\nBack to top\nUsing “exist” and “does not exist” string comparison operands in an Endpoint policy\nIn this example, we show how you can use the string comparison operands\nexists\nand\ndoes-not-exist\nin Endpoint policy rules. These operands are part of the\nPolicy_Compare_String\n, which specifies the comparison that the system should perform as a part of the Endpoint policy.\nAs their names suggest,\nexists\nchecks if the string being compared exists, and\ndoes-not-exist\nchecks if it does not exist.\nThese operands are only supported on BIG-IP 15.0 or later, and do not accept values.\nFor more information on LTM Endpoint Policies, see\nLocal Traffic Policies\nin the BIG-IP documentation.\nSee\nEndpoint_Policy\nand\nPolicy_Compare_String\nin the Schema Reference for more information and BIG-IP AS3 usage.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nSample_ep_operands\n.\nAn Application named\nApplication\n.\nA virtual server named\nservice\nthat references the Endpoint Policy.\nAn Endpoint policy named\nendpointPolicy\nthat contains a rule with two\nhttpMethod\nconditions, one using\nexists\nand one\ndoes-not-exist\n.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.29.0\"\n,\n\"id\"\n:\n\"Service_HTTP\"\n,\n\"Sample_ep_operands\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"service\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"policyEndpoint\"\n:\n\"endpointPolicy\"\n,\n\"virtualAddresses\"\n:\n[\n\"10.1.40.50\"\n]\n},\n\"endpointPolicy\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"default\"\n,\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"httpCookie\"\n,\n\"all\"\n:\n{\n\"operand\"\n:\n\"exists\"\n},\n\"name\"\n:\n\"test\"\n},\n{\n\"type\"\n:\n\"httpCookie\"\n,\n\"all\"\n:\n{\n\"operand\"\n:\n\"does-not-exist\"\n},\n\"name\"\n:\n\"test2\"\n}\n]\n}\n]\n}\n}\n}\n}\nBack to top\nConfiguring TCP Endpoint Policy Conditions in a declaration\nIn this example, we show how you can use the TCP Endpoint Policy Conditions added in BIG-IP AS3 3.29. These event options determine when to evaluate the condition in the request-response cycle.\nRequest\nand\nResponse\nwere supported in previous versions, BIG-IP AS3 3.29 adds the following conditions:\nclassification-detected\nproxy-connect\nproxy-response\nssl-client-hello\nssl-server-handshake\nws-request\nclient-accepted\nproxy-request\nserver-connected\nssl-client-serverhello-send\nssl-server-hello\nws-response\nNote\nclient-accepted, server-connected, proxy-connect, proxy-request, proxy-response, and ssl-client-serverhello-send require BIG-IP v13.1 or later.\nSee\nPolicy_Condition_TCP\nin the Schema Reference for more information and BIG-IP AS3 usage.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nAS3_Tenant\n.\nAn Application named\nAS3_Application\n.\nA virtual server named\ntcpItem\nthat references the Endpoint Policy.\nSeven different Endpoint policies that contain examples of the newly supported events.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.29.0\"\n,\n\"id\"\n:\n\"Endpoint_Policy\"\n,\n\"AS3_Tenant\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"AS3_Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"tcpItem\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"policyEndpoint\"\n:\n\"tcpPolicy\"\n,\n\"virtualAddresses\"\n:\n[\n\"10.1.40.50\"\n]\n},\n\"tcpPolicy\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"tcpDefault\"\n,\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"tcp\"\n,\n\"event\"\n:\n\"request\"\n,\n\"address\"\n:\n{\n\"operand\"\n:\n\"matches\"\n,\n\"values\"\n:\n[\n\"10.10.10.11\"\n]\n}\n},\n{\n\"type\"\n:\n\"tcp\"\n,\n\"event\"\n:\n\"response\"\n,\n\"address\"\n:\n{\n\"operand\"\n:\n\"does-not-match\"\n,\n\"values\"\n:\n[\n\"10.10.10.12\"\n]\n}\n},\n{\n\"type\"\n:\n\"tcp\"\n,\n\"event\"\n:\n\"client-accepted\"\n,\n\"address\"\n:\n{\n\"operand\"\n:\n\"does-not-match\"\n,\n\"values\"\n:\n[\n\"10.10.10.14\"\n]\n}\n},\n{\n\"type\"\n:\n\"tcp\"\n,\n\"event\"\n:\n\"server-connected\"\n,\n\"address\"\n:\n{\n\"operand\"\n:\n\"does-not-match\"\n,\n\"values\"\n:\n[\n\"10.10.10.18\"\n]\n}\n}\n]\n}\n]\n},\n\"httpConnectPolicy\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"httpConnectPolicy\"\n,\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"tcp\"\n,\n\"event\"\n:\n\"proxy-response\"\n,\n\"address\"\n:\n{\n\"values\"\n:\n[\n\"10.10.10.17\"\n]\n}\n},\n{\n\"type\"\n:\n\"tcp\"\n,\n\"event\"\n:\n\"proxy-connect\"\n,\n\"address\"\n:\n{\n\"values\"\n:\n[\n\"10.10.10.15\"\n]\n}\n}\n]\n}\n]\n},\n\"httpExplicitPolicy\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"httpExplicitPolicy\"\n,\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"tcp\"\n,\n\"event\"\n:\n\"proxy-request\"\n,\n\"address\"\n:\n{\n\"values\"\n:\n[\n\"10.10.10.16\"\n]\n}\n}\n]\n}\n]\n},\n\"classificationPolicy\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"classificationPolicy\"\n,\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"tcp\"\n,\n\"event\"\n:\n\"classification-detected\"\n,\n\"address\"\n:\n{\n\"values\"\n:\n[\n\"10.10.10.13\"\n]\n}\n}\n]\n}\n]\n},\n\"clientSslPolicy\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"clientSslPolicy\"\n,\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"tcp\"\n,\n\"event\"\n:\n\"ssl-client-hello\"\n,\n\"address\"\n:\n{\n\"values\"\n:\n[\n\"10.10.10.19\"\n]\n}\n},\n{\n\"type\"\n:\n\"tcp\"\n,\n\"event\"\n:\n\"ssl-client-serverhello-send\"\n,\n\"address\"\n:\n{\n\"values\"\n:\n[\n\"10.10.10.20\"\n]\n}\n}\n]\n}\n]\n},\n\"serverSslPolicy\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"serverSslPolicy\"\n,\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"tcp\"\n,\n\"event\"\n:\n\"ssl-server-handshake\"\n,\n\"address\"\n:\n{\n\"values\"\n:\n[\n\"10.10.10.21\"\n]\n}\n},\n{\n\"type\"\n:\n\"tcp\"\n,\n\"event\"\n:\n\"ssl-server-hello\"\n,\n\"address\"\n:\n{\n\"values\"\n:\n[\n\"10.10.10.22\"\n]\n}\n}\n]\n}\n]\n},\n\"websocketPolicy\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"websocketPolicy\"\n,\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"tcp\"\n,\n\"event\"\n:\n\"ws-request\"\n,\n\"address\"\n:\n{\n\"values\"\n:\n[\n\"10.10.10.23\"\n]\n}\n},\n{\n\"type\"\n:\n\"tcp\"\n,\n\"event\"\n:\n\"ws-response\"\n,\n\"address\"\n:\n{\n\"values\"\n:\n[\n\"10.10.10.24\"\n]\n}\n}\n]\n}\n]\n}\n}\n}\n}\nBack to top\nUsing the log Endpoint Policy Rule action\nIn this example, we show how you can use the\nlog\nEndpoint Policy rule actions introduced in BIG-IP AS3 3.34. This feature writes messages to a local or remote system log, based on the information you provide.\nWhen using the\nlog\naction type, you specify the timing with the log\nevent\nproperty, which determines when to run this event in the request-response cycle (see\nPolicy_Action_Log\nin the Schema Reference to see a list of the possible\nevent\nvalues).  The\nwrite\nproperty determines how and where the logs are written (see\nPolicy_Action_Log_Write\nfor the possible options for\nwrite\n).\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nAS3_Tenant\n.\nAn Application named\nAS3_Application\n.\nA virtual server named\nservice\nthat references the Endpoint Policy.\nAn Endpoint policy rule action of\nlog\nwith\nevent\nand\nwrite\nproperties.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.34.0\"\n,\n\"id\"\n:\n\"Endpoint_Policy\"\n,\n\"AS3_Tenant\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"AS3_Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"service\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"virtualAddresses\"\n:\n[\n\"1.2.3.4\"\n],\n\"policyEndpoint\"\n:\n{\n\"use\"\n:\n\"endpointPolicy\"\n}\n},\n\"endpointPolicy\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"rule\"\n,\n\"actions\"\n:\n[\n{\n\"type\"\n:\n\"log\"\n,\n\"event\"\n:\n\"request\"\n,\n\"write\"\n:\n{\n\"message\"\n:\n\"The message\"\n,\n\"facility\"\n:\n\"local1\"\n,\n\"priority\"\n:\n\"warning\"\n,\n\"ipAddress\"\n:\n\"5.6.7.8\"\n,\n\"port\"\n:\n123\n}\n}\n]\n}\n]\n}\n}\n}\n}\nBack to top\nReferencing a WAF policy from a file on the BIG-IP\nIn this example, we show how you can use the\nfile\nproperty to reference a WAF policy file that exists on the BIG-IP system.  This must be the absolute file path for the ASM policy stored on the BIG-IP.\nIn BIG-IP AS3 3.37 and later, any overrides available for the WAF policy (such as\nenforcementMode\n) are honored when referencing the policy from a file on the BIG-IP.  In previous versions, these overrides were ignored.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nWAF_Policy_File\n.\nAn Application named\nApplication\n.\nA virtual server named\nservice\nthat references the WAF Policy.\nA WAF policy named\nwafPolicy\nthat references a policy file on the BIG-IP.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.37.0\"\n,\n\"WAF_Policy_File\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"service\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"virtualAddresses\"\n:\n[\n\"192.0.2.0\"\n],\n\"policyWAF\"\n:\n{\n\"use\"\n:\n\"wafPolicy\"\n}\n},\n\"wafPolicy\"\n:\n{\n\"class\"\n:\n\"WAF_Policy\"\n,\n\"file\"\n:\n\"/path/to/file\"\n,\n\"enforcementMode\"\n:\n\"transparent\"\n}\n}\n}\n}\nBack to top\nUsing GeoIP Conditions in an Endpoint policy\nIn this example, we show how you can use GeoIP Conditions (introduced in BIG-IP AS3 3.42) in an Endpoint Policy. GeoIP Conditions allow you to configure an Endpoint policy to match against specific IP geolocation properties. For more information on LTM Endpoint Policies, see\nLocal Traffic Policies\nin the BIG-IP documentation.\nSee\nPolicy_Condition_GeoIP\nin the Schema Reference for available properties, descriptions, and AS3 usage.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nAS3_Tenant\n.\nAn Application named\nAS3_Application\n.\nA virtual server named\ntcpItem\nthat references the Endpoint Policy.\nAn Endpoint policy named\ngeoIPPolicy\nwith a set or rules named\ngeoIPDefault\nMultiple rules using the\ngeoip\ntype.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.42.0\"\n,\n\"id\"\n:\n\"Endpoint_Policy\"\n,\n\"AS3_Tenant\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"AS3_Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"tcpItem\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"policyEndpoint\"\n:\n\"geoIPPolicy\"\n,\n\"virtualAddresses\"\n:\n[\n\"10.1.0.1\"\n]\n},\n\"geoIPPolicy\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"geoIPDefault\"\n,\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"geoip\"\n,\n\"event\"\n:\n\"request\"\n,\n\"continent\"\n:\n{\n\"operand\"\n:\n\"matches\"\n,\n\"values\"\n:\n[\n\"AF\"\n]\n}\n},\n{\n\"type\"\n:\n\"geoip\"\n,\n\"event\"\n:\n\"request\"\n,\n\"countryCode\"\n:\n{\n\"operand\"\n:\n\"matches\"\n,\n\"values\"\n:\n[\n\"AT\"\n]\n}\n},\n{\n\"type\"\n:\n\"geoip\"\n,\n\"event\"\n:\n\"request\"\n,\n\"countryName\"\n:\n{\n\"operand\"\n:\n\"matches\"\n,\n\"values\"\n:\n[\n\"Germany\"\n]\n}\n},\n{\n\"type\"\n:\n\"geoip\"\n,\n\"event\"\n:\n\"request\"\n,\n\"isp\"\n:\n{\n\"operand\"\n:\n\"matches\"\n,\n\"values\"\n:\n[\n\"AT&T\"\n]\n}\n},\n{\n\"type\"\n:\n\"geoip\"\n,\n\"event\"\n:\n\"request\"\n,\n\"org\"\n:\n{\n\"operand\"\n:\n\"matches\"\n,\n\"values\"\n:\n[\n\"myORG\"\n]\n}\n},\n{\n\"type\"\n:\n\"geoip\"\n,\n\"event\"\n:\n\"request\"\n,\n\"regionCode\"\n:\n{\n\"operand\"\n:\n\"matches\"\n,\n\"values\"\n:\n[\n\"OR\"\n]\n}\n},\n{\n\"type\"\n:\n\"geoip\"\n,\n\"event\"\n:\n\"request\"\n,\n\"regionName\"\n:\n{\n\"operand\"\n:\n\"matches\"\n,\n\"values\"\n:\n[\n\"Ohio\"\n]\n}\n}\n]\n}\n]\n}\n}\n}\n}\nBack to top\nConfiguring Security Log Profile NAT settings\nIn this example, we show how you can configure Security Log Profile NAT settings in an AS3 declaration. These settings determine how the system logs firewall NAT events.\nWhile the Security Log Profile with NAT settings has long been supported, AS3 3.43 introduced three new properties for the NAT object, related to LSN legacy mode:\nlsnLegacyMode\n: specifies whether translation events and other NAT events are logged in existing CGNAT/LSN formats (for backward compatibility with LSN events). The following options are applicable only if lsnLegacyMode is enabled (\ntrue\n).\nlogStartOutboundSessionDestination\n: includes the destination address and port with the log entry for the\nstart\nof the translation event for a NAT client.\nlogEndOutboundSessionDestination\n:  includes the destination address and port with log entry for the\nend\nof the translation event for a NAT client.\nImportant\nIf\nlsnLegacyMode\nis enabled, you cannot set the\nrateLimitStartInboundSession\n,\nrateLimitEndInboundSession\n,\nrateLimitStartOutboundSession\n, or\nrateLimitEndOutboundSession\nproperties.\nFor more information on the Security Log Profile, see\nSecurity Log Profile class\n. For details on all of the available NAT settings, see\nSecurity_Log_Profile.nat\n.\nThis declaration creates the following objects on the BIG-IP (if you try to use the following declaration on an AS3 version prior to 3.43, it will fail. On previous versions, remove the new settings, highlighted in yellow):\nPartition (tenant) named\nSample_sec_log_profile_nat\n.\nAn Application named\nA1\n.\nA Security Log Profile named\nsecLogNAT\nwith a number of settings, including\nlsnLegacyMode\n,\nlogStartOutboundSessionDestination\n, and\nlogEndOutboundSessionDestination\nintroduced in AS3 3.43.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"label\"\n:\n\"Sample Security Log Profile NAT\"\n,\n\"schemaVersion\"\n:\n\"3.43.0\"\n,\n\"id\"\n:\n\"Security_Log_Profile_NAT\"\n,\n\"Sample_sec_log_profile_nat\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"A1\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"secLogNAT\"\n:\n{\n\"class\"\n:\n\"Security_Log_Profile\"\n,\n\"nat\"\n:\n{\n\"publisher\"\n:\n{\n\"bigip\"\n:\n\"/Common/default-ipsec-log-publisher\"\n},\n\"logErrors\"\n:\ntrue\n,\n\"logSubscriberId\"\n:\ntrue\n,\n\"logQuotaExceeded\"\n:\ntrue\n,\n\"logStartInboundSession\"\n:\ntrue\n,\n\"logEndInboundSession\"\n:\ntrue\n,\n\"logStartOutboundSession\"\n:\ntrue\n,\n\"logStartOutboundSessionDestination\"\n:\nfalse\n,\n\"logEndOutboundSession\"\n:\ntrue\n,\n\"logEndOutboundSessionDestination\"\n:\nfalse\n,\n\"lsnLegacyMode\"\n:\nfalse\n,\n\"rateLimitAggregate\"\n:\n100\n,\n\"rateLimitErrors\"\n:\n10\n,\n\"rateLimitQuotaExceeded\"\n:\n20\n,\n\"rateLimitStartInboundSession\"\n:\n30\n,\n\"rateLimitEndInboundSession\"\n:\n40\n,\n\"rateLimitStartOutboundSession\"\n:\n50\n,\n\"rateLimitEndOutboundSession\"\n:\n60\n,\n\"formatErrors\"\n:\n{\n\"fields\"\n:\n[\n\"context-name\"\n,\n\"event-name\"\n,\n\"dest-ip\"\n],\n\"delimiter\"\n:\n\".\"\n}\n}\n}\n}\n}\n}\nBack to top\nEnabling and disabling a bot defense profile in an Endpoint policy\nIn this example, we show how you can enable or disable a bot defense profile in an Endpoint policy using BIG-IP AS3 3.46 or later. This allows you to enable or disable the bot defense profile when specific conditions occur, such as when a particular HTTP URI is called.\nFor more information, see\nEndpoint_Policy\nand\nDOS_Profile_Application_Bot_Defense\nin the Schema Reference.\nFor detailed information on bot defense, see\nBot defense overview\nand\nConfiguring Bot defense\n.\nThis declaration creates the following objects on the BIG-IP\nPartition (tenant) named\nEndpoint_Policy_BotDefense\n.\nAn Application named\nApplication\n.\nA virtual server named\ntestItem\nthat references an endpoint policy and a bot defense profile.\nAn endpoint policy named\nendpointPolicy\nwith multiple rules that enable or disable the bot defense profile.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.46.0\"\n,\n\"id\"\n:\n\"Service_HTTP\"\n,\n\"Endpoint_Policy_BotDefense\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"testItem\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"virtualAddresses\"\n:\n[\n\"10.1.40.50\"\n],\n\"policyEndpoint\"\n:\n\"endpointPolicy\"\n,\n\"profileBotDefense\"\n:\n{\n\"bigip\"\n:\n\"/Common/bot-defense\"\n}\n},\n\"endpointPolicy\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"enableBotDefense\"\n,\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"httpUri\"\n,\n\"path\"\n:\n{\n\"values\"\n:\n[\n\"example.com\"\n]\n}\n}\n],\n\"actions\"\n:\n[\n{\n\"type\"\n:\n\"botDefense\"\n,\n\"profile\"\n:\n{\n\"bigip\"\n:\n\"/Common/bot-defense\"\n}\n}\n]\n},\n{\n\"name\"\n:\n\"disableBotDefense\"\n,\n\"conditions\"\n:\n[],\n\"actions\"\n:\n[\n{\n\"type\"\n:\n\"botDefense\"\n}\n]\n}\n]\n}\n}\n}\n}\nBack to top\nUsing expand for values in a WAF policy\nIn this example, we show how you can use the\nexpand\nproperty in a WAF policy in BIG-IP AS3 3.46 or later. When using expand, BIG-IP AS3 performs string expansion on specified values within the WAF Policy.\nNote\nTo use expand, the WAF Policy must be in JSON format; WAF policies that are not in JSON format are ignored.\nThe\nexpand\nproperty accepts an array of JSON pointers that denote which properties in the imported WAF policy should have AS3 string expansion performed on them. AS3 expands the target property values in the WAF policy and overwrites the data before passing it to the BIG-IP.\nFor more information, see\nWAF_Policy\nin the Schema Reference.\nFor more information on BIG-IP AS3 string expansion, see\nString Expansion in URLs, iRules, and Other Values\nin the Reference Guide.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nTenant\n.\nAn Application named\nApplication\n.\nA virtual server named\nservice\nthat references a WAF policy.\nA WAF policy named\nwafPolicy\nwith a text policy, and the\nexpand\nproperty that includes a JSON pointer to a value to expand.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.46.0\"\n,\n\"id\"\n:\n\"WAF_Policy\"\n,\n\"Tenant\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"service\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"virtualAddresses\"\n:\n[\n\"192.0.2.10\"\n],\n\"policyWAF\"\n:\n{\n\"use\"\n:\n\"wafPolicy\"\n}\n},\n\"wafPolicy\"\n:\n{\n\"class\"\n:\n\"WAF_Policy\"\n,\n\"policy\"\n:\n{\n\"text\"\n:\n\"{\\n  \\\"policy\\\": {\\n    \\\"name\\\": \\\"AppPolicy01\\\",\\n    \\\"description\\\": \\\"embedded WAF Policy\\\",\\n    \\\"template\\\": {\\n      \\\"name\\\": \\\"POLICY_TEMPLATE_RAPID_DEPLOYMENT\\\"\\n    },\\n    \\\"open-api-files\\\": [\\n      {\\n        \\\"link\\\": \\\"https:\\/\\/example.com\\/files\\/`A`\\/openapi.yaml\\\"\\n      }\\n    ]\\n  }\\n}\\n\"\n},\n\"expand\"\n:\n[\n\"/policy/open-api-files/0/link\"\n]\n}\n}\n}\n}\nBack to top\nUsing the httpHost condition in an Endpoint policy rule\nIn this example, we show how you can use the\nhttpHost\ncondition in your Endpoint policy rules. This allows you to match the host of an HTTP request, proxy request, or proxy connect.\nThe options for\nhttpHost\nare:\nhost\n- Matches the host name.\nport\n- Matches the port number.\nall\n- Matches the full host header string.\nFor more information on LTM Endpoint Policies, see\nLocal Traffic Policies\nin the BIG-IP documentation.\nAlso see\nPolicy_Condition_HTTP_Host\nin the Schema Reference.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nTenant\n.\nAn Application named\nApplication\n.\nA virtual server named\nhttp_host_service\nAn HTTP profile named\nhttpProfile\nA Data Group named\nhostnames\nAn Endpoint policy named\nhttp_host_policy\nthat contains three rules that use the different options for the\nhttpHost\ncondition.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.47.0\"\n,\n\"remark\"\n:\n\"HTTP Host condition with LTM policy\"\n,\n\"Tenant\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"http_host_service\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"virtualAddresses\"\n:\n[\n\"10.0.1.10\"\n],\n\"policyEndpoint\"\n:\n\"http_host_policy\"\n,\n\"profileHTTP\"\n:\n{\n\"use\"\n:\n\"httpProfile\"\n}\n},\n\"httpProfile\"\n:\n{\n\"class\"\n:\n\"HTTP_Profile\"\n,\n\"proxyConnectEnabled\"\n:\ntrue\n,\n\"proxyType\"\n:\n\"explicit\"\n,\n\"resolver\"\n:\n{\n\"bigip\"\n:\n\"/Common/f5-aws-dns\"\n}\n},\n\"hostnames\"\n:\n{\n\"class\"\n:\n\"Data_Group\"\n,\n\"keyDataType\"\n:\n\"string\"\n,\n\"records\"\n:\n[\n{\n\"key\"\n:\n\"testKey\"\n,\n\"value\"\n:\n\"test.com\"\n},\n{\n\"key\"\n:\n\"exampleKey\"\n,\n\"value\"\n:\n\"example.com\"\n}\n]\n},\n\"http_host_policy\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"http_host_1\"\n,\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"httpHost\"\n,\n\"event\"\n:\n\"proxy-request\"\n,\n\"all\"\n:\n{\n\"operand\"\n:\n\"contains\"\n,\n\"datagroup\"\n:\n{\n\"bigip\"\n:\n\"/Common/hostnames\"\n}\n}\n}\n]\n},\n{\n\"name\"\n:\n\"http_host_2\"\n,\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"httpHost\"\n,\n\"event\"\n:\n\"request\"\n,\n\"host\"\n:\n{\n\"operand\"\n:\n\"ends-with\"\n,\n\"values\"\n:\n[\n\"test.com\"\n,\n\"example.com\"\n]\n},\n\"caseSensitive\"\n:\ntrue\n}\n]\n},\n{\n\"name\"\n:\n\"http_host_3\"\n,\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"httpHost\"\n,\n\"event\"\n:\n\"proxy-connect\"\n,\n\"port\"\n:\n{\n\"operand\"\n:\n\"equals\"\n,\n\"values\"\n:\n[\n8080\n,\n8443\n]\n}\n}\n]\n}\n]\n}\n}\n}\n}\nBack to top\nUsing HTTP Status condition in an Endpoint policy rule\nIn this example, we show how you can use the\nhttpStatus\ncondition in your Endpoint policy rules. This allows you to match the HTTP status code of an HTTP request and configure the appropriate action.\nFor more information on LTM Endpoint Policies, see\nLocal Traffic Policies\nin the BIG-IP documentation.\nAlso see\nPolicy_Condition\nType\nin the Schema Reference.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nAS3_Tenant\n.\nAn Application named\nAS3_Application\n.\nA virtual server named\nservice\nthat references an endpoint policy\nThree Data Groups named\nallDataGroup\n,\ntextDataGroup\n, and\ncodeDataGroup\nAn Endpoint policy named\ntest_EP\nthat contains a rule that includes a number of\nhttpStatus\ncondition examples.\n{\n\"class\"\n:\n\"ADC\"\n,\n\"schemaVersion\"\n:\n\"3.48.0\"\n,\n\"id\"\n:\n\"Endpoint_Policy\"\n,\n\"AS3_Tenant\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"AS3_Application\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"service\"\n:\n{\n\"class\"\n:\n\"Service_HTTP\"\n,\n\"virtualAddresses\"\n:\n[\n\"1.2.3.4\"\n],\n\"policyEndpoint\"\n:\n{\n\"use\"\n:\n\"test_EP\"\n}\n},\n\"allDataGroup\"\n:\n{\n\"class\"\n:\n\"Data_Group\"\n,\n\"label\"\n:\n\"HTTP Status All\"\n,\n\"storageType\"\n:\n\"internal\"\n,\n\"name\"\n:\n\"HTTP Status All\"\n,\n\"keyDataType\"\n:\n\"string\"\n,\n\"records\"\n:\n[\n{\n\"key\"\n:\n\"403 Forbidden\"\n},\n{\n\"key\"\n:\n\"404 Not Found\"\n}\n]\n},\n\"textDataGroup\"\n:\n{\n\"class\"\n:\n\"Data_Group\"\n,\n\"label\"\n:\n\"HTTP Status Text\"\n,\n\"storageType\"\n:\n\"internal\"\n,\n\"name\"\n:\n\"HTTP Status Text\"\n,\n\"keyDataType\"\n:\n\"string\"\n,\n\"records\"\n:\n[\n{\n\"key\"\n:\n\"Bad Request\"\n},\n{\n\"key\"\n:\n\"Unauthorized\"\n}\n]\n},\n\"codeDataGroup\"\n:\n{\n\"class\"\n:\n\"Data_Group\"\n,\n\"label\"\n:\n\"HTTP Status Codes\"\n,\n\"storageType\"\n:\n\"internal\"\n,\n\"name\"\n:\n\"HTTP Status Codes\"\n,\n\"keyDataType\"\n:\n\"integer\"\n,\n\"records\"\n:\n[\n{\n\"key\"\n:\n400\n},\n{\n\"key\"\n:\n500\n}\n]\n},\n\"test_EP\"\n:\n{\n\"class\"\n:\n\"Endpoint_Policy\"\n,\n\"rules\"\n:\n[\n{\n\"name\"\n:\n\"log\"\n,\n\"actions\"\n:\n[\n{\n\"type\"\n:\n\"log\"\n,\n\"event\"\n:\n\"response\"\n,\n\"write\"\n:\n{\n\"message\"\n:\n\"The message\"\n,\n\"facility\"\n:\n\"local1\"\n,\n\"priority\"\n:\n\"warning\"\n,\n\"ipAddress\"\n:\n\"5.6.7.8\"\n,\n\"port\"\n:\n123\n}\n}\n],\n\"conditions\"\n:\n[\n{\n\"type\"\n:\n\"httpStatus\"\n,\n\"event\"\n:\n\"response\"\n,\n\"all\"\n:\n{\n\"operand\"\n:\n\"equals\"\n,\n\"values\"\n:\n[\n\"204 No Content\"\n,\n\"205 Reset Content\"\n,\n\"206 Partial Content\"\n]\n}\n},\n{\n\"type\"\n:\n\"httpStatus\"\n,\n\"event\"\n:\n\"response\"\n,\n\"all\"\n:\n{\n\"operand\"\n:\n\"equals\"\n,\n\"datagroup\"\n:\n{\n\"use\"\n:\n\"allDataGroup\"\n}\n}\n},\n{\n\"type\"\n:\n\"httpStatus\"\n,\n\"event\"\n:\n\"response\"\n,\n\"text\"\n:\n{\n\"operand\"\n:\n\"contains\"\n,\n\"values\"\n:\n[\n\"Unauthorized\"\n,\n\"Payment Required\"\n]\n}\n},\n{\n\"type\"\n:\n\"httpStatus\"\n,\n\"event\"\n:\n\"response\"\n,\n\"text\"\n:\n{\n\"operand\"\n:\n\"ends-with\"\n,\n\"datagroup\"\n:\n{\n\"use\"\n:\n\"textDataGroup\"\n}\n}\n},\n{\n\"type\"\n:\n\"httpStatus\"\n,\n\"event\"\n:\n\"response\"\n,\n\"code\"\n:\n{\n\"operand\"\n:\n\"greater\"\n,\n\"values\"\n:\n[\n500\n]\n}\n},\n{\n\"type\"\n:\n\"httpStatus\"\n,\n\"event\"\n:\n\"response\"\n,\n\"code\"\n:\n{\n\"operand\"\n:\n\"equals\"\n,\n\"datagroup\"\n:\n{\n\"use\"\n:\n\"codeDataGroup\"\n}\n}\n}\n]\n}\n]\n}\n}\n}\n}\nBack to top\nUsing the logUuidField property in a Security Log Profile network section\nIn this example, we show how you can use the\nlogUuidField\nproperty in the network section of a Security_Log_Profile. When\nlogUuidField\nis set to\ntrue\n, the UUID field is included in the network firewall log entries, which can be useful for correlating log entries with specific firewall rules.\nSee\nSecurity Log Profile class\nin the Schema Reference for options and BIG-IP AS3 usage.\nThis declaration creates the following objects on the BIG-IP:\nPartition (tenant) named\nexampleTenant\n.\nAn Application named\nexampleApplication\n.\nA Security Log Profile named\nnetwork_log_profile\nwith network logging enabled, including the\nlogUuidField\nproperty and a custom storage format.\n{\n\"schemaVersion\"\n:\n\"3.57.0\"\n,\n\"class\"\n:\n\"ADC\"\n,\n\"exampleTenant\"\n:\n{\n\"class\"\n:\n\"Tenant\"\n,\n\"exampleApplication\"\n:\n{\n\"class\"\n:\n\"Application\"\n,\n\"network_log_profile\"\n:\n{\n\"class\"\n:\n\"Security_Log_Profile\"\n,\n\"network\"\n:\n{\n\"logRuleMatchAccepts\"\n:\ntrue\n,\n\"logUuidField\"\n:\ntrue\n,\n\"storageFormat\"\n:\n\"Example Format ${date_time} ${bigip_hostname} ${acl_policy_name},${acl_policy_type},${acl_rule_name},${action},${context_name},${context_type},${dest_ip},${dest_port},${drop_reason},${protocol},${sa_translation_pool},${sa_translation_type},${src_ip},${src_port},${translated_dest_ip},${translated_dest_port},${translated_ip_protocol},${translated_src_ip},${translated_src_port},${translated_vlan},${vlan}\"\n}\n}\n}\n}\n}\nBack to top\nPrevious\nNext",
+  "title": "Application Security",
+  "updated": "2026-05-29 08:13:18",
+  "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/declarations/application-security.html",
+  "url_version": null
+}

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ltm rule command RESOLV lookup</title><link rel="canonical" href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_RESOLV_lookup.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>ltm rule command RESOLV lookup</h1><p>cli_reference · 17.0.0</p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_RESOLV_lookup.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="ltm-rule-command-resolv-lookup">
+<span id="id1"></span><h1>ltm rule command RESOLV lookup</h1>
+<html>
+<pre>
+iRule(1)						BIG-IP TMSH Manual						  iRule(1)
+
+RESOLV::lookup
+       Deprecated: The commands for making a DNS lookup.
+
+SYNOPSIS
+DESCRIPTION
+       RESOLV::lookup performs a DNS query, returning one or more addresses (A records) for a hostname, a domain name (PTR record)
+       for an IP address, or optionally one or more values for records of other types. Multiple values are returned as a list, so
+       to obtain a single IP address the construction [lindex [RESOLV::lookup $hostname] 0] may be used.
+
+       The key difference between this command and the older NAME::lookup command is that RESOLV::lookup briefly suspends
+       execution of the current iRule (event) then returns the result inline, whereas NAME::lookup is asynchronous (the current
+       rule continues and eventually another event NAME_RESOLVED fires when the result is available. In each NAME_RESOLVED event
+       you must call NAME::response to obtain the result). RESOLV::lookup is almost always more convenient than the older
+       NAME::lookup function.
+
+       By default RESOLV::lookup queries the BIG-IP's local caching nameserver (bind) which you must configure in advance. If your
+       RESOLV::lookup queries don't seem to work you should adjust your BIG-IP configuration as explained in f5 Solution Note
+       SOL12224.
+
+       RESOLV::lookup lets you optionally specify a DNS resolver to query. You may give either a single nameserver's IP address or
+       the name (e.g., /Common/myDNS) of a virtual server which sends DNS queries to some pool of nameservers. You may use this
+       feature to implement external DNS-query-based services such as large real time IP block lists.
+
+       By default, TMM will make up to 4 consecutive query attempts (1 original with 3 retries) with an individual query timeout
+       of 5 seconds. These parameters are globally configurable using these database keys:
+
+	   b db tmm.resolv.retry
+	   b db tmm.resolv.timeout
+
+	   Or via tmsh:
+
+	   tmsh modify /sys db tmm.resolv.retry value &lt; value &gt;
+	   tmsh modify /sys db tmm.resolv.timeout value &lt; value &gt;
+
+RETURN VALUE
+       If you send queries to a virtual server using an argument of the form @/Common/myDNS and expect those queries to leave the
+       BIG-IP, ensure that you SNAT traffic via that virtual server so the remote nameservers will have a routable address to send
+       replies to (otherwise the query source address will be one of the BIG-IP's loopback addresses, 127.1.x.y). Either set SNAT
+       Automap or assign a SNAT pool to the virtual server, or add a selective-SNAT iRule which triggers when client IP matches
+       127.1.0.0/16.
+
+       The [inet|inet6] arguments are most useful when querying non-address records. The -a option (query for type A IPv4-address
+       records) is incompatible with 'inet6' and -aaaa (query for type AAAA IPv6-address records) is incompatible with 'inet'.
+
+       The RESOLV::lookup function will not chase through a chain of CNAME records.
+
+VALID DURING
+       ANY_EVENT
+
+EXAMPLES
+	when CLIENT_ACCEPTED {
+	    log local0. "devcentral.f5.com is currently at IP [RESOLV::lookup @10.10.20.1 "devcentral.f5.com"]"
+	}
+
+	Results in log entry:
+	Jan 21 20:21:22 local/tmm info tmm[5018]: Rule resolv_test <client_accepted>: devcentral.f5.com is currently at IP 65.61.115.213
+
+	# Select the first returned IP address as the destination IP (inherits the destination port from the client's destination port).
+	when RULE_INIT {
+	    set static::dns_vs my_dns_vs
+	}
+	when CLIENT_ACCEPTED {
+	    # Get IP(s) for hostname www.example.com against 4.2.2.1 name server
+	    set ips [RESOLV::lookup @$static::dns_vs -a "www.example.com"]
+
+	    # Log result. If there are multiple IP's it could be a TCL list like {1.1.1.1 2.2.2.2 3.3.3.3}.
+	    log local0. "Looked up www.example.com and found $ips, parsed first element: [lindex $ips 0]"
+
+	    # Check if the first list element was empty
+	    if {$ips eq ""}{
+		# Input wasn't an IP address, take some default action?
+	    } else {
+		# Select the IP
+		node [lindex $ips 0]
+	    }
+	}
+
+HINTS
+       Note: The results for all query types should be cached according to the Time To Live on the response. Subsequent calls
+       using RESOLV::lookup will use the cache.
+
+       Note: There was a known issue for RESOLV::lookup where a "wrong # args" runtime error occurs if 4 arguments are supplied.
+       This issue was being tracked as CR 135777 / Bug 243140 and was fixed in 10.2.0.
+
+       Note: There was a known issue for RESOLV::lookup when using the -ptr flag. A hostname will not be returned even a valid PTR
+       record for the IP address exists. This was tracked as Bug 340659 (SOL12378) and was fixed in 10.2.2. Contact F5 Support for
+       a hotfix in 10.2.0 and 10.2.1.
+
+       Note: RESOLV::lookup won't work with a virtual server address as the destination. Use the virtual server name instead as
+       this is the expected format. In V11, the virtual server name must include the /Common/ designation, exactly as the VIP
+       appears in bigip.conf
+
+SEE ALSO
+CHANGE LOG
+       @BIGIP-10.1.0 --First introduced the command.  @BIGIP-15.1.0 --Deprecated in favor of RESOLVER and DNSMSG namespaces
+
+BIG-IP							    2022-04-12							  iRule(1)
+</client_accepted></pre>
+</html>
+</div>
+</div>
+</article>
+</body></html>

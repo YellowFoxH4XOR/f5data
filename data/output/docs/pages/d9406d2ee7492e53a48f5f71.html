@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ltm rule command SSL forward proxy</title><link rel="canonical" href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_SSL_forward_proxy.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>ltm rule command SSL forward proxy</h1><p>cli_reference · 17.0.0</p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_SSL_forward_proxy.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="ltm-rule-command-ssl-forward-proxy">
+<span id="id1"></span><h1>ltm rule command SSL forward proxy</h1>
+<html>
+<pre>
+iRule(1)						BIG-IP TMSH Manual						  iRule(1)
+
+SSL::forward_proxy
+       Sets the SSL forward proxy bypass feature to bypass or intercept, or retrieves the forged certificate, or
+       enables/disables/gets verified_handshake semantics, or mask/ignore certificate response_control for the SSL handshake or
+       inserts a certificate extension to the certificate, or sets server certificate status.
+
+SYNOPSIS
+       SSL::forward_proxy ( (policy (bypass | intercept)?) | cert)
+
+       SSL::forward_proxy verified_handshake (enable | disable) ?
+
+       SSL::forward_proxy cert response_control (ignore | mask) ?
+
+       SSL::forward_proxy extension (ARG ARG)
+
+       SSL::forward_proxy cert status (revoke) ?
+
+DESCRIPTION
+       This command sets the SSL forward proxy bypass feature to bypass or intercept, or retrieves the forged certificate if the
+       policy or cert subcommands are specified. If verified-handshake subcommand is specified, the command enables, disables or
+       retrieves the verified_handshake behavior for the SSL handshake. If response_control subcommand is specified, the command
+       ignore or mask the server side certificate errors while forging client certificate. If extension subcommand is specified,
+       the command inserts an extension while forging a certificate. If status subcommand is specified, the command sets server
+       certificate status.
+
+RETURN VALUE
+       SSL::forward_proxy policy &lt;[bypass] | [intercept]&gt;
+	   This command sets the policy of SSL Forward Proxy Bypass feature to "bypass" or "intercept"
+
+       SSL::forward_proxy cert
+	   Returns the X509 SSL certificate forged by the SSL forward proxy.
+
+       SSL::forward_proxy verified_handshake [ enable | disable ]
+	   Returns the verified handshake value if no option is specified, else sets the verified handshake to enable or disable.
+
+       SSL::forward_proxy cert response_control [ ignore | mask ]
+	   This command allows toggle option for forging of a good certificate (mask) or preserve server side certificate errors
+       (ignore) on certificate to be sent to client.
+
+       SSL::forward_proxy extension <oid oid-value="">
+	   This command inserts <oid oid-value=""> as an extension to the forged certificate with OID=oid and value=oid-value.
+
+       SSL::forward_proxy cert status [ revoke ]
+	   This command internally sets server cert status to revoked. Any cert status retrieved from server-side will be
+       overwritten with a revoked status.
+
+VALID DURING
+       CLIENTSSL_SERVERHELLO_SEND CLIENT_ACCEPTED CLIENTSSL_CLIENTHELLO SERVER_CONNECTED SERVERSSL_SERVERCERT SERVERSSL_HANDSHAKE
+
+EXAMPLES
+	when CLIENTSSL_SERVERHELLO_SEND {
+	    log local0. 'bypassing'
+	    SSL::forward_proxy policy bypass
+	}
+
+	when CLIENTSSL_SERVERHELLO_SEND {
+	    log local0. 'intercepting'
+	    SSL::forward_proxy policy intercept
+	}
+
+	when CLIENTSSL_SERVERHELLO_SEND {
+	    set cert [SSL::forward_proxy cert]
+	    log local0. "Cert issuer - [X509::issuer $cert]"
+	}
+
+	when CLIENTSSL_CLIENTHELLO {
+	    SSL::forward_proxy verified_handshake enable
+	    set vhs [ SSL::forward_proxy verified_handshake ]
+	    log local0. "Set clientside SSL forward proxy verified handshake to $vhs"
+	}
+
+	when CLIENTSSL_CLIENTHELLO {
+	    SSL::forward_proxy extension AIA "ocsp,https://ocsp.entrust.net.com; caIssuer, https://aia.entrust.net/l1m-chain256.cer"
+	    SSL::forward_proxy extension CRLDP "http://crl.entrust.net/level1m.crl"
+	    SSL::forward_proxy extension CP "2.16.840.1.101.2.1.11.9, cpsuri:https://test-statement.com/pki/cps.txt, cpsuri:https://test-statement1.com/pki/cps.txt;2.16.840.1.101.2.1.11.19"
+	    SSL::forward_proxy extension 1.3.6.1.4.1.3375.3.1.1 "a F5 Network oid"
+	    SSL::forward_proxy extension 1.2.3.4 "This is oid-value for oid 1.2.3.4"
+	}
+
+	when SERVER_CONNECTED {
+	    SSL::forward_proxy verified_handshake enable
+	    set vhs [ SSL::forward_proxy verified_handshake ]
+	    log local0. "Set serverside SSL forward proxy verified handshake to $vhs"
+	}
+	when SERVERSSL_HANDSHAKE {
+	    if { [X509::verify_cert_error_string [SSL::verify_result]] ne "ok" } {
+		 SSL::forward_proxy cert response_control mask
+	    }
+	    log local0. "Set mask option to forge a good certificate when server certificate is bad"
+	}
+	when SERVERSSL_SERVERCERT {
+	    if { [SSL::cert count] != 0 } {
+		 set subject_cn [findstr [X509::subject [SSL::cert 0]] "CN=" 3 ","]
+		 if { $subject_cn equals "xyz.com" } {
+		    log local0. "Set certificate status as revoked when server certificate CN matches 'xyz.com'"
+		    SSL::forward_proxy cert status revoke
+		 }
+	    }
+	}
+
+HINTS
+       The "SSL::forward_proxy verified_handshake" command must be run on both the client and server side of the forward proxy to
+       configure the verified-handshake behavior.
+
+SEE ALSO
+CHANGE LOG
+       @BIGIP-16.1.0 -- The "cert" subcommand option "status" was introduced.  @BIGIP-15.1.0 -- The "extension" subcommand was
+       introduced.  @BIGIP-15.0.0.0 -- The "response_control" subcommand was introduced.  @BIGIP-13.1.0.1 -- The
+       "verified_handshake" subcommand was introduced.	@BIGIP-13.1.0 -- The "cert" subcommand was introduced.	@BIGIP-11.5.0
+       --First introduced the command.
+
+BIG-IP							    2022-04-12							  iRule(1)
+</oid></oid></pre>
+</html>
+</div>
+</div>
+</article>
+</body></html>

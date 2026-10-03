@@ -1,0 +1,75 @@
+{
+  "applies_to": [
+    {
+      "product": "F5 BIG-IP iRules API",
+      "versions": []
+    }
+  ],
+  "breadcrumbs": [],
+  "code_examples": [
+    {
+      "section": "Syntax",
+      "text": "ACCESS::oauth sign [ -header <raw-data> ] -payload <raw-data> -key <JWK object> [ -alg <signing algorithm> ] [ -ignore-cert-expiry ]\n"
+    },
+    {
+      "section": "Examples",
+      "text": "when RULE_INIT {\n    # This is an example of using ACCESS::oauth sign command to perform\n    # JWT access token resigning.\n    # Here we predefined the list of incoming claims which BIG-IP\n    # needs to include in the JWT. Here we assumed there is an OAuth Scope\n    # Agent configured, which produces the session variables for each claim.\n    # Once the JWT payload is constructed, here we use ACCESS::oauth sign\n    # command to sign the payload, and produce a JWS.\n    set static::claim_list_string { {sub} {name} }\n    set static::claim_list_boolean_int { {admin} }\n    set static::jws_cache {oauth-sign-test-jws_cache}\n    set static::jwt_issuer {https://myissuer.com}\n    set static::jwt_sess_var_name {session.oauth.scope.last.jwt}\n    set static::jwt_expires_in 10\n    set static::jwt_leeway 0\n    set static::jwt_sdb_timeout_adjustment 3\n}\n\nproc gettimeofday {} {\n    return [ clock seconds ]\n}\n\nproc generate_payload { claim_list_string claim_list_boolean_int } {\n    set payload \"\\{\"\n    append payload {\"issuer\":\"} $static::jwt_issuer {\"}\n    set iat [ call gettimeofday ]\n    append payload {,\"iat\":} $iat\n    append payload {,\"exp\":} [ expr { $iat + $static::jwt_expires_in } ]\n    append payload {,\"nbf\":} [ expr { $iat - $static::jwt_leeway } ]\n    foreach claim $claim_list_string {\n        set value [ ACCESS::session data get \"$static::jwt_sess_var_name.$claim\" ]\n        if { [ string length value ] == 0 } {\n            continue\n        }\n        append payload {,\"} $claim {\":\"} $value {\"}\n    }\n    foreach claim $claim_list_boolean_int {\n        set value [ ACCESS::session data get \"$static::jwt_sess_var_name.$claim\" ]\n        if { [ string length value ] == 0 } {\n            continue\n        }\n        append payload {,\"} $claim {\":} $value\n    }\n    append payload \"\\}\"\n    return $payload\n}\n\nproc generate_jws {} {\n    set payload [ call generate_payload $static::claim_list_string $static::claim_list_boolean_int ]\n    return [ ACCESS::oauth sign -payload $payload -alg RS512 -key /Common/jwk-rsa-2 -ignore-cert-expiry ]\n}\n\nproc get_user_key {} {\n    set data [ ACCESS::session sid ]\n    binary scan [ md5 $data ] H* data\n    return $data\n}\n\nproc get_user_key_from_sdb {} {\n    return [ ACCESS::session data get {session.jwt.cache.user_key} ]\n}\n\nproc set_user_key_to_sdb {} {\n    ACCESS::session data set {session.jwt.cache.user_key} [ call get_user_key ]\n}\n\nproc calc_sdb_timeout {} {\n    return [ expr { $static::jwt_expires_in - $static::jwt_sdb_timeout_adjustment } ]\n}\n\nproc get_jws_from_cache {} {\n    set user_key [ call get_user_key ]\n    set jws [ table lookup -notouch -subtable $static::jws_cache $user_key ]\n    if { [ string length $jws ] != 0 } {\n        return $jws\n    }\n    return [ table set -notouch -subtable $static::jws_cache -excl $user_key [ call generate_jws ] [ call calc_sdb_timeout ]  [ call calc_sdb_timeout ] ]\n}\n\nproc get_jws { from_cache } {\n    if { $from_cache == \"yes\" } {\n        return [ call get_jws_from_cache ]\n    } else {\n        return [ call generate_jws ]\n    }\n}\n\nproc delete_jws_cache {} {\n    set user_key [ call get_user_key_from_sdb ]\n    ACCESS::log \"Delete cache for $user_key\"\n    table delete -subtable $static::jws_cache $user_key\n}\n\nwhen ACCESS_SESSION_STARTED {\n    call set_user_key_to_sdb\n}\n\nwhen ACCESS_ACL_ALLOWED {\n    set jws [call get_jws \"yes\" ]\n    HTTP::header replace Authorization \"Bearer $jws\"\n}\n\nwhen ACCESS_SESSION_CLOSED {\n    call delete_jws_cache\n}\n"
+    }
+  ],
+  "content_hash": "b03977502e417f2f459acac204921a53a3932232c39f5b87551fca71a72de77b",
+  "diagrams": [],
+  "documentation_version": null,
+  "headings": [
+    {
+      "anchor": "access-oauth",
+      "level": 1,
+      "path": [],
+      "title": "ACCESS::oauth"
+    },
+    {
+      "anchor": "description",
+      "level": 2,
+      "path": [
+        "ACCESS::oauth"
+      ],
+      "title": "Description"
+    },
+    {
+      "anchor": "syntax",
+      "level": 2,
+      "path": [
+        "ACCESS::oauth"
+      ],
+      "title": "Syntax"
+    },
+    {
+      "anchor": "examples",
+      "level": 2,
+      "path": [
+        "ACCESS::oauth"
+      ],
+      "title": "Examples"
+    },
+    {
+      "anchor": "related-information",
+      "level": 2,
+      "path": [
+        "ACCESS::oauth"
+      ],
+      "title": "Related Information"
+    }
+  ],
+  "id": "f0ae5d8c791cefd8bc9f9da3",
+  "images": [],
+  "kind": "programming_reference",
+  "links": [],
+  "publisher_product_labels": [
+    "F5 BIG-IP iRules API"
+  ],
+  "source": "irules",
+  "text": "ACCESS::oauth\nDescription\nThis command returns a JSON Web Signature token based on provided\npayload and signed with the provided JWK object. When the specified\nJWK object does not specify a JWS signing algorithm, an additional\nsigning algorithm is required and must be provided with the -alg\noption. Unless specified with the -header option, JOSE header section\nof JWS will be derived and auto-generated from the available JWK\nobject and signing algorithm, and the generated JOSE header will\ninclude a signing algorithm, and JWK key ID or certificate SHA-1\nthumbprint or SHA-256 thumbprint whichever is available first in that\norder. When the specified JWK object contains a certificate, this\ncommand by default ensures that only a certificate with a valid\nexpiration is allowed to be used , unless the -ignore-cert-expiry\noption is specified.\nNote: Requires APM module.\nSyntax\nACCESS\n::\noauth\nsign\n[\n-header\n<\nraw-data\n>\n]\n-\npayload\n<\nraw-data\n>\n-\nkey\n<\nJWK\nobject\n>\n[\n-alg\n<\nsigning\nalgorithm\n>\n]\n[\n-ignore-cert-expiry\n]\nExamples\nwhen\nRULE_INIT\n{\n# This is an example of using ACCESS::oauth sign command to perform\n# JWT access token resigning.\n# Here we predefined the list of incoming claims which BIG-IP\n# needs to include in the JWT. Here we assumed there is an OAuth Scope\n# Agent configured, which produces the session variables for each claim.\n# Once the JWT payload is constructed, here we use ACCESS::oauth sign\n# command to sign the payload, and produce a JWS.\nset\nstatic::claim_list_string\n{\n{\nsub\n}\n{\nname\n}\n}\nset\nstatic::claim_list_boolean_int\n{\n{\nadmin\n}\n}\nset\nstatic::jws_cache\n{\noauth-sign-test-jws_cache\n}\nset\nstatic::jwt_issuer\n{\nhttps\n://\nmyissuer.com\n}\nset\nstatic::jwt_sess_var_name\n{\nsession.oauth.scope.last.jwt\n}\nset\nstatic::jwt_expires_in\n10\nset\nstatic::jwt_leeway\n0\nset\nstatic::jwt_sdb_timeout_adjustment\n3\n}\nproc\ngettimeofday\n{}\n{\nreturn\n[\nclock\nseconds\n]\n}\nproc\ngenerate_payload\n{\nclaim_list_string\nclaim_list_boolean_int\n}\n{\nset\npayload\n\"\\{\"\nappend\npayload\n{\n\"issuer\"\n:\n\"} $static::jwt_issuer {\"\n}\nset\niat\n[\ncall\ngettimeofday\n]\nappend\npayload\n{\n,\n\"iat\"\n:\n}\n$iat\nappend\npayload\n{\n,\n\"exp\"\n:\n}\n[\nexpr\n{\n$iat\n+\n$static::jwt_expires_in\n}\n]\nappend\npayload\n{\n,\n\"nbf\"\n:\n}\n[\nexpr\n{\n$iat\n-\n$static::jwt_leeway\n}\n]\nforeach\nclaim\n$claim_list_string\n{\nset\nvalue\n[\nACCESS\n::\nsession\ndata\nget\n\"$static::jwt_sess_var_name.$claim\"\n]\nif\n{\n[\nstring\nlength\nvalue\n]\n==\n0\n}\n{\ncontinue\n}\nappend\npayload\n{\n,\n\"} $claim {\"\n:\n\"} $value {\"\n}\n}\nforeach\nclaim\n$claim_list_boolean_int\n{\nset\nvalue\n[\nACCESS\n::\nsession\ndata\nget\n\"$static::jwt_sess_var_name.$claim\"\n]\nif\n{\n[\nstring\nlength\nvalue\n]\n==\n0\n}\n{\ncontinue\n}\nappend\npayload\n{\n,\n\"} $claim {\"\n:\n}\n$value\n}\nappend\npayload\n\"\\}\"\nreturn\n$payload\n}\nproc\ngenerate_jws\n{}\n{\nset\npayload\n[\ncall\ngenerate_payload\n$static::claim_list_string\n$static::claim_list_boolean_int\n]\nreturn\n[\nACCESS\n::\noauth\nsign\n-\npayload\n$payload\n-\nalg\nRS512\n-\nkey\n/\nCommon\n/\njwk-rsa-2\n-\nignore-cert-expiry\n]\n}\nproc\nget_user_key\n{}\n{\nset\ndata\n[\nACCESS\n::\nsession\nsid\n]\nbinary\nscan\n[\nmd5\n$data\n]\nH\n*\ndata\nreturn\n$data\n}\nproc\nget_user_key_from_sdb\n{}\n{\nreturn\n[\nACCESS\n::\nsession\ndata\nget\n{\nsession.jwt.cache.user_key\n}\n]\n}\nproc\nset_user_key_to_sdb\n{}\n{\nACCESS\n::\nsession\ndata\nset\n{\nsession.jwt.cache.user_key\n}\n[\ncall\nget_user_key\n]\n}\nproc\ncalc_sdb_timeout\n{}\n{\nreturn\n[\nexpr\n{\n$static::jwt_expires_in\n-\n$static::jwt_sdb_timeout_adjustment\n}\n]\n}\nproc\nget_jws_from_cache\n{}\n{\nset\nuser_key\n[\ncall\nget_user_key\n]\nset\njws\n[\ntable\nlookup\n-\nnotouch\n-\nsubtable\n$static::jws_cache\n$user_key\n]\nif\n{\n[\nstring\nlength\n$jws\n]\n!=\n0\n}\n{\nreturn\n$jws\n}\nreturn\n[\ntable\nset\n-\nnotouch\n-\nsubtable\n$static::jws_cache\n-\nexcl\n$user_key\n[\ncall\ngenerate_jws\n]\n[\ncall\ncalc_sdb_timeout\n]\n[\ncall\ncalc_sdb_timeout\n]\n]\n}\nproc\nget_jws\n{\nfrom_cache\n}\n{\nif\n{\n$from_cache\n==\n\"yes\"\n}\n{\nreturn\n[\ncall\nget_jws_from_cache\n]\n}\nelse\n{\nreturn\n[\ncall\ngenerate_jws\n]\n}\n}\nproc\ndelete_jws_cache\n{}\n{\nset\nuser_key\n[\ncall\nget_user_key_from_sdb\n]\nACCESS\n::\nlog\n\"Delete cache for $user_key\"\ntable\ndelete\n-\nsubtable\n$static::jws_cache\n$user_key\n}\nwhen\nACCESS_SESSION_STARTED\n{\ncall\nset_user_key_to_sdb\n}\nwhen\nACCESS_ACL_ALLOWED\n{\nset\njws\n[\ncall\nget_jws\n\"yes\"\n]\nHTTP\n::\nheader\nreplace\nAuthorization\n\"Bearer $jws\"\n}\nwhen\nACCESS_SESSION_CLOSED\n{\ncall\ndelete_jws_cache\n}\nRelated Information\nValid Events:\nWarning\nThe links to the sample code below are remnants of the old DevCentral wiki and will result in a 404 error. For best results, please copy the link text and search the codeshare directly on DevCentral.\nSample Code:\nIntroduced: BIGIP-13.1.0\nThe BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor \nor control community code contributions. We make no guarantees or warranties regarding the available code, \nand it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any \ncode available in the BIG-IP API reference guides is solely at your own risk.",
+  "title": "ACCESS::oauth",
+  "updated": "2026-07-13 12:27:40",
+  "url": "https://clouddocs.f5.com/api/irules/ACCESS__oauth.html",
+  "url_version": null
+}

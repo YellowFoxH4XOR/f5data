@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ltm rule command MQTT qos</title><link rel="canonical" href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_MQTT_qos.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>ltm rule command MQTT qos</h1><p>cli_reference · 17.0.0</p><a href="https://clouddocs.f5.com/cli/tmsh-reference/latest/modules/ltm/ltm_rule_command_MQTT_qos.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="ltm-rule-command-mqtt-qos">
+<span id="id1"></span><h1>ltm rule command MQTT qos</h1>
+<html>
+<pre>
+iRule(1)						BIG-IP TMSH Manual						  iRule(1)
+
+MQTT::qos
+       Get or set qos of MQTT PUBLISH message
+
+SYNOPSIS
+       MQTT::qos ('0' | '1' | '2')?
+
+DESCRIPTION
+       This command can be used to get or set qos field of MQTT message.  This command is valid only for following MQTT message
+       types:
+
+	   PUBLISH
+
+       Syntax
+
+       MQTT::qos [ 0 | 1 | 2 ]
+
+       MQTT::qos
+	   * Get the qos field of MQTT PUBLISH message
+
+       MQTT::qos 0
+	   * Set the qos of MQTT PUBLISH message to at most once delivery.
+	     When QoS is changed to 0 from 1 or 2, the packet-id field
+	     of the PUBLISH message will be removed. Call MQTT::packet_id before
+	     calling MQTT::qos 0 to save original packet-id if needed.
+
+       MQTT::qos 1
+	   * Set the qos of MQTT PUBLISH message to at least once delivery.
+	     When changing from 0, this call must be followed by
+	     MQTT::packet_id <packet-id> to maintain MQTT protocol correctness.
+	     This is because packet-id is not present in PUBLISH messages at QoS 0,
+	     while it is required at levels 1 and 2.
+
+       MQTT::qos 2
+	   * Set the qos field of MQTT PUBLISH message to exactly once delivery
+	     When changing from 0, this call must be followed by
+	     MQTT::packet_id <packet-id> to maintain MQTT protocol correctness.
+	     This is because packet-id is not present in PUBLISH messages at QoS 0,
+	     while it is required at levels 1 and 2.
+
+RETURN VALUE
+       When called without an argument, this command returns the qos of MQTT message
+
+VALID DURING
+       MQTT_CLIENT_INGRESS MQTT_SERVER_INGRESS MQTT_CLIENT_DATA MQTT_SERVER_DATA MQTT_CLIENT_EGRESS MQTT_SERVER_EGRESS
+
+EXAMPLES
+	#Downgrading QoS to 0:
+
+	when MQTT_CLIENT_INGRESS {
+	    set type [MQTT::type]
+	    switch $type {
+		"PUBLISH" {
+		    set in_qos [MQTT::qos]
+		    if { $in_qos &gt; 0 } {
+			set pktid [MQTT::packet_id]
+		    }
+		    MQTT::dup 0
+		    MQTT::qos 0
+		    if { $in_qos == 1 } {
+			MQTT::respond type PUBACK packet_id $pktid
+		    } elseif { $in_qos == 2 } {
+			MQTT::respond type PUBREC packet_id $pktid
+		    }
+		}
+		"PUBREL" {
+		    set pktid [MQTT::packet_id]
+		    MQTT::drop
+		    MQTT::respond type PUBCOMP packet_id $pktid
+		}
+	    }
+	}
+
+	#Changing QoS to 1:
+
+	when CLIENT_ACCEPTED {
+	   set self_pktid 1
+	}
+	when MQTT_CLIENT_INGRESS {
+	    set type [MQTT::type]
+	    switch $type {
+		"PUBLISH" {
+		    set in_qos [MQTT::qos]
+		    MQTT::qos 1
+		    if { $in_qos == 0 } {
+			MQTT::packet_id $self_pktid
+			set self_pktid [$self_pktid + 1]
+		    }
+		}
+		"PUBREL" {
+		    set pktid [MQTT::packet_id]
+		    MQTT::drop
+		    MQTT::respond type PUBCOMP packet_id $pktid
+		}
+	    }
+	}
+
+	when MQTT_SERVER_INGRESS {
+	    set type [MQTT::type]
+	    switch $type {
+		"PUBACK" {
+		   if {$in_qos == 0} {
+		       MQTT::drop
+		   } elseif {$in_qos == 2} {
+		       set pktid [MQTT::packet_id]
+		       MQTT::replace type PUBREC packet_id $pktid
+		   }
+		}
+	    }
+	}
+
+HINTS
+SEE ALSO
+CHANGE LOG
+       @BIGIP-13.0.0 --First introduced the command.
+
+BIG-IP							    2022-04-12							  iRule(1)
+</packet-id></packet-id></pre>
+</html>
+</div>
+</div>
+</article>
+</body></html>

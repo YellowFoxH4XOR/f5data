@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Lab 8: BIG-IP Monitoring</title><link rel="canonical" href="https://clouddocs.f5.com/training/community/f5cert/html/class2/modules/module08.html"><style>body{max-width:1100px;margin:2rem auto;padding:0 1rem;font:16px/1.6 system-ui}
+pre,.mermaid{white-space:pre-wrap;background:#f3f4f6;padding:1rem;overflow:auto}
+img,svg{max-width:100%;height:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.5rem}
+header{border-bottom:1px solid #ddd;margin-bottom:2rem}code{font-family:monospace}</style></head><body><header><h1>Lab 8: BIG-IP Monitoring</h1><p>training_lab · See product applicability metadata</p><a href="https://clouddocs.f5.com/training/community/f5cert/html/class2/modules/module08.html">Original F5 documentation</a></header>
+<article class="docs-container site-article-inner">
+<!-- custom breadcrumb -->
+<h5>
+<a href="https://clouddocs.f5.com/training/community/f5cert/html/index.html">Unofficial - F5 Certification Exam Prep Material</a>
+              &gt; <a href="https://clouddocs.f5.com/training/community/f5cert/html/class2/class2.html">Symposium 2026 - BIG-IP Administrator:</a>
+<span class="right">
+<a href="https://clouddocs.f5.com/training/community/f5cert/html/_sources/class2/modules/module08.rst.txt" rel="nofollow">Source</a> |
+             <a href="https://github.com/f5devcentral/f5-agility-labs-cert">Edit on <i aria-hidden="true" class="fa fa-github"></i></a>
+</span>
+</h5>
+<!-- end custom breadcrumb -->
+<!--a title="Export PDF" id="export-pdf" class="btn btn btn-link pull-right">View PDF</a-->
+<button class="btn btn-link right" id="export-pdf" type="button">PDF</button>
+<div role="main">
+<div class="section" id="lab-8-big-ip-monitoring">
+<h1>Lab 8: BIG-IP Monitoring</h1>
+<div class="section" id="monitoring-big-ip-ltm-using-syslog-and-snmp-v3-with-librenms">
+<h2>Monitoring BIG-IP LTM Using Syslog and SNMP v3 with LibreNMS</h2>
+<p>This guide demonstrates how to configure Syslog and SNMP v3 on a BIG-IP LTM device
+and integrate it with LibreNMS for monitoring.</p>
+</div>
+<div class="section" id="lab-environment">
+<h2>Lab Environment</h2>
+<p>The following components are available in the lab:</p>
+<ul class="simple">
+<li><strong>BIG-IP LTM</strong> instance, accessible via SSH or GUI.</li>
+<li><strong>LibreNMS Server</strong>, accessible and configured as a SNMP and syslog server.</li>
+<li>SNMP v3 credentials planned:<ul>
+<li><strong>Username</strong>: <em>nms</em></li>
+<li><strong>Authentication Password</strong>: <em>f5UDFrocks!</em></li>
+<li><strong>Authentication Alogrithm</strong>: <em>SHA</em></li>
+<li><strong>Crypto Password</strong>: <em>f5UDFrocks!</em></li>
+<li><strong>Crypto Alogrithm</strong>: <em>AES</em></li>
+</ul>
+</li>
+</ul>
+</div>
+<div class="section" id="pre-lab-configure-dns-and-ntp">
+<h2>Pre-Lab: Configure DNS and NTP</h2>
+<p>Before starting the monitoring configuration, ensure that the DNS and NTP are properly set up on the BIG-IP LTM device to ensure proper connectivity and time synchronization.</p>
+</div>
+<div class="section" id="step-1-configure-dns">
+<h2>Step 1: Configure DNS</h2>
+<p>DNS configuration allows the BIG-IP LTM to resolve domain names to IP addresses.</p>
+<p><strong>Configure Using the GUI</strong></p>
+<ol class="arabic simple">
+<li>Navigate to: <code class="docutils literal notranslate"><span class="pre">System</span> <span class="pre">&gt;</span> <span class="pre">Device</span> <span class="pre">&gt;</span> <span class="pre">Configuration</span> <span class="pre">&gt;</span> <span class="pre">DNS</span></code></li>
+<li>Click <strong>Add</strong> and enter the following details:
+- <strong>DNS Server</strong>: <code class="docutils literal notranslate"><span class="pre">10.1.1.1</span></code> (or your DNS server IP)</li>
+<li>Click <strong>Update</strong> to apply the changes.</li>
+</ol>
+<a class="reference internal image-reference" href="https://clouddocs.f5.com/training/community/f5cert/html/_images/dns.png"><img alt="../../_images/dns.png" src="../assets/bf6917ef473f7c6b6def1e36.png" style="width: 400px;"/></a>
+<p><strong>Configure Using TMSH</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>tmsh modify sys dns name-servers add <span class="o">{</span> <span class="m">10</span>.1.1.1 <span class="o">}</span>
+tmsh save /sys config
+</pre></div>
+</div>
+</div>
+<div class="section" id="configure-using-the-gui">
+<h2>Configure Using the GUI</h2>
+<ol class="arabic simple">
+<li>Navigate to: <code class="docutils literal notranslate"><span class="pre">System</span> <span class="pre">&gt;</span> <span class="pre">Device</span> <span class="pre">&gt;</span> <span class="pre">Configuration</span> <span class="pre">&gt;</span> <span class="pre">NTP</span></code></li>
+<li>Click <strong>Add</strong> and enter the following details:
+- <strong>NTP Server</strong>: <code class="docutils literal notranslate"><span class="pre">time.nist.gov</span></code> (or your NTP server IP)</li>
+<li>Click <strong>Update</strong> to apply the changes.</li>
+</ol>
+<a class="reference internal image-reference" href="https://clouddocs.f5.com/training/community/f5cert/html/_images/ntp.png"><img alt="../../_images/ntp.png" src="../assets/f87f74d7dbf5b254d655aa81.png" style="width: 400px;"/></a>
+</div>
+<div class="section" id="configure-using-tmsh">
+<h2>Configure Using TMSH</h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>tmsh modify sys ntp servers add <span class="o">{</span> time.nist.gov <span class="o">}</span>
+tmsh save /sys config
+</pre></div>
+</div>
+</div>
+<div class="section" id="configuration-steps">
+<h2>Configuration Steps</h2>
+<p>This guide covers the following steps:</p>
+<ol class="arabic simple">
+<li><strong>Enable Syslog</strong></li>
+<li><strong>Enable SNMP v3</strong></li>
+<li><strong>Add BIG-IP to LibreNMS</strong></li>
+<li><strong>Verify Monitoring</strong></li>
+</ol>
+</div>
+<div class="section" id="step-1-enable-syslog">
+<h2>Step 1: Enable Syslog</h2>
+<p>Syslog enables the BIG-IP LTM to send operational and system logs to an external logging service.</p>
+<p><strong>Configure Using the GUI</strong></p>
+<blockquote>
+<div><code class="docutils literal notranslate"><span class="pre">System</span> <span class="pre">&gt;</span> <span class="pre">Logs</span> <span class="pre">&gt;</span> <span class="pre">Configuration</span> <span class="pre">&gt;</span> <span class="pre">Remote</span> <span class="pre">Logging</span></code></div></blockquote>
+<ol class="arabic">
+<li><p class="first">Click <strong>Create</strong> and enter the following details:</p>
+<ul class="simple">
+<li><strong>Remote IP</strong>: <code class="docutils literal notranslate"><span class="pre">10.1.1.8</span></code></li>
+<li><strong>Remote Port</strong>: <code class="docutils literal notranslate"><span class="pre">514</span></code></li>
+<li><strong>Local IP</strong>: <code class="docutils literal notranslate"><span class="pre">10.1.1.4</span></code></li>
+</ul>
+</li>
+<li><p class="first">Click <strong>Add</strong>, then <strong>Update</strong> to save:</p>
+<a class="reference internal image-reference" href="https://clouddocs.f5.com/training/community/f5cert/html/_images/bigip-syslog.png"><img alt="../../_images/bigip-syslog.png" src="../assets/00b603ff54396cba7ee32c5e.png" style="width: 400px; height: 400px;"/></a>
+<ul class="simple">
+<li><strong>Configure Using TMSH</strong></li>
+</ul>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>tmsh modify /sys syslog remote-servers add <span class="o">{</span> remoteSyslog <span class="o">{</span> host <span class="m">10</span>.1.1.8 remote-port <span class="m">514</span> local-ip <span class="m">10</span>.1.1.4 <span class="o">}</span> <span class="o">}</span>
+tmsh save /sys config
+</pre></div>
+</div>
+</li>
+<li><p class="first">Verify the configuration:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>tmsh list /sys syslog
+</pre></div>
+</div>
+</li>
+</ol>
+<a class="reference internal image-reference" href="https://clouddocs.f5.com/training/community/f5cert/html/_images/tmsh-syslog-setting.png"><img alt="../../_images/tmsh-syslog-setting.png" src="../assets/74f204831881403ef2e1ad95.png" style="width: 400px;"/></a>
+</div>
+<div class="section" id="step-2-enable-snmp-v3">
+<h2>Step 2: Enable SNMP v3</h2>
+<p>SNMP v3 provides secure authentication and optional encryption for tracking system metrics.</p>
+<p><strong>Configure Using the GUI</strong></p>
+<ol class="arabic simple">
+<li>Navigate to:
+<code class="docutils literal notranslate"><span class="pre">System</span> <span class="pre">&gt;</span> <span class="pre">SNMP</span> <span class="pre">&gt;</span> <span class="pre">Agent</span> <span class="pre">&gt;</span> <span class="pre">Access</span> <span class="pre">(v3)</span></code></li>
+<li>Click <strong>Add</strong> and enter the following details:<ul>
+<li><strong>Username</strong>: <code class="docutils literal notranslate"><span class="pre">nms</span></code></li>
+<li><strong>Authentication Protocol</strong>: <code class="docutils literal notranslate"><span class="pre">SHA</span></code></li>
+<li><strong>Authentication Password</strong>: <code class="docutils literal notranslate"><span class="pre">f5UDFrocks!</span></code></li>
+<li><strong>Privacy Protocol</strong>: <code class="docutils literal notranslate"><span class="pre">AES</span></code></li>
+<li><strong>Privacy Password</strong>: <code class="docutils literal notranslate"><span class="pre">f5UDFrocks!</span></code></li>
+</ul>
+</li>
+<li>Click <strong>Finish</strong> to save.</li>
+</ol>
+<blockquote>
+<div><a class="reference internal image-reference" href="https://clouddocs.f5.com/training/community/f5cert/html/_images/bigip-snmp-setting.png"><img alt="../../_images/bigip-snmp-setting.png" src="../assets/c59fe89d2c212124e5c9208e.png" style="width: 400px; height: 400px;"/></a>
+</div></blockquote>
+<ol class="arabic">
+<li><p class="first">Navigate to:
+<code class="docutils literal notranslate"><span class="pre">System</span> <span class="pre">&gt;</span> <span class="pre">SNMP</span> <span class="pre">&gt;</span> <span class="pre">Agent</span> <span class="pre">&gt;</span> <span class="pre">Configuration</span></code></p>
+</li>
+<li><p class="first">Enter the LibreNMS IP address in the Address field, and click Add, and Update.</p>
+<a class="reference internal image-reference" href="https://clouddocs.f5.com/training/community/f5cert/html/_images/bigip-agent-setting.png"><img alt="../../_images/bigip-agent-setting.png" src="../assets/a058a6f7ebe979ea218350d3.png" style="width: 400px;"/></a>
+<ul>
+<li><p class="first"><strong>Configure Using TMSH</strong></p>
+<blockquote>
+<div><div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>tmsh modify sys snmp users add <span class="o">{</span> nms <span class="o">{</span> username nms oid-subset <span class="m">1</span> auth-protocol sha auth-password f5UDFrocks! privacy-protocol aes privacy-password f5UDFrocks! <span class="o">}</span> <span class="o">}</span>
+tmsh modify sys snmp allowed-addresses add <span class="o">{</span><span class="m">10</span>.1.1.8<span class="o">}</span>
+tmsh save /sys config
+</pre></div>
+</div>
+</div></blockquote>
+</li>
+</ul>
+</li>
+<li><p class="first">Verify the SNMP configuration:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>tmsh list /sys snmp users
+</pre></div>
+</div>
+</li>
+</ol>
+<blockquote>
+<div><a class="reference internal image-reference" href="https://clouddocs.f5.com/training/community/f5cert/html/_images/tmsh-snmp-setting.png"><img alt="../../_images/tmsh-snmp-setting.png" src="../assets/4adb9ab1b5685d64c483aba5.png" style="width: 400px;"/></a>
+</div></blockquote>
+</div>
+<div class="section" id="step-3-add-big-ip-to-librenms">
+<h2>Step 3: Add BIG-IP to LibreNMS</h2>
+<ol class="arabic simple">
+<li>Log in to LibreNMS.<ul>
+<li>Click the <code class="docutils literal notranslate"><span class="pre">NMS</span> <span class="pre">device's</span> <span class="pre">&gt;</span> <span class="pre">Access</span> <span class="pre">&gt;</span> <span class="pre">NMS</span></code></li>
+<li>Log in with username: <code class="docutils literal notranslate"><span class="pre">admin</span></code> and password: <code class="docutils literal notranslate"><span class="pre">f5UDFrocks!</span></code></li>
+</ul>
+</li>
+<li>Navigate to <code class="docutils literal notranslate"><span class="pre">Devices</span> <span class="pre">&gt;</span> <span class="pre">Add</span> <span class="pre">Device</span></code>.</li>
+<li>Enter the following configuration:<ul>
+<li><strong>Hostname or IP</strong>: <code class="docutils literal notranslate"><span class="pre">10.1.1.4</span></code></li>
+<li><strong>SNMP Version</strong>: <code class="docutils literal notranslate"><span class="pre">v3</span></code></li>
+<li><strong>Port Association Mode</strong>: <code class="docutils literal notranslate"><span class="pre">IfName</span></code></li>
+<li><strong>SNMPv3 Configuration</strong>:<ul>
+<li><strong>Auth Level</strong>: <code class="docutils literal notranslate"><span class="pre">authPriv</span></code></li>
+<li><strong>Auth User Name</strong>: <code class="docutils literal notranslate"><span class="pre">nms</span></code></li>
+<li><strong>Auth Password</strong>: <code class="docutils literal notranslate"><span class="pre">f5UDFrocks!</span></code></li>
+<li><strong>Auth Alogrithm</strong>: <code class="docutils literal notranslate"><span class="pre">SHA</span></code></li>
+<li><strong>Crypto Password</strong>: <code class="docutils literal notranslate"><span class="pre">f5UDFrocks!</span></code></li>
+<li><strong>Crypto Alogrithm</strong>: <code class="docutils literal notranslate"><span class="pre">AES</span></code></li>
+</ul>
+</li>
+</ul>
+</li>
+<li>Click <strong>Add Device</strong>.</li>
+</ol>
+<a class="reference internal image-reference" href="https://clouddocs.f5.com/training/community/f5cert/html/_images/LibreNMS-bigip01.png"><img alt="../../_images/LibreNMS-bigip01.png" src="../assets/ba8dca5b2b62f2bf5b9400ec.png" style="width: 400px; height: 400px;"/></a>
+</div>
+<div class="section" id="step-4-verify-monitoring">
+<h2>Step 4: Verify Monitoring</h2>
+<p>Verify that logs and metrics are collected correctly.</p>
+<div class="section" id="syslog-verification">
+<h3>Syslog Verification:</h3>
+<ol class="arabic">
+<li><p class="first">Generate test logs from BIG-IP:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>logger -p local0.notice <span class="s2">"Test message for monitoring lab"</span>
+</pre></div>
+</div>
+</li>
+<li><p class="first">Check your syslog on the LibreNMS server for entries from BIG-IP.</p>
+<ul class="simple">
+<li>Click <code class="docutils literal notranslate"><span class="pre">Overview</span> <span class="pre">&gt;</span> <span class="pre">Dashboard</span> <span class="pre">&gt;</span> <span class="pre">Default</span></code></li>
+<li>The test syslog is searchable in the syslog panel</li>
+</ul>
+<img alt="../../_images/nms-syslog.png" src="../assets/2292abcd15dcdb32e6bf7d65.png"/>
+</li>
+</ol>
+</div>
+<div class="section" id="snmp-v3-verification">
+<h3>SNMP v3 Verification:</h3>
+<ol class="arabic">
+<li><p class="first">Log in to LibreNMS.</p>
+</li>
+<li><p class="first">Click <code class="docutils literal notranslate"><span class="pre">Devices</span> <span class="pre">&gt;</span> <span class="pre">All</span> <span class="pre">Devices</span></code></p>
+</li>
+<li><p class="first">Click the IP address of BIG-IP01 (10.1.1.4)</p>
+<a class="reference internal image-reference" href="https://clouddocs.f5.com/training/community/f5cert/html/_images/nsm-bigip-tab.png"><img alt="../../_images/nsm-bigip-tab.png" src="../assets/e6df6fdd92296a2e70e7fa31.png" style="width: 400px;"/></a>
+</li>
+<li><p class="first">Confirm the following information is visible:</p>
+<ul class="simple">
+<li>Hostname, device uptime, polling status, and device type.</li>
+<li>IP address, hardware version, and software details.</li>
+</ul>
+</li>
+</ol>
+<a class="reference internal image-reference" href="https://clouddocs.f5.com/training/community/f5cert/html/_images/librenms-device-stats.png"><img alt="../../_images/librenms-device-stats.png" src="../assets/44861370dab6c53039969a0b.png" style="width: 400px; height: 400px;"/></a>
+</div>
+</div>
+<div class="section" id="summary">
+<h2>Summary</h2>
+<p>You have successfully configured Syslog and SNMP v3 on a BIG-IP LTM device and integrated it with LibreNMS for monitoring. Device logs and performance metrics—including CPU, memory, and network statistics—are now accessible in LibreNMS. You can leverage LibreNMS to track resource utilization and troubleshoot operational issues securely and effectively.</p>
+</div>
+</div>
+</div>
+<div class="row next-prev-btn-row">
+<div class="col-lg-12">
+<a accesskey="p" class="btn btn-primary left" href="https://clouddocs.f5.com/training/community/f5cert/html/class2/modules/module07.html" title="Lab 7: Common Configuration Items"><i aria-hidden="true" class="fa fa-arrow-circle-left"></i> Previous</a>
+<a accesskey="n" class="btn btn-primary right" href="https://clouddocs.f5.com/training/community/f5cert/html/class2/modules/module09.html" title="Lab 9: BIG-IP LTM Management Interface">Next <i aria-hidden="true" class="fa fa-arrow-circle-right"></i></a>
+</div>
+</div>
+</article>
+</body></html>

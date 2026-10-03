@@ -1,0 +1,249 @@
+{
+  "applies_to": [
+    {
+      "product": "F5 BIG-IP AS3",
+      "versions": [
+        "3.57.0"
+      ]
+    }
+  ],
+  "breadcrumbs": [],
+  "code_examples": [
+    {
+      "section": "Installing BIG-IP AS3 using cURL from the Linux shell",
+      "text": "FN=f5-appsvcs-3.0.0-36.noarch.rpm\n\nCREDS=admin:password\n\nIP=IP address of BIG-IP\n"
+    },
+    {
+      "section": "Installing BIG-IP AS3 using cURL from the Linux shell",
+      "text": "LEN=$(wc -c $FN | awk 'NR==1{print $1}')\n\ncurl -kvu $CREDS https://$IP/mgmt/shared/file-transfer/uploads/$FN -H 'Content-Type: application/octet-stream' -H \"Content-Range: 0-$((LEN - 1))/$LEN\" -H \"Content-Length: $LEN\" -H 'Connection: keep-alive' --data-binary @$FN\n"
+    },
+    {
+      "section": "Installing BIG-IP AS3 using cURL from the Linux shell",
+      "text": "DATA=\"{\\\"operation\\\":\\\"INSTALL\\\",\\\"packageFilePath\\\":\\\"/var/config/rest/downloads/$FN\\\"}\"\n\n\ncurl -kvu $CREDS \"https://$IP/mgmt/shared/iapp/package-management-tasks\" -H \"Origin: https://$IP\" -H 'Content-Type: application/json;charset=UTF-8' --data $DATA\n"
+    },
+    {
+      "section": "Installing BIG-IP AS3 using a shell script",
+      "text": "#!/bin/bash\n\nset -e\n\nif [ -z \"$1\" ]; then\n    echo \"Target machine is required for installation.\"\n    exit 0\nfi\n\nif [ -z \"$2\" ]; then\n    echo \"Credentials [username:password] for target machine are required for installation.\"\n    exit 0\nfi\n\nif [ -z \"$3\" ]; then\n    echo \"File path to RPM is required for installation.\"\n    exit 0\nfi\n\nTARGET=\"$1\"\nCREDS=\"$2\"\nTARGET_RPM=\"$3\"\nRPM_NAME=$(basename $TARGET_RPM)\nCURL_FLAGS=\"--silent --insecure --connect-timeout 10 --max-time 30 -u $CREDS\"\n\npoll_task () {\n    STATUS=\"STARTED\"\n    while [ $STATUS != \"FINISHED\" ]; do\n        sleep 1\n        RESULT=$(curl ${CURL_FLAGS} \"https://$TARGET/mgmt/shared/iapp/package-management-tasks/$1\")\n        STATUS=$(echo $RESULT | jq -r .status)\n        if [ $STATUS = \"FAILED\" ]; then\n            echo \"Failed to\" $(echo $RESULT | jq -r .operation) \"package:\" \\\n                $(echo $RESULT | jq -r .errorMessage)\n            exit 1\n        fi\n    done\n}\n\n#Get list of existing f5-appsvcs packages on target\nTASK=$(curl $CURL_FLAGS -H \"Content-Type: application/json\" \\\n    -X POST https://$TARGET/mgmt/shared/iapp/package-management-tasks -d \"{operation: 'QUERY'}\")\npoll_task $(echo $TASK | jq -r .id)\nAS3RPMS=$(echo $RESULT | jq -r '.queryResponse[].packageName | select(. | startswith(\"f5-appsvcs\"))')\n\n#Uninstall existing f5-appsvcs packages on target\nfor PKG in $AS3RPMS; do\n    echo \"Uninstalling $PKG on $TARGET\"\n    DATA=\"{\\\"operation\\\":\\\"UNINSTALL\\\",\\\"packageName\\\":\\\"$PKG\\\"}\"\n    TASK=$(curl ${CURL_FLAGS} \"https://$TARGET/mgmt/shared/iapp/package-management-tasks\" \\\n        --data $DATA -H \"Origin: https://$TARGET\" -H \"Content-Type: application/json;charset=UTF-8\")\n    poll_task $(echo $TASK | jq -r .id)\ndone\n\n#Upload new f5-appsvcs RPM to target\necho \"Uploading RPM to https://$TARGET/mgmt/shared/file-transfer/uploads/$RPM_NAME\"\nLEN=$(wc -c $TARGET_RPM | awk 'NR==1{print $1}')\nRANGE_SIZE=5000000\nCHUNKS=$(( $LEN / $RANGE_SIZE))\nfor i in $(seq 0 $CHUNKS); do\n    START=$(( $i * $RANGE_SIZE))\n    END=$(( $START + $RANGE_SIZE))\n    END=$(( $LEN < $END ? $LEN : $END))\n    OFFSET=$(( $START + 1))\n    curl ${CURL_FLAGS} -o /dev/null --write-out \"\" \\\n        https://$TARGET/mgmt/shared/file-transfer/uploads/$RPM_NAME \\\n        --data-binary @<(tail -c +$OFFSET $TARGET_RPM) \\\n        -H \"Content-Type: application/octet-stream\" \\\n        -H \"Content-Range: $START-$(( $END - 1))/$LEN\" \\\n        -H \"Content-Length: $(( $END - $START ))\" \\\n        -H \"Connection: keep-alive\"\ndone\n\n#Install f5-appsvcs on target\necho \"Installing $RPM_NAME on $TARGET\"\nDATA=\"{\\\"operation\\\":\\\"INSTALL\\\",\\\"packageFilePath\\\":\\\"/var/config/rest/downloads/$RPM_NAME\\\"}\"\nTASK=$(curl ${CURL_FLAGS} \"https://$TARGET/mgmt/shared/iapp/package-management-tasks\" \\\n    --data $DATA -H \"Origin: https://$TARGET\" -H \"Content-Type: application/json;charset=UTF-8\")\npoll_task $(echo $TASK | jq -r .id)\n\necho \"Waiting for /info endpoint to be available\"\nuntil curl ${CURL_FLAGS} -o /dev/null --write-out \"\" --fail --silent \\\n    \"https://$TARGET/mgmt/shared/appsvcs/info\"; do\n    sleep 1\ndone\n\necho \"Installed $RPM_NAME on $TARGET\"\n\nexit 0\n"
+    },
+    {
+      "section": "Checking for a successful installation",
+      "text": "{\n    \"version\": \"3.8.0\",\n    \"release\": \"2\",\n    \"schemaCurrent\": \"3.8.0\",\n    \"schemaMinimum\": \"3.0.0\"\n}\n"
+    }
+  ],
+  "content_hash": "849bca682eba8c0b296d379a7de142bc80dc07a11d3b8ee1c68dd88a567af008",
+  "diagrams": [],
+  "documentation_version": "3.57.0",
+  "headings": [
+    {
+      "anchor": "downloading-and-installing-the-big-ip-as3-package",
+      "level": 1,
+      "path": [],
+      "title": "Downloading and installing the BIG-IP AS3 package"
+    },
+    {
+      "anchor": "downloading-the-rpm-file",
+      "level": 2,
+      "path": [
+        "Downloading and installing the BIG-IP AS3 package"
+      ],
+      "title": "Downloading the RPM file"
+    },
+    {
+      "anchor": "verifying-the-integrity-of-the-big-ip-as3-rpm-package",
+      "level": 3,
+      "path": [
+        "Downloading and installing the BIG-IP AS3 package",
+        "Downloading the RPM file"
+      ],
+      "title": "Verifying the integrity of the BIG-IP AS3 RPM package"
+    },
+    {
+      "anchor": "uploading-and-installing-the-big-ip-as3-file-on-the-big-ip",
+      "level": 2,
+      "path": [
+        "Downloading and installing the BIG-IP AS3 package"
+      ],
+      "title": "Uploading and installing the BIG-IP AS3 file on the BIG-IP"
+    },
+    {
+      "anchor": "installing-big-ip-as3-using-the-big-ip-configuration-utility",
+      "level": 3,
+      "path": [
+        "Downloading and installing the BIG-IP AS3 package",
+        "Uploading and installing the BIG-IP AS3 file on the BIG-IP"
+      ],
+      "title": "Installing BIG-IP AS3 using the BIG-IP Configuration utility"
+    },
+    {
+      "anchor": "installing-big-ip-as3-using-curl-from-the-linux-shell",
+      "level": 3,
+      "path": [
+        "Downloading and installing the BIG-IP AS3 package",
+        "Uploading and installing the BIG-IP AS3 file on the BIG-IP"
+      ],
+      "title": "Installing BIG-IP AS3 using cURL from the Linux shell"
+    },
+    {
+      "anchor": "installing-big-ip-as3-using-a-shell-script",
+      "level": 3,
+      "path": [
+        "Downloading and installing the BIG-IP AS3 package",
+        "Uploading and installing the BIG-IP AS3 file on the BIG-IP"
+      ],
+      "title": "Installing BIG-IP AS3 using a shell script"
+    },
+    {
+      "anchor": "checking-for-a-successful-installation",
+      "level": 2,
+      "path": [
+        "Downloading and installing the BIG-IP AS3 package"
+      ],
+      "title": "Checking for a successful installation"
+    },
+    {
+      "anchor": "updating-big-ip-as3",
+      "level": 3,
+      "path": [
+        "Downloading and installing the BIG-IP AS3 package",
+        "Checking for a successful installation"
+      ],
+      "title": "Updating BIG-IP AS3"
+    },
+    {
+      "anchor": "reverting-to-a-previous-version-of-big-ip-as3",
+      "level": 3,
+      "path": [
+        "Downloading and installing the BIG-IP AS3 package",
+        "Checking for a successful installation"
+      ],
+      "title": "Reverting to a previous version of BIG-IP AS3"
+    },
+    {
+      "anchor": "uninstalling-big-ip-as3",
+      "level": 1,
+      "path": [],
+      "title": "Uninstalling BIG-IP AS3"
+    },
+    {
+      "anchor": "uninstalling-big-ip-as3-from-the-configuration-utility",
+      "level": 2,
+      "path": [
+        "Uninstalling BIG-IP AS3"
+      ],
+      "title": "Uninstalling BIG-IP AS3 from the Configuration utility"
+    },
+    {
+      "anchor": "uninstalling-big-ip-as3-from-postman",
+      "level": 2,
+      "path": [
+        "Uninstalling BIG-IP AS3"
+      ],
+      "title": "Uninstalling BIG-IP AS3 from Postman"
+    },
+    {
+      "anchor": "uninstalling-big-ip-as3-using-curl",
+      "level": 2,
+      "path": [
+        "Uninstalling BIG-IP AS3"
+      ],
+      "title": "Uninstalling BIG-IP AS3 using cURL"
+    },
+    {
+      "anchor": "upgrading-big-ip-versions-when-big-ip-as3-is-installed",
+      "level": 1,
+      "path": [],
+      "title": "Upgrading BIG-IP versions when BIG-IP AS3 is installed"
+    }
+  ],
+  "id": "436eeb3e03f1088612cb9685",
+  "images": [
+    {
+      "alt": "../_images/install1.png",
+      "local_file": "docs/assets/68d4379eb35ea6e957383992.png",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/_images/install1.png"
+    },
+    {
+      "alt": "../_images/install2.png",
+      "local_file": "docs/assets/c26ed237b75d4abb02ac27d1.png",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/_images/install2.png"
+    },
+    {
+      "alt": "../_images/install3.png",
+      "local_file": "docs/assets/dd805614e6cefb5baf0edb6e.png",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/_images/install3.png"
+    },
+    {
+      "alt": "../_images/upgrade.png",
+      "local_file": "docs/assets/af3f26d7c4bc36dfbc5934ad.png",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/_images/upgrade.png"
+    }
+  ],
+  "kind": "automation_reference",
+  "links": [
+    {
+      "title": "Quick Start",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/quick-start.html"
+    },
+    {
+      "title": "Uninstalling BIG-IP AS3",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/installation.html#uninstall"
+    },
+    {
+      "title": "F5 BIG-IP AS3 repository on GitHub",
+      "url": "https://github.com/F5Networks/f5-appsvcs-extension"
+    },
+    {
+      "title": "GitHub Release",
+      "url": "https://github.com/F5Networks/f5-appsvcs-extension/releases"
+    },
+    {
+      "title": "GitHub Release",
+      "url": "https://github.com/F5Networks/f5-appsvcs-extension/releases"
+    },
+    {
+      "title": "Checking for a successful installation",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/installation.html#success"
+    },
+    {
+      "title": "Checking for a successful installation",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/installation.html#success"
+    },
+    {
+      "title": "https://clouddocs.f5.com/products/iapp/iapp-lx/tmos-14_0/icontrollx_pacakges/working_with_icontrollx_packages.html#uninstalling-an-rpm-package",
+      "url": "https://clouddocs.f5.com/products/iapp/iapp-lx/tmos-14_0/icontrollx_pacakges/working_with_icontrollx_packages.html#uninstalling-an-rpm-package"
+    },
+    {
+      "title": "https://support.f5.com/csp/article/K84554955",
+      "url": "https://support.f5.com/csp/article/K84554955"
+    },
+    {
+      "title": "Why did some of my iControl LX (iApp LX) Extensions disappear after upgrading my BIG-IP?",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/troubleshooting.html#iclx"
+    },
+    {
+      "title": "Install BIG-IP AS3",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/installation.html#install"
+    },
+    {
+      "title": "Install BIG-IP AS3",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/installation.html#install"
+    },
+    {
+      "title": "Previous",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/authentication.html"
+    },
+    {
+      "title": "Next",
+      "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/composing-a-declaration.html"
+    }
+  ],
+  "publisher_product_labels": [
+    "F5 BIG-IP AS3"
+  ],
+  "source": "as3",
+  "text": "PDF\nDownloading and installing the BIG-IP AS3 package\nThe BIG-IP AS3 package is an RPM file you download, and then upload to the BIG-IP system using the iControl/iApp LX framework. Alternatively, you can see our\nQuick Start\n.\nImportant\nStarting from BIG-IP AS3 version 3.50.0, BIG-IP AS3 no longer supports BIG-IP 13.1 to 14.1.x. However, if you are still using the BIG-IP 13.1 to 14.1.x versions, you can use BIG-IP AS3 3.49.0 or earlier.\nNote\nYou must use the\nadmin\nuser (and not just a user with administrator privileges) to install BIG-IP AS3.\nTo uninstall BIG-IP AS3, see\nUninstalling BIG-IP AS3\n.\nDownloading the RPM file\nThe first task is to download the latest RPM file.  Go to the\nF5 BIG-IP AS3 repository on GitHub\n, and download the latest (highest numbered) RPM file, or the appropriate LTS version.\nImportant\nBeginning with BIG-IP AS3 3.15.0, the BIG-IP AS3 RPM, Postman collection, and checksum files will no longer be located in the\n/dist\ndirectory in the BIG-IP AS3 repository on GitHub.  These files can be found on the\nGitHub Release\n, as\nAssets\n.\nVerifying the integrity of the BIG-IP AS3 RPM package\nF5 Networks provides a checksum for each of our BIG-IP AS3 releases so you can confirm the integrity of the RPM package.\nYou can get a checksum for a particular template by running one of the following commands, depending on your operating system:\nLinux:\nsha256sum\n<path_to_template>\nWindows using CertUtil:\nCertUtil\n-hashfile\n<path_to_template>\nSHA256\nYou can compare the checksum produced by that command against the\n.sha256\nfile on GitHub. If you are using BIG-IP AS3 3.15.0 or later, this checksum file is found as a release\nAsset\non the\nGitHub Release\n.  In previous versions, this was found in the\n/dist\ndirectory in the GitHub repository.\nUploading and installing the BIG-IP AS3 file on the BIG-IP\nAfter you download the RPM, you must upload and then install it on your BIG-IP system.  You can use the BIG-IP Configuration utility, cURL (you can alternatively use SCP to upload the file to\n/var/config/rest/downloads\n, but you would still have to use cURL command to install the package), or a shell script to install BIG-IP AS3. Use only one of the following procedures.\nImportant\nYou must use the\nadmin\nuser (and not just a user with administrator privileges) to install BIG-IP AS3.\nNote\nFor high availability clusters F5 recommends following the steps below on the active device, saving the running config on the active device with the command “tmsh save sys config”, and then synchronizing the config to the cluster peers. All BIG-IP AS3 actions should be done on the active device.\nInstalling BIG-IP AS3 using the BIG-IP Configuration utility\nFrom the Configuration utility:\nIf you are using a BIG-IP version prior to 14.0, before you can use the Configuration utility, you must enable the framework using the BIG-IP command line. From the CLI, type the following command:\ntouch\n/var/config/rest/iapps/enable\n.  You only need to run this command once (per BIG-IP system). This is not necessary with 14.0 and later.\nClick\niApps > Package Management LX\n.  Your BIG-IP AS3 version number may be different than the one shown in the following example.\nNote you may have to refresh the browser page before you see Package Management LX option.\nClick the\nImport\nbutton.\nClick\nChoose File\nand then browse to the location you saved the RPM file, and then click\nOk\n.\nClick the\nUpload\nbutton.\nContinue with\nChecking for a successful installation\n.\nInstalling BIG-IP AS3 using cURL from the Linux shell\nIf you want to use cURL to install BIG-IP AS3, use the following command syntax.  First, set the file name and the BIG-IP IP address and credentials, making sure you use the appropriate RPM file name, including build number (36 in the following example), and BIG-IP credentials.\nFN\n=\nf5-appsvcs-3.0.0-36.noarch.rpm\nCREDS\n=\nadmin:password\nIP\n=\nIP address of BIG-IP\nCopy the following commands to upload the package. If you uploaded the RPM by another method, you can skip these commands.\nLEN\n=\n$(\nwc -c\n$FN\n|\nawk\n'NR==1{print $1}'\n)\ncurl -kvu\n$CREDS\nhttps://\n$IP\n/mgmt/shared/file-transfer/uploads/\n$FN\n-H\n'Content-Type: application/octet-stream'\n-H\n\"Content-Range: 0-\n$((\nLEN\n-\n1\n))\n/\n$LEN\n\"\n-H\n\"Content-Length:\n$LEN\n\"\n-H\n'Connection: keep-alive'\n--data-binary @\n$FN\nCopy the following commands to install the package.\nDATA\n=\n\"{\\\"operation\\\":\\\"INSTALL\\\",\\\"packageFilePath\\\":\\\"/var/config/rest/downloads/\n$FN\n\\\"}\"\ncurl -kvu\n$CREDS\n\"https://\n$IP\n/mgmt/shared/iapp/package-management-tasks\"\n-H\n\"Origin: https://\n$IP\n\"\n-H\n'Content-Type: application/json;charset=UTF-8'\n--data\n$DATA\nContinue with\nChecking for a successful installation\n.\nInstalling BIG-IP AS3 using a shell script\nYou can also use the following shell script to upload and install the target RPM to the BIG-IP system (the script first uninstalls any existing BIG-IP AS3 RPM packages on the BIG-IP).\nTo use this script, you must have both\ncURL\nand\njq\ninstalled.\nCopy the following script to a new file on any system with a UNIX shell installed.  We name the file\ninstall-rpm.sh\n.\n#!/bin/bash\nset\n-e\nif\n[\n-z\n\"\n$1\n\"\n]\n;\nthen\necho\n\"Target machine is required for installation.\"\nexit\n0\nfi\nif\n[\n-z\n\"\n$2\n\"\n]\n;\nthen\necho\n\"Credentials [username:password] for target machine are required for installation.\"\nexit\n0\nfi\nif\n[\n-z\n\"\n$3\n\"\n]\n;\nthen\necho\n\"File path to RPM is required for installation.\"\nexit\n0\nfi\nTARGET\n=\n\"\n$1\n\"\nCREDS\n=\n\"\n$2\n\"\nTARGET_RPM\n=\n\"\n$3\n\"\nRPM_NAME\n=\n$(\nbasename\n$TARGET_RPM\n)\nCURL_FLAGS\n=\n\"--silent --insecure --connect-timeout 10 --max-time 30 -u\n$CREDS\n\"\npoll_task\n()\n{\nSTATUS\n=\n\"STARTED\"\nwhile\n[\n$STATUS\n!\n=\n\"FINISHED\"\n]\n;\ndo\nsleep\n1\nRESULT\n=\n$(\ncurl\n${\nCURL_FLAGS\n}\n\"https://\n$TARGET\n/mgmt/shared/iapp/package-management-tasks/\n$1\n\"\n)\nSTATUS\n=\n$(\necho\n$RESULT\n|\njq -r .status\n)\nif\n[\n$STATUS\n=\n\"FAILED\"\n]\n;\nthen\necho\n\"Failed to\"\n$(\necho\n$RESULT\n|\njq -r .operation\n)\n\"package:\"\n\\\n$(\necho\n$RESULT\n|\njq -r .errorMessage\n)\nexit\n1\nfi\ndone\n}\n#Get list of existing f5-appsvcs packages on target\nTASK\n=\n$(\ncurl\n$CURL_FLAGS\n-H\n\"Content-Type: application/json\"\n\\\n-X POST https://\n$TARGET\n/mgmt/shared/iapp/package-management-tasks -d\n\"{operation: 'QUERY'}\"\n)\npoll_task\n$(\necho\n$TASK\n|\njq -r .id\n)\nAS3RPMS\n=\n$(\necho\n$RESULT\n|\njq -r\n'.queryResponse[].packageName | select(. | startswith(\"f5-appsvcs\"))'\n)\n#Uninstall existing f5-appsvcs packages on target\nfor\nPKG\nin\n$AS3RPMS\n;\ndo\necho\n\"Uninstalling\n$PKG\non\n$TARGET\n\"\nDATA\n=\n\"{\\\"operation\\\":\\\"UNINSTALL\\\",\\\"packageName\\\":\\\"\n$PKG\n\\\"}\"\nTASK\n=\n$(\ncurl\n${\nCURL_FLAGS\n}\n\"https://\n$TARGET\n/mgmt/shared/iapp/package-management-tasks\"\n\\\n--data\n$DATA\n-H\n\"Origin: https://\n$TARGET\n\"\n-H\n\"Content-Type: application/json;charset=UTF-8\"\n)\npoll_task\n$(\necho\n$TASK\n|\njq -r .id\n)\ndone\n#Upload new f5-appsvcs RPM to target\necho\n\"Uploading RPM to https://\n$TARGET\n/mgmt/shared/file-transfer/uploads/\n$RPM_NAME\n\"\nLEN\n=\n$(\nwc -c\n$TARGET_RPM\n|\nawk\n'NR==1{print $1}'\n)\nRANGE_SIZE\n=\n5000000\nCHUNKS\n=\n$((\n$LEN\n/\n$RANGE_SIZE\n))\nfor\ni\nin\n$(\nseq\n0\n$CHUNKS\n)\n;\ndo\nSTART\n=\n$((\n$i\n*\n$RANGE_SIZE\n))\nEND\n=\n$((\n$START\n+\n$RANGE_SIZE\n))\nEND\n=\n$((\n$LEN\n<\n$END\n?\n$LEN\n:\n$END\n))\nOFFSET\n=\n$((\n$START\n+\n1\n))\ncurl\n${\nCURL_FLAGS\n}\n-o /dev/null --write-out\n\"\"\n\\\nhttps://\n$TARGET\n/mgmt/shared/file-transfer/uploads/\n$RPM_NAME\n\\\n--data-binary @<\n(\ntail -c +\n$OFFSET\n$TARGET_RPM\n)\n\\\n-H\n\"Content-Type: application/octet-stream\"\n\\\n-H\n\"Content-Range:\n$START\n-\n$((\n$END\n-\n1\n))\n/\n$LEN\n\"\n\\\n-H\n\"Content-Length:\n$((\n$END\n-\n$START\n))\n\"\n\\\n-H\n\"Connection: keep-alive\"\ndone\n#Install f5-appsvcs on target\necho\n\"Installing\n$RPM_NAME\non\n$TARGET\n\"\nDATA\n=\n\"{\\\"operation\\\":\\\"INSTALL\\\",\\\"packageFilePath\\\":\\\"/var/config/rest/downloads/\n$RPM_NAME\n\\\"}\"\nTASK\n=\n$(\ncurl\n${\nCURL_FLAGS\n}\n\"https://\n$TARGET\n/mgmt/shared/iapp/package-management-tasks\"\n\\\n--data\n$DATA\n-H\n\"Origin: https://\n$TARGET\n\"\n-H\n\"Content-Type: application/json;charset=UTF-8\"\n)\npoll_task\n$(\necho\n$TASK\n|\njq -r .id\n)\necho\n\"Waiting for /info endpoint to be available\"\nuntil\ncurl\n${\nCURL_FLAGS\n}\n-o /dev/null --write-out\n\"\"\n--fail --silent\n\\\n\"https://\n$TARGET\n/mgmt/shared/appsvcs/info\"\n;\ndo\nsleep\n1\ndone\necho\n\"Installed\n$RPM_NAME\non\n$TARGET\n\"\nexit\n0\nMake the new file an executable script with the following command (use the name you gave the script if different):\nchmod\n+x\ninstall-rpm.sh\nUse the following command syntax to execute the script and pass it the IP of the target BIG-IP, BIG-IP credentials, and path to the RPM (use the name you gave the script if different):\n./install-rpm.sh\n<IP\naddress\nof\nBIG-IP>\n<username>:<password>\n<path\nto\nRPM>\nChecking for a successful installation\nAfter you have installed BIG-IP AS3, you can test for a successful installation by sending a GET request to the\n/info\nendpoint.  For example, from your RESTful client, after entering your credentials, use GET to send\nhttps://(IP\naddress\nof\nBIG-IP)/mgmt/shared/appsvcs/info\n.\nYou should see a response like the following:\n{\n\"version\"\n:\n\"3.8.0\"\n,\n\"release\"\n:\n\"2\"\n,\n\"schemaCurrent\"\n:\n\"3.8.0\"\n,\n\"schemaMinimum\"\n:\n\"3.0.0\"\n}\nUpdating BIG-IP AS3\nWhen F5 releases a new version of BIG-IP AS3, use the same procedure you used to initially install the RPM.  For example, if you used the Configuration utility, when you click Import and then select the new RPM, the system recognizes you are upgrading BIG-IP AS3:\nNote\nInstalling or uninstalling BIG-IP AS3 does not affect the BIG-IP configuration created by BIG-IP AS3.\nReverting to a previous version of BIG-IP AS3\nIf for any reason you want to revert to a previous version of BIG-IP AS3, you must first remove the version of BIG-IP AS3 on your BIG-IP system (\niApps > Package Management LX > f5-appsvcs > Uninstall\n).  After you uninstall, you can import the RPM for the version of BIG-IP AS3 you want to use.\nUninstalling BIG-IP AS3\nIf you want to uninstall BIG-IP AS3 for any reason, use the following guidance.  This uninstalls the BIG-IP AS3 package and the associated Service Discovery that was included with the install. You can uninstall using the BIG-IP Configuration utility, a RESTful client like Postman, or cURL.\nUninstalling BIG-IP AS3 from the Configuration utility\nUse the following procedure to uninstall BIG-IP AS3 and the Service Discovery package(s) from the BIG-IP Configuration utility.\nFrom the BIG-IP system Configuration utility, click\niApps > Package Management LX\n.\nYou see the\nf5-appsvcs\npackage, as well as the\nf5-service-discovery\npackage that was included when you installed BIG-IP AS3 (if you are using BIG-IP AS3 3.10.0 and upgraded from a previous BIG-IP AS3 version, you may see an additional service discovery package named\nf5-appsvcs-discovery\n).\nCheck the boxes to the left of the package names for each of the BIG-IP AS3 packages (BIG-IP AS3 and the Service Discovery package(s)).  To completely remove BIG-IP AS3, you must also delete the Service Discovery packages.\nClick the\nUninstall\nbutton.\nAt the\nUninstall Packages?\nprompt, click\nYes\n.\nBIG-IP AS3 is now uninstalled.\nUninstalling BIG-IP AS3 from Postman\nUse the following procedure to uninstall BIG-IP AS3 and the Service Discovery package(s) from a RESTful client such as Postman.\nIn your RESTful client, use the following endpoint:\nhttps://<BIG-IP\nIP>/mgmt/shared/iapp/package-management-tasks\nUse the following syntax for the POST body:\n{\n\"operation\":\"UNINSTALL\",\"packageName\":\n\"<package\nname\nwithout\n.rpm>\"}\nFor example:\n{\n\"operation\":\"UNINSTALL\",\"packageName\":\n\"f5-appsvcs-3.10.0-5.noarch\"}\nClick\nSend\n.\nIn the Response body, you should see a status of\nCREATED\n, which means the uninstall operation was successful.\nRepeat steps 2 and 3 for the Service Discovery package(s).  For example, the POST body should be similar to:\n{\n\"operation\":\"UNINSTALL\",\"packageName\":\n\"f5-service-discovery-1.2.7-1.noarch\"}\n.\nYou can check for a successful uninstall operation by sending a GET request to /mgmt/shared/service-discovery/info endpoint.  If it was uninstalled, you should receive a 404 error code.\nBIG-IP AS3 is now uninstalled.\nUninstalling BIG-IP AS3 using cURL\nTo uninstall BIG-IP AS3 using cURL, see\nhttps://clouddocs.f5.com/products/iapp/iapp-lx/tmos-14_0/icontrollx_pacakges/working_with_icontrollx_packages.html#uninstalling-an-rpm-package\n.\nMake sure to uninstall BIG-IP AS3 and the Service Discovery package(s) to completely uninstall BIG-IP AS3.\nUpgrading BIG-IP versions when BIG-IP AS3 is installed\nThis section contains information about upgrading the BIG-IP system itself when BIG-IP AS3 is installed, and how that affects the BIG-IP AS3 installation.  For information on updating BIG-IP software, see\nhttps://support.f5.com/csp/article/K84554955\n.\nImportant\nIf you upgrade a BIG-IP and no longer see BIG-IP AS3 installed, see\nWhy did some of my iControl LX (iApp LX) Extensions disappear after upgrading my BIG-IP?\nStarting from BIG-IP AS3 version 3.50.0, BIG-IP AS3 no longer supports BIG-IP 13.1 to 14.1.x. However, if you are still using the BIG-IP 13.1 to 14.1.x versions, you can use BIG-IP AS3 3.49.0 or earlier.\nTip\nBefore upgrading a BIG-IP, we recommend you send a GET request to the\n/declare\nendpoint, which will return BIG-IP AS3’s current configuration. Copy and save the response, and then in the unlikely event something goes wrong, you will have the BIG-IP AS3 configuration.\nUpgrading BIG-IP 12.1.x to 13.1.x\nAfter upgrading the BIG-IP system from 12.1.x to 13.1.x, you need to run the following command from the command line before BIG-IP AS3 can be installed:\ntouch /var/config/rest/iapps/enable\n. After that,\nInstall BIG-IP AS3\nas described above. All previous declarations should still be available, which you can confirm by sending a GET to the\n/declare\nendpoint.\nUpgrading BIG-IP 12.1.x to 14.1.x\nAfter upgrading to 14.1.x,\nInstall BIG-IP AS3\nas described above. The previous declarations should still be available, you can confirm by sending a GET to the\n/declare\nendpoint.\nUpgrading BIG-IP 13.1.x to 14.1.x\nWhen upgrading from 13.1.x to 14.1.x, the system retains the BIG-IP AS3 installation as well as the previous declarations. You can confirm by sending a GET to the\n/declare\nendpoint.\nPrevious\nNext",
+  "title": "Downloading and installing the BIG-IP AS3 package",
+  "updated": "2026-05-29 08:13:18",
+  "url": "https://clouddocs.f5.com/products/extensions/f5-appsvcs-extension/latest/userguide/installation.html",
+  "url_version": null
+}

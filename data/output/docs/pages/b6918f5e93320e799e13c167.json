@@ -1,0 +1,168 @@
+{
+  "applies_to": [
+    {
+      "product": "F5 BIG-IP iRules API",
+      "versions": []
+    }
+  ],
+  "breadcrumbs": [],
+  "code_examples": [
+    {
+      "section": "Syntax",
+      "text": "RADIUS::avp <attr> [attr_type]\nRADIUS::avp <attr> [attr_type] [index x] [vendor-id y] [vendor-type z]\nRADIUS::avp delete <attr>\nRADIUS::avp delete <attr> [index x] [vendor-id y] [vendor-type z]\nRADIUS::avp insert <attr> <value> [attr_type]\nRADIUS::avp replace <attr> <value> [attr_type]\nRADIUS::avp replace <attr> <value> [attr_type] [index x] [vendor-id y] [vendor-type z]\n"
+    },
+    {
+      "section": "Examples",
+      "text": "when CLIENT_DATA {\n  persist uie [RADIUS::avp 1]\n  RADIUS::avp replace  USER-NAME \"foo\"\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "when CLIENT_DATA {\n    set type [RADIUS::avp 40 integer]\n        switch $type {\n            1 -\n            2 {\n                if { [active_members radius_test_pool] > 0 } {\n                    pool radius_test_pool\n                }\n            }\n            default {\n                drop\n            }\n    }\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "when RULE_INIT {\n    set static::DBG_X 1\n\n    #http://tools.ietf.org/html/rfc2865\n    #http://tools.ietf.org/html/rfc2866\n    array set static::R_AVP {\n        User_Name   1\n        User_Password   2\n        Framed_IP_Address   8\n        Called_Station_Id   30\n        Calling_Station_Id  31\n    }\n\n    array set static::ACCOUNTINGT_STATUS_T {\n        1   START\n        2   STOP\n        3   INTERIM_UPDATE\n    }\n\n    array set static::RADIUS_CODE {\n        4   ACCOUNTING_REQUEST\n        5   ACCOUNTING_RESPONSE\n    }\n\n    # http://www.3gpp.org/ftp/Specs/archive/29_series/29.061/29061_9b0.zip\n    array set static::3GGP {\n        VENDOR_ID   10415\n        3GPP_IMSI        1\n        3GPP_IMEISV      20\n        3GPP_RAT_Type    21\n        3GPP_User_Location_Info 22\n    }\n}\n\nwhen CLIENT_DATA {\n    set radius_code $static::RADIUS_CODE([RADIUS::code])\n\n    if {$static::DBG_X}{\n        log local0. \"$radius_code from [IP::client_addr]:[UDP::client_port]\"\n    }\n\n    switch $radius_code {\n    ACCOUNTING_REQUEST {\n        set user_name  [RADIUS::avp  $static::R_AVP(User_Name) \"string\"]\n        set framed_ip_address [RADIUS::avp  $static::R_AVP(Framed_IP_Address) ip4 ]\n        set accounting_status_t $static::ACCOUNTINGT_STATUS_T([RADIUS::avp 40 \"integer\"])\n\n        switch $accounting_status_t {\n        START {\n            set msisdn  [RADIUS::avp $static::R_AVP(Calling_Station_Id) \"string\"]\n\n            set imsi [RADIUS::avp 26 \"string\" \\\n                        index 0 \\\n                        vendor-id $static::3GGP(VENDOR_ID) \\\n                        vendor-type $static::3GGP(3GPP_IMSI)]\n\n            set imeisv [RADIUS::avp 26 \"string\" \\\n                        index 0 \\\n                        vendor-id $static::3GGP(VENDOR_ID) \\\n                        vendor-type $static::3GGP(3GPP_IMEISV)]\n\n            set rat_type [scan [RADIUS::avp 26 \"octet\" \\\n                        index 0 \\\n                        vendor-id $static::3GGP(VENDOR_ID) \\\n                        vendor-type $static::3GGP(3GPP_RAT_Type)] \"%c\"]\n\n            binary scan [RADIUS::avp 26 \\\n                        index 0 \\\n                        vendor-id $static::3GGP(VENDOR_ID) \\\n                        vendor-type $static::3GGP(3GPP_User_Location_Info) \\\n                        ] H* 3gpp_user_location_info\n\n            PEM::session create $framed_ip_address \\\n                                subscriber-id $msisdn \\\n                                subscriber-type e164 \\\n                                user-name $user_name \\\n                                imsi $imsi \\\n                                imeisv $imeisv \\\n                                tower-id $3gpp_user_location_info \\\n                                rat_type $rat_type\n\n            if {$static::DBG_X}{\n                set msg \"Accounting-Status-Type: $accounting_status_t\"\n                append msg \" PEM::Session create $framed_ip_address subscriber_id $msisdn\"\n                append msg \" subscriber_type e164 user_name $user_name\"\n                append msg \" imsi $imsi tower_id $3gpp_user_location_info\"\n                append msg \" imeisv $imeisv rat_type $rat_type \"\n                log local0. $msg\n            }\n        }\n\n        STOP {\n            PEM::session delete $framed_ip_address\n\n            if {$static::DBG_X}{\n                set msg \"Accounting-Status-Type: $accounting_status_t\"\n                append msg \" PEM::session delete $framed_ip_address\"\n                log local0. $msg\n            }\n        }\n\n        INTERIM_UPDATE {\n            set rat_type [scan [RADIUS::avp 26 \"octet\" \\\n                        index 0 \\\n                        vendor_id $static::3GGP(VENDOR_ID) \\\n                        vendor_type $static::3GGP(3GPP_RAT_Type)] \"%c\"]\n\n            PEM::session info attr $framed_ip_address rat_type $rat_type\n\n            if {$static::DBG_X}{\n                set msg \"Accounting-Status-Type: $accounting_status_t\"\n                append msg \" PEM::session info attr $framed_ip_address RAT_TYPE $rat_type\"\n                log local0. $msg\n            }\n        }\n        }\n    }\n    }\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "when RULE_INIT {\n    set static::secret \"linus\"\n}\nwhen CLIENT_DATA {\n    # getting base information, see also RFC 2865\n    #0                   1                   2                   3\n    #0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1\n    #+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n    #|     Code      |  Identifier   |            Length             |\n    #+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n    #|                         Authenticator                         |\n    #+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n    #|  Attributes ...\n    #+-+-+-+-+-+-+-+-+-+-+-+-+-\n\n    binary scan [UDP::payload] caSa16 code id len req_auth\n        # Checking if Radius Code is 4 Accounting-Request\n    if { $code == 4 } {\n\n    # Accounting-Response will be 5, hardcode it\n    # Accounting Response will be 20 bytes long, hardcode it\n    # creating  ResponseAuth =\n    #  MD5(Code+ID+Length+RequestAuth+Attributes+Secret)\n\n    set res_auth [md5 \"\\x05${id}\\x00\\x14${req_auth}${static::secret}\"]\n    set reply [binary format caSa16 5 $id 20 $res_auth]\n    clientside { UDP::respond ${reply}}\n\n    # Drop the packet since we are not going to send it anywhere\n    # If we would, we would not need to sent a reply, right ?\n    UDP::drop\n    }\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "when RULE_INIT {\n    set static::DBG_X 1\n    set static::secret \"linus\"\n\n    #http://tools.ietf.org/html/rfc2865\n    #http://tools.ietf.org/html/rfc2866\n    array set static::R_AVP {\n        User_Name   1\n        User_Password   2\n        Framed_IP_Address   8\n        Called_Station_Id   30\n        Calling_Station_Id  31\n    }\n\n    array set static::ACCOUNTINGT_STATUS_T {\n        1   START\n        2   STOP\n        3   INTERIM_UPDATE\n    }\n\n    array set static::RADIUS_CODE {\n        4   ACCOUNTING_REQUEST\n        5   ACCOUNTING_RESPONSE\n    }\n\n    # http://www.3gpp.org/ftp/Specs/archive/29_series/29.061/29061_9b0.zip\n    array set static::3GGP {\n        VENDOR_ID   10415\n        3GPP_IMSI        1\n        3GPP_IMEISV      20\n        3GPP_RAT_Type    21\n        3GPP_User_Location_Info 22\n    }\n}\n\nwhen CLIENT_DATA {\n    set radius_code $static::RADIUS_CODE([RADIUS::code])\n    # getting base information, see also RFC 2865\n    #0                   1                   2                   3\n    #0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1\n    #+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n    #|     Code      |  Identifier   |            Length             |\n    #+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n    #|                         Authenticator                         |\n    #+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n    #|  Attributes ...\n    #+-+-+-+-+-+-+-+-+-+-+-+-+-\n\n    binary scan [UDP::payload] caSa16 code id len req_auth\n\n    if {$static::DBG_X}{\n        log local0. \"$radius_code from [IP::client_addr]:[UDP::client_port]\"\n    }\n\n    switch $radius_code {\n    ACCOUNTING_REQUEST {\n        set user_name  [RADIUS::avp  $static::R_AVP(User_Name) \"string\"]\n        set framed_ip_address [RADIUS::avp  $static::R_AVP(Framed_IP_Address) ip4 ]\n        set accounting_status_t $static::ACCOUNTINGT_STATUS_T([RADIUS::avp 40 \"integer\"])\n\n        switch $accounting_status_t {\n        START {\n            set msisdn  [RADIUS::avp $static::R_AVP(Calling_Station_Id) \"string\"]\n\n            set imsi [RADIUS::avp 26 \"string\" \\\n                        index 0 \\\n                        vendor-id $static::3GGP(VENDOR_ID) \\\n                        vendor-type $static::3GGP(3GPP_IMSI)]\n\n            set imeisv [RADIUS::avp 26 \"string\" \\\n                        index 0 \\\n                        vendor-id $static::3GGP(VENDOR_ID) \\\n                        vendor-type $static::3GGP(3GPP_IMEISV)]\n\n            set rat_type [scan [RADIUS::avp 26 \"octet\" \\\n                        index 0 \\\n                        vendor-id $static::3GGP(VENDOR_ID) \\\n                        vendor-type $static::3GGP(3GPP_RAT_Type)] \"%c\"]\n\n            binary scan [RADIUS::avp 26 \\\n                        index 0 \\\n                        vendor-id $static::3GGP(VENDOR_ID) \\\n                        vendor-type $static::3GGP(3GPP_User_Location_Info) \\\n                        ] H* 3gpp_user_location_info\n\n            PEM::session create $framed_ip_address \\\n                                subscriber-id $msisdn \\\n                                subscriber-type e164 \\\n                                user-name $user_name \\\n                                imsi $imsi \\\n                                imeisv $imeisv \\\n                                tower-id $3gpp_user_location_info \\\n                                rat_type $rat_type\n\n            if {$static::DBG_X}{\n                set msg \"Accounting-Status-Type: $accounting_status_t\"\n                append msg \" PEM::Session create $framed_ip_address subscriber_id $msisdn\"\n                append msg \" subscriber_type e164 user_name $user_name\"\n                append msg \" imsi $imsi tower_id $3gpp_user_location_info\"\n                append msg \" imeisv $imeisv rat_type $rat_type \"\n                log local0. $msg\n            }\n        }\n\n        STOP {\n            PEM::session delete $framed_ip_address\n\n            if {$static::DBG_X}{\n                set msg \"Accounting-Status-Type: $accounting_status_t\"\n                append msg \" PEM::session delete $framed_ip_address\"\n                log local0. $msg\n            }\n        }\n\n        INTERIM_UPDATE {\n            set rat_type [scan [RADIUS::avp 26 \"octet\" \\\n                        index 0 \\\n                        vendor_id $static::3GGP(VENDOR_ID) \\\n                        vendor_type $static::3GGP(3GPP_RAT_Type)] \"%c\"]\n\n            PEM::session info attr $framed_ip_address rat_type $rat_type\n\n            if {$static::DBG_X}{\n                set msg \"Accounting-Status-Type: $accounting_status_t\"\n                append msg \" PEM::session info attr $framed_ip_address RAT_TYPE $rat_type\"\n                log local0. $msg\n            }\n        }\n        }\n        # Accounting-Response will be 5, hardcode it\n        # Accounting Response will be 20 bytes long, hardcode it\n        # creating  ResponseAuth =\n        #  MD5(Code+ID+Length+RequestAuth+Attributes+Secret)\n\n        set res_auth [md5 \"\\x05${id}\\x00\\x14${req_auth}${static::secret}\"]\n        set reply [binary format caSa16 5 $id 20 $res_auth]\n        clientside { UDP::respond ${reply}}\n\n        # Drop the packet since we are not going to send it anywhere\n        # If we would, we would not need to sent a reply, right ?\n        UDP::drop\n    }\n    }\n}\n"
+    },
+    {
+      "section": "Examples",
+      "text": "when CLIENT_ACCEPTED {\n# this example shows how to parse multiple nested AVPs\nfor {set i 0; set res \"\"} {$i < 10} {incr i} {\n    set avp  [ RADIUS::avp 26 \"string\" index $i vendor-id 10415 vendor-type 13]\n    if { $avp eq \"\" }{\n        break\n    }\n    lappend res $avp\n}\nlog local0. \"result $res \"\n}\n"
+    }
+  ],
+  "content_hash": "31b98ec10c1f42bd7cccc786a589eaad8a26b9739d7349d3a82d0e37f10ac384",
+  "diagrams": [],
+  "documentation_version": null,
+  "headings": [
+    {
+      "anchor": "radius-avp",
+      "level": 1,
+      "path": [],
+      "title": "RADIUS::avp"
+    },
+    {
+      "anchor": "description",
+      "level": 2,
+      "path": [
+        "RADIUS::avp"
+      ],
+      "title": "Description"
+    },
+    {
+      "anchor": "syntax",
+      "level": 2,
+      "path": [
+        "RADIUS::avp"
+      ],
+      "title": "Syntax"
+    },
+    {
+      "anchor": "radius-avp-attr-type",
+      "level": 3,
+      "path": [
+        "RADIUS::avp",
+        "Syntax"
+      ],
+      "title": "RADIUS::avp [attr_type]"
+    },
+    {
+      "anchor": "radius-avp-attr-type-index-x-vendor-id-y-vendor-type-z",
+      "level": 3,
+      "path": [
+        "RADIUS::avp",
+        "Syntax"
+      ],
+      "title": "RADIUS::avp [attr_type] [index x] [vendor-id y] [vendor-type z]"
+    },
+    {
+      "anchor": "radius-avp-delete",
+      "level": 3,
+      "path": [
+        "RADIUS::avp",
+        "Syntax"
+      ],
+      "title": "RADIUS::avp delete"
+    },
+    {
+      "anchor": "radius-avp-delete-index-x-vendor-id-y-vendor-type-z",
+      "level": 3,
+      "path": [
+        "RADIUS::avp",
+        "Syntax"
+      ],
+      "title": "RADIUS::avp delete [index x] [vendor-id y] [vendor-type z]"
+    },
+    {
+      "anchor": "radius-avp-insert-attr-type",
+      "level": 3,
+      "path": [
+        "RADIUS::avp",
+        "Syntax"
+      ],
+      "title": "RADIUS::avp insert [attr_type]"
+    },
+    {
+      "anchor": "radius-avp-replace-attr-type",
+      "level": 3,
+      "path": [
+        "RADIUS::avp",
+        "Syntax"
+      ],
+      "title": "RADIUS::avp replace [attr_type]"
+    },
+    {
+      "anchor": "note",
+      "level": 4,
+      "path": [
+        "RADIUS::avp",
+        "Syntax",
+        "RADIUS::avp replace [attr_type]"
+      ],
+      "title": "Note"
+    },
+    {
+      "anchor": "examples",
+      "level": 2,
+      "path": [
+        "RADIUS::avp"
+      ],
+      "title": "Examples"
+    },
+    {
+      "anchor": "related-information",
+      "level": 2,
+      "path": [
+        "RADIUS::avp"
+      ],
+      "title": "Related Information"
+    }
+  ],
+  "id": "b6918f5e93320e799e13c167",
+  "images": [],
+  "kind": "programming_reference",
+  "links": [
+    {
+      "title": "RFC\n2865",
+      "url": "http://www.ietf.org/rfc/rfc2865.txt"
+    },
+    {
+      "title": "RFC\n2866",
+      "url": "http://www.ietf.org/rfc/rfc2866.txt"
+    }
+  ],
+  "publisher_product_labels": [
+    "F5 BIG-IP iRules API"
+  ],
+  "source": "irules",
+  "text": "RADIUS::avp\nDescription\nThis command returns or adds/changes/removes RADIUS attribute-value\npairs. Radius profile must be applied for access to this command.\nSyntax\nRADIUS\n::\navp\n<\nattr\n>\n[\nattr_type\n]\nRADIUS\n::\navp\n<\nattr\n>\n[\nattr_type\n]\n[\nindex\nx\n]\n[\nvendor-id\ny\n]\n[\nvendor-type\nz\n]\nRADIUS\n::\navp\ndelete\n<\nattr\n>\nRADIUS\n::\navp\ndelete\n<\nattr\n>\n[\nindex\nx\n]\n[\nvendor-id\ny\n]\n[\nvendor-type\nz\n]\nRADIUS\n::\navp\ninsert\n<\nattr\n>\n<\nvalue\n>\n[\nattr_type\n]\nRADIUS\n::\navp\nreplace\n<\nattr\n>\n<\nvalue\n>\n[\nattr_type\n]\nRADIUS\n::\navp\nreplace\n<\nattr\n>\n<\nvalue\n>\n[\nattr_type\n]\n[\nindex\nx\n]\n[\nvendor-id\ny\n]\n[\nvendor-type\nz\n]\nRADIUS::avp [attr_type]\nReturns the value of the specified RADIUS attribute. optional\nattr_type = ( octet | ip4 | ip6 | integer | string | integer64\n| ip4prefix | ip6prefix )\nRADIUS::avp [attr_type] [index x] [vendor-id y] [vendor-type z]\nRADIUS Vendor-Specific attribute\nOptional attr_type = ( octet | ip4 | ip6 | integer | integer64 |\nip4prefix | ip6prefix )\nSee example below\nIntroduced in Version 11.4.0\nRADIUS::avp delete\nDeletes the specified RADIUS attribute.\nRADIUS::avp delete [index x] [vendor-id y] [vendor-type z]\nReturns the value of the specified RADIUS Vendor-Specific attribute\nOptional attr_type = ( octet | ip4 | ip6 | integer | integer64 |\nip4prefix | ip6prefix )\nSee example below\nIntroduced in Version 11.4.0\nRADIUS::avp insert [attr_type]\nInserts the specified RADIUS attribute and value. optional attr_type\n= ( octet | ip4 | ip6 | integer | string | integer64 |\nip4prefix | ip6prefix )\nRADIUS::avp replace [attr_type]\nRewrites the specified RADIUS attribute with new value. optional\nattr_type = ( octet | ip4 | ip6 | integer | string | integer64\n| ip4prefix | ip6prefix )\nNote\nThe attr should be supplied as the decimal value 1 to 255 or as the\nUPPERCASE strings specified in\nRFC\n2865\nand\nRFC\n2866\n. The optional attr_type\nindicates how a value should be interpreted. Valid types are octet,\nstring, ip4, ip6, integer, integer64, ip4prefix, and ip6prefix ). An\nunknown type is treated as octet.\nExamples\nwhen\nCLIENT_DATA\n{\npersist\nuie\n[\nRADIUS\n::\navp\n1\n]\nRADIUS\n::\navp\nreplace\nUSER-NAME\n\"foo\"\n}\nThis example sends only START and STOP messages to a AAA complex that\ncan’t handle the full load of accounting updates\nwhen\nCLIENT_DATA\n{\nset\ntype\n[\nRADIUS\n::\navp\n40\ninteger\n]\nswitch\n$type\n{\n1\n-\n2\n{\nif\n{\n[\nactive_members\nradius_test_pool\n]\n>\n0\n}\n{\npool\nradius_test_pool\n}\n}\ndefault\n{\ndrop\n}\n}\n}\nIn Version 11.4.0 vendor specific attribute parsing was introduced,\nhere as an example how to add custom attributes to PEM Session\nwhen RULE_INIT {\n    set static::DBG_X 1\n\n    #http://tools.ietf.org/html/rfc2865\n    #http://tools.ietf.org/html/rfc2866\n    array set static::R_AVP {\n        User_Name   1\n        User_Password   2\n        Framed_IP_Address   8\n        Called_Station_Id   30\n        Calling_Station_Id  31\n    }\n\n    array set static::ACCOUNTINGT_STATUS_T {\n        1   START\n        2   STOP\n        3   INTERIM_UPDATE\n    }\n\n    array set static::RADIUS_CODE {\n        4   ACCOUNTING_REQUEST\n        5   ACCOUNTING_RESPONSE\n    }\n\n    # http://www.3gpp.org/ftp/Specs/archive/29_series/29.061/29061_9b0.zip\n    array set static::3GGP {\n        VENDOR_ID   10415\n        3GPP_IMSI        1\n        3GPP_IMEISV      20\n        3GPP_RAT_Type    21\n        3GPP_User_Location_Info 22\n    }\n}\n\nwhen CLIENT_DATA {\n    set radius_code $static::RADIUS_CODE([RADIUS::code])\n\n    if {$static::DBG_X}{\n        log local0. \"$radius_code from [IP::client_addr]:[UDP::client_port]\"\n    }\n\n    switch $radius_code {\n    ACCOUNTING_REQUEST {\n        set user_name  [RADIUS::avp  $static::R_AVP(User_Name) \"string\"]\n        set framed_ip_address [RADIUS::avp  $static::R_AVP(Framed_IP_Address) ip4 ]\n        set accounting_status_t $static::ACCOUNTINGT_STATUS_T([RADIUS::avp 40 \"integer\"])\n\n        switch $accounting_status_t {\n        START {\n            set msisdn  [RADIUS::avp $static::R_AVP(Calling_Station_Id) \"string\"]\n\n            set imsi [RADIUS::avp 26 \"string\" \\\n                        index 0 \\\n                        vendor-id $static::3GGP(VENDOR_ID) \\\n                        vendor-type $static::3GGP(3GPP_IMSI)]\n\n            set imeisv [RADIUS::avp 26 \"string\" \\\n                        index 0 \\\n                        vendor-id $static::3GGP(VENDOR_ID) \\\n                        vendor-type $static::3GGP(3GPP_IMEISV)]\n\n            set rat_type [scan [RADIUS::avp 26 \"octet\" \\\n                        index 0 \\\n                        vendor-id $static::3GGP(VENDOR_ID) \\\n                        vendor-type $static::3GGP(3GPP_RAT_Type)] \"%c\"]\n\n            binary scan [RADIUS::avp 26 \\\n                        index 0 \\\n                        vendor-id $static::3GGP(VENDOR_ID) \\\n                        vendor-type $static::3GGP(3GPP_User_Location_Info) \\\n                        ] H* 3gpp_user_location_info\n\n            PEM::session create $framed_ip_address \\\n                                subscriber-id $msisdn \\\n                                subscriber-type e164 \\\n                                user-name $user_name \\\n                                imsi $imsi \\\n                                imeisv $imeisv \\\n                                tower-id $3gpp_user_location_info \\\n                                rat_type $rat_type\n\n            if {$static::DBG_X}{\n                set msg \"Accounting-Status-Type: $accounting_status_t\"\n                append msg \" PEM::Session create $framed_ip_address subscriber_id $msisdn\"\n                append msg \" subscriber_type e164 user_name $user_name\"\n                append msg \" imsi $imsi tower_id $3gpp_user_location_info\"\n                append msg \" imeisv $imeisv rat_type $rat_type \"\n                log local0. $msg\n            }\n        }\n\n        STOP {\n            PEM::session delete $framed_ip_address\n\n            if {$static::DBG_X}{\n                set msg \"Accounting-Status-Type: $accounting_status_t\"\n                append msg \" PEM::session delete $framed_ip_address\"\n                log local0. $msg\n            }\n        }\n\n        INTERIM_UPDATE {\n            set rat_type [scan [RADIUS::avp 26 \"octet\" \\\n                        index 0 \\\n                        vendor_id $static::3GGP(VENDOR_ID) \\\n                        vendor_type $static::3GGP(3GPP_RAT_Type)] \"%c\"]\n\n            PEM::session info attr $framed_ip_address rat_type $rat_type\n\n            if {$static::DBG_X}{\n                set msg \"Accounting-Status-Type: $accounting_status_t\"\n                append msg \" PEM::session info attr $framed_ip_address RAT_TYPE $rat_type\"\n                log local0. $msg\n            }\n        }\n        }\n    }\n    }\n}\nSee this code when you want to sent a RADIUS Accounting Accept\nwhen\nRULE_INIT\n{\nset\nstatic::secret\n\"linus\"\n}\nwhen\nCLIENT_DATA\n{\n# getting base information, see also RFC 2865\n#0                   1                   2                   3\n#0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1\n#+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n#|     Code      |  Identifier   |            Length             |\n#+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n#|                         Authenticator                         |\n#+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n#|  Attributes ...\n#+-+-+-+-+-+-+-+-+-+-+-+-+-\nbinary\nscan\n[\nUDP\n::\npayload\n]\ncaSa16\ncode\nid\nlen\nreq_auth\n# Checking if Radius Code is 4 Accounting-Request\nif\n{\n$code\n==\n4\n}\n{\n# Accounting-Response will be 5, hardcode it\n# Accounting Response will be 20 bytes long, hardcode it\n# creating  ResponseAuth =\n#  MD5(Code+ID+Length+RequestAuth+Attributes+Secret)\nset\nres_auth\n[\nmd5\n\"\\x05${id}\\x00\\x14${req_auth}${static::secret}\"\n]\nset\nreply\n[\nbinary\nformat\ncaSa16\n5\n$id\n20\n$res_auth\n]\nclientside\n{\nUDP\n::\nrespond\n${reply}\n}\n# Drop the packet since we are not going to send it anywhere\n# If we would, we would not need to sent a reply, right ?\nUDP\n::\ndrop\n}\n}\nUse iRule for PEM:Session and reply\nwhen RULE_INIT {\n    set static::DBG_X 1\n    set static::secret \"linus\"\n\n    #http://tools.ietf.org/html/rfc2865\n    #http://tools.ietf.org/html/rfc2866\n    array set static::R_AVP {\n        User_Name   1\n        User_Password   2\n        Framed_IP_Address   8\n        Called_Station_Id   30\n        Calling_Station_Id  31\n    }\n\n    array set static::ACCOUNTINGT_STATUS_T {\n        1   START\n        2   STOP\n        3   INTERIM_UPDATE\n    }\n\n    array set static::RADIUS_CODE {\n        4   ACCOUNTING_REQUEST\n        5   ACCOUNTING_RESPONSE\n    }\n\n    # http://www.3gpp.org/ftp/Specs/archive/29_series/29.061/29061_9b0.zip\n    array set static::3GGP {\n        VENDOR_ID   10415\n        3GPP_IMSI        1\n        3GPP_IMEISV      20\n        3GPP_RAT_Type    21\n        3GPP_User_Location_Info 22\n    }\n}\n\nwhen CLIENT_DATA {\n    set radius_code $static::RADIUS_CODE([RADIUS::code])\n    # getting base information, see also RFC 2865\n    #0                   1                   2                   3\n    #0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1\n    #+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n    #|     Code      |  Identifier   |            Length             |\n    #+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n    #|                         Authenticator                         |\n    #+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n    #|  Attributes ...\n    #+-+-+-+-+-+-+-+-+-+-+-+-+-\n\n    binary scan [UDP::payload] caSa16 code id len req_auth\n\n    if {$static::DBG_X}{\n        log local0. \"$radius_code from [IP::client_addr]:[UDP::client_port]\"\n    }\n\n    switch $radius_code {\n    ACCOUNTING_REQUEST {\n        set user_name  [RADIUS::avp  $static::R_AVP(User_Name) \"string\"]\n        set framed_ip_address [RADIUS::avp  $static::R_AVP(Framed_IP_Address) ip4 ]\n        set accounting_status_t $static::ACCOUNTINGT_STATUS_T([RADIUS::avp 40 \"integer\"])\n\n        switch $accounting_status_t {\n        START {\n            set msisdn  [RADIUS::avp $static::R_AVP(Calling_Station_Id) \"string\"]\n\n            set imsi [RADIUS::avp 26 \"string\" \\\n                        index 0 \\\n                        vendor-id $static::3GGP(VENDOR_ID) \\\n                        vendor-type $static::3GGP(3GPP_IMSI)]\n\n            set imeisv [RADIUS::avp 26 \"string\" \\\n                        index 0 \\\n                        vendor-id $static::3GGP(VENDOR_ID) \\\n                        vendor-type $static::3GGP(3GPP_IMEISV)]\n\n            set rat_type [scan [RADIUS::avp 26 \"octet\" \\\n                        index 0 \\\n                        vendor-id $static::3GGP(VENDOR_ID) \\\n                        vendor-type $static::3GGP(3GPP_RAT_Type)] \"%c\"]\n\n            binary scan [RADIUS::avp 26 \\\n                        index 0 \\\n                        vendor-id $static::3GGP(VENDOR_ID) \\\n                        vendor-type $static::3GGP(3GPP_User_Location_Info) \\\n                        ] H* 3gpp_user_location_info\n\n            PEM::session create $framed_ip_address \\\n                                subscriber-id $msisdn \\\n                                subscriber-type e164 \\\n                                user-name $user_name \\\n                                imsi $imsi \\\n                                imeisv $imeisv \\\n                                tower-id $3gpp_user_location_info \\\n                                rat_type $rat_type\n\n            if {$static::DBG_X}{\n                set msg \"Accounting-Status-Type: $accounting_status_t\"\n                append msg \" PEM::Session create $framed_ip_address subscriber_id $msisdn\"\n                append msg \" subscriber_type e164 user_name $user_name\"\n                append msg \" imsi $imsi tower_id $3gpp_user_location_info\"\n                append msg \" imeisv $imeisv rat_type $rat_type \"\n                log local0. $msg\n            }\n        }\n\n        STOP {\n            PEM::session delete $framed_ip_address\n\n            if {$static::DBG_X}{\n                set msg \"Accounting-Status-Type: $accounting_status_t\"\n                append msg \" PEM::session delete $framed_ip_address\"\n                log local0. $msg\n            }\n        }\n\n        INTERIM_UPDATE {\n            set rat_type [scan [RADIUS::avp 26 \"octet\" \\\n                        index 0 \\\n                        vendor_id $static::3GGP(VENDOR_ID) \\\n                        vendor_type $static::3GGP(3GPP_RAT_Type)] \"%c\"]\n\n            PEM::session info attr $framed_ip_address rat_type $rat_type\n\n            if {$static::DBG_X}{\n                set msg \"Accounting-Status-Type: $accounting_status_t\"\n                append msg \" PEM::session info attr $framed_ip_address RAT_TYPE $rat_type\"\n                log local0. $msg\n            }\n        }\n        }\n        # Accounting-Response will be 5, hardcode it\n        # Accounting Response will be 20 bytes long, hardcode it\n        # creating  ResponseAuth =\n        #  MD5(Code+ID+Length+RequestAuth+Attributes+Secret)\n\n        set res_auth [md5 \"\\x05${id}\\x00\\x14${req_auth}${static::secret}\"]\n        set reply [binary format caSa16 5 $id 20 $res_auth]\n        clientside { UDP::respond ${reply}}\n\n        # Drop the packet since we are not going to send it anywhere\n        # If we would, we would not need to sent a reply, right ?\n        UDP::drop\n    }\n    }\n}\nThis example shows how to parse multiple nested AVPs\nwhen\nCLIENT_ACCEPTED\n{\n# this example shows how to parse multiple nested AVPs\nfor\n{set\ni\n0\n;\nset\nres\n\"\"\n}\n{\n$i\n<\n10\n}\n{\nincr\ni\n}\n{\nset\navp\n[\nRADIUS\n::\navp\n26\n\"string\"\nindex\n$i\nvendor-id\n10415\nvendor-type\n13\n]\nif\n{\n$avp\neq\n\"\"\n}{\nbreak\n}\nlappend\nres\n$avp\n}\nlog\nlocal0.\n\"result $res \"\n}\nRelated Information\nValid Events:\nWarning\nThe links to the sample code below are remnants of the old DevCentral wiki and will result in a 404 error. For best results, please copy the link text and search the codeshare directly on DevCentral.\nSample Code:\nIntroduced: BIGIP-10.1\nEnhanced: BIGIP-11.4.0\nEnhanced: BIGIP-13.1.0 (added support for integer64, ip4prefix,\nip6prefix types)\nThe BIG-IP API Reference documentation contains community-contributed content. F5 does not monitor \nor control community code contributions. We make no guarantees or warranties regarding the available code, \nand it may contain errors, defects, bugs, inaccuracies, or security vulnerabilities.  Your access to and use of any \ncode available in the BIG-IP API reference guides is solely at your own risk.",
+  "title": "RADIUS::avp",
+  "updated": "2026-07-13 12:27:40",
+  "url": "https://clouddocs.f5.com/api/irules/RADIUS__avp.html",
+  "url_version": null
+}
