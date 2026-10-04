@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163417: How to copy missing zone file from a working BIG-IP DNS device.</title>
+<meta name="description" content="Support Solution: How to copy missing zone file from a working BIG-IP DNS device. — On BIG-IP DNS, zrd may repeatedly restart or remain down when a BIND zone is configured in named.conf but the referenced zone file is missing or cannot be read by the named service.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163417">
+</head>
+<body>
+<header>
+<h1>K000163417: How to copy missing zone file from a working BIG-IP DNS device.</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-03</dd>
+<dt>Updated</dt><dd>2026-10-03</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163417">https://my.f5.com/manage/s/article/K000163417</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>On BIG-IP DNS, zrd may repeatedly restart or remain down when a BIND zone is configured in named.conf but the referenced zone file is <strong>missing</strong> or cannot be read by the named service.</p>
+<p>Typical log messages include:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #ecf0f1;">zoneload: error: zone &lt;zone&gt;/IN/external:</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #ecf0f1;">loading from master file db.external.&lt;zone&gt;. failed: file not found</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #ecf0f1;">zoneload: error: zone &lt;zone&gt;/IN/external:</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #ecf0f1;">not loaded due to errors</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #ecf0f1;">Re-starting zrd</span></p>
+<h2>Environment</h2>
+<ul><li>BIG-IP DNS</li><li>DNS synchronization enabled</li><li>DNS zone-file synchronization enabled</li><li>BIG-IP DNS devices configured in the same DNS synchronization group</li><li>ZoneRunner/BIND zone files</li></ul>
+<h2>Cause</h2>
+<p>The affected BIG-IP DNS device contained a BIND zone declaration for which the referenced zone file was not present.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>For simplicity, let&#39;s say you have 2 BIG-IP DNS devices. Device-A has the working copy of the zone file. Device-B is the device experiencing zrd restart due to missing zone file.</p>
+<p>1.) Back up the source file on Device A.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>cd /var/named/config/namedb
+cp db.external.example.com. db.external.example.com..pre-copy</code></pre>
+<p>2.) Prepare Device A and flush its journal.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>cd /var/named/config/namedb
+bigstart stop zrd
+rndc freeze
+rndc sync -clean</code></pre>
+<p>Then validate the source file. You should see &quot;OK&quot;</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>named-checkzone example.com. /var/named/config/namedb/db.external.example.com.</code></pre>
+<p>3.) On Device B, first preserve any existing file or related configuration, then run:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>cd /var/named/config/namedb
+bigstart stop zrd
+rndc freeze 
+rndc sync -clean</code></pre>
+<p>4.) Copy the complete file from Device A to Device B. Still on Device A, run:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>scp /var/named/config/namedb/db.external.example.com. root@192.168.0.2:/var/tmp/</code></pre>
+<p>5.) Check the file if present then move the file into the ZoneRunner directory on Device B:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ls -l /var/tmp/db.external.claims.w-insurance.com.</code></pre>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>mv /var/tmp/db.external.example.com. /var/named/config/namedb/db.external.example.com.</code></pre>
+<p>6.) Check ownership and permissions. Compare the restored file on Device B with the source file on Device A:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>ls -l /var/named/config/namedb/db.external.example.com.</code></pre>
+<p><span style="color: #15891f;"><strong>NOTE: All files under /var/named/config/namedb/ should have named:named as ownership and not root:root. If there is root owned, change the owner to named, run:</strong></span></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>chown named:named /var/named/config/namedb/*
+bigstart restart zrd</code></pre>
+<p>7.) Validate the file on Device B. You should see &quot;OK&quot;</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>named-checkzone example.com. /var/named/config/namedb/db.external.example.com.</code></pre>
+<p>Then check all configured zones: </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>named-checkconf -j -z -t /var/named</code></pre>
+<p>There should be no more missing files.</p>
+<p>8.) Thaw the zone and restart ZoneRunner on both devices.</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>rndc thaw
+bigstart start zrd</code></pre>
+<p><span style="color: #15891f;"><strong>NOTE: If you encounter this permission denied error below,  check ownership and permissions again.</strong></span></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>rndc: &#39;thaw&#39; failed: permission denied</code></pre>
+<h2>Additional Information</h2>
+<p>If the file exists but has incorrect permissions or ownership, the log may report:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>zoneload: error: zone &lt;zone&gt;/IN/external:
+loading from master file db.external.&lt;zone&gt;. failed: permission denied</code></pre>
+</article>
+</body>
+</html>
