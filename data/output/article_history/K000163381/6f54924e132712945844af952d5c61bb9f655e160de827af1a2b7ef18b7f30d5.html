@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163381: BIG-IP SSL Profiles: OCSP and CRL Validator Interaction and Precedence</title>
+<meta name="description" content="Support Solution: BIG-IP SSL Profiles: OCSP and CRL Validator Interaction and Precedence — When both OCSP and Dynamic CRL validators are configured on the same BIG-IP LTM Server SSL profile, OCSP takes precedence and the CRL validator is not used as a fallback. A certificate containing a…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163381">
+</head>
+<body>
+<header>
+<h1>K000163381: BIG-IP SSL Profiles: OCSP and CRL Validator Interaction and Precedence</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-07</dd>
+<dt>Updated</dt><dd>2026-10-07</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163381">https://my.f5.com/manage/s/article/K000163381</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When both OCSP and Dynamic CRL validators are configured on the same BIG-IP LTM Server SSL profile, OCSP takes precedence and the CRL validator is not used as a fallback. A certificate containing a CRL Distribution Point (CRLDP) but no OCSP responder URL can therefore be accepted even when it is listed as revoked in the CRL.</p>
+<p>Observed results with a test certificate for <strong>example.com</strong>:</p>
+<ul><li>CRL validation only detected the revoked certificate and blocked the connection.</li><li>OCSP validation only made no OCSP request because the certificate had no OCSP responder URL.</li><li>OCSP and CRL validation together allowed the connection to proceed.</li></ul>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP LTM</li><li>Topology: F5 SSL Orchestrator explicit proxy</li><li>Profile type: Server SSL</li><li>Configured validators:
+<ul><li>Dynamic CRL</li><li>OCSP</li></ul>
+</li><li>Certificate extensions:
+<ul><li>AIA containing a CA Issuers URI only</li><li>No OCSP responder URI</li><li>CRLDP URI</li></ul>
+</li><li>The certificate was revoked and listed in the cached CRL.</li><li>The Server SSL profile required peer certificate validation.</li></ul>
+<p>The revoked-certificate response can be configured to either terminate the TLS connection or allow F5 SSL Orchestrator to display its policy block page, depending on the deployment design.</p>
+<h2>Cause</h2>
+<p>The validation implementation prioritizes OCSP when an OCSP validator is configured on the profile. Other configured validation methods, including Dynamic CRL validation, are bypassed instead of being used as fallback mechanisms.</p>
+<p>The presence of an AIA extension does not necessarily indicate that a certificate contains an OCSP responder URI. In this scenario, the AIA extension contained only a CA Issuers URI.</p>
+<p>Configuring both validators can therefore create a misleading configuration in which the Dynamic CRL validator is effectively inactive.</p>
+<h2>Recommended Actions</h2>
+<ol><li>Do not configure OCSP and Dynamic CRL together when CRL validation is required for certificates without an OCSP responder URI. The current implementation does not provide CRL fallback when OCSP is configured.</li><li>For CRL-based validation, remove the OCSP validator and configure only the Dynamic CRL validator:<br><span style="background-color: #f1f1f1;">tmsh modify ltm profile server-ssl &lt;server_ssl_profile&gt; ocsp none</span><br><span style="background-color: #f1f1f1;">tmsh modify ltm profile server-ssl &lt;server_ssl_profile&gt; crl &lt;crl_validator&gt;</span></li><li>For OCSP-only validation, remove the Dynamic CRL validator and configure only the OCSP validator:<br><span style="background-color: #f1f1f1;">tmsh modify ltm profile server-ssl &lt;server_ssl_profile&gt; crl none</span><br><span style="background-color: #f1f1f1;">tmsh modify ltm profile server-ssl &lt;server_ssl_profile&gt; ocsp &lt;ocsp_validator&gt;</span></li><li>Inspect certificate extensions before selecting the validation method. Confirm separately whether the certificate contains:
+<ul><li>An AIA OCSP responder URI</li><li>A CRLDP URI</li></ul>
+Do not treat the presence of any AIA extension as proof that OCSP is available.</li><li>Verify CRL operation using validator statistics and logs. A successful CRL revocation check can produce output similar to:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Total Certificate Status Queries 1</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Certificate Status Good 0</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Revoked 1</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Unknown 0</span></p>
+<p> </p>
+Relevant log messages include:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Cert status: revoked</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Certificate with subject name (...) and serial number (...) is revoked</span></p>
+</li><li>Select the revoked-certificate response behavior according to the deployment design:
+<ul><li>Use a drop or reject response to terminate the TLS connection.</li><li>Use the appropriate F5 SSL Orchestrator response-control setting when the intended result is an SSL Orchestrator block page.</li></ul>
+</li><li>Do not assume that configuring both validators provides defense in depth. A true OCSP-preferred and CRL-fallback mechanism requires product support for validator coexistence and fallback behavior.</li></ol>
+<h2>Additional Information</h2>
+<ul><li>The behavior is not caused by the absence of a CRLDP URI. The certificate contained a CRLDP URI, and CRL-only testing identified it as revoked.</li><li>OCSP-only validation recorded zero OCSP requests because the certificate did not contain an OCSP responder URI.</li><li>With both validators configured, the CRL validator did not receive the revocation query even though the cached CRL contained a matching revoked certificate.</li><li>The current implementation treats OCSP and Dynamic CRL as alternative validation methods rather than independent checks.</li><li>The configuration interface may allow both validators to be attached to a profile, but this does not mean both will be evaluated.</li><li>A fix is required to support true OCSP and Dynamic CRL coexistence with fallback behavior.</li></ul>
+</article>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000135991: Qkview generation is getting stuck</title>
+<meta name="description" content="Support Solution: Qkview generation is getting stuck — [root@bigip:Standby:Not All Devices Synced] config # qkview -v">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000135991">
+</head>
+<body>
+<header>
+<h1>K000135991: Qkview generation is getting stuck</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-07</dd>
+<dt>Updated</dt><dd>2026-10-07</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000135991">https://my.f5.com/manage/s/article/K000135991</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<ul><li>Qkview generation is getting stuck/stalled</li><li>Running verbose mode using &quot;qkview -v&quot; shows :</li></ul>
+<pre class="ckeditor_codeblock">[root@bigip:Standby:Not All Devices Synced] config # qkview -v          
+ Gathering System Diagnostics: Please wait ...
+       Executing /bin/date ...
+       Result: [0] Elapsed: 0.004908
+ Executing Module: [qktam.so]
+ Module [qktam.so] execution time: 0
+ Executing Module: [qkgtm.so]
+       Executing /usr/bin/tmsh -q show gtm datacenter detail ...
+       Result: [0] Elapsed: 0.245286
+       Executing /usr/bin/tmsh -q show gtm distributed-app ...
+       Result: [0] Elapsed: 0.208926
+       Executing /usr/bin/tmsh -q show gtm wideip ...
+       Result: [0] Elapsed: 0.234451
+       Executing /usr/bin/tmsh -q show gtm iquery ...
+       Result: [0] Elapsed: 0.211507
+       Executing /usr/bin/tmsh -q show gtm rule ...
+       Result: [0] Elapsed: 0.200958
+       Executing /usr/bin/tmsh -q show gtm traffic ...
+       Result: [0] Elapsed: 0.207683
+ Module [qkgtm.so] execution time: 1.31
+ Executing Module: [qkshared.so]
+</pre>
+<ul><li>
+<p>Checking the process &quot;ps -ef | grep qkview&quot; shows :</p>
+</li></ul>
+<pre class="ckeditor_codeblock">[root@bigip:Standby] config # ps -ef | grep 31139 
+ root      372 19403 0 16:42 pts/0   S+    0:00 grep 31139
+ root    31139 16791 0 16:41 pts/1   S+    0:00 qkview -v
+ root    31228 31139 0 16:41 pts/1   S+    0:00 sh -c /opt/bin/rpm -qa --dbpath /var/config/rest/rpm &gt; /var/tmp/plugin_rpm_dump.txt 2&gt;&amp;1
+
+ [root@bigip:Standby] config # ps -ef | grep 31228
+ root      940 19403 0 16:43 pts/0   S+    0:00 grep 31228
+ root    31228 31139 0 16:41 pts/1   S+    0:00 sh -c /opt/bin/rpm -qa --dbpath /var/config/rest/rpm &gt; /var/tmp/plugin_rpm_dump.txt 2&gt;&amp;1
+ root    31229 31228 0 16:41 pts/1   S+    0:00 /opt/usr/lib/rpm/rpmq -q --all --define _dbpath /var/config/rest/rpm</pre>
+<ul><li>Killing the orphaned qkview process as per <a href="https://my.f5.com/manage/s/article/K61154426" target="_blank" rel="noopener noreferrer">K61154426</a> is not helping</li><li>Logs collected using <a href="https://my.f5.com/manage/s/article/K11419837" target="_blank" rel="noopener noreferrer">K11419837 </a>shows :</li></ul>
+<pre class="ckeditor_codeblock">qkview_run.data
+
+START MODULE: qktam.so
+END MODULE: Module not provisioned qktam.so
+START MODULE: qkgtm.so
+GtmModule::GtmModule(qkview_plugin_arg_t*)
+virtual void GtmModule::generate()
+virtual GtmModule::~GtmModule()
+END MODULE: qkgtm.so, Time: 1.983
+START MODULE: qkshared.so
+SharedModule::SharedModule(qkview_plugin_arg_t*)
+virtual void SharedModule::generate()
+/opt/bin/rpm -qa --dbpath /shared/lib/rpm &gt; /var/tmp/shared_rpm_dump.txt 2&gt;&amp;1
+/opt/bin/rpm -qa --dbpath /var/config/rest/rpm &gt; /var/tmp/plugin_rpm_dump.txt 2&gt;&amp;1
+/opt/bin/rpm -v -qa --dbpath /var/config/rest/rpm</pre>
+<ul><li>Running below command is also getting stuck :</li></ul>
+<p>/opt/bin/rpm -v -qa --dbpath /var/config/rest/rpm</p>
+<p> </p>
+<h2><strong>Environment</strong></h2>
+<ul><li>BIG-IP</li><li>Generating Qkview</li></ul>
+<h2><strong>Cause</strong></h2>
+<p>Possibly RPM database is corrupted</p>
+<p> </p>
+<h2> <strong>Recommended Actions</strong></h2>
+<p>1) Take a UCS backup and note down &quot;F5mku -K&quot; output</p>
+<p>2) Take RPM backup using:</p>
+<p>tar -czf /shared/tmp/${HOSTNAME}-rpm-db.tar.gz --absolute-names /shared/lib/rpm/<em> /var/config/rest/rpm/</em></p>
+<p>3) Kill the running rpm or processes:</p>
+<p># ps aux | grep -E &#39;[P]ID|[r]pm&#39;</p>
+<p># kill -9 &lt;pid&gt;</p>
+<p>3) Executed the below commands to rebuild the rpm db:</p>
+<p># rm -f -v /shared/lib/rpm/* /var/config/rest/rpm/*</p>
+<p># /opt/bin/rpm --dbpath /shared/lib/rpm --rebuilddb</p>
+<p># /opt/bin/rpm --dbpath /var/config/rest/rpm --rebuilddb</p>
+<p>4) Verify below command is now running :</p>
+<p>/opt/bin/rpm -v -qa --dbpath /var/config/rest/rpm</p>
+<p>Qkview generation should now work.</p>
+<h2><strong>Additional Information</strong></h2>
+<p>None.</p>
+</article>
+</body>
+</html>

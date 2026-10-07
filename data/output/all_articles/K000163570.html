@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163570: BIG-IP APM OAuth Client Password-Grant Requests Return HTTP 503 Due to Username Validation</title>
+<meta name="description" content="Support Solution: BIG-IP APM OAuth Client Password-Grant Requests Return HTTP 503 Due to Username Validation — A BIG-IP APM OAuth Client using the password grant can return HTTP 503 when the username submitted to the OAuth Authorization Server contains characters rejected by Logon Page input validation.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163570">
+</head>
+<body>
+<header>
+<h1>K000163570: BIG-IP APM OAuth Client Password-Grant Requests Return HTTP 503 Due to Username Validation</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-06</dd>
+<dt>Updated</dt><dd>2026-10-06</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163570">https://my.f5.com/manage/s/article/K000163570</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>A BIG-IP APM OAuth Client using the password grant can return HTTP 503 when the username submitted to the OAuth Authorization Server contains characters rejected by Logon Page input validation.</p>
+<p>The following messages may appear:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Failed to validate logon page input field username.</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">OAuth Client: failed for server &#39;&lt;OAuth-Authorization-Server&gt;&#39;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">using &#39;password&#39; grant type, error: HTTP error 503</span></p>
+<p>The OAuth Client may then follow the configured fallback branch.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP APM configured as an OAuth Client.</li><li>The OAuth Client uses the password grant.</li><li>A local OAuth Authorization Server is hosted on BIG-IP.</li><li>The Authorization Server uses an APM access policy containing a Logon Page agent.</li><li>The username contains one or more characters rejected by Logon Page validation.</li><li>The OAuth Client and Authorization Server may use different virtual servers.</li><li>A software fix is available for this behavior.</li></ul>
+<h2>Cause</h2>
+<p>A Logon Page input-validation change tracked by <a href="https://cdn.f5.com/product/bugtracker/2259313.html" target="_blank">Bug ID 2259313</a> rejects the following characters in the username field:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">&quot; / [ ] : ; | = , + * ? &lt; &gt;</span></p>
+<p>When the OAuth Client submits a username containing one or more of these characters, the OAuth Authorization Server Logon Page rejects the username. The OAuth Client reports the resulting authorization failure as HTTP 503.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>Apply a BIG-IP software release containing the fix for this issue, where available.</p>
+<p>If the fix cannot be applied, use one of the following workarounds.</p>
+<p><strong>Workaround 1: Change the Logon Page username field type</strong></p>
+<ol><li>Open the access policy used by the OAuth Authorization Server.</li><li>Open the Logon Page agent.</li><li>Change the username field type from <span style="background-color: #f1f1f1;">text</span> to <span style="background-color: #f1f1f1;">password</span>.</li><li>Enable username splitting if required by the access policy.</li><li>Use equivalent settings for the applicable Logon Page agent:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">customization-group /Common/&lt;logon-page-agent&gt;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">fieldtype1 password</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">split-username true</span></p>
+</li><li>Save and apply the access policy.</li><li>Test the OAuth password-grant request with the original username.</li><li>Confirm that the Authorization Server access policy reaches the expected Allow branch.</li><li>Validate all relevant claims in the issued token.</li></ol>
+<p><em><strong>Impact of workaround</strong>: Testing showed that the JWT <code>sub</code> claim retained the original username, while the JWT username claim was empty. Confirm that downstream applications do not depend on the username claim before using this workaround.</em></p>
+<p><strong>Workaround 2: Encode and decode the username</strong></p>
+<p>If changing the Logon Page field type is not suitable, encode the username before the OAuth request and decode it in the OAuth Authorization Server access policy.</p>
+<ol><li>In the action that prepares the username for the OAuth request, encode the value as hexadecimal and add the <span style="background-color: #f1f1f1;">f5hx</span> prefix:
+<p><code>binary scan [mcget {perflow.custom}] H* h<br>return &quot;f5hx$h&quot;</code></p>
+</li><li>In the OAuth Authorization Server access policy, add a Variable Assign action after the Logon Page action and before the OAuth Authorization action.</li><li>Decode the value and assign it to <span style="background-color: #f1f1f1;">session.logon.last.username</span>:
+<p><code>set u [mcget {session.logon.last.username}]<br>if { [string match &quot;f5hx*&quot; $u] } {<br>    return [binary format H* [string range $u 4 end]]<br>}<br>return $u</code></p>
+</li><li>Configure the OAuth Authorization subject to use:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">%{session.logon.last.username}</span></p>
+</li><li>Test usernames containing special characters and usernames containing only ordinary characters.</li><li>Confirm that the Authorization Server access policy reaches the expected Allow branch.</li><li>Validate the resulting JWT claims.</li></ol>
+<p><em><strong>Impact of workaround</strong>: Testing showed that the JWT <code>sub</code> claim contained the original decoded username, while the JWT username claim retained the encoded <code>f5hx</code> value. Validate the token claims in the target environment before deploying this workaround.</em></p>
+<h2>Additional Information</h2>
+<ul><li>An HTTP 503 from the OAuth Client does not necessarily indicate that the OAuth Authorization Server virtual server was unreachable.</li><li>The Authorization Server may receive the request and reject it during Logon Page input validation.</li><li>The absence of a TCP/443 flow to the Authorization Server virtual server in a packet capture does not rule out an alternate internal connection path.</li><li>Validate downstream dependencies on the JWT <code>sub</code> and username claims after applying either workaround.</li></ul>
+</article>
+</body>
+</html>
