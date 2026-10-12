@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import io
 import json
 import tempfile
+import urllib.error
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -33,6 +35,21 @@ def result(a: dict, rowid: int) -> dict:
         "sfdetails__c": a["body"],
         "sfapplies_to_products__c": json.dumps([{"Product": p} for p in a["applies_to"]]),
     }}
+
+
+def fake_coveo(index: list[dict], max_number: int):
+    """Coveo search over `index` (rowid cursor) that rejects pages over `max_number` results
+    the way the real API rejects responses over its 20 MiB cap."""
+    def search(auth: str, *, aq: str, number: int, **_) -> dict:
+        if number > max_number:
+            body = json.dumps({"statusCode": 400,
+                               "message": "Response exceeds the maximum size of 20971520 bytes",
+                               "type": "ResponseExceededMaximumSizeException"}).encode()
+            raise urllib.error.HTTPError("https://coveo.test", 400, "Bad Request", None, io.BytesIO(body))
+        cursor = int(aq.rsplit("@rowid>", 1)[1]) if "@rowid>" in aq else 0
+        rest = [r for r in index if r["raw"]["rowid"] > cursor]
+        return {"totalCount": len(rest), "results": rest[:number]}
+    return search
 
 
 class HistoryTests(unittest.TestCase):
@@ -210,6 +227,28 @@ class CollectionTests(unittest.IsolatedAsyncioTestCase):
         query = search.call_args.kwargs["aq"]
         self.assertIn("(@f5_updated_published_date>=2026/09/03 OR @f5_original_published_date>=2026/09/03)", query)
         self.assertTrue(query.endswith("@rowid>123"))
+
+    async def test_page_over_coveo_size_cap_is_split_and_run_completes(self) -> None:
+        self.seed(*(article(f"K{i}") for i in range(1, 12)))
+        live = [result(article(f"K{i}"), i) for i in range(1, 11)]
+        with patch.object(articles, "_capture_coveo_token", new=AsyncMock(return_value="Bearer fixture")), \
+             patch.object(articles, "_coveo_search", side_effect=fake_coveo(live, max_number=3)), \
+             patch.object(articles, "_PAGE_SIZE", 8), \
+             patch.object(articles.time, "sleep"):
+            stats = await articles.run(object(), self.output)
+        # Every live article fetched and the enumeration counted as complete: K11 is pruned.
+        self.assertEqual((stats["articles"], stats["pruned"]), (10, 1))
+        self.assertEqual(sorted(self.cache.read_json("all_articles.json")),
+                         sorted(f"K{i}.html" for i in range(1, 11)))
+
+    async def test_single_article_over_size_cap_fails_instead_of_truncating(self) -> None:
+        self.seed(article("K1"))
+        with patch.object(articles, "_capture_coveo_token", new=AsyncMock(return_value="Bearer fixture")), \
+             patch.object(articles, "_coveo_search", side_effect=fake_coveo([result(article("K1"), 1)], max_number=0)), \
+             patch.object(articles.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "maximum size"):
+                await articles.run(object(), self.output)
+        self.assertTrue((self.output / "all_articles/K1.html").exists())
 
 
 if __name__ == "__main__":

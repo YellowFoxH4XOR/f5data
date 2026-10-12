@@ -9,6 +9,8 @@ token.
 Pagination is a @rowid cursor rather than discover.py's year-slicing: ~19k
 articles share a Sep 2024 date, so no date slice stays under Coveo's 5000-result
 cap, whereas `@rowid>{last}` sorted ascending never needs firstResult > 0.
+The cursor works at any page size, so a page that breaks Coveo's 20 MiB
+response cap is halved and re-requested (see _TOO_LARGE).
 
 Output:
   all_articles/{Knumber}.html : one standalone page per article — metadata
@@ -29,6 +31,7 @@ advisories, so recording every K-number here would suppress advisory discovery.
 from __future__ import annotations
 
 import html
+import http.client
 import json
 import logging
 import re
@@ -69,6 +72,10 @@ _FIELDS = [
     "sfarticle_status__c",
 ]
 _PAGE_SIZE = 1000
+# Coveo rejects any search response over 20 MiB with HTTP 400 and this error
+# type. Most 1000-article pages are 7-12 MiB, but articles with long
+# product/version lists (`sfapplies_to_products__c`) can push one past it.
+_TOO_LARGE = "ResponseExceededMaximumSizeException"
 _MAX_ATTEMPTS = 3
 _RETRY_SLEEP = 10.0
 _DESC_MAX = 200
@@ -204,6 +211,20 @@ def _render(a: dict[str, Any], description: str) -> str:
     )
 
 
+class _ResponseTooLarge(Exception):
+    """Coveo refused a page because the response would exceed its size cap."""
+
+
+def _error_body(exc: urllib.error.HTTPError) -> dict[str, Any]:
+    """Coveo's JSON error body ({statusCode, message, type, ...}); {} if unreadable."""
+    try:
+        with exc:
+            body = json.loads(exc.read())
+    except (OSError, ValueError, http.client.HTTPException):
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
 def _search_page(auth: str, cursor: str | None, number: int, *, since: str | None = None) -> dict[str, Any]:
     aq = _KB_AQ
     if since:
@@ -212,19 +233,25 @@ def _search_page(auth: str, cursor: str | None, number: int, *, since: str | Non
                f" OR @f5_original_published_date>={date_query})")
     if cursor:
         aq += f" @rowid>{cursor}"
-    last_err: Exception | None = None
+    last_err = ""
     for attempt in range(_MAX_ATTEMPTS):
         try:
             return _coveo_search(
                 auth, q="", aq=aq, number=number,
                 sort="@rowid ascending", fields=_FIELDS,
             )
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError) as exc:
-            last_err = exc
-            log.warning("articles: Coveo page failed (attempt %d/%d): %s",
-                        attempt + 1, _MAX_ATTEMPTS, exc)
-            if attempt < _MAX_ATTEMPTS - 1:
-                time.sleep(_RETRY_SLEEP)
+        except urllib.error.HTTPError as exc:
+            err = _error_body(exc)
+            if err.get("type") == _TOO_LARGE:
+                # Deterministic for this page size: retrying it is pointless.
+                raise _ResponseTooLarge(err.get("message") or str(exc)) from exc
+            last_err = f"{exc} — {err.get('type')}: {err.get('message')}" if err else str(exc)
+        except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+            last_err = str(exc)
+        log.warning("articles: Coveo page failed (attempt %d/%d): %s",
+                    attempt + 1, _MAX_ATTEMPTS, last_err)
+        if attempt < _MAX_ATTEMPTS - 1:
+            time.sleep(_RETRY_SLEEP)
     raise RuntimeError(f"articles: Coveo API failed after {_MAX_ATTEMPTS} attempts: {last_err}")
 
 
@@ -245,9 +272,19 @@ async def run(
     cursor: str | None = None
     missing_body = False
 
+    page_size = _PAGE_SIZE
     while limit is None or len(seen) < limit:
-        number = _PAGE_SIZE if limit is None else min(_PAGE_SIZE, limit - len(seen))
-        resp = _search_page(auth, cursor, number, since=since)
+        number = page_size if limit is None else min(page_size, limit - len(seen))
+        try:
+            resp = _search_page(auth, cursor, number, since=since)
+        except _ResponseTooLarge as exc:
+            if number == 1:
+                raise RuntimeError(f"articles: a single article exceeds Coveo's response cap: {exc}") from exc
+            # Keep the smaller size for the rest of the run: rowid is the
+            # indexing time, so articles updated in one batch sit together.
+            page_size = number // 2
+            log.warning("articles: %s — retrying with %d articles per page", exc, page_size)
+            continue
         if total is None:
             total = resp.get("totalCount", 0)
             log.info("articles: %d K-articles%s in the Coveo index", total,
