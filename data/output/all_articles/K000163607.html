@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163607: ClickHouse Memory Exhaustion During TTL Processing in NGINX Instance Manager</title>
+<meta name="description" content="Support Solution: ClickHouse Memory Exhaustion During TTL Processing in NGINX Instance Manager — NGINX Instance Manager may fail to configure the nms.events table TTL when ClickHouse exhausts its available memory. The failure can cause ClickHouse connection errors, NGINX Instance Manager publish…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163607">
+</head>
+<body>
+<header>
+<h1>K000163607: ClickHouse Memory Exhaustion During TTL Processing in NGINX Instance Manager</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-08</dd>
+<dt>Updated</dt><dd>2026-10-08</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Instance Manager</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163607">https://my.f5.com/manage/s/article/K000163607</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>NGINX Instance Manager may fail to configure the <span style="background-color: #f1f1f1;">nms.events</span> table TTL when ClickHouse exhausts its available memory. The failure can cause ClickHouse connection errors, NGINX Instance Manager publish timeouts, unavailable runtime sockets, NATS connectivity errors, and NGINX App Protect WAF policy compilations that remain in progress.</p>
+<p>Representative errors include:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">MEMORY_LIMIT_EXCEEDED</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">would use 6.69 GiB</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">current RSS: 5.90 GiB</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">maximum: 6.69 GiB</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">could not set TTL for nms.events table</span></p>
+<h2>Environment</h2>
+<ul><li>NGINX Instance Manager 2.22.0.</li><li>NGINX App Protect WAF policy compilation.</li><li>NGINX Open Source 1.30.3.</li><li>RHEL 9.</li><li>A host with 4 vCPUs and 8 GiB of RAM.</li><li>High metrics and event ingestion volume.</li><li>ClickHouse configured with a memory limit close to the host’s usable memory.</li><li>TTL mutations, background merges, or other ClickHouse operations running concurrently.</li></ul>
+<p>An 8 GiB host may report less usable memory because the operating system, kernel, drivers, and system firmware reserve part of the allocated memory.</p>
+<p>The NGINX Instance Manager retention settings are configured in:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">/etc/nms/nms.conf</span></p>
+<p>Example:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">ttl_configs:</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">- feature: metrics</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> ttl: 7</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">- feature: events</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> ttl: 7</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">- feature: securityevents</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> ttl: 32</span></p>
+<h2>Cause</h2>
+<p>The issue is caused by ClickHouse resource exhaustion while processing a TTL mutation for the <span style="background-color: #f1f1f1;">nms.events</span> table or while performing background data operations.</p>
+<p>A minimum-sized host has limited memory available for the operating system, NGINX Instance Manager services, ClickHouse, metrics and event ingestion, TTL processing, and background merges. When ClickHouse reaches its configured memory limit, the TTL mutation may fail. ClickHouse can then become temporarily unavailable, causing dependent NGINX Instance Manager operations to fail.</p>
+<p>The exact trigger for ClickHouse connection loss and related NGINX Instance Manager service interruptions may require additional ClickHouse server logs for confirmation.</p>
+<h2>Recommended Actions</h2>
+<h3>Reduce ClickHouse resource pressure</h3>
+<ol><li>Configure ClickHouse with a memory limit that leaves sufficient headroom for the operating system and NGINX Instance Manager services.</li><li>Do not configure ClickHouse to consume nearly all usable host memory.</li><li>Monitor memory usage during high-volume ingestion, TTL processing, background merges, and maintenance operations.</li><li>Increase host memory or processing resources if the workload regularly approaches the available limits.</li><li>Use retention periods appropriate for the metrics and event volume. A shorter retention period can reduce ClickHouse storage and processing requirements.</li></ol>
+<h3>Verify incomplete mutations</h3>
+<p>Use the supported ClickHouse metadata procedure for the deployed NGINX Instance Manager version to identify incomplete mutations for the <span style="background-color: #f1f1f1;">nms.events</span> table.</p>
+<p>The following read-only query can be used when approved for the environment:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">SELECT mutation_id, command, create_time, is_done, latest_fail_reason</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">FROM system.mutations</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">WHERE database = &#39;nms&#39;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> AND table = &#39;events&#39;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"> AND is_done = 0;</span></p>
+<p>No rows should be returned after all mutations have completed. Review any mutation with:</p>
+<ul><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">is_done = 0</span></li><li>A populated <span style="font-family: &#39;courier new&#39;, courier, monospace;">latest_fail_reason</span></li><li>A memory-limit or resource-related failure</li></ul>
+<h3>Reapply a failed TTL</h3>
+<p>If the <span style="background-color: #f1f1f1;">nms.events</span> TTL mutation failed:</p>
+<ol><li>Reduce ClickHouse memory pressure before retrying the operation.</li><li>Confirm the intended event-retention period in <span style="font-family: &#39;courier new&#39;, courier, monospace;">/etc/nms/nms.conf</span>.</li><li>Ensure the NGINX Instance Manager retention value and the ClickHouse table TTL use the same interval.</li><li>Reapply the TTL using the supported NGINX Instance Manager procedure for the deployed version.</li><li>Materialize the TTL for existing data only when required by the approved procedure.</li><li>Verify that the mutation completes successfully and that no stalled mutations remain.</li></ol>
+<p>Do not use an example retention interval unless it matches the required retention policy.</p>
+<h3>Review the ClickHouse memory setting</h3>
+<p>The ClickHouse configuration is located at:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">/etc/clickhouse-server/config.xml</span></p>
+<p>The relevant setting is:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">&lt;max_server_memory_usage&gt;...&lt;/max_server_memory_usage&gt;</span></p>
+<p>After changing the setting through an approved change procedure, restart ClickHouse during an appropriate maintenance window. The effective setting can be reviewed with:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">SELECT name, value, changed</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">FROM system.server_settings</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">WHERE name = &#39;max_server_memory_usage&#39;;</span></p>
+<h3>Post-remediation monitoring</h3>
+<p>Monitor the following after remediation:</p>
+<ul><li>ClickHouse memory consumption.</li><li>ClickHouse availability on port <span style="font-family: &#39;courier new&#39;, courier, monospace;">9000</span>.</li><li>Pending, failed, or stalled mutations.</li><li>NGINX Instance Manager service and runtime socket availability.</li><li>Configuration publish operations.</li><li>NGINX App Protect WAF policy compilation status.</li><li>NATS connectivity.</li><li>Disk usage and growth of the NGINX Instance Manager event tables.</li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">/var/log/nms/nms.log</span> for memory-limit, connection, and mutation errors.</li></ul>
+<p>A failed or inactive TTL may delay automatic cleanup of event data. Continue monitoring disk usage until TTL processing completes and the retention policy is confirmed.</p>
+<h2>Additional Information</h2>
+<ul><li>NGINX Instance Manager requires 8 GB of system memory as a minimum, but the usable memory reported by the operating system is normally lower.</li><li>ClickHouse memory configuration must leave sufficient headroom for NGINX Instance Manager services and operating-system functions.</li><li>The NGINX Instance Manager TTL settings and ClickHouse table TTL definitions must remain consistent. Mismatched values may cause the retention policy to be changed or overridden by subsequent NGINX Instance Manager operations.</li><li>Successful publishing or policy compilation after a temporary recovery does not confirm that a failed TTL mutation or resource condition has been resolved.</li><li>Attack-signature download warnings are separate from ClickHouse TTL and configuration-publishing failures unless additional evidence directly correlates them.</li></ul>
+</article>
+</body>
+</html>

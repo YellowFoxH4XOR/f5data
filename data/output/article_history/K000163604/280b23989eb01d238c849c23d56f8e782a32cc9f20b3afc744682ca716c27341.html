@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163604: NGINX Ingress Controller: Unix Socket Path Length Limit for TransportServer and VirtualServer Resources</title>
+<meta name="description" content="Support Solution: NGINX Ingress Controller: Unix Socket Path Length Limit for TransportServer and VirtualServer Resources — &quot;unix:/var/lib/nginx/passthrough-&lt;namespace&gt;_&lt;metadata.name&gt;.sock&quot;">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163604">
+</head>
+<body>
+<header>
+<h1>K000163604: NGINX Ingress Controller: Unix Socket Path Length Limit for TransportServer and VirtualServer Resources</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-08</dd>
+<dt>Updated</dt><dd>2026-10-08</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Ingress Controller</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163604">https://my.f5.com/manage/s/article/K000163604</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>NGINX Ingress Controller derives Unix domain socket paths for TransportServer passthrough listeners from the Kubernetes namespace and resource name. When the generated path exceeds the operating system limit, NGINX rejects the <span style="background-color: #f1f1f1;">listen</span> directive during configuration reload:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">too long path in the unix domain socket in</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">&quot;unix:/var/lib/nginx/passthrough-&lt;namespace&gt;_&lt;metadata.name&gt;.sock&quot;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">of the &quot;listen&quot; directive</span></p>
+<p>The affected resource may enter the following state:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">state: Invalid</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">reason: AddedOrUpdatedWithError</span></p>
+<h2>Environment</h2>
+<ul><li>NGINX Ingress Controller with NGINX Plus</li><li>Kubernetes TransportServer resources using passthrough listeners, such as <span style="background-color: #f1f1f1;">TLS_PASSTHROUGH</span></li><li>VirtualServer or TransportServer resources with long combined namespace and <span style="background-color: #f1f1f1;">metadata.name</span> values</li><li>Generated socket path template:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">/var/lib/nginx/passthrough-&lt;namespace&gt;_&lt;name&gt;.sock</span></p>
+</li></ul>
+<h2>Cause</h2>
+<p>Unix domain sockets use a fixed-size <span style="background-color: #f1f1f1;">sun_path</span> field. On Linux-based systems, the field is 108 bytes, with filesystem socket paths supporting up to approximately 107 characters.</p>
+<p>The static portion of the NGINX Ingress Controller socket path is 33 characters:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">/var/lib/nginx/passthrough-_.sock</span></p>
+<p>The combined namespace and CRD <span style="background-color: #f1f1f1;">metadata.name</span> values should therefore remain within approximately:</p>
+<ul><li>74 characters on Linux-based systems</li><li>70 characters on BSD-based systems, including macOS</li></ul>
+<p>When the combined values exceed the available length, NGINX rejects the generated configuration and the resource cannot be applied successfully.</p>
+<h2>Recommended Actions</h2>
+<ol><li><strong>Use shorter namespace and resource names.</strong>
+<p>Keep the combined namespace and <span style="background-color: #f1f1f1;">metadata.name</span> length within the applicable operating system limit. On Linux-based systems, use a combined length of no more than approximately 74 characters.</p>
+</li><li><strong>Inspect generated socket paths.</strong>
+<p>Run the following command from the NGINX Ingress Controller pod:</p>
+<span style="background-color: #f1f1f1;">kubectl -n nginx-ingress exec &quot;$POD&quot; -- sh -c \ &quot;grep -rho &#39;unix:/var/lib/nginx/passthrough-[^ ;]*&#39; /etc/nginx/stream-conf.d/ \ | sed &#39;s|^unix:||&#39; | awk &#39;{print length(\$0), \$0}&#39; | sort -rn&quot;</span>
+<p>Review paths that approach or exceed 107 characters.</p>
+</li><li><strong>Validate resource names before deployment.</strong>
+<p>Use an admission policy, such as Kyverno, to prevent TransportServer and VirtualServer resources from being created or updated when their namespace and <span style="background-color: #f1f1f1;">metadata.name</span> values would generate an overlong socket path.</p>
+<p>The validation must account for the complete socket path template and the namespace length, rather than validating only the resource name.</p>
+</li><li><strong>Enable configuration safety where supported.</strong>
+<p>NGINX Ingress Controller 5.4.x introduced the experimental <span style="background-color: #f1f1f1;">-enable-config-safety</span> option. Enable it in the controller deployment:</p>
+<span style="background-color: #f1f1f1;">kubectl -n nginx-ingress edit deploy/nginx-ingress-controller</span>
+<p>Set the option to:</p>
+<span style="background-color: #f1f1f1;">-enable-config-safety=true</span>
+<p>This feature rejects invalid configurations and helps preserve the last known good configuration. It does not increase the operating system’s Unix domain socket path limit.</p>
+</li><li><strong>Use a product fix when available.</strong>
+<p>A product fix can prevent this condition by validating the combined namespace and resource name before rendering the NGINX configuration or by shortening or hashing the generated socket path.</p>
+</li></ol>
+<h2>Additional Information</h2>
+<ul><li>Kubernetes can accept a resource even when NGINX later rejects the generated configuration.</li><li>The failure is caused by the generated Unix domain socket path, not by the functional TransportServer or VirtualServer configuration.</li><li>Increasing the Kubernetes CRD name limit does not resolve the operating system socket-path restriction.</li><li>Reducing the namespace or resource name is the current workaround.</li><li>Configuration safety can limit the impact of an invalid resource on other managed resources, but it does not remove the Unix domain socket path restriction.</li></ul>
+</article>
+</body>
+</html>

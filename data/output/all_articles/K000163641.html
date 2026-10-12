@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163641: NGINX Plus worker event loop stalls when serving Prometheus metrics via njs</title>
+<meta name="description" content="Support Solution: NGINX Plus worker event loop stalls when serving Prometheus metrics via njs — Disabling the njs-based /metrics endpoint stops the error, but removes Prometheus metrics collection.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163641">
+</head>
+<body>
+<header>
+<h1>K000163641: NGINX Plus worker event loop stalls when serving Prometheus metrics via njs</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-09</dd>
+<dt>Updated</dt><dd>2026-10-09</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Plus: 37.X.X, R36, R35, R34, R33, R32, R31, R30, R29, R28, R27, R26, R25, R24, R23, R22, R21, R20, R19, R18, R17, R16, R15, R14, R13, 37.1.X, 37.1.1, 37.1.0, 37.0.X, 37.0.6, 37.0.5, 37.0.4, 37.0.3, 37.0.2, 37.0.1, 37.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163641">https://my.f5.com/manage/s/article/K000163641</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>NGINX Plus logs a critical error indicating an event loop stall when a synchronous njs-based Prometheus metrics handler blocks a worker process:</p>
+<p style="margin-left: 20px;font-family: monospace;color: #333;">[crit] event loop was stalled for XXXX ms</p>
+<p>Disabling the njs-based <b>/metrics</b> endpoint stops the error, but removes Prometheus metrics collection.</p>
+<h2>Environment</h2>
+<ul><li>NGINX Plus</li><li>Prometheus-njs module configured for Prometheus metrics generation:</li></ul>
+<p style="margin-left: 20px;font-family: monospace;color: #333;">js_import /path/to/prometheus.js;</p>
+<p style="margin-left: 20px;font-family: monospace;color: #333;"><br>location = /metrics {<br>    js_content prometheus.metrics;<br>}</p>
+<h2>Cause</h2>
+<p>The njs metrics handler executes synchronously inside the NGINX worker process. Gathering, parsing, and formatting metrics consumes sufficient CPU time to block the worker event loop, delaying client request processing until metrics generation completes.</p>
+<h2>Recommended Actions</h2>
+<p>Deploy the standalone <b>NGINX Prometheus Exporter</b> service instead of generating Prometheus metrics synchronously through prometheus-njs. This offloads metrics collection, parsing, and formatting outside the NGINX worker event loop.<br><br></p>
+<ol><li><strong>Enable the read-only NGINX Plus API</strong><br>Configure a local, read-only NGINX Plus API endpoint and restrict access to authorized sources:
+<p style="margin-left: 20px;font-family: monospace;color: #333;">server {<br>    listen &lt;LOCAL_IP_ADDRESS&gt;:8080;<br><br>    location /api {<br>        api write=off;<br>        allow &lt;LOCAL_IP_ADDRESS&gt;;<br>        deny all;<br>    }<br>}<br><br></p>
+Validate and reload the NGINX configuration:
+<p style="margin-left: 20px;font-family: monospace;color: #333;">sudo nginx -t<br>sudo nginx -s reload<br><br></p>
+</li><li><strong>Install the NGINX Prometheus Exporter</strong><br>Download the official release tarball for your system architecture, extract the binary, and install it to <b>/usr/local/bin/</b>:
+<p style="margin-left: 20px;font-family: monospace;color: #333;">(You can find the latest nginx-prometheus-exporter release tarball at <a href="https://github.com/nginx/nginx-prometheus-exporter/releases" target="_blank" rel="noopener noreferrer">https://github.com/nginx/nginx-prometheus-exporter/releases</a>)<br><br>tar -zxvf nginx-prometheus-exporter_&lt;VERSION&gt;_linux_amd64.tar.gz<br>sudo mv nginx-prometheus-exporter /usr/local/bin/<br>sudo chmod 755 /usr/local/bin/nginx-prometheus-exporter<br>sudo restorecon -v /usr/local/bin/nginx-prometheus-exporter<br><br></p>
+</li><li><strong>Create a dedicated system account</strong><br>Create an unprivileged system user for the exporter service:
+<p style="margin-left: 20px;font-family: monospace;color: #333;">sudo useradd --system --no-create-home --shell /sbin/nologin nginx_exporter<br><br></p>
+</li><li><strong>Create the systemd service file</strong><br>Create <b>/etc/systemd/system/nginx-prometheus-exporter.service</b> with the following configuration:
+<p style="margin-left: 20px;font-family: monospace;color: #333;">[Unit]<br>Description=NGINX Prometheus Exporter<br>After=network.target nginx.service<br><br>[Service]<br>Type=simple<br>User=nginx_exporter<br>Group=nginx_exporter<br>ExecStart=/usr/local/bin/nginx-prometheus-exporter \<br>  --nginx.plus \<br>  --nginx.scrape-uri=http://&lt;LOCAL_IP_ADDRESS&gt;:8080/api<br>Restart=always<br>RestartSec=5s<br>ProtectSystem=strict<br>ProtectHome=true<br>PrivateTmp=true<br><br>[Install]<br>WantedBy=multi-user.target<br><br></p>
+</li><li><strong>Start and enable the exporter service</strong><br>Reload the systemd manager configuration, enable, and start the service:
+<p style="margin-left: 20px;font-family: monospace;color: #333;">sudo systemctl daemon-reload<br>sudo systemctl enable --now nginx-prometheus-exporter<br>sudo systemctl status nginx-prometheus-exporter<br><br></p>
+Verify the metrics endpoint (default port <b>9113</b>):
+<p style="margin-left: 20px;font-family: monospace;color: #333;">curl http://&lt;EXPORTER_HOST&gt;:9113/metrics<br><br></p>
+A valid response returns standard Prometheus metrics starting with <b># HELP</b> and <b># TYPE</b>.<br><br></li><li><strong>Configure Prometheus scrape targets</strong><br>Update <b>prometheus.yml</b> to scrape the exporter endpoint:
+<p style="margin-left: 20px;font-family: monospace;color: #333;">scrape_configs:<br>  - job_name: &quot;nginx-plus&quot;<br>    scrape_interval: 15s<br>    static_configs:<br>      - targets:<br>          - &quot;&lt;EXPORTER_HOST&gt;:9113&quot;<br><br></p>
+</li><li><strong>Remove the legacy njs metrics endpoint</strong><br>After verifying that Prometheus scrapes metrics successfully, remove the njs-based <b>/metrics</b> block from the NGINX configuration and reload NGINX:
+<p style="margin-left: 20px;font-family: monospace;color: #333;">location = /metrics {<br>    js_content prometheus.metrics;<br>}</p>
+</li></ol>
+<h2>Additional Information</h2>
+<ul><li>The <b>stall_threshold</b> directive configures the duration threshold for logging event-loop stall warnings; modifying it does not eliminate the underlying blocking workload.</li><li>Setting <b>js_engine qjs;</b> may improve execution performance in some environments, but does not eliminate synchronous execution within the worker thread.</li><li>An event-loop stall message indicates worker processing latency; it does not indicate a process crash or worker failure.</li><li>If event-loop stalls persist after offloading metrics collection, investigate third-party modules, synchronous health checks, or blocking network/DNS calls.</li></ul>
+</article>
+</body>
+</html>
