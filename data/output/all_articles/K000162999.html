@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000162999: BIG-IP DNS: NS, SOA, and CAA Queries Dropped When Local BIND Lookup Is Disabled</title>
+<meta name="description" content="Support Solution: BIG-IP DNS: NS, SOA, and CAA Queries Dropped When Local BIND Lookup Is Disabled — BIG-IP DNS answers A-record queries through GTM/Wide IP processing but does not respond to NS, SOA, or CAA queries for the same zone.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000162999">
+</head>
+<body>
+<header>
+<h1>K000162999: BIG-IP DNS: NS, SOA, and CAA Queries Dropped When Local BIND Lookup Is Disabled</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-13</dd>
+<dt>Updated</dt><dd>2026-10-13</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>F5 Distributed Cloud Services</li><li>BIG-IP DNS</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000162999">https://my.f5.com/manage/s/article/K000162999</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>BIG-IP DNS answers A-record queries through GTM/Wide IP processing but does not respond to NS, SOA, or CAA queries for the same zone.</p>
+<p>Typical symptoms include:</p>
+<ul><li>NS or SOA queries time out.</li><li>CAA queries return <em><strong>SERVFAIL</strong></em>.</li><li>Extended DNS Error (EDE) <em><strong>22</strong></em> (<em><strong>No Reachable Authority</strong></em>) is returned.</li><li>Packet captures show that queries reach the DNS listener, but no response is returned.</li><li>A-record queries continue to succeed.</li></ul>
+<p>The issue occurs when the required records exist in a ZoneRunner/local BIND zone, but the DNS profile is not configured to consult local BIND.</p>
+<h2>Environment</h2>
+<ul><li>Classic BIG-IP DNS with external UDP/53 listener virtual servers.</li><li>DNS profile settings:
+<ul><li style="font-style: italic;"><em>use-local-bind <strong>no</strong></em></li><li style="font-style: italic;"><em>unhandled-query-action <strong>drop</strong></em></li><li style="font-style: italic;"><em>enable-dns-express <strong>no</strong></em></li></ul>
+</li><li>A ZoneRunner/local BIND zone containing:
+<ul><li>SOA records.</li><li>NS records.</li><li>CAA records.</li><li>Glue A records for the authoritative name servers.</li></ul>
+</li><li>A-record responses provided by GTM/Wide IP processing.</li><li>DNSSEC enabled on the delegated upstream DNS provider.</li><li>Client traffic reaching the DNS listener without address translation when source-based BIND access control is required.</li></ul>
+<h2>Cause</h2>
+<p>The DNS listener receives queries that are not answered by the GTM/Wide IP processing path. Because <em><strong>use-local-bind </strong></em>is disabled, the listener does not consult the local BIND service for records maintained in the ZoneRunner zone.</p>
+<p>With <em><strong>unhandled-query-action </strong></em>set to <em><strong>drop</strong></em>, unanswered NS, SOA, and CAA queries are silently discarded. A-record queries continue to work because they are handled by GTM/Wide IP processing.</p>
+<h2>Answer/Recommended Actions</h2>
+<p><span style="color: #15891f;"><em><strong>Note:</strong> It is recommended to first test the configuration on a non-production zone first.</em></span></p>
+<ol><li>Confirm that the ZoneRunner zone exists on each BIG-IP DNS device and contains the required SOA, NS, CAA, and glue A records.</li><li>In the BIG-IP TMOS GUI, go to:<br>DNS &gt; Zones &gt; ZoneRunner &gt; named Configuration &gt; Options</li><li>Add an <em>allow-query</em> statement containing:
+<ul><li>The existing BIG-IP internal ACL.</li><li><em>localhost</em>, where required.</li><li>Approved DNS provider source IP addresses or CIDR ranges.</li><li>Approved certificate-validation service source IP addresses or CIDR ranges.</li><li>Any additional approved DNS client networks.<br>Example:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>allow-query {
+    localhost;
+    &lt;approved-dns-provider-ip-or-cidr&gt;;
+    &lt;approved-certificate-validation-ip-or-cidr&gt;;
+};</code></pre>
+</li></ul>
+</li><li>Add <em>allow-query</em> as a separate access-control setting. Do not use the existing statement below as a query allowlist:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>allow-transfer { localhost; };
+allow-transfer controls zone transfers and does not authorize normal DNS queries.</code></pre>
+</li><li>Do not use a DNS provider or certificate-validation service hostname as the BIND allowlist mechanism. Use approved IP addresses or CIDR ranges.</li><li>Use the ZoneRunner GUI to update the BIND configuration. <br><span style="color: #c20025;"><em><strong>Important: </strong>F5 recommends configuring BIND through the BIG-IP DNS ZoneRunner GUI rather than editing <strong>named.conf </strong>directly from the command line. Navigate to DNS &gt; Zones &gt; ZoneRunner &gt; named Configuration to add or modify the required BIND options. ZoneRunner performs syntax validation and helps prevent configuration changes from adversely affecting BIND or the ZoneRunner daemon (<strong>zrd</strong>)..<br><br></em></span></li><li>Enable local BIND lookup in the DNS profile on each required BIG-IP DNS device:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify ltm profile dns dns_profile use-local-bind yes</code></pre>
+</li><li>Initially retain the existing setting:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>unhandled-query-action drop</code></pre>
+Change this action only if NS, SOA, or CAA queries remain unanswered after enabling local BIND and confirming the ZoneRunner configuration.</li><li>If the configuration was changed through the CLI, save it:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh save sys config</code></pre>
+</li><li>Verify the results against each DNS listener:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>dig NS &lt;zone-name&gt; @&lt;dns-listener-ip&gt;
+dig SOA &lt;zone-name&gt; @&lt;dns-listener-ip&gt;
+dig CAA &lt;certificate-validation-name&gt; @&lt;dns-listener-ip&gt;
+dig A &lt;wide-ip-name&gt; @&lt;dns-listener-ip&gt;</code></pre>
+</li><li>Confirm that:
+<ul><li>NS and SOA queries return authoritative records.</li><li>CAA queries return the expected CAA policy.</li><li>Existing A-record resolution continues to work.</li><li>Each DNS listener provides the expected responses.</li></ul>
+</li><li>Confirm whether source NAT exists between the requesting client and the BIG-IP DNS listener. If NAT is present, BIND evaluates the translated source address rather than the original client address. The translated address must therefore be permitted by allow-query.</li><li>Apply and validate the configuration independently on each required BIG-IP DNS device. The change is not propagated through GTM configuration synchronization.</li></ol>
+<ul></ul>
+<ol></ol>
+<p><span style="font-family: NeusaNextProWideMedium-normal-expanded, Arial, Helvetica, sans-serif;font-size: 22px;">Additional Information</span></p>
+<ul><li>Enabling <em>use-local-bind</em> allows the DNS listener to use records maintained by the local BIND/ZoneRunner service. It does not replace GTM/Wide IP processing for records already handled by GTM.</li><li>Restricting queries with <em>allow-query</em> is appropriate only when the required source IP ranges are known and stable.</li><li>If the DNS listener must remain accessible to unrestricted users worldwide, listener-level source restrictions may not be suitable. Review DNS iRules, AFM policies, DNS rate limiting, and other security controls according to the deployment requirements.</li><li>Review the DNS and security architecture before enabling local BIND for the first time.</li><li>Configuration for one zone should not be assumed to exist for another zone. Verify each required zone separately.</li></ul>
+</article>
+</body>
+</html>

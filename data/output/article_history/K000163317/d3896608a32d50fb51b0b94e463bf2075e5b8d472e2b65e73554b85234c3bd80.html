@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163317: BIG-IP ACME account creation may fail when the configured DNS resolver or internal proxy lacks a usable TMM route</title>
+<meta name="description" content="Support Solution: BIG-IP ACME account creation may fail when the configured DNS resolver or internal proxy lacks a usable TMM route — ACME account creation on BIG-IP LTM may fail and leave the ACME provider status as Error instead of Valid when the DNS resolver or internal proxy used by the ACME provider cannot reach its next-hop…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163317">
+</head>
+<body>
+<header>
+<h1>K000163317: BIG-IP ACME account creation may fail when the configured DNS resolver or internal proxy lacks a usable TMM route</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-09-27</dd>
+<dt>Updated</dt><dd>2026-10-14</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.0.0, 17.1.0, 17.0.X, 21.X.X, 17.X.X, 21.1.X, 21.1.0, 21.0.X, 21.0.0, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163317">https://my.f5.com/manage/s/article/K000163317</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>1. Description</h2>
+<pre><code>ACME account creation on BIG-IP LTM may fail and leave the ACME provider status as Error instead of Valid when the DNS resolver or internal proxy used by the ACME provider cannot reach its next-hop or destination through the configured TMM route domain.</code></pre>
+<p>The following messages may appear in the BIG-IP <em><strong>/var/log/ltm</strong></em>:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>debug keymgmtd[6558]: 01a40000:7: curl_code: 56
+debug keymgmtd[6558]: 01a40000:7: response_code: 0
+debug keymgmtd[6558]: 01a40000:7: curl_err_str: Failure when receiving data from the peer
+debug keymgmtd[6558]: 01a40000:7: content_type:
+err keymgmtd[6558]: 01a40000:3: Failed to get ACME directory listing from https://&lt;ACME_DIRECTORY_ENDPOINT&gt;. curl_code=56,response_code=0, error=Failure when receiving data from the peer
+err keymgmtd[6558]: 01a40000:3: Cannot take account action as directory listing is invalid</code></pre>
+<p>When an internal proxy is configured, it may return: </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>HTTP/1.0 503 Service Unavailable
+Connection: close
+DNS lookup failed</code></pre>
+<pre></pre>
+<p>These messages indicate that BIG-IP did not obtain a usable response from the ACME directory. They do not, by themselves, prove that the ACME directory is unavailable, that DNS resolution failed, or that the cause is a missing route. Interpret them together with the DNS resolver logs, TMM route information, packet captures, and firewall evidence collected during the same reproduction.</p>
+<p>In the documented failure scenario, the DNS resolver assigned to the ACME internal proxy could not reach its configured nameserver through the resolver&#39;s TMM route domain. The resulting DNS failure prevented the internal proxy from establishing the outbound ACME connection.</p>
+<p>The DNS resolver and internal proxy use BIG-IP networking objects and route-domain settings. A successful shell-based DNS or HTTPS test does not necessarily validate the exact resolver and proxy path used by the ACME operation. Validate the configured DNS resolver route domain, the internal-proxy route domain, the selected TMM source address, and the corresponding packet flow.</p>
+<h2>2. Environment</h2>
+<ul><li>BIG-IP LTM</li><li>ACME provider configured with an ACME directory endpoint such as <span style="font-size: 12.6px;font-family: &#39;JetBrains Mono&#39;, monospace;">https://&lt;ACME_DIRECTORY_ENDPOINT&gt;</span></li><li>ACME provider configured with an Internal proxy
+<ul><li>Internal proxy: /Common/acme_internal_proxy</li></ul>
+</li><li>DNS resolver associated with the internal proxy
+<ul><li>DNS resolver: /Common/f5-aws-dns</li></ul>
+</li><li>TMM route domain configured for the internal proxy and DNS resolver
+<ul><li>Proxy route domain: /Common/0</li></ul>
+</li></ul>
+<h2>3. Cause</h2>
+<p>In the investigated failure scenario, the DNS resolver associated with the ACME internal proxy used a TMM route domain that had no usable path to its configured DNS nameserver.</p>
+<p>As a result:</p>
+<ul><li>The TMM DNS resolver cannot send DNS queries to the configured resolver.</li><li>DNS resolution for the ACME hostname fails with resolver-generated SERVFAIL for A and AAAA queries.</li><li>When the TMM DNS resolver cannot reach the configured DNS server, it cannot resolve the ACME hostname. The internal proxy consequently cannot establish the outbound ACME connection and may return<strong></strong><em><strong> HTTP/1.0 503 Service Unavailable</strong></em>. <strong><em>keymgmtd </em></strong>reports <em><strong>curl_code=56, response_code=0</strong></em>, and an invalid ACME directory listing.</li><li>The ACME provider reports an invalid directory listing and remains in an error state.</li><li>Successful shell-based DNS or HTTPS tests do not necessarily validate the TMM path used by the ACME transaction. The shell test and the ACME transaction may use different routing contexts, source addresses, or interfaces. Verify the route and DNS activity for the TMM route domain used by the internal proxy and DNS resolver.</li></ul>
+<p>To determine whether missing or unusable TMM routing is the cause, identify the route domain configured on both the DNS resolver and the internal proxy. Then collect DNS resolver logs, a DNS packet capture, an internal-proxy capture, and the relevant TMM route information during the same reproduction.</p>
+<ol><li>Enable temporary DNS resolver logging only if the setting is supported on the installed BIG-IP release (Debug logging can be noisy. Enable it only for the shortest period needed to reproduce the issue and monitor available local storage):
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify sys db dnscacheresolver.loglevel value debug3</code></pre>
+<ol style="list-style-type: lower-alpha;"><li>Start the captures before reproducing the issue.</li></ol>
+</li><li>Capture TMM DNS traffic:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tcpdump -s0 -nni 0.0:nnnp -w /var/tmp/acme-dns.pcap &#39;port 53&#39;
+</code></pre>
+</li><li>Capture the internal-proxy connection:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tcpdump -s0 -nni 0.0:nnnhp -w /var/tmp/acme-proxy.pcap host &lt;INTERNAL_PROXY_IP&gt; and port &lt;INTERNAL_PROXY_PORT&gt;
+</code></pre>
+<ol style="list-style-type: lower-alpha;"><li>Replace &lt;INTERNAL_PROXY_IP&gt; and &lt;INTERNAL_PROXY_PORT&gt; with the proxy address and port  shown in the keymgmtd log.</li></ol>
+</li><li>Collect comparison tests from the BIG-IP shell::
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>nslookup &lt;ACME_ENDPOINT_FQDN&gt;
+zebos -r 0 cmd &quot;show ip route&quot;
+zebos -r 0 cmd &quot;show ip route database&quot;
+date -u
+</code></pre>
+</li><li>Reproduce the issue
+<ol style="list-style-type: lower-alpha;"><li>Click Update for the ACME provider once.</li></ol>
+</li><li>Stop both captures  with Ctrl+C.</li><li>Restore normal DNS resolver logging:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh modify sys db dnscacheresolver.loglevel value notice
+</code></pre>
+</li><li>Review the evidence
+<ol style="list-style-type: lower-alpha;"><li>Check <strong><em>/var/log/ltm</em></strong> for entries similar to:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>DNScache: resolving &lt;ACME_ENDPOINT_FQDN&gt;. A IN
+DNScache: sending query
+DNScache: error sending query to auth server
+DNScache: configured stub or forward servers failed -- returning SERVFAIL
+DNScache: return error response SERVFAIL
+</code></pre>
+<ul><li>Correlate these entries with the packet capture and timestamp. The log messages support a DNS-resolution failure, but they do not alone identify whether the failure was caused by a missing route, an unreachable nameserver, a firewall policy, a return-path problem, or a DNS-server failure.</li></ul>
+</li><li>Confirm the associated <strong><em>keymgmtd </em></strong>error:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>Failed to get ACME directory listing
+curl_code=56
+response_code=0
+Failure when receiving data from the peer
+Cannot take account action as directory listing is invalid</code></pre>
+<ul><li>These messages show that keymgmtd did not obtain a usable ACME directory response. They are secondary evidence and must be interpreted together with the DNS, proxy, route, and firewall evidence.</li></ul>
+</li><li>Review the route output:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>=== route domain: 0 ===</code></pre>
+<ul><li>
+<p>Do not conclude that a route domain has no installed routes from a heading-only ZebOS response alone. First confirm that the command executed successfully and that the output represents the TMM route table for the intended route domain.</p>
+<p>The missing-route diagnosis is supported when the authoritative TMM route output shows no usable route to the configured DNS nameserver, or when the route lookup selects an egress path that is not reachable from the relevant TMM self IP.</p>
+</li><li>A shell-based nslookup test does not necessarily validate the TMM DNS resolver path. The shell command and the ACME transaction may use different routing contexts. Therefore, successful shell DNS or HTTPS tests do not, by themselves, prove that the TMM path used by the ACME internal proxy is functional. Verify the TMM route to the configured DNS resolver and correlate the result with TMM DNS logs.</li></ul>
+</li><li>In the proxy capture, the expected failure pattern is:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>HTTP/1.0 503 Service Unavailable
+Connection: close
+DNS lookup failed
+</code></pre>
+</li></ol>
+</li><li>
+<p>When the failure is caused by DNS or outbound-connectivity failure in the internal proxy, a capture may show some or all of the following:</p>
+<ul><li>The BIG-IP internal proxy listener is reachable from <strong><em><code>keymgmtd</code></em></strong>.</li><li>The TCP three-way handshake to port <em><strong><code>39443</code> </strong></em>completed successfully for this transaction.</li><li>The <code>CONNECT</code> request for the ACME endpoint reached <code><em><strong>/Common/acme_internal_proxy</strong></em></code>.</li><li>The proxy returned <code><em><strong>HTTP/1.0 503 Service Unavailable</strong></em></code>.</li><li>The proxy closed the connection before a successful <em><strong>CONNECT </strong></em>tunnel was established.</li><li>No TLS <em><strong>ClientHello </strong></em>to the ACME endpoint was visible in this proxy-leg capture.</li></ul>
+</li></ol>
+<p>This capture confirms that the failure occurred after the CONNECT request reached the internal proxy and before a successful proxy tunnel was established. The proxy-leg capture alone does not determine whether the proxy attempted an outbound connection, whether DNS resolution failed, or whether an external firewall or other network device blocked the connection. Additional DNS, route, and firewall evidence is required.</p>
+<p><em><strong>Conclusion</strong></em>: If, during the same reproduction, the TMM DNS log shows repeated failures sending queries to the configured resolver or shows resolver-generated SERVFAIL, the proxy-leg capture shows the CONNECT request reaching the internal proxy and receiving HTTP/1.0 503 Service Unavailable, and the relevant route domain has no usable route to the configured resolver, the evidence supports missing or unusable TMM routing as the cause of the ACME failure.</p>
+<p>The HTTP 503, curl_code=56, response_code=0, and invalid-directory messages are secondary symptoms in this evidence pattern. They do not, by themselves, indicate a problem with the ACME directory.</p>
+<p>If the TMM DNS and route evidence is absent, investigate the DNS resolver and forward-zone configuration, the proxy or firewall path, TLS inspection or resets, and the ACME directory response before concluding that routing is the cause.</p>
+<h2>4. Recommended Actions</h2>
+<p>A valid TMM default route in the route domain used by the ACME internal proxy and its associated DNS resolver is generally preferred because ACME hostnames may resolve to multiple or changing IP addresses over time.</p>
+<p>Route domain 0 is not automatically correct for every deployment. Configure the route in the route domain selected by the internal proxy and DNS resolver. Use route domain 0 only when it is the intended egress context for the deployment.</p>
+<p>The route must use:</p>
+<ul><li>The appropriate TMM egress interface or self IP</li><li>A TMM gateway</li><li>A gateway directly reachable through a BIG-IP interface</li><li>A firewall policy that allows the resulting TMM source address</li><li>For Classic BIG-IP TMOS, <a href="https://my.f5.com/manage/s/article/K13833" target="_blank" rel="noopener noreferrer">K13833</a> documents the static-route syntax:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>tmsh
+create /net route &lt;route-destination/mask&gt; gw &lt;TMM-gateway&gt;
+list /net route
+save /sys config</code></pre>
+</li></ul>
+<p><span style="color: #d35400;">Please note: These routing commands apply to Classic BIG-IP TMOS. They do not apply to F5OS management-layer routing.</span></p>
+<p>For a default route in the applicable Classic BIG-IP TMOS route domain, the destination would normally be represented as:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>0.0.0.0/0</code></pre>
+<p>Do not add the route only to the management routing context or to an unrelated route domain. Verify that the route is installed in the route domain selected by<strong><em> /Common/acme_internal_proxy</em></strong> and that the DNS resolver used by that proxy is associated with the intended route domain.</p>
+<h2>5. Additional Information</h2>
+<p><b>1. Alternative Fix: Specific TMM Routes</b></p>
+<p>If a TMM default route cannot be used, configure specific Classic BIG-IP TMOS routes in the applicable route domain for:</p>
+<ul><li>Every DNS server configured in the DNS resolver used by the ACME internal proxy.</li><li>The currently resolved ACME destination addresses or networks.</li></ul>
+<p>In the investigated deployment, adding TMM routes for the DNS resolver and the ACME endpoint allowed the internal proxy to complete the ACME transaction. Treat this as case-derived evidence rather than a universal result; validate the route, source address, gateway, and return path in each deployment.</p>
+<p>However, this is less reliable for ACME because the hostname can resolve to multiple or changing IP addresses. A route to only one resolved address may stop working when DNS returns a different address.</p>
+<p>Therefore:</p>
+<ul><li>Specific DNS routes are appropriate when the DNS server location is stable.</li><li>Specific ACME host routes should be treated as a workaround or controlled design choice.</li><li>A valid TMM default route is preferred because newly resolved ACME addresses can use it automatically without manual route updates.</li></ul>
+<p>The static route must use a TMM-reachable gateway and must not create an asymmetric path.</p>
+<p> </p>
+<p><b>2. Firewall Requirements</b></p>
+<p>The firewall must permit traffic from the actual TMM source or egress address selected for the applicable route domain to:</p>
+<ul><li>The configured DNS resolver over DNS, normally UDP/TCP port 53.</li><li>The resolved ACME endpoint over HTTPS, normally TCP port 443.</li><li>Any external proxy or other egress device required by the network design.</li></ul>
+<p>In the investigated deployment, TCP port 39443 was the local BIG-IP internal-proxy listener. Do not treat this port as universal; verify the listener port and topology on the affected system. It normally does not need to be allowed through the external firewall unless the network topology places that connection across a firewall.</p>
+<p>If the TMM route and DNS checks are correct but the ACME operation still fails, ask the firewall team to correlate the exact reproduction timestamp and verify:</p>
+<ul><li>Whether the TMM connection reached the firewall.</li><li>Whether DNS traffic was permitted and whether the response returned.</li><li>Whether the HTTPS connection to the resolved ACME address was permitted.</li><li>Whether the CONNECT-related traffic was allowed.</li><li>Whether TLS inspection was applied.</li><li>Which device sent the FIN or TCP reset:<br><pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>CONNECT &lt;ACME_ENDPOINT_FQDN&gt;:443 HTTP/1.1
+HTTP/1.0 503 Service Unavailable
+FIN, ACK</code></pre>
+</li><li>Whether the firewall used the expected TMM source or egress address.</li></ul>
+<p>A successful management-plane DNS or HTTPS test does not prove that the firewall permits the TMM path used by the ACME internal proxy. Correlate the exact reproduction timestamp with the TMM source address, DNS request and response, resolved ACME destination, and outbound HTTPS connection.</p>
+<p> </p>
+</article>
+</body>
+</html>
