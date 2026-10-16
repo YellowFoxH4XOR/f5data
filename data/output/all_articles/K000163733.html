@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163733: F5OS-C VELOS: Investigating High Partition Shared-Volume Utilization</title>
+<meta name="description" content="Support Solution: F5OS-C VELOS: Investigating High Partition Shared-Volume Utilization — The alarm identifies the affected partition resource but does not identify the files consuming the storage. The partition shared volume stores diagnostic data, including QKViews, packet captures, and…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163733">
+</head>
+<body>
+<header>
+<h1>K000163733: F5OS-C VELOS: Investigating High Partition Shared-Volume Utilization</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-15</dd>
+<dt>Updated</dt><dd>2026-10-15</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS Products</li><li>F5OS-C: 1.8.X, 1.8.2, 1.8.1, 1.8.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163733">https://my.f5.com/manage/s/article/K000163733</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>A VELOS system may generate an alarm indicating that a partition&#39;s shared-volume utilization is growing rapidly. An example alarm is:</p>
+<pre>Partition-1 shared volume utilization growth rate is high</pre>
+<p>The alarm identifies the affected partition resource but does not identify the files consuming the storage. The partition shared volume stores diagnostic data, including QKViews, packet captures, and core files.</p>
+<div class="important"><strong>Important:</strong> The partition shared volume is separate from the tenant-image volume.</div>
+<h2>Environment</h2>
+<ul><li>F5OS-C on a VELOS system</li><li>F5OS chassis partitions</li><li>Partition shared-volume storage</li><li>System-controller and partition management CLIs</li><li>SNMP monitoring of controller and partition storage</li></ul>
+<h2>Cause</h2>
+<p>A full or nearly full shared partition can impair diagnostic-data collection. Insufficient disk space may also contribute to unexpected system behavior. The alarm should therefore be investigated, but diagnostic files must not be deleted indiscriminately.</p>
+<h2>Answer/Recommended Actions</h2>
+<h3>1. Identify the affected partition and controller</h3>
+<ol><li>Log in to the VELOS system-controller CLI using an account with administrator access.</li><li>In operational mode, run:</li></ol>
+<pre>show system alarms
+show partitions
+show partitions volumes</pre>
+<p>Record the following information:</p>
+<ul><li>The exact alarm text and affected controller resource</li><li>The alarm creation time</li><li>The partition name associated with the affected partition ID</li><li>The partition ID</li><li>The controller that is running-active for the partition</li><li>The <strong>TOTAL SIZE</strong> and <strong>AVAILABLE SIZE</strong> of the shared volume on both controllers</li></ul>
+<div class="warning"><strong>Warning:</strong> Do not assume that the configured partition name is partition1. The partition&#39;s running-active controller may also differ from the chassis-active controller.</div>
+<h3>2. Inventory diagnostic files</h3>
+<p>Connect to the affected chassis partition&#39;s F5OS management CLI and run the following commands in operational mode:</p>
+<pre>system diagnostics qkview list
+system diagnostics qkview status
+file list path diags/shared/
+file list path diags/shared/qkview/
+system diagnostics core-files list</pre>
+<p>Review the returned filenames, dates, sizes, and controller locations. Confirm which controller holds each file before taking any cleanup action.</p>
+<h3>3. Preserve required diagnostic files</h3>
+<p>Before deleting any file:</p>
+<ul><li>Download diagnostic files that must be retained.</li><li>Do not delete a QKView while it is being collected.</li><li>Do not delete files required for an active troubleshooting investigation.</li><li>Do not delete files whose purpose or retention requirement is unknown.</li></ul>
+<p>To download a retained QKView through the partition web interface:</p>
+<ol><li>Open <strong>SYSTEM SETTINGS → File Utilities</strong>.</li><li>Navigate to diags/shared → qkview.</li><li>Select the required QKView.</li><li>Click <strong>Download</strong>.</li></ol>
+<p>For core files, retain the files until F5 Technical Support determines that they are unnecessary or analysis of the related issue is complete.</p>
+<h3>4. Delete only specifically identified, unnecessary files</h3>
+<p>Delete files only after confirming that they are no longer required for troubleshooting, auditing, or support analysis.</p>
+<h4>Delete a selected QKView</h4>
+<p>From the affected partition&#39;s operational CLI, use the exact filename returned by the QKView inventory:</p>
+<pre>system diagnostics qkview delete filename &lt;filename&gt;</pre>
+<p>If the file is located on another controller, use the controller-qualified filename when returned by the inventory. For example:</p>
+<pre>system diagnostics qkview delete filename controller-2:&lt;filename&gt;</pre>
+<p>Use the controller where the file actually resides.</p>
+<h4>Delete a selected core file</h4>
+<p>Use the complete identifier returned by the core-file inventory:</p>
+<pre>system diagnostics core-files delete files { &lt;exact-entry-returned-by-list&gt; }</pre>
+<p>The identifier includes the controller, path, and filename. Use the exact entry returned by system diagnostics core-files list. Do not construct a replacement path or remove the controller prefix.</p>
+<div class="warning"><strong>Warning:</strong> Do not use wildcards, bulk filesystem cleanup, or manually constructed paths. If the space-consuming files cannot be identified safely, stop and contact F5 Support.</div>
+<h3>5. Verify the result</h3>
+<p>Return to the system-controller CLI and run:</p>
+<pre>show partitions volumes
+show system alarms</pre>
+<p>Compare the affected partition&#39;s shared-volume rows on both controllers. Successful cleanup should:</p>
+<ul><li>Increase AVAILABLE SIZE</li><li>Leave TOTAL SIZE unchanged</li><li>Reduce the amount of retained diagnostic data</li></ul>
+<p>Review the alarm state separately. Freeing space does not by itself prove that the alarm has cleared or that continued storage growth has stopped.</p>
+<h2>Do Not Delete</h2>
+<ul><li>Files required for an active F5 Support investigation</li><li>A QKView that is currently being collected</li><li>Files whose purpose or retention requirement is unknown</li><li>The tenant-image volume contents to resolve a shared-volume alarm</li><li>Chassis-controller images or partition ISO images for this purpose</li><li>Files using wildcard or bulk filesystem deletion commands</li></ul>
+<h2>Additional Information</h2>
+<p>If the cause cannot be identified or safe cleanup cannot be determined, provide F5 Support with:</p>
+<ul><li>show system alarms output</li><li>show partitions output</li><li>show partitions volumes output</li><li>QKView inventory output</li><li>Shared-directory file listings</li><li>Core-file inventory output</li><li>The controller associated with each space-consuming file</li><li>The status of any active diagnostic collection</li></ul>
+</article>
+</body>
+</html>

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163731: Reclaiming Disk Space Used by ClickHouse Logs in NGINX Instance Manager Description</title>
+<meta name="description" content="Support Solution: Reclaiming Disk Space Used by ClickHouse Logs in NGINX Instance Manager Description — The /var filesystem in NGINX Instance Manager can reach high utilization when ClickHouse retains excessive trace and text log data under /var/lib/clickhouse. Direct deletion of individual ClickHouse…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163731">
+</head>
+<body>
+<header>
+<h1>K000163731: Reclaiming Disk Space Used by ClickHouse Logs in NGINX Instance Manager Description</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-15</dd>
+<dt>Updated</dt><dd>2026-10-15</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Instance Manager: 2.22.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163731">https://my.f5.com/manage/s/article/K000163731</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>The <span style="background-color: #f1f1f1;">/var</span> filesystem in NGINX Instance Manager can reach high utilization when ClickHouse retains excessive trace and text log data under <span style="background-color: #f1f1f1;">/var/lib/clickhouse</span>. Direct deletion of individual ClickHouse <span style="background-color: #f1f1f1;">.bin</span> files is unsafe and can corrupt table parts.</p>
+<h2>Environment</h2>
+<ul><li>NGINX Instance Manager</li><li>ClickHouse data stored under <span style="background-color: #f1f1f1;">/var/lib/clickhouse</span></li><li>ClickHouse system log tables:
+<ul><li><span style="background-color: #f1f1f1;">system.trace_log</span></li><li><span style="background-color: #f1f1f1;">system.text_log</span></li><li><span style="background-color: #f1f1f1;">system.metric_log</span></li><li><span style="background-color: #f1f1f1;">system.asynchronous_metric_log</span></li><li><span style="background-color: #f1f1f1;">system.query_log</span></li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p>ClickHouse trace-level and text-level logging can generate a large volume of diagnostic data. Without restrictive TTL settings, the following tables can grow significantly:</p>
+<ul><li><span style="background-color: #f1f1f1;">system.trace_log</span></li><li><span style="background-color: #f1f1f1;">system.text_log</span></li></ul>
+<h2>Recommended Actions</h2>
+<ol><li><strong>Back up NGINX Instance Manager</strong><br><p>Create and verify an NGINX Instance Manager backup before modifying ClickHouse configuration or retention settings.</p>
+</li><li><strong>Review ClickHouse table usage</strong><br><p>Run the following query using <span style="background-color: #f1f1f1;">clickhouse-client</span>:</p>
+<p><code>SELECT<br>    database,<br>    `table`,<br>    formatReadableSize(sum(bytes_on_disk)) AS size<br>FROM system.parts<br>WHERE active<br>GROUP BY database, `table`<br>ORDER BY sum(bytes_on_disk) DESC;</code></p>
+</li><li><strong>Do not delete ClickHouse files directly</strong><br><p>Do not use <span style="background-color: #f1f1f1;">rm</span> to delete individual files under <span style="background-color: #f1f1f1;">/var/lib/clickhouse</span>. ClickHouse manages table-part files and metadata as a unit. Removing a single column file can make the table part inconsistent.</p>
+</li><li><strong>Configure retention for trace and text logs</strong><br><p>Apply a suitable TTL to the affected system tables. For example:</p>
+<p><code>ALTER TABLE system.trace_log<br>MODIFY TTL event_time + INTERVAL 3 DAY;<br><br>ALTER TABLE system.text_log<br>MODIFY TTL event_time + INTERVAL 3 DAY;</code></p>
+<p>Select a retention period that meets operational and troubleshooting requirements.</p>
+</li><li><strong>Reduce ClickHouse logging verbosity</strong><br><p>Change the ClickHouse server logging level from <span style="background-color: #f1f1f1;">trace</span> to <span style="background-color: #f1f1f1;">error</span> in the ClickHouse server configuration. This reduces the amount of diagnostic data generated.</p>
+</li><li><strong>Restart ClickHouse when required</strong><br><p>After changing the ClickHouse configuration, check and restart the service according to the approved maintenance procedure:</p>
+<span style="background-color: #f1f1f1;">sudo systemctl status clickhouse-server</span><br><span style="background-color: #f1f1f1;">sudo systemctl restart clickhouse-server</span></li><li><strong>Verify cleanup</strong><br><p>Recheck filesystem usage:</p>
+<span style="background-color: #f1f1f1;">df -h /var</span>
+<p>Review active mutations if required:</p>
+<p><code>SELECT<br>    database,<br>    table,<br>    mutation_id,<br>    command,<br>    is_done,<br>    latest_fail_reason<br>FROM system.mutations<br>ORDER BY create_time DESC;</code></p>
+<p>TTL processing and physical disk-space reclamation may not occur immediately after the <span style="background-color: #f1f1f1;">ALTER TABLE</span> command completes.</p>
+</li></ol>
+<h2>Additional Information</h2>
+<ul><li>Do not remove individual <span style="background-color: #f1f1f1;">.bin</span> files from ClickHouse data directories.</li><li>Use ClickHouse TTL settings or other ClickHouse-native data-management commands.</li><li>Confirm that the selected retention period satisfies diagnostic and operational requirements.</li><li>Keep a verified backup before changing ClickHouse retention or logging configuration.</li><li>Perform service restarts during an approved maintenance window.</li><li>NGINX Instance Manager does not provide a dedicated cleanup script for this purpose.</li></ul>
+</article>
+</body>
+</html>

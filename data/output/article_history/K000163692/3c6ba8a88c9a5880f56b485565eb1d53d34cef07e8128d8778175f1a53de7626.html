@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163692: Reconnect Drive Mappings when connecting with Edge Client</title>
+<meta name="description" content="Support Solution: Reconnect Drive Mappings when connecting with Edge Client — Your employees rely on mapped network drives to access intranet resources at the office.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163692">
+</head>
+<body>
+<header>
+<h1>K000163692: Reconnect Drive Mappings when connecting with Edge Client</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-15</dd>
+<dt>Updated</dt><dd>2026-10-15</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163692">https://my.f5.com/manage/s/article/K000163692</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Your employees rely on mapped network drives to access intranet resources at the office. </p>
+<p>However, when working remotely, these drives appear disconnected. Even after establishing a secure VPN tunnel, Windows OS often leaves these network drives in a disconnected state until they are manually accessed or refreshed.</p>
+<pre>For example, for User &#39;user1&#39;, DC &#39;ws.lab.lan&#39;, Domain &#39;lab.lan&#39; and Shared resource &#39;\LABData&#39;:<br><br>C:\Users\user1.LAB&gt;net use<br>New connections will be remembered.<br><br>Status       Local     Remote                    Network<br>-------------------------------------------------------------------------------<br>Disconnected Y:        \\ws.lab.lan\LABData      Microsoft Windows Network<br>Disconnected Z:        \\ws\LABData              Microsoft Windows Network</pre>
+<h2>Environment</h2>
+<ul><li>APM deployed with Network Access</li><li>Edge Client package installed on a Windows device</li></ul>
+<h2>Cause</h2>
+<p>When employees connect to a VPN from home, their network drives do not automatically reconnect by themselves. </p>
+<p>The VPN creates the secure tunnel, but Windows OS does not instantly re-verify or refresh the network drive mappings the moment that tunnel is established.</p>
+<h2>Recommended Actions</h2>
+<p>This procedure allows computers to synchronize with Active Directory policies immediately upon connection establishment, executing logon scripts.</p>
+<p>You need to enable &quot;Synchronize with Active Directory policies on connection establishment&quot; in your NA resource.</p>
+<pre>Path: Access ＞＞ Connectivity / VPN ＞＞ Network Access (VPN) ＞＞ Network Access Lists ＞＞ [Select your NA resource] ＞＞ Network Settings tab ＞＞ Reconnect To Domain ＞＞ Check &quot;Synchronize with Active Directory policies on connection establishment&quot;.</pre>
+<p>Since F5 APM triggers legacy domain logon scripts using standard Windows command paths, it cannot directly execute raw PowerShell files. F5 has filed RFE ID756893 to support the execution of PowerShell script through GPO on VPN establishment. </p>
+<p>To bypass this, you need to wrap your PowerShell script inside a Windows batch (.bat) file.</p>
+<p>Register the batch file inside the GPO settings (User Configuration &gt;&gt; Policies &gt;&gt; Windows Settings &gt;&gt; Scripts (Logon)) and place both files within the NETLOGON share on your Domain Controller.</p>
+<pre>For example, for DC &#39;ws.lab.lan&#39; and Domain &#39;lab.lan&#39;,<br><br>\\ws.lab.lan\SYSVOL\lab.lan\Policies\{GUID of GPO}\User\Scripts\Logon</pre>
+<p><em style="box-sizing: border-box;color: #c20025;font-family: ProximaNova-Reg, Arial, Helvetica, sans-serif;font-size: 14px;white-space: normal;"><strong style="box-sizing: border-box;font-family: ProximaNova-Bold, Arial, Helvetica, sans-serif;font-size: 14px;line-height: 21px;">Important: These scripts are neither supported nor maintained by F5. It is a tool that may help you refreshing Drive mappings when VPN is established.  </strong></em><em style="box-sizing: border-box;color: #c20025;font-family: ProximaNova-Reg, Arial, Helvetica, sans-serif;white-space: normal;"><strong style="box-sizing: border-box;font-family: ProximaNova-Bold, Arial, Helvetica, sans-serif;font-size: 14px;line-height: 21px;">Feel free to modify these scripts at your convenience to adapt them to your environment. </strong></em></p>
+<p>The PowerShell script reads mapped drives from &#39;HKCU:\Network&#39;, so you need to map network drives with persistence enabled in order for Windows to add them to HKCU:\Network</p>
+<pre>net use Z: \\ws\LABData /persistent:yes<br>net use Y: \\ws.lab.lan\LABData /persistent:yes</pre>
+<p>Add these two files in your location on DC</p>
+<ul><li>File &quot;RefreshDrives.cmd&quot;.<br>Replace &#39;File&#39; with your own location.</li></ul>
+<pre>@echo off<br>&quot;%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe&quot; ^<br>  -NoProfile ^<br>  -ExecutionPolicy Bypass ^<br>  -WindowStyle Hidden ^<br>  -File &quot;\\lab.lan\SysVol\lab.lan\Policies\{BE4B8F8D-9116-4613-ABD7-6F835CBA10D0}\User\Scripts\Logon\RefreshDrives.ps1&quot;<br><br>exit /b %ERRORLEVEL%</pre>
+<ul><li>File &quot;RefreshDrives.ps1&quot;<br>Replace &#39;InternalServer&#39; with your Domain controller FQDN.</li></ul>
+<pre>$InternalServer = &#39;ws.lab.lan&#39;<br>$MaxAttempts = 60<br>$LogFile = Join-Path $env:TEMP &#39;F5RefreshDrives.log&#39;<br><br>function Write-Log([string]$Message) {<br>    Add-Content -LiteralPath $LogFile -Value (<br>        &#39;{0} {1}&#39; -f (Get-Date -Format &#39;yyyy-MM-dd HH:mm:ss&#39;), $Message<br>    )<br>}<br><br>$Ready = $false<br>for ($Attempt = 1; $Attempt -le $MaxAttempts; $Attempt++) {<br>    &amp; &quot;$env:SystemRoot\System32\PING.EXE&quot; -n 1 -w 1000 $InternalServer &gt; $null 2&gt;&amp;1<br>    if ($LASTEXITCODE -eq 0) {<br>        $Ready = $true<br>        break<br>    }<br>    Start-Sleep -Seconds 10<br>}<br><br>if (-not $Ready) {<br>    Write-Log &quot;Internal host did not respond; no mappings changed.&quot;<br>    exit 1<br>}<br><br>if (-not (Test-Path &#39;HKCU:\Network&#39;)) {<br>    Write-Log &#39;No saved drive mappings found in HKCU:\Network.&#39;<br>    exit 0<br>}<br><br>$Mappings = @(<br>    Get-ChildItem &#39;HKCU:\Network&#39; | ForEach-Object {<br>        $RemotePath = (Get-ItemProperty -LiteralPath $_.PSPath `<br>            -Name RemotePath -ErrorAction SilentlyContinue).RemotePath<br><br>        if ($_.PSChildName -match &#39;^[A-Z]$&#39; -and $RemotePath) {<br>            [pscustomobject]@{<br>                Drive = &quot;$($_.PSChildName):&quot;<br>                Path  = $RemotePath<br>            }<br>        }<br>    }<br>)<br><br>foreach ($Mapping in $Mappings) {<br>    $Drive = $Mapping.Drive<br>    $RemotePath = $Mapping.Path<br><br>    if (Test-Path -LiteralPath &quot;$Drive\&quot;) {<br>        Write-Log &quot;$Drive already accessible; unchanged.&quot;<br>        continue<br>    }<br><br>    if (-not (Test-Path -LiteralPath $RemotePath)) {<br>        Write-Log &quot;$Drive target unavailable or access denied: $RemotePath; unchanged.&quot;<br>        continue<br>    }<br><br>    &amp; net.exe use $Drive /delete /y &gt; $null 2&gt;&amp;1<br>    $RemoveResult = $LASTEXITCODE<br>    if ($RemoveResult -ne 0) {<br>        Write-Log &quot;$Drive could not be released (exit $RemoveResult); unchanged.&quot;<br>        continue<br>    }<br><br>    &amp; net.exe use $Drive $RemotePath /persistent:yes &gt; $null 2&gt;&amp;1<br>    $MapResult = $LASTEXITCODE<br>    if ($MapResult -eq 0) {<br>        Write-Log &quot;$Drive mapped to $RemotePath.&quot;<br>    } else {<br>        Write-Log &quot;$Drive mapping failed (exit $MapResult): $RemotePath.&quot;<br>    }<br>}</pre>
+<p>Log file &#39;F5RefreshDrives.log&#39; is created in &#39;C:\Users\&lt;user&gt;\AppData\Local\Temp&#39;</p>
+<p>After the logon script runs, the network drives will be successfully mapped and accessible to the user.</p>
+<pre>C:\Users\user1.LAB&gt;net use<br>New connections will be remembered.<br><br>Status       Local     Remote                    Network<br>-------------------------------------------------------------------------------<br>OK           Y:        \\ws.lab.lan\LABData      Microsoft Windows Network<br>OK           Z:        \\ws\LABData              Microsoft Windows Network<br>The command completed successfully.</pre>
+<h2>Additional Information</h2>
+<p>No</p>
+</article>
+</body>
+</html>

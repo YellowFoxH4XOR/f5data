@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163734: F5 ASM and APM Integration - login page (/my.policy)</title>
+<meta name="description" content="Support Solution: F5 ASM and APM Integration - login page (/my.policy) — When BIG-IP ASM is placed in front of a BIG-IP APM virtual server, requests to the APM /my.policy endpoint may be blocked after the client is redirected to that endpoint.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163734">
+</head>
+<body>
+<header>
+<h1>K000163734: F5 ASM and APM Integration - login page (/my.policy)</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-15</dd>
+<dt>Updated</dt><dd>2026-10-15</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM</li><li>BIG-IP APM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163734">https://my.f5.com/manage/s/article/K000163734</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When BIG-IP ASM is placed in front of a BIG-IP APM virtual server, requests to the APM <strong>/my.policy</strong> endpoint may be blocked after the client is redirected to that endpoint.</p>
+<p>The issue is related to ASM processing the APM <strong>/my.policy</strong> redirect and session-establishment flow.</p>
+<p>The initial application request may pass through ASM successfully. APM then returns a redirect to <strong>/my.policy</strong> and generates APM session related data (compression, encryption etc). When the client follows the redirect, the <strong>/my.policy</strong> request is processed by ASM. ASM may identify the APM-generated request, cookie, or HTTP content as a policy violation and block it before the request reaches APM.</p>
+<p>The issue is resolvedf by an iRule that disables ASM for <strong>/my.policy</strong>.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP APM</li><li>BIG-IP ASM or Advanced WAF</li><li>APM virtual server protected by a layered ASM virtual server</li><li>APM access policy using <strong><span style="background-color: #f1f1f1;">/my.policy</span></strong></li><li>SAML authentication may or may not be configured</li><li>BIG-IP 14.x or later supported releases</li></ul>
+<h2>Cause</h2>
+<p>APM generates and processes the <strong>/my.policy</strong> request as part of the access-policy and session-establishment flow. ASM may inspect this request on the layered virtual server and block it based on the configured security policy.</p>
+<p>Transparent mode does not bypass ASM processing. Requests continue to be inspected and may still be blocked when a violation is detected.</p>
+<p>The supported architecture is to place ASM on a layered virtual server in front of the APM virtual server. This allows ASM to process traffic before APM access-policy evaluation. However, APM authentication-related requests such as <strong>/my.policy</strong> require an ASM bypass.</p>
+<p>See <strong>K54217479: <a href="https://my.f5.com/manage/s/article/K54217479" target="_blank" rel="noopener noreferrer">How to protect an APM virtual server with ASM</a></strong>.</p>
+<h2>Resolution</h2>
+<h3>1. Use a layered ASM virtual server</h3>
+<p>Configure ASM on a separate client-facing virtual server and keep the APM access profile on the dedicated APM virtual server.</p>
+<p>The procedure and example layered virtual-server configuration are documented in <strong>K54217479</strong>.</p>
+<h3>2. Confirm the affected request</h3>
+<p>Before changing the ASM policy, review the ASM event logs and request details for the failed transaction.</p>
+<p>Check whether the blocked request:</p>
+<ul><li>Uses the <strong>/my.policy</strong> path.</li><li>Occurs after an APM redirect.</li><li>Contains APM session cookies such as <strong>MRHSession</strong> or <strong>LastMRH_Session</strong>.</li><li>Generates an HTTP protocol compliance violation.</li><li>Is blocked before reaching the APM virtual server.</li></ul>
+<p>Analyze the redirect response and the subsequent <strong>/my.policy</strong> request separately. In the reported behavior, the subsequent request to <span><strong>/my.policy</strong></span> is the request that must be allowed to reach APM.</p>
+<h3>3. Bypass ASM only for /my.policy</h3>
+<p><span>If the ASM event confirms that <strong>/my.policy</strong> is the affected request, create a narrowly scoped ASM bypass for that path.</span></p>
+<p>F5 documents Local Traffic Policy and iRule methods for disabling ASM for selected requests in <strong>K22021244: <a href="https://my.f5.com/manage/s/article/K22021244" target="_blank" rel="noopener noreferrer">Bypassing the BIG-IP ASM system (12.1.0 and later)</a></strong>.</p>
+<p>Example iRule:</p>
+<p><code>when HTTP_REQUEST {<br>    set path [string tolower [HTTP::path]]<br><br>    if { $path starts_with &quot;/my.policy&quot; } {<br>        ASM::disable<br>    }<br>}</code></p>
+<p>Apply the iRule to the layered ASM virtual server. Test the rule in a controlled environment and ensure that the match is limited to the required APM endpoint.</p>
+<p><span>A Local Traffic Policy can also be used. Place the specific <strong>/my.policy</strong> rule before the general ASM-processing rule and configure the action to disable ASM at request time.</span></p>
+<p>Do not bypass ASM for all traffic on the virtual server unless the security requirements and application design explicitly allow it.</p>
+<h2>Alternative policy adjustment</h2>
+<p><span>If the ASM event identifies a specific violation involving APM-generated cookies or HTTP protocol compliance, review and adjust the policy instead of bypassing the entire <strong>/my.policy</strong> request.</span></p>
+<p><strong>K13401: <a href="https://my.f5.com/manage/s/article/K13401" target="_blank" rel="noopener noreferrer">BIG-IP APM client traffic may be blocked by the BIG-IP ASM security policy</a></strong> describes related APM/ASM interactions involving:</p>
+<ul><li><span><strong>MRHSession</strong></span></li><li><span><strong>LastMRH_Session</strong></span></li><li><span>Modified domain cookies</span></li><li><span>Header names without values</span></li><li><span>Missing <strong>Host</strong> headers</span></li><li><span><strong>Host</strong> headers contain</span>ing an IP address</li></ul>
+<p>K13401 is marked <strong>Legacy Content</strong> and applies to older BIG-IP versions and configurations. Use it as related diagnostic information, not as confirmation that the same historical defect applies to the current release.</p>
+<p>Any policy relaxation should be limited to the confirmed violation and evaluated against the security requirements of the application.</p>
+<p> </p>
+</article>
+</body>
+</html>
