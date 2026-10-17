@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>K000152951: ASM false positives for legitimate traffic after an upgrade to version 17.1.x</title>
-<meta name="description" content="Support Solution: ASM false positives for legitimate traffic after an upgrade to version 17.1.x — On BIG-IP Advanced WAF (AWAF) version 17.1.x, legitimate requests may be incorrectly blocked with &quot;Illegal method&quot; violations, such as HTTP POST or GET, even when these methods are explicitly allowed…">
+<meta name="description" content="Support Solution: ASM false positives for legitimate traffic after an upgrade to version 17.1.x — After upgrade to BIG-IP ASM version 17.1.x from a preivoue TMOS version, legitimate requests may be incorrectly blocked with &quot;Illegal method&quot; violations, such as HTTP POST or GET, even when these…">
 <link rel="canonical" href="https://my.f5.com/manage/s/article/K000152951">
 </head>
 <body>
@@ -12,7 +12,7 @@
 <dl>
 <dt>Type</dt><dd>Support Solution</dd>
 <dt>Published</dt><dd>2025-08-11</dd>
-<dt>Updated</dt><dd>2025-08-11</dd>
+<dt>Updated</dt><dd>2026-10-16</dd>
 <dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP ASM: 17.1.1, 17.1.2, 17.1.0</li></ul></dd>
 <dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000152951">https://my.f5.com/manage/s/article/K000152951</a></dd>
 </dl>
@@ -20,16 +20,19 @@
 <hr>
 <article>
 <h2>Description</h2>
-<p>On BIG-IP Advanced WAF (AWAF) version 17.1.x, legitimate requests may be incorrectly blocked with &quot;Illegal method&quot; violations, such as HTTP POST or GET, even when these methods are explicitly allowed in the security policy.</p>
-<p>Error messages and logs may include the following:</p>
-<ul><li style="font-family: &#39;courier new&#39;, courier, monospace;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">ASM subsystem error: Watchdog detected failure for process. Process name: asm_config_server.pl, Failure: Insufficient number of threads (required: 3, found: 0).</span></li><li style="font-family: &#39;courier new&#39;, courier, monospace;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">dcc|ERR| [tsconfd::ASMCONFIG_CALL, update mcp device group device] Failed due to Thrift exception: connect() failed: Connection refused</span></li></ul>
+<p>After upgrade to BIG-IP ASM version 17.1.x from a preivoue TMOS version, legitimate requests may be incorrectly blocked with &quot;Illegal method&quot; violations, such as HTTP POST or GET, even when these methods are explicitly allowed in the security policy.</p>
+<p dir="auto">In addition to requests being blocked due to false positives, the following symptoms may occur after an upgrade. This list is not exhaustive (most symptoms are related to incorrect policy enforcement or false positives):</p>
+<ul dir="auto"><li>Incorrect geolocation enforcement</li><li>Local request event logging does not work properly</li><li>Attack signatures not enforced</li></ul>
 <h2>Environment</h2>
-<ul><li>BIG-IP Advanced WAF (AWAF) / ASM 17.1.x, including 17.1.2.1</li><li>Large number of ASM policies, for example, 200 or more </li><li>/var partition sized below the recommended value, for example, 4.5 GB</li><li>Upgrades or configuration sync operations involving ASM policies</li></ul>
+<ul><li>BIG-IP Advanced WAF (AWAF) / ASM 17.1.x</li><li>Large number of ASM policies, for example, 200 or more </li><li>The /var partition is undersized relative to the ASM configuration, for example, 4.5 GB</li><li>Upgrades or configuration sync operations involving ASM policies</li></ul>
 <h2>Cause</h2>
 <p>A change introduced in BIG-IP version 17.1.x altered how running ASM configurations are loaded into the bd process, requiring significantly more space in the /var partition than previous versions. If /var does not have sufficient free space during policy load, upgrade, or config sync operations, temporary files can fill the partition and cause MySQL DCC database corruption. This leads to unpredictable ASM behavior including blocking of legitimate HTTP methods and policy misalignment. This issue is tracked as Bug <a href="https://cdn.f5.com/product/bugtracker/ID1694693.html" target="_blank" rel="noopener noreferrer">ID1694693</a>.</p>
+<p>Please note that, beginning with BIG-IP 16.0.0, the /var partition on Virtual Edition (VE) systems is approximately 4.5 GB by default (refer to <a href="https://my.f5.com/manage/s/article/K53259232" target="_blank" rel="noopener noreferrer">K53259232</a>). Therefore, systems using the default /var partition size may encounter this issue relatively easily. To determine the size allocated to the /var partition in the current boot location, use the <strong>df</strong> command in bash CLI. Also, the space used in /var while loading the ASM configuration is reclaimed if the operation fails. Therefore, when an administrator checks disk usage afterward, /var may no longer appear to be full.</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;"># df -h | egrep &quot;^Filesystem|_var&quot;<br>Filesystem                             Size  Used Avail Use% Mounted on<br>/dev/mapper/vg--db--sda-set.6._var     4.4G  650M  3.5G  16% /var</span><span style="font-family: &#39;courier new&#39;, courier, monospace;"></span></p>
 <h2>Recommended Actions</h2>
-<p>There are two methods to fix the issue:</p>
-<ol><li>Follow the workaround for <a href="https://cdn.f5.com/product/bugtracker/ID1694693.html" target="_blank" rel="noopener noreferrer">ID1694693</a>, and then perform the upgrade again.</li><li>Export and re-import the security policies that demonstrate the misbehavior. This action will repopulate the ASM databases and will fix the issue. In case of large configurations and the desire to follow the same action for all policies for proactive reasons, the script below can be used.</li></ol>
+<ul><li>Roll back to the previously known-good boot location. Before re-attempt to upgrade to BIG-IP 17.1.x (or later) in a new boot location, follow the steps in <a href="https://my.f5.com/manage/s/article/K22301343" target="_blank" rel="noopener noreferrer">K22301343</a> to ensure that the /var partition in the new boot location is sufficiently sized.</li><li>If upgrading again is not desirable, follow the workaround for ID1694693 <a href="https://cdn.f5.com/product/bugtracker/ID1694693.html" target="_blank" rel="noopener noreferrer">ID1694693</a> to extend the /var partition in the current boot location, and then use one of the following workarounds:
+<ul><li>Run the upgrade script against a UCS archive to reactivate all policies contained in the archive. Follow the steps in <a href="https://my.f5.com/manage/s/article/K67645520" target="_blank" rel="noopener noreferrer">K67645520</a>.</li><li>Export and re-import the security policies on the system. This action repopulates the ASM databases and resolves the issue. For large configurations, use the script below to preform the action for all security policies on the system.</li></ul>
+</li></ul>
 <pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>1. Create the bash script export_import_apply.sh, you can use vim or nano.
 
 # vim export_import_apply_partition.sh
@@ -135,6 +138,9 @@ echo &quot;--- ASM Policy Export/Import/Apply Script Completed ---&quot;
 4. If you have additional security policies in partitions other than /Common, run the following command to process the policies in all custom partitions.
 
 # for partition in `tmsh list auth partition one-line | awk &#39;{print &quot;/&quot; $3}&#39; | grep -v Common`; do bash /var/tmp/export_import_apply_partition.sh $partition ;done</code></pre>
+<ol><li style="list-style-type: none;">
+<ol><li style="list-style-type: none;"></li></ol>
+</li></ol>
 <h2>Additional Information</h2>
 <p>None</p>
 </article>
