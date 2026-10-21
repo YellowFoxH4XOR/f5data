@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160543: Step-by-Step Guide: How to Manually Fix UCS files for F5OS migration to rSeries platforms</title>
+<meta name="description" content="Support Solution: Step-by-Step Guide: How to Manually Fix UCS files for F5OS migration to rSeries platforms — Error: trunk configurations are not supported on this platform">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160543">
+</head>
+<body>
+<header>
+<h1>K000160543: Step-by-Step Guide: How to Manually Fix UCS files for F5OS migration to rSeries platforms</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-04-06</dd>
+<dt>Updated</dt><dd>2026-04-26</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS</li><li>F5OS-A: 1.8.X, 1.7.X, 1.5.X, 1.8.3, 1.8.0, 1.7.0, 1.5.4, 1.5.3, 1.5.2, 1.5.1, 1.5.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160543">https://my.f5.com/manage/s/article/K000160543</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When migrating a BIG-IP configuration to an F5OS-A (rSeries) platform using a UCS file, the import may fail if the UCS contains configurations that are not supported on F5OS-A. Specifically, UCS files exported from BIG-IP devices that use <strong>trunk (LAG) interfaces</strong> require manual editing before they can be successfully imported on an rSeries tenant. Some of the symptoms you may observe are the following:</p>
+<p> </p>
+<ul><li>UCS import fails on F5OS-A (rSeries) tenant</li><li>Import errors referencing trunk or STP configurations</li><li>VLAN interface references to trunks prevent successful load</li></ul>
+<p>You may observe the following error messages while loading the UCS file:</p>
+<p class="ql-indent-1" style="padding-left: 40px;"><span style="font-family: courier;">Error: trunk configurations are not supported on this platform</span></p>
+<p class="ql-indent-1" style="padding-left: 40px;"><span style="font-family: courier;">Error: net stp configuration references unsupported objects</span></p>
+<h2>Environment</h2>
+<ul><li><strong>Source platform</strong>: BIG-IP (any version) configured with trunk/LAG interfaces and STP</li><li><strong>Target platform</strong>: F5OS-A (rSeries) — any model (e.g., r2000, r4000, r5000, r10000)</li><li><strong>Operating System</strong>: Linux workstation (used for UCS manipulation)</li><li><strong>Utilities required</strong>: tar, gzip, text editor (nano, vi, or similar)</li><li><strong>Relevant configuration objects</strong>:
+<ul><li><span style="font-family: courier;">net trunk</span> — LAG/trunk interface definitions</li><li><span style="font-family: courier;">net stp</span> / <span style="font-family: courier;">net stp-globals </span>— Spanning Tree Protocol configuration</li><li><span style="font-family: courier;">net vlan</span> — VLAN definitions containing <span style="font-family: courier;">interfaces </span>blocks referencing trunks</li></ul>
+</li><li><strong>UCS file</strong>: Exported from source BIG-IP via<span style="font-family: courier;"> tmsh save sys ucs</span></li></ul>
+<h2>Cause</h2>
+<p>F5OS-A (rSeries) does not support <em>net trunk</em>, <em>net stp</em>, and<em> net stp-globals</em> configurations within a BIG-IP tenant UCS. These constructs are managed at the <strong>F5OS host layer</strong>, not within the tenant. When a UCS exported from a classic BIG-IP (which manages these objects at the TMOS layer) is imported into an rSeries tenant, the import fails because the tenant has no authority over physical interface aggregation or STP. </p>
+<p>Additionally, <em>net vlan</em> objects that contain interfaces blocks referencing trunks must have those blocks removed, as interface-to-VLAN mapping is also handled at the F5OS host layer on rSeries platforms.</p>
+<p> </p>
+<h2>Answer/Recommended Actions</h2>
+<p>The following procedure describes how to manually edit and repackage a UCS file on a Linux workstation to remove unsupported configurations before importing on an rSeries tenant.</p>
+<p> </p>
+<p><strong><span style="text-decoration: underline;">Step 1: Create Working Directory</span></strong></p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">mkdir -p ~/ucs_migration</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">cd ~/ucs_migration</span></p>
+<p style="padding-left: 40px;">Verify the file is there:</p>
+<p style="padding-left: 40px;"><span style="background-color: #f1f1f1;font-family: &#39;courier new&#39;, courier, monospace;">ls -lh bigip-backup.ucs</span></p>
+<p><span style="text-decoration: underline;"><strong>Step 2: Copy the Original UCS File to Working Directory</strong></span></p>
+<p style="padding-left: 40px;">Assuming you have the UCS file in your current directory or downloads:</p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">cp /path/to/bigip-backup.ucs ~/ucs_migration/</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">cd ~/ucs_migration</span></p>
+<p style="padding-left: 40px;"><span style="color: #c0392b;">Warning: if your UCS is large the filesystem containg /home/users or /root (depending on which user you are logged in as) may be too small to copy this file to.   In such instance consider utilizing /var/tmp instead.</span></p>
+<p style="padding-left: 40px;">Verify the file is there:</p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">ls -lh bigip-backup.ucs</span></p>
+<p><span style="text-decoration: underline;"><strong>Step 3: Create Extraction Directory and Extract the UCS</strong></span></p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">mkdir ucs_temp</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">cd ucs_temp</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">tar -xzf ../bigip-backup.ucs</span></p>
+<p style="padding-left: 40px;">Note: You will see many symlink errors like:</p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">tar: config/bigip/auth/pam.d/system-auth: Cannot create symlink to &#39;ldap/system-auth&#39;: Operation not supported</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">tar: var/libdata/dpi/conf/classification_update.conf: Cannot create symlink to &#39;classification_update_empty.conf&#39;: Operation not supported</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">...</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">tar: Exiting with failure status due to previous errors</span></p>
+<p style="padding-left: 40px;">These errors are NORMAL and expected. They occur because the UCS contains symlinks to system paths that don&#39;t exist on your Linux workstation. The actual file content is extracted successfully, and these symlinks will be recreated correctly when the UCS is loaded on the target F5OS system.</p>
+<p><span style="text-decoration: underline;"><strong>Step 4: Verify Extraction Was Successful</strong></span></p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">ls -la</span></p>
+<p style="padding-left: 40px;">You should see:</p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">    config/ directory</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    etc/ directory</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    var/ directory</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    home/ directory</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    root/ directory</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    SPEC-Manifest file</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    SPEC-Files file</span></p>
+<p><span style="text-decoration: underline;"><strong>Step 5: Identify Problematic Configurations</strong></span></p>
+<p style="padding-left: 40px;">Check for trunk configurations: <span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">grep -n &quot;net trunk&quot; config/bigip_base.conf</span><br>Check for STP configurations: <span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">grep -n &quot;net stp&quot; config/bigip_base.conf</span><br>Check for VLAN configurations: <span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">grep -n &quot;net vlan&quot; config/bigip_base.conf</span><br>Check for any trunk references: <span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">grep -i &quot;trunk&quot; config/bigip_base.conf</span></p>
+<p style="padding-left: 40px;">Take note of the line numbers where these configurations appear.</p>
+<p><span style="text-decoration: underline;"><strong>Step 6: View the Configurations That Need to Be Removed</strong></span></p>
+<p style="padding-left: 40px;">To see the actual trunk configuration:<span style="font-family: &#39;courier new&#39;, courier, monospace;"> <span style="background-color: #f1f1f1;">grep -A 10 &quot;net trunk&quot; config/bigip_base.conf</span></span><br>To see the STP configuration: <span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">grep -A 15 &quot;net stp&quot; config/bigip_base.conf</span><br>To see the VLAN configurations: <span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">grep -A 12 &quot;net vlan&quot; config/bigip_base.conf | head -80</span></p>
+<p><span style="text-decoration: underline;"><strong>Step 7: Edit bigip_base.conf</strong></span></p>
+<p style="padding-left: 40px;">You can use either nano or vi. I used nano.</p>
+<p><span style="text-decoration: underline;"><strong>Step 8: Remove Unsupported Configuration Blocks</strong></span></p>
+<p style="padding-left: 40px;">A. Remove ALL net trunk configurations</p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">net trunk lag1 {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    interfaces {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        1.1</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        1.2</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    }</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    lacp enabled</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></p>
+<p style="padding-left: 40px;">Delete the entire block from net trunk lag1 { to the closing }</p>
+<p style="padding-left: 40px;">B. Remove ALL net stp configurations</p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">net stp /Common/cist {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    trunks {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        lag1 {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">            external-path-cost 2000</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">            internal-path-cost 2000</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        }</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    }</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    vlans {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        /Common/vlan_10</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        /Common/vlan_20</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        /Common/vlan_30</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        /Common/vlan_40</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        /Common/vlan_50</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    }</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></p>
+<p style="padding-left: 40px;">Delete the entire block from net stp /Common/cist { to the closing }</p>
+<p style="padding-left: 40px;">Also delete:</p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">net stp-globals {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    config-name 00-00-00-00-00-00</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></p>
+<p style="padding-left: 40px;">C. Remove interfaces sections from ALL VLANs. BEFORE (what you&#39;ll see):</p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">net vlan /Common/vlan_10 {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    dag-adjustment none</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    description internal_network</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    interfaces {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        lag1 {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">            tag-mode service</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">            tagged</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        }</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    }</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    sflow {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        poll-interval-global no</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        sampling-rate-global no</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    }</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    tag 10</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></p>
+<p style="padding-left: 40px;">AFTER (what it should look like):</p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">net vlan /Common/vlan_10 {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    dag-adjustment none</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    description internal_network</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    sflow {</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        poll-interval-global no</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">        sampling-rate-global no</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    }</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    tag 10</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></p>
+<p style="padding-left: 40px;">Remove ONLY the interfaces { ... } section, but KEEP the rest of the VLAN definition (description, sflow, tag). Repeat this for ALL VLANs that have interfaces sections referencing trunks. <span style="color: #2ecc71;"> </span></p>
+<p style="padding-left: 40px;"><span style="color: #2ecc71;">Note: after you successfully load this configuration via the rebuilt ucs file, you will need to associate your host provided lag or interface to the vlan so that traffic can flow (easily done in the webui).  If you are aware of the approriate host provided interface or lag name you <em>can</em> simply subsitute that name in interfaces stanza.</span></p>
+<p><span style="text-decoration: underline;"><strong>Step 9: Save and Exit</strong></span></p>
+<p style="padding-left: 40px;">For nano:</p>
+<p style="padding-left: 40px;">    Press Ctrl + O to save<br>    Press Enter to confirm<br>    Press Ctrl + X to exit</p>
+<p><span style="text-decoration: underline;"><strong>Step 10: Verify Changes</strong></span></p>
+<p style="padding-left: 40px;">Check that trunk configurations are gone:<span style="background-color: #f1f1f1;"> <span style="font-family: &#39;courier new&#39;, courier, monospace;">grep -n &quot;net trunk&quot; config/bigip_base.conf</span></span><br>Check that STP configurations are gone: <span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">grep -n &quot;net stp&quot; config/bigip_base.conf</span><br>Check that VLANs no longer have interface/trunk references: <span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">grep -A 10 &quot;net vlan&quot; config/bigip_base.conf | head -60</span><br>Double-check for any remaining trunk references: <span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">grep -i &quot;trunk&quot; config/bigip_base.conf</span></p>
+<p><span style="text-decoration: underline;"><strong>Step 11: Navigate Back to Parent Directory</strong></span></p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">cd ..</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">pwd</span></p>
+<p style="padding-left: 40px;">You should be in ~/ucs_migration</p>
+<p><span style="text-decoration: underline;"><strong>Step 12: Repackage the UCS File</strong></span></p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">cd ucs_temp</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">tar -czf ../bigip-fixed.ucs *</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">cd ..</span></p>
+<p style="padding-left: 40px;">Note: You may see warnings like:</p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">tar: config/customization: file changed as we read it</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">tar: config: file changed as we read it</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">tar: var/tmp/storage_temp: file changed as we read it</span></p>
+<p style="padding-left: 40px;">These warnings are NORMAL and can be ignored. They occur because tar is reading directories while creating the archive.</p>
+<p><span style="text-decoration: underline;"><strong>Step 13: Verify the New UCS Archive Structure</strong></span></p>
+<p style="padding-left: 40px;">Check the first 20 files in the archive: <span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">tar -tzf bigip-fixed.ucs | head -20</span></p>
+<p style="padding-left: 40px;">Expected output: You should see files like:</p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">config/</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">config/.auto_schema_data_security_cli.dat-uuid-excluded</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">config/.bigip_emergency.conf</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">config/.diffVersions/</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">...</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">SPEC-Files</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">SPEC-Manifest</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">etc/</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">var/</span></p>
+<p style="padding-left: 40px;">Important: There should be NO ./ prefixes at the beginning of any file paths.</p>
+<p><span style="text-decoration: underline;"><strong>Step 14: Check for Problematic ./ Prefixes</strong></span></p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">tar -tzf bigip-fixed.ucs | grep &quot;^\\./&quot;</span></p>
+<p style="padding-left: 40px;">Expected output: Nothing (empty)</p>
+<p style="padding-left: 40px;">If this command returns nothing, your UCS file is properly packaged. If it returns file paths starting with ./, the archive is incorrectly structured and will fail to import.</p>
+<p><span style="text-decoration: underline;"><strong>Step 15: Verify Critical Files Are Present</strong></span></p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">tar -tzf bigip-fixed.ucs | grep -E &quot;^(SPEC-|config/bigip_base\.conf$)&quot;</span></p>
+<p style="padding-left: 40px;">Expected output:</p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">config/bigip_base.conf</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">SPEC-Files</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">SPEC-Manifest</span></p>
+<p><span style="text-decoration: underline;"><strong>Step 16: Compare File Sizes</strong></span></p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">ls -lh bigip-backup.ucs bigip-fixed.ucs</span></p>
+<p style="padding-left: 40px;">The new file should be slightly smaller (since we removed trunk/STP config), but similar in size to the original.</p>
+<p style="padding-left: 40px;">Example output:</p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">-rw-rw-r-- 1 user user 39M Jan 1  bigip-backup.ucs</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">-rw-rw-r-- 1 user user 38M Jan 1  bigip-fixed.ucs</span></p>
+<p><span style="text-decoration: underline;"><strong>Step 17: Clean Up (Optional)</strong></span></p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">rm -rf ucs_temp</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">ls -lh</span></p>
+<p style="padding-left: 40px;">You should now see:</p>
+<p style="padding-left: 40px;">    Original: bigip-backup.ucs<br>    New fixed: bigip-fixed.ucs</p>
+<p><span style="text-decoration: underline;"><strong>Step 18: Upload and Import the Fixed UCS on the F5OS Tenant</strong></span></p>
+<p style="padding-left: 40px;">Upload the UCS file to the tenant. SSH to the tenant and import the UCS.</p>
+<p style="padding-left: 40px;"><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">ssh admin@&lt;tenant-management-ip&gt;</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">tmsh load sys ucs /shared/bigip-fixed.ucs no-license platform-migrate reset-trust</span></p>
+<p><span style="text-decoration: underline;"><strong>Step 19: Post-Import Configuration at the F5OS-A Host Level</strong></span></p>
+<p style="padding-left: 40px;">After successful import, you must manually configure the following at the F5OS-A host level (not within the tenant):</p>
+<p style="padding-left: 40px;">A. Create LAG (Link Aggregation Group) at F5OS-A Level<br>B. Create VLANs at F5OS-A Level<br>C. Assign VLANs to LAG Interface<br>D. Associate VLANs with Tenant</p>
+<p>This procedure applies specifically to UCS files from BIG-IP devices that used hardware-based trunk/LAG interfaces. UCS files from devices without trunk configurations may not require these edits. The <em>platform-migrate</em> flag in the<em> tmsh load sys ucs</em> command is required when migrating between different hardware platforms (e.g., iSeries to rSeries). The reset-trust flag is required to reset device trust relationships, which is expected when migrating to a new platform. After import, interface and VLAN configuration must be validated at the F5OS-A host layer to ensure traffic flows correctly to the tenant.</p>
+<p>For LAG and VLAN configuration at the F5OS-A host layer, refer to: F5OS-A Network Configuration on rSeries.</p>
+<h2>Additional Information</h2>
+<p><a href="https://clouddocs.f5.com/training/community/rseries-training/html/initial_setup_of_rseries_network_layer.html" target="_self">Initial Setup of the rSeries Network Layer</a></p>
+</article>
+</body>
+</html>

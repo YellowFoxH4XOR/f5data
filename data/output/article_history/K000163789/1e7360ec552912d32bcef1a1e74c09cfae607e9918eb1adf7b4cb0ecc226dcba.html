@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163789: BIG-IQ device inventory tasks stuck in STARTED or FAILED status cannot be deleted</title>
+<meta name="description" content="Support Solution: BIG-IQ device inventory tasks stuck in STARTED or FAILED status cannot be deleted — BIG-IQ device inventory tasks can sometimes become permanently stuck in the STARTED or FAILED status (often hanging at the GatherResults step). When this occurs, attempts to clear the tasks via the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163789">
+</head>
+<body>
+<header>
+<h1>K000163789: BIG-IQ device inventory tasks stuck in STARTED or FAILED status cannot be deleted</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-20</dd>
+<dt>Updated</dt><dd>2026-10-20</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163789">https://my.f5.com/manage/s/article/K000163789</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>BIG-IQ device inventory tasks can sometimes become permanently stuck in the STARTED or FAILED status (often hanging at the GatherResults step). When this occurs, attempts to clear the tasks via the GUI fail.</p>
+<h2>Environment</h2>
+<ul><li>
+<p>BIG-IQ Centralized Management 8.4.x</p>
+</li><li>
+<p>Device Inventory Tasks</p>
+</li><li>
+<p>PostgreSQL and Elasticsearch (tokumond) backend storage</p>
+</li></ul>
+<h2>Cause</h2>
+<p>The REST API worker daemon restjavad becomes deadlocked or the Elasticsearch index falls out of sync with the underlying PostgreSQL database for that specific task object. Because the REST framework cannot process updates to the corrupted record, standard API interactions are rejected, requiring manual database intervention.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>To resolve this issue, you must manually delete the corrupted task from the PostgreSQL database and flush the Elasticsearch cache. <br><br><strong>Impact of procedure:</strong> Modifying the PostgreSQL database directly carries inherent risks. F5 strongly recommends taking a full UCS backup and a VM snapshot of the BIG-IQ system before proceeding.</p>
+<ol><li>
+<p>Log in to the command line of the BIG-IQ system as the root user.</p>
+</li><li>
+<p>Stop the REST and Elasticsearch services to prevent the database from being modified while you work:<br><strong>bigstart stop restjavad tokumond</strong></p>
+</li><li>
+<p>Access the BIG-IQ PostgreSQL Database:<br><strong>psql -U postgres -d bigiq_db</strong></p>
+</li><li>
+<p>List the current device inventory tasks to identify the specific API ID of the stuck tasks. Because BIG-IQ stores the REST payload as JSONB, you must query inside the _value column:<br><strong>SELECT _value-&gt;&gt;&#39;id&#39; AS task_id, _value-&gt;&gt;&#39;status&#39; AS task_status FROM bigiqtasks.device_tasks_device_inventory;</strong></p>
+</li><li>
+<p>Delete the corrupted task by matching the API ID extracted from the JSON payload (replace <em>&lt;STUCK_API_TASK_ID&gt;</em> with the ID identified in the previous step):<br><strong>DELETE FROM bigiqtasks.device_tasks_device_inventory WHERE _value-&gt;&gt;&#39;id&#39; = &#39;&lt;STUCK_API_TASK_ID&gt;&#39;;</strong><br><span style="color: #15891f;"><em>Note: The command should return DELETE 1.</em></span></p>
+</li><li>
+<p>Exit the PostgreSQL prompt:<br><strong>\q</strong></p>
+</li><li>
+<p>Wipe the Elasticsearch index cache. Because the row was surgically removed from PostgreSQL, the Elasticsearch cache must be cleared so it is forced to rebuild from the cleaned database upon boot:<br><strong>rm -rf /var/config/rest/elasticsearch/data/*</strong></p>
+</li><li>
+<p>Restart the services:<br><strong>bigstart start tokumond restjavad</strong></p>
+</li></ol>
+<p>It will take a few minutes for BIG-IQ to come back online and re-index the database. Once the services are fully initialized, the stuck inventory task will be completely removed from the system.</p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>
