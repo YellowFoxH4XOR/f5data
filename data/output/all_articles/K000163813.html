@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163813: Troubleshooting iRuleLX Streaming Mode Request Processing Stalls on BIG-IP</title>
+<meta name="description" content="Support Solution: Troubleshooting iRuleLX Streaming Mode Request Processing Stalls on BIG-IP — iRuleLX in Streaming mode stops processing requests. The iRule continues to run in TMM, but most requests remain unprocessed, and no iRuleLX logs are generated, including logs from the business logic…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163813">
+</head>
+<body>
+<header>
+<h1>K000163813: Troubleshooting iRuleLX Streaming Mode Request Processing Stalls on BIG-IP</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-21</dd>
+<dt>Updated</dt><dd>2026-10-21</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 21.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163813">https://my.f5.com/manage/s/article/K000163813</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>iRuleLX in Streaming mode stops processing requests. The iRule continues to run in TMM, but most requests remain unprocessed, and no iRuleLX logs are generated, including logs from the business logic within the iRuleLX extension. Requests resume processing after the iRuleLX workspace is reloaded.</p>
+<p>Key characteristics:</p>
+<ul><li>Most requests remain in an unprocessed state, and only a small number are occasionally handled.</li><li>TMM and overall host performance show no degradation, and no TMM crashes or iRule errors are reported.</li><li>No iRuleLX business logic log output is produced during the stall.</li></ul>
+<p>Because iRuleLX sends data from the iRule to a control plane Node.js component, a stall with a healthy TMM typically indicates a failure in the control plane component, not in the iRule itself. Control plane failures can be caused by:</p>
+<ul><li>restjavad failures or restarts</li><li>High control plane CPU or memory contention from other processes</li><li>High TMM traffic load that starves control plane CPU, including activation of Idle Enforcer on the management/control plane CPUs</li></ul>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM with iRuleLX (Streaming mode) using the llm-router extension</li><li>Reported affected version: BIG-IP 21.1.0</li><li>Lab validation performed on BIG-IP v17.1.3 and v21.x without reproducing the issue</li><li>Lab configuration tested: 4-core, 8 GB VE with LTM, iRuleLX, and Large MGMT provisioning, with stable iRuleLX extension CPU and memory</li></ul>
+<h2>Cause</h2>
+<p>Control plane resource starvation (CPU or memory) affecting the Node.js component of iRuleLX, possibly related to restjavad memory pressure or Idle Enforcer activation during peak traffic load.</p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li><strong>Verify control plane health before enabling iRuleLX.</strong> Upload a qkview of the affected device to iHealth and confirm the following:
+<ul><li>No crashing or restarting processes</li><li>Low control plane CPU usage</li><li>Sufficient free memory after TMM allocation</li></ul>
+</li><li style="line-height: 1;"><strong>Check restjavad health.</strong> If iHealth shows restjavad failures due to lack of memory, increase its memory provisioning. Confirm sufficient free memory first, and apply these changes during a maintenance window on a standby device, because they restart TMM and can cause an HA failover if run on an active device. Example of high provisioning settings:
+<p style="line-height: 1;"><code><span style="font-family: &#39;courier new&#39;, courier, monospace;"></span><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh modify sys db provision.extramb value 4000</span></code></p>
+<p style="line-height: 1;"><code><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh modify sys db provision.restjavad.extramb value 2227</span></code></p>
+<p style="line-height: 1;"><code><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh modify sys db provision.tomcat.extramb value 300</span></code></p>
+<p style="line-height: 1;"><code><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh modify sys db restnoded.timeout value 600</span></code></p>
+<p style="line-height: 1;"><code><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh modify sys db restjavad.timeout value 600</span></code></p>
+<p style="line-height: 1;"><code><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh modify sys db icrd.timeout value 600</span></code></p>
+<p style="line-height: 1;"><code><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh modify sys httpd max-clients 25</span></code></p>
+<p style="line-height: 1;"><code><span style="font-family: &#39;courier new&#39;, courier, monospace;">bigstart restart tomcat &amp;&amp; sleep 20 &amp;&amp; bigstart restart httpd &amp;&amp; sleep 20 &amp;&amp; bigstart restart restjavad &amp;&amp; sleep 20 &amp;&amp; bigstart restart restnoded</span></code></p>
+<p style="line-height: 1;"><code><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh save sys config</span></code></p>
+<code><span style="font-family: &#39;courier new&#39;, courier, monospace;"></span></code></li><li><strong>Check for Idle Enforcer activation.</strong> Review qkview graphs to determine whether Idle Enforcer activates on the management/control plane CPUs during peak TMM load. If it does, add licensed traffic cores so that Idle Enforcer does not activate, or defer iRuleLX deployment until it no longer activates.</li><li><strong>On a VE, allocate more CPU cores</strong> to the management/control plane if control plane CPU is constrained.</li><li><strong>Monitor the iRuleLX extension</strong> during operation with the following command:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmsh show ilx plugin /Common/&lt;plugin_name&gt; extensions { &lt;name&gt; }</span></p>
+</li><li><strong>Collect diagnostic data immediately after a failure:</strong>
+<ul><li>Generate a full qkview with logs using <span style="background-color: #f1f1f1;">qkview -s0</span>. Ideally, generate it within 3 hours of the failure, because the first 3 hours of qkview graphs provide the highest granularity.</li><li>Collect a tarball of <span style="background-color: #f1f1f1;">/var/log/</span> in case the qkview omits data.</li><li>Check <span style="background-color: #f1f1f1;">/var/log/ltm</span> for TCL errors, which would indicate an iRule-side failure.</li></ul>
+</li></ol>
+<h2>Additional Information</h2>
+<ul><li>A TMM-side failure (iRule errors in <span style="background-color: #f1f1f1;">/var/log/ltm</span>, TMM crashes, or traffic impact) points to the iRule itself. A stall with a healthy TMM and no logs points to the control plane Node.js component.</li><li>Lab testing that does not reproduce the issue does not rule out the problem, because the failure is likely tied to production control plane load and conditions (such as monitoring load or high traffic) that are not present in a lab environment.</li><li>Redeploying iRuleLX on a device with unresolved control plane issues is likely to reproduce the failure.</li></ul>
+</article>
+</body>
+</html>

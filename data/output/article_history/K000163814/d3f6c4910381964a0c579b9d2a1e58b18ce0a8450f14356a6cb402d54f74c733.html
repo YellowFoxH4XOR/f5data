@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163814: ssl_ecdh_curve in a non-default server block does not disable ffdhe2048</title>
+<meta name="description" content="Support Solution: ssl_ecdh_curve in a non-default server block does not disable ffdhe2048 — Finite field group: ffdhe2048 ffdhe3072 ffdhe4096 ffdhe6144 ffdhe8192">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163814">
+</head>
+<body>
+<header>
+<h1>K000163814: ssl_ecdh_curve in a non-default server block does not disable ffdhe2048</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-21</dd>
+<dt>Updated</dt><dd>2026-10-21</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Plus: 37.0.2</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163814">https://my.f5.com/manage/s/article/K000163814</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When multiple TLS <span style="font-family: &#39;courier new&#39;, courier, monospace;">server blocks</span> share the same listen IP address and port, NGINX Plus can continue to offer the <span style="font-family: &#39;courier new&#39;, courier, monospace;">ffdhe2048</span> finite-field group even when <span style="font-family: &#39;courier new&#39;, courier, monospace;">ssl_ecdh_curve </span>in the SNI-matched, non-default server block excludes it. For example, <span style="font-family: &#39;courier new&#39;, courier, monospace;">testssl.sh</span> may report:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Finite field group: ffdhe2048 ffdhe3072 ffdhe4096 ffdhe6144 ffdhe8192</span></p>
+<h2>Environment</h2>
+<ul><li>
+<p>NGINX Plus R37 (nginx/1.29.8, nginx-plus-r37.0.4)</p>
+</li><li>
+<p>OpenSSL 3.5.5</p>
+</li><li>
+<p>Enterprise Linux 9.8</p>
+</li><li>
+<p>NGINX configured as a TLS-terminating load balancer</p>
+</li><li>
+<p>Multiple TLS server blocks sharing the same listen IP address and port</p>
+</li><li>
+<p>SSL directives configured at the server level</p>
+</li></ul>
+<h2>Cause</h2>
+<p>For shared TLS listeners, the key-exchange-group list is taken from the default server. With OpenSSL 1.0.2 and later, this list is copied to the connection when it is created and is not replaced after NGINX selects the SNI-matched server block.</p>
+<p>If <span style="font-family: &#39;courier new&#39;, courier, monospace;">ssl_ecdh_curve</span> is not configured in the default server, the default value <span style="font-family: &#39;courier new&#39;, courier, monospace;">auto</span> applies. OpenSSL then uses its configured group list, which can include <span style="font-family: &#39;courier new&#39;, courier, monospace;">ffdhe2048</span>. Consequently, an <span style="font-family: &#39;courier new&#39;, courier, monospace;">ssl_ecdh_curve</span> setting in a non-default server block does not affect the connection.</p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li>
+<p>Configure <span style="font-family: &#39;courier new&#39;, courier, monospace;">ssl_ecdh_curve</span> in the <span style="font-family: &#39;courier new&#39;, courier, monospace;">http</span> context so that all server blocks, including default servers, inherit the same group list:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">http {</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">    ssl_ecdh_curve X25519MLKEM768:X25519:secp384r1;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></p>
+<p>If finite-field groups are required, include only the permitted groups. For example:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">http {</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">    ssl_ecdh_curve X25519MLKEM768:X25519:secp384r1:ffdhe3072:ffdhe4096;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">}</span></p>
+</li><li>
+<p>Alternatively, configure <span style="font-family: &#39;courier new&#39;, courier, monospace;">ssl_ecdh_curve</span> in the default server for every TLS listen IP address and port.</p>
+</li><li>
+<p>Do not combine <span style="font-family: &#39;courier new&#39;, courier, monospace;">ssl_ecdh_curve</span> with <span style="font-family: &#39;courier new&#39;, courier, monospace;">ssl_conf_command Groups</span>, because both directives configure the OpenSSL key-exchange-group list. A server-level <span style="font-family: &#39;courier new&#39;, courier, monospace;">ssl_conf_command </span>also replaces inherited <span style="font-family: &#39;courier new&#39;, courier, monospace;">ssl_conf_command </span>directives.</p>
+</li><li>
+<p>Validate and reload the configuration:</p>
+<p><span>nginx -t</span><br><span>nginx -s reload</span></p>
+</li><li>
+<p>Verify that <span style="font-family: &#39;courier new&#39;, courier, monospace;">ffdhe2048 </span>is disabled by scanning with <span style="font-family: &#39;courier new&#39;, courier, monospace;">testssl.sh</span>, or by attempting a TLS 1.3 handshake that offers only <span style="font-family: &#39;courier new&#39;, courier, monospace;">ffdhe2048:</span></p>
+<p><span>openssl s_client -connect example.com:443 -servername example.com -tls1_3 -groups ffdhe2048</span></p>
+<p>A handshake failure indicates that <span style="font-family: &#39;courier new&#39;, courier, monospace;">ffdhe2048</span> is disabled.</p>
+</li></ol>
+<h2>Additional Information</h2>
+<p>This behavior is expected NGINX and OpenSSL behavior and is not a product defect requiring a later release. Configuring <span style="font-family: &#39;courier new&#39;, courier, monospace;">ssl_ecdh_curve</span> in the default server prevents NGINX Plus from offering <span style="font-family: &#39;courier new&#39;, courier, monospace;">ffdhe2048 </span>when that group is excluded from the configured list.</p>
+</article>
+</body>
+</html>

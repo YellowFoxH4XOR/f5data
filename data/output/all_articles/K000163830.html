@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163830: NGF Deploys Oldest NIM Compilation Instead of Latest When WAFPolicy Uses policyName</title>
+<meta name="description" content="Support Solution: NGF Deploys Oldest NIM Compilation Instead of Latest When WAFPolicy Uses policyName — When an NGINX Gateway Fabric (NGF) WAFPolicy uses spec.policySource.nimSource.policyName to pull a WAF policy from NGINX Instance Manager (NIM), NGF deploys the oldest compiled bundle of that policy…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163830">
+</head>
+<body>
+<header>
+<h1>K000163830: NGF Deploys Oldest NIM Compilation Instead of Latest When WAFPolicy Uses policyName</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-21</dd>
+<dt>Updated</dt><dd>2026-10-21</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Gateway Fabric: 2.7.X, 2.8.X, 2.6.X, 2.5.X, 2.8.0, 2.7.2, 2.7.1, 2.7.0, 2.6.8, 2.6.7, 2.6.6, 2.6.5, 2.6.4, 2.6.3, 2.6.2, 2.6.1, 2.6.0, 2.5.1, 2.5.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163830">https://my.f5.com/manage/s/article/K000163830</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When an NGINX Gateway Fabric (NGF) WAFPolicy uses <strong>spec.policySource.nimSource.policyName</strong> to pull a WAF policy from NGINX Instance Manager (NIM), NGF deploys the oldest compiled bundle of that policy instead of the most recent one. This occurs when one NIM policy has multiple compilations, for example with different <strong>appProtectWAFVersion</strong> or signature versions.</p>
+<p>Symptoms:</p>
+<ul><li>Recompiling the policy, or compiling it with newer WAF or signature versions, does not change the bundle deployed to the data plane.</li><li>The data plane keeps the WAF engine version of the first compilation. For example, <strong>wafEngineVersion</strong> 11.665.2 (WAF 5.635.2) remains deployed while the newest compilation is WAF 5.635.3.</li><li>With polling enabled, NGF logs the following message on every poll cycle, but the deployed bundle hash never matches the new checksum:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Bundle checksum changed, downloading full bundle</span></p>
+</li><li>A new WAFPolicy that points to the same NIM policy also receives the oldest bundle.</li><li>A policy whose first compilation is the newest one deploys correctly, which indicates that the first-compiled bundle is always selected.</li></ul>
+<p>Reproduced on NGF 2.6.7 and 2.7.2 with NIM 2.22.2 and 2.23.0.</p>
+<h2>Environment</h2>
+<ul><li><strong>Product:</strong> NGINX Gateway Fabric 2.6.x and 2.7.x with F5 WAF for NGINX (NAP v5)</li><li><strong>Management:</strong> NGINX Instance Manager (NIM) 2.22.x and 2.23.x</li><li><strong>Configuration:</strong> WAFPolicy with <strong>spec.type: NIM</strong> and <strong>spec.policySource.nimSource.policyName</strong> set. Polling (<strong>policySource.polling.enabled: true</strong>) is optional and does not change the behavior.</li><li><strong>Condition:</strong> The same NIM policy has more than one compiled bundle. NIM assigns all compilations of one policy the same <strong>metadata.policyUID</strong>, and each compilation has its own <strong>metadata.uid</strong>.</li></ul>
+<h2>Cause</h2>
+<p>A defect in the NGF bundle fetch logic (<strong>fetchNIM</strong> flow in the WAF fetch package):</p>
+<ol><li><strong>resolveLatestNIMPolicyUID()</strong> selects the most recently created compilation, based on <strong>metadata.created</strong>, but returns its shared <strong>metadata.policyUID</strong>. The per-compilation <strong>metadata.uid</strong> is not used.</li><li><strong>fetchNIMByUID()</strong> then queries <strong>/api/platform/v1/security/policies/bundles?policyUID=&lt;policyUID&gt;</strong>. NIM returns every compilation of the policy in ascending creation order. NGF takes <strong>resp.Items[0]</strong>, which is the oldest compilation.</li></ol>
+<p>The &quot;latest&quot; selection in step 1 is overridden in step 2. The checksum used for change detection and the content that is downloaded come from different compilations.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>There is no configuration-only fix in the WAFPolicy CRD, because it has no field for selecting a specific bundle. F5 engineering has confirmed the defect, and a fix is planned for a future release. No release version has been committed.</p>
+<p>Workaround (confirmed by F5 Support):</p>
+<ol><li>In NIM, delete the WAF security policy that NGF uses.</li><li>Recreate the policy in NIM with the same policy name.</li><li>Compile the policy with the WAF version you want to deploy.</li><li>Confirm that NGF has fetched the new bundle by checking the <code>timestamp</code> and <strong>wafEngineVersion</strong> in the bundle catalog on the NGINX data plane, and comparing them with the <strong>modified</strong> and <strong>appProtectWAFVersion</strong> values returned by the NIM bundles API.</li></ol>
+<p>Alternative used by customers (not an official F5 workaround):</p>
+<ul><li>Keep one compilation per NIM policy, and use a separate policy name for each WAF version you need.</li></ul>
+<p>Until the fix is released, avoid keeping multiple compilations of the same NIM policy if NGF must deploy the newest compilation.</p>
+<h2>Additional Information</h2>
+<ul><li><strong>Expected behavior:</strong> NGF deploys the most recently created compilation of the policy, which matches the intent of the <strong>latestNIMItem()</strong> selection.</li><li><strong>Actual behavior:</strong> NGF deploys the oldest compilation and does not update when newer compilations are created.</li><li>The NIM list endpoint has no per-bundle selector. The single-bundle endpoint <strong>/api/platform/v1/security/policies/{POLICY_UID}/bundles/{POLICY_BUNDLE_UID}</strong> returns one compilation by its <strong>metadata.uid</strong>. F5 engineering identified this endpoint as the correct method for the fix.</li><li>Upgrading NGF to 2.7.2 does not resolve this issue.</li></ul>
+</article>
+</body>
+</html>
