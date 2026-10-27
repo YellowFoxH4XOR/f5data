@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163899: Portal Access Connections Reset with &quot;Fetching cookie failed&quot;</title>
+<meta name="description" content="Support Solution: Portal Access Connections Reset with &quot;Fetching cookie failed&quot; — BIG-IP APM with Portal Access (webtop and rewrite resources)">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163899">
+</head>
+<body>
+<header>
+<h1>K000163899: Portal Access Connections Reset with &quot;Fetching cookie failed&quot;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-26</dd>
+<dt>Updated</dt><dd>2026-10-26</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.1.3</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163899">https://my.f5.com/manage/s/article/K000163899</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Applies To</h2>
+<ul><li>BIG-IP APM with Portal Access (webtop and rewrite resources)</li><li>Affected branches and fixed releases (per the <a href="https://cdn.f5.com/product/bugtracker/ID2359001.html" rel="noopener noreferrer" target="_blank">public bug tracker entry for ID2359001</a>):
+<ul><li>17.1.3.6 and later</li><li>17.5.1.10 and later</li><li>21.1.0.3 and later</li></ul>
+</li></ul>
+<h2>Symptoms</h2>
+<ul><li>After several Portal Access applications are opened in one session, the browser shows one of the following:
+<ul><li>Chrome: <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 12.6px;">ERR_EMPTY_RESPONSE</span> or <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 12.6px;">ERR_CONNECTION_RESET</span></li><li>Firefox: <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 12.6px;">PR_END_OF_FILE_ERROR</span></li></ul>
+</li><li>A packet capture shows the BIG-IP sending a TCP RST with this message: <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 12.6px;">Internal error (APM::REWRITE requested abort (ERROR Fetching cookie failed.))</span></li><li>The <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 12.6px;">/var/log/ltm</span> file contains entries like: <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 12.6px;">err tmm1[...]: 01230140:3: RST sent from ... Internal error (APM::REWRITE requested abort (ERROR Fetching cookie failed.))</span></li><li>The rewrite log contains entries like: <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 12.6px;">rewrite - RewritePlugin.cpp:3290 ...: ERROR: Fetching cookie failed.</span></li><li>The APM session stays active. Access Reports show no session end or timeout.</li><li>The failure can worsen over time. Affected users can fail on the first application, not only after the Nth one.</li></ul>
+<h2>Cause</h2>
+<p>Cookie data accumulates in the APM session as more applications are opened. Backend and security modules (such as ASM and Bot Defense) can set large cookies, which increases the cookie data the rewrite engine must process.</p>
+<h2>Resolution</h2>
+<h3>1. Upgrade to a fixed release</h3>
+<p>Install one of the fixed releases listed above, or a later release on the same branch. The fix is in a release with ID2359001, so an engineering hotfix may be needed on some builds. Follow <a href="https://my.f5.com/manage/s/article/K4918" rel="noopener noreferrer" target="_blank">K4918: Overview of the F5 critical issue hotfix policy</a> for hotfix guidance.<br><br></p>
+<h3>2. Confirm the system database variable exists</h3>
+<p>After the upgrade, verify that the variable is defined:<br><span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 12.6px;">tmsh list sys db access.http.buffersize</span></p>
+<p>If the command returns <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 12.6px;">01020036:3: The requested database variable (access.http.buffersize) was not found.</span>, do not change the value. Contact F5 Support.<br><br></p>
+<h3>3. Increase the rewrite buffer size</h3>
+<p>The default value is 16 (KB). The valid range is 4 to 128.<br><span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 12.6px;">tmsh modify sys db access.http.buffersize value 32</span></p>
+<p>If the issue persists at 32, increase the value in steps, up to 128. Test each change before moving to a higher value.<br><br></p>
+<h3>4. Validate the fix</h3>
+<ol><li>Start a new Portal Access session.</li><li>Open the same number of applications that previously failed.</li><li>Check <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 12.6px;">/var/log/ltm</span> for <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 12.6px;">Internal error (APM::REWRITE requested abort (ERROR Fetching cookie failed.))</span>. The message should not appear.</li><li>Confirm that the browser loads all applications without resets.</li></ol>
+<h2>Interim Workaround (Not a Fix)</h2>
+<p>Disabling AVR (Application Visibility and Reporting) on the affected virtual server reduced the cookie size in one customer environment and resolved the symptoms. This is a temporary measure. It does not remove the underlying cookie size limit, and it removes AVR reporting for that virtual server. Re-test after the upgrade before you re-enable HTTP Analytics or AVR.</p>
+<h2>Notes</h2>
+<ul><li>Do not apply the workaround and the buffer size change at the same time. Change one item at a time so that you can see which one has an effect.</li><li>If you open a support case, include the following:
+<ul><li>The output of <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 12.6px;">tmsh show sys version</span></li><li>The output of <span style="font-family: &#39;JetBrains Mono&#39;, monospace;font-size: 12.6px;">tmsh list sys db access.http.buffersize</span></li><li>A packet capture or rewrite log that shows the RST message</li></ul>
+</li></ul>
+</article>
+</body>
+</html>
