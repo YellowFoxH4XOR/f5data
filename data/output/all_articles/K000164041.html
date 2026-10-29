@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000164041: CIS cannot deploy configuration after BIG-IP fast failover</title>
+<meta name="description" content="Support Solution: CIS cannot deploy configuration after BIG-IP fast failover — [ERROR] [Request: 4][AS3] authentication failed, Error response from BIGIP with status code: 401 Message: X-F5-Auth-Token does not exist.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000164041">
+</head>
+<body>
+<header>
+<h1>K000164041: CIS cannot deploy configuration after BIG-IP fast failover</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-29</dd>
+<dt>Updated</dt><dd>2026-10-29</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Automation and Orchestration</li><li>F5 BIG-IP Container Ingress Services</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000164041">https://my.f5.com/manage/s/article/K000164041</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When CIS 2.20.4 connects to a BIG-IP Active-Standby pair through a Floating Self IP, an AS3 POST sent shortly after a failover can be rejected by the newly Active device:</p>
+<pre>[ERROR] [Request: 4][AS3] authentication failed, Error response from BIGIP with status code: 401 Message: X-F5-Auth-Token does not exist.</pre>
+<p>The affected VirtualServer shows <code>status: ERROR</code></p>
+<p>The condition clears when CIS obtains a new token, or when a POST succeeds after the old token expires.</p>
+<h2>Environment</h2>
+<ul><li><strong>Product:</strong> F5 Container Ingress Services (CIS) 2.20.4</li><li><strong>BIG-IP:</strong> Active-Standby HA pair</li><li><strong>CIS connection:</strong> Floating Self IP configured as <code>bigip-url</code></li></ul>
+<h2>Cause</h2>
+<ul><li>Token Manager logs showed CIS continuing to use the token issued by the previously Active BIG-IP after failover.</li><li>The AS3 POST returned <code>401 X-F5-Auth-Token does not exist</code> until the token was refreshed.</li><li>A failover followed by a CIS deployment within roughly 30–60 seconds may fail, because AS3 on the new Active device may not be ready yet.</li><li>The 401 occurs because CIS reuses a token from the former Active device, or sends a deployment before AS3 on the new Active device is ready.</li></ul>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>Method A: Wait for token expiry, then trigger a POST</strong></p>
+<ol><li>Wait for the token to expire (default is 20 minutes ).</li><li>Trigger a configuration update so CIS sends a POST.</li><li>CIS obtains a token from the newly Active BIG-IP.</li></ol>
+<p><strong>Method B: Restart (roll out) CIS</strong></p>
+<p><span style="background-color: #f1f1f1;">kubectl -n kube-system rollout restart deploy/cis-k8s-f5-bigip-ctlr</span></p>
+<p>Confirm the deployment name in your cluster before running the command.</p>
+<h3>Verification (read-only)</h3>
+<p><span style="background-color: #f1f1f1;">kubectl -n kube-system logs deploy/cis-k8s-f5-bigip-ctlr --since=3m | grep -Ei &#39;x509|certificate|tls|401|403|refused|timeout|\[ERROR\]|post resulted&#39;</span></p>
+<p><span style="background-color: #f1f1f1;">kubectl -n kube-system logs -f deploy/cis-k8s-f5-bigip-ctlr --timestamps | grep --line-buffered -E &#39;Token Manager|UNAUTHORIZED|post resulted|AS3\]\[POST\]&#39;</span></p>
+<p><span style="background-color: #f1f1f1;">kubectl get virtualserver &lt;name&gt; -n &lt;namespace&gt; -o yaml</span></p>
+<h3>Preventive measure</h3>
+<p>Avoid starting a CIS deployment within about 60 seconds of an HA failover. Confirm that the newly Active BIG-IP is responding before you change configuration.</p>
+<h2>Additional Information</h2>
+<ul><li>None.</li></ul>
+</article>
+</body>
+</html>

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000164042: Tenant&#x27;s  IP address changed from static to dynamic after updating host OS</title>
+<meta name="description" content="Support Solution: Tenant&#x27;s  IP address changed from static to dynamic after updating host OS — A BIG-IP tenant&#x27;s statically configured management IP address changes to a DHCP-assigned address, even though DHCP is disabled for management.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000164042">
+</head>
+<body>
+<header>
+<h1>K000164042: Tenant&#x27;s  IP address changed from static to dynamic after updating host OS</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-29</dd>
+<dt>Updated</dt><dd>2026-10-29</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP AFM: 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0</li><li>BIG-IP APM: 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0</li><li>BIG-IP ASM: 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0</li><li>BIG-IP DNS: 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0</li><li>BIG-IP LTM: 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0</li><li>BIG-IP SSL Orchestrator: 17.X.X, 17.5.X, 17.5.0, 17.1.X, 17.1.3, 17.1.1, 17.1.0, 17.0.X, 17.0.0</li><li>BIG-IP DDoS Hybrid Defender: 17.X.X, 17.5.X, 17.5.0, 17.1.X, 17.1.0, 17.0.X, 17.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000164042">https://my.f5.com/manage/s/article/K000164042</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>A BIG-IP tenant&#39;s statically configured management IP address changes to a DHCP-assigned address, even though DHCP is disabled for management.</p>
+<ul><li><strong>Symptoms:</strong>
+<ul><li>The tenant management IP differs from the configured static address.</li><li>Control-plane communication may be affected, including management access and HA communication.</li></ul>
+</li><li><strong>Relevant log and process observations:</strong>
+<ul><li><code>platform_agent_startup</code> logs an interface name change for the internal host-facing interface (hnet), for example:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Interface name for pci addr:03:00.0 and virtio2 device is eth7</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">delete old dhcp config files as system is switch to eth7 from eth2</span></p>
+</li><li>A <span style="background-color: #f1f1f1;">dhclient</span> process for <strong>eth2</strong> (<span style="background-color: #f1f1f1;">/sbin/dhclient ... -cf ... -lf ...</span>) continues to run after the interface name changes. This is visible with <span style="background-color: #f1f1f1;">ps aux</span>.</li><li>The DHCP configuration file for eth2 is removed, but the running process is not stopped.</li></ul>
+</li><li><strong>Mechanism:</strong> When the internal interface is renumbered, the old <span style="background-color: #f1f1f1;">dhclient</span> process is left running on the old interface name. If that name is later reassigned to the management interface, a DHCP lease renewal on it can apply a DHCP address to management.</li></ul>
+<h2>Environment</h2>
+<ul><li><strong>Host software:</strong> F5OS 1.8.0 upgraded to 1.8.4-HR-1</li><li><strong>Tenant software:</strong> BIG-IP 17.1.3.2 (affected tenant, as recorded in boot logs). Affected versions are listed in <a href="https://cdn.f5.com/product/bugtracker/ID2131833.html" target="_blank" rel="noopener noreferrer">Bug ID 2131833</a>.</li><li><strong>Configuration:</strong>
+<ul><li>Tenant management IP configured as static on the F5OS host, with DHCP disabled for management.</li><li>Two-device HA configuration with each device as a tenant on a separate F5OS host, connected through Layer 2 switches.</li></ul>
+</li><li><strong>Interface behavior:</strong>
+<ul><li>The internal host-facing interface (hnet) is normally <strong>eth2</strong> in the tenant. It is used by platform_agent to configure the guest management address. Its address is in the internal range assigned by the F5OS host, such as 10.0.0.0 - 10.255.255.255 (10/8 prefix).</li><li>Interface enumeration can change between reboots (eth2 to eth7 and back to eth2).</li></ul>
+</li></ul>
+<h2>Cause</h2>
+<ul><li><a href="https://cdn.f5.com/product/bugtracker/ID2131833.html" target="_blank" rel="noopener noreferrer">Bug ID 2131833</a>: A stale <span style="background-color: #f1f1f1;">dhclient</span> process is not terminated when the hnet interface is renumbered. This leaves a DHCP client bound to an interface name that later becomes the management interface.</li><li>This issue is rare. A fix for <a href="https://cdn.f5.com/product/bugtracker/ID2131833.html" target="_blank" rel="noopener noreferrer">Bug ID 2131833</a> is available in later releases. Contact F5 Support to confirm fix availability for your release train.</li></ul>
+<h2>Answer/Recommended Actions</h2>
+<p><strong>Immediate check:</strong></p>
+<ol><li>On the affected tenant, confirm the management IP matches the configured value.</li><li>Run <span style="background-color: #f1f1f1;">ps aux | grep dhclient</span> and confirm that <span style="background-color: #f1f1f1;">dhclient</span> runs only on the expected internal interface.</li><li>Confirm the management interface name and MAC address. If the interface associated with a running <span style="background-color: #f1f1f1;">dhclient</span> process is now the management interface, the tenant is affected.</li></ol>
+<p><strong>Recovery options (apply only with guidance from F5 Support):</strong></p>
+<ol><li><strong>Tenant reconfiguration:</strong> Set the tenant to Configured, set the management IP address, and then set the tenant to Deployed. This may need to be done twice as the management IP may only be re-proposed if it differs from the last deployed value.</li></ol>
+<p><strong>Preventive steps:</strong></p>
+<ul><li>After any F5OS host upgrade or tenant reboot, verify that <span style="background-color: #f1f1f1;">dhclient</span> runs only on the expected interface and that the management IP matches the configured value.</li><li>Plan for a release that includes the <a href="https://cdn.f5.com/product/bugtracker/ID2131833.html" target="_blank" rel="noopener noreferrer">Bug ID 2131833</a> fix if this behavior affects your environment. Engineering Hotfix policy is described in <a href="https://my.f5.com/manage/s/article/K4918" target="_blank" rel="noopener noreferrer">K4918: Overview of the F5 critical issue hotfix policy</a>.</li></ul>
+<h2>Additional Information</h2>
+<ul><li>The DHCP lease that changed the management address was tied to the internal interface, not a physical front-panel interface. Management DHCP was disabled.</li><li>Log entries of the form <span style="background-color: #f1f1f1;">HA Connection with peer ... lost</span> for <strong>traffic-group</strong> reflect the connection mirroring channel. Connection mirroring was not in use in this environment, so these entries are not, by themselves, evidence of the management IP issue.</li><li>The interface name for the hnet can differ after a reboot. Expect eth2 or another name after reboot, and check which interface is the management interface before you troubleshoot DHCP behavior.</li></ul>
+</article>
+</body>
+</html>

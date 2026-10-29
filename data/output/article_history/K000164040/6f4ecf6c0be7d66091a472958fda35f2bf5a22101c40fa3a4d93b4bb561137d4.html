@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000164040: Multiple Device Certificates and PEM Bundle Support in CIS</title>
+<meta name="description" content="Support Solution: Multiple Device Certificates and PEM Bundle Support in CIS — When F5 Container Ingress Services (CIS) connects to a BIG-IP high-availability (HA) pair through a Floating Self IP with insecure: false Each BIG-IP can present its own device certificate. CIS must…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000164040">
+</head>
+<body>
+<header>
+<h1>K000164040: Multiple Device Certificates and PEM Bundle Support in CIS</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-29</dd>
+<dt>Updated</dt><dd>2026-10-29</dd>
+<dt>Applies to</dt><dd><ul><li>F5 Automation and Orchestration</li><li>F5 BIG-IP Container Ingress Services</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000164040">https://my.f5.com/manage/s/article/K000164040</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When F5 Container Ingress Services (CIS) connects to a BIG-IP high-availability (HA) pair through a Floating Self IP with <code>insecure: false</code> Each BIG-IP can present its own device certificate. CIS must trust the certificate presented by whichever device is Active. This article explains how to provide more than one BIG-IP device certificate to CIS 2.20.4.</p>
+<h2>Environment</h2>
+<ul><li><strong>Product:</strong> F5 Container Ingress Services (CIS) 2.20.4</li><li><strong>Platform:</strong> Red Hat OpenShift Container Platform (OCP)</li><li><strong>BIG-IP:</strong> Active-Standby HA pair</li><li><strong>CIS connection:</strong> Floating Self IP configured as <code>bigip-url: &lt;Floating_IP&gt;</code></li><li><strong>TLS verification:</strong> <code>insecure: false</code></li><li><strong>Certificates:</strong> One self-signed device certificate on each BIG-IP</li></ul>
+<h2>Cause</h2>
+<p>None. This is a configuration task, not a defect.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>CIS 2.20.4 trusts multiple BIG-IP device certificates through a single <code>trusted-certs-cfgmap</code> A multi-certificate PEM bundle was accepted by CIS with tag <strong>insecure: false </strong>(means enforced certificate check)<code>insecure: false</code></p>
+<h3>Option 1: One PEM bundle in one ConfigMap key (tested)</h3>
+<ol><li>Collect the device certificate from each BIG-IP. Include certificates only. CIS does not need the private keys.</li><li>Combine the certificates into one PEM file:<br><pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>cat bigip1.crt bigip2.crt &gt; bundle.pem</code></pre>
+</li><li>Confirm the bundle.pem contains all certificate
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>cat bundle.pem</code></pre>
+ Output should be<code>-----BEGIN CERTIFICATE-----</code> and <code>-----END CERTIFICATE-----</code></li><li>Create the ConfigMap in the namespace where CIS runs:<br><pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>kubectl create configmap trusted-certs --from-file=./bundle.pem -n kube-system</code></pre>
+</li><li>Confirm that the ConfigMap contains every certificate. <br> block should appear under
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>kubectl -n kube-system get cm trusted-certs -o yaml
+kubectl -n kube-system describe configmap trusted-certs
+kubectl -n kube-system get cm trusted-certs -o jsonpath=&#39;{.data.server_cert\.pem}&#39; | \
+openssl x509 -noout -subject -issuer -dates -fingerprint -sha256 -text | \
+grep -E &#39;Subject:|Issuer:|Not |Fingerprint|Subject Alternative|IP Address|DNS&#39;</code></pre>
+</li><li>Set the following CIS arguments in the deployment:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>--insecure=false
+--trusted-certs-cfgmap=kube-system/trusted-certs</code></pre>
+</li><li>Confirm that CIS starts without certificate errors:
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>kubectl -n kube-system logs deploy/cis-k8s-f5-bigip-ctlr --since=3m | grep -Ei &#39;x509|certificate|tls|\[ERROR\]&#39;</code></pre>
+</li></ol>
+<h3>Certificate requirements for HA with a Floating Self IP</h3>
+<p>Each device certificate SAN should include:</p>
+<ul><li>The Floating Self IP address</li><li>Each BIG-IP hostname (DNS name)</li><li>The self IP address of each device</li></ul>
+<p>With these entries, the certificate name matches the address CIS connects to, regardless of which device is Active.</p>
+<h3>Certificate changes</h3>
+<p>When a BIG-IP or CA certificate is renewed, update the ConfigMap with the new certificate and restart CIS, as described in the CIS Installation guide. Test this in a non-production environment first.</p>
+<h2>Additional Information</h2>
+<ul><li>Failover does not require a CIS restart for certificate validation. CIS validated the certificate presented by the newly Active device without a restart.</li><li>CIS accepts the <code>insecure</code> parameter with a default of <code>false</code>. Setting <code>insecure: true</code> disables SSL verification and is not recommended.</li><li>If the insucure is false <code>insecure: false</code> and the ConfigMap is missing in CRD mode, CIS may fail with <code>x509: certificate signed by unknown authority</code></li></ul>
+</article>
+</body>
+</html>
