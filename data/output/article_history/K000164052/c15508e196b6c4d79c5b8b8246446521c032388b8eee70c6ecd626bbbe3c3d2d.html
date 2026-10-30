@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000164052: ACME Providers stuck in Updating state</title>
+<meta name="description" content="Support Solution: ACME Providers stuck in Updating state — Code: [], Details: [Internal error: newOrder URL not available in directory listing]">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000164052">
+</head>
+<body>
+<header>
+<h1>K000164052: ACME Providers stuck in Updating state</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-29</dd>
+<dt>Updated</dt><dd>2026-10-29</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 21.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000164052">https://my.f5.com/manage/s/article/K000164052</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>BIG-IP ACME providers that previously issued certificates can stop working. Certificate requests fail with the following error:<br><span style="font-family: &#39;courier new&#39;, courier, monospace;">Code: [], Details: [Internal error: newOrder URL not available in directory listing]</span></p>
+<p>The ACME provider objects may then remain in an <strong>Updating</strong> state for an extended period, even after a restart of restjavad, restnoded, and tomcat, or a system reboot. <br>Clearing the stale Updating state can leave the provider in an <strong>Error</strong> state, with <strong>account-status error</strong> shown in the configuration.</p>
+<p>Relevant log messages observed in this scenario:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">err tmsh[...]: 01420006:3: 01020036:3: The requested Virtual Server (/Common/proxy-acme) was not found.<br></span><span style="font-family: &#39;courier new&#39;, courier, monospace;">err mcpd[...]: 01070734:3: Configuration error: Deleting ACME provider &#39;/Common/&lt;provider&gt;&#39; not allowed: account-action (&#39;update&#39;) is in progress.<br></span><span style="font-family: &#39;courier new&#39;, courier, monospace;">err keymgmtd[...]: 01a40000:3: Failed to create ACME account. curl_code=0, response_code=403, error=<br></span><span style="font-family: &#39;courier new&#39;, courier, monospace;">err mcpd[...]: 01070712:3: Caught configuration exception (0), Values (&lt;vs&gt;) specified for ACME Provider (/Common/&lt;provider&gt;): foreign key index (acme_internal_proxy_FK) do not point at an item that exists in the database.<br></span><span style="font-family: &#39;courier new&#39;, courier, monospace;">err mcpd[...]: 01070734:3: Configuration error: ACME provider (/Common/&lt;provider&gt;) missing required field: internal proxy</span></p>
+<h2>Environment</h2>
+<ul><li>BIG-IP VE, version 21.1.0.x (Standalone configuration)</li><li>Native ACMEv2 integration with Let&#39;s Encrypt, using two ACME providers (production and staging)</li><li>ACME providers using <strong>challenge-type http-01</strong></li><li>ACME providers referencing an internal proxy (<span style="background-color: #f1f1f1;">sys internal-proxy</span>) with a dedicated DNS resolver (<span style="background-color: #f1f1f1;">net dns-resolver</span>)</li><li>A virtual server on port 80 with <strong>acmev2-challenge enabled</strong> and an iRule that redirects HTTP to HTTPS while allowing <strong>/.well-known/acme-challenge/</strong> requests through</li><li>Configuration changes made to an existing ACME provider, or a provider that was previously in use</li></ul>
+<h2>Cause</h2>
+<p>Unknown at time of publication.</p>
+<ul><li><a href="https://cdn.f5.com/product/bugtracker/ID2471597.html" target="_blank" rel="noopener noreferrer">Bug ID 2471597</a> describes After an ACME account update, the account-action value may remain set to update even though the account status is valid.</li><li>This leaves the provider in an Updating or Pending state and may prevent additional account changes, certificate operations, or provider deletion. </li><li>Clearing the stale Updating state can leave the provider in an <strong>Error</strong> state, with <strong>account-status error</strong> shown in the configuration.</li></ul>
+<h2>Recommended Actions</h2>
+<p>Perform the following steps from the BIG-IP command line. <br>Replace &lt;acme-provider&gt; with the provider name.</p>
+<ol><li>
+<p>Clear a stuck Updating state by resetting the account action:<br><span style="background-color: #f1f1f1;">tmsh modify sys crypto acme-provider &lt;acme-provider&gt; account-action none<br></span><span style="background-color: #f1f1f1;">tmsh save sys config<br></span><span style="background-color: #f1f1f1;">tmsh list sys crypto acme-provider &lt;acme-provider&gt;</span></p>
+</li><li>
+<p>Delete the ACME provider:</p>
+<p><span style="background-color: #f1f1f1;">tmsh delete sys crypto acme-provider &lt;acme-provider&gt;</span></p>
+<p>If the delete fails with the following error, repeat step 1 and then delete the provider again:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">account-action (&#39;update&#39;) is in progress</span></p>
+</li><li>
+<p>Create a dedicated account key before recreating the provider:</p>
+<ul><li>Navigate to <strong>System &gt; Certificate Management &gt; Traffic Certificate Management &gt; SSL Certificate List</strong> and create a self-signed certificate and key that is used only for the ACME account.</li><li>Do not use <strong>default.key</strong> as the account key.</li></ul>
+</li><li>Recreate the ACME provider and select the dedicated key as the account key. Confirm that the internal proxy and DNS resolver are correctly configured, and that the provider is linked to the internal proxy.</li><li>
+<p>Confirm that the HTTP-01 challenge path is reachable:</p>
+<ul><li>Ensure the virtual server on port 80 has <strong>acmev2-challenge enabled</strong>.</li><li>Ensure any iRule that redirects HTTP to HTTPS does not redirect <strong>/.well-known/acme-challenge/</strong> requests.</li><li>Follow the ACME provider setup steps in the SSL certificate management documentation to verify the configuration.</li></ul>
+</li><li>Verify that the provider shows <span style="font-family: &#39;courier new&#39;, courier, monospace;">account-status valid</span>, then retry certificate issuance.</li></ol>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: Applying K000163249 to clear the Updating state may leave the provider in an Error state. If this occurs, use steps 2 through 6 above.</em></span></p>
+<h2>Additional Information</h2>
+<ul><li>In one reported scenario, deleting and recreating the ACME providers with a dedicated account key resolved the issue, and certificates were issued successfully for two domains. Renewal behavior after this change was not verified at time of publication.</li><li>The <strong>default.key</strong> account key is generated per device. In an HA pair, the active and standby units would use different keys, which can cause ACME account validation problems.</li><li>Log entries showing <span style="font-family: &#39;courier new&#39;, courier, monospace;">Values (...) specified for ACME Provider ... foreign key index (acme_internal_proxy_FK) do not point at an item that exists in the database</span> indicate that the provider&#39;s internal proxy reference is missing or invalid. Verify that <span style="background-color: #f1f1f1;">sys internal-proxy</span> exists and is referenced by the provider.</li></ul>
+</article>
+</body>
+</html>

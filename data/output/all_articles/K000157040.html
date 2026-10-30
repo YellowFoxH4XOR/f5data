@@ -2,39 +2,74 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>K000157040: Portal Access: PeopleSoft Application experiencing navigation/loading issues.</title>
-<meta name="description" content="Support Solution: Portal Access: PeopleSoft Application experiencing navigation/loading issues. — You are accessing an Oracle Peoplesoft application through BIG-IP APM Portal Access, but a section of the application may fail to load. You might encounter a continuously spinning cursor, and the…">
+<title>K000157040: Portal Access: Oracle PeopleSoft page does not finish loading because of PT_WORKER_MIN_ requests</title>
+<meta name="description" content="Support Solution: Portal Access: Oracle PeopleSoft page does not finish loading because of PT_WORKER_MIN_ requests — You access an Oracle PeopleSoft application through BIG-IP APM Portal Access, and a page or part of a page does not finish loading. The browser shows a spinning cursor, and the expected content is…">
 <link rel="canonical" href="https://my.f5.com/manage/s/article/K000157040">
 </head>
 <body>
 <header>
-<h1>K000157040: Portal Access: PeopleSoft Application experiencing navigation/loading issues.</h1>
+<h1>K000157040: Portal Access: Oracle PeopleSoft page does not finish loading because of PT_WORKER_MIN_ requests</h1>
 <dl>
 <dt>Type</dt><dd>Support Solution</dd>
 <dt>Published</dt><dd>2025-10-16</dd>
-<dt>Updated</dt><dd>2026-07-01</dd>
-<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.5.1</li></ul></dd>
+<dt>Updated</dt><dd>2026-10-29</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM</li></ul></dd>
 <dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000157040">https://my.f5.com/manage/s/article/K000157040</a></dd>
 </dl>
 </header>
 <hr>
 <article>
 <h2>Description</h2>
-<p>You are accessing an Oracle Peoplesoft application through BIG-IP APM Portal Access, but a section of the application may fail to load. You might encounter a continuously spinning cursor, and the expected document is not displayed. This issue typically arises when requests containing &quot;PT_WORKER_MIN_&quot; are made in the URL path, causing the page to remain stuck in a loading state.</p>
+<p>You access an Oracle PeopleSoft application through BIG-IP APM Portal Access, and a page or part of a page does not finish loading. The browser shows a spinning cursor, and the expected content is not displayed.</p>
+<p>When you troubleshoot this issue, you may observe the following symptoms:</p>
+<ul><li>
+<p>In the <strong>Network</strong> tab of the browser developer tools (F12), the application requests files whose path contains <span style="font-family: &#39;courier new&#39;, courier, monospace;">PT_WORKER_MIN_</span>, for example <span style="font-family: &#39;courier new&#39;, courier, monospace;">PT_WORKER_MIN_1.js</span>.</p>
+</li><li>
+<p>The issue occurs only through Portal Access. The application works as expected when you access it directly, without BIG-IP APM.</p>
+</li></ul>
 <h2>Environment</h2>
-<ul><li>Product: BIG-IP APM</li><li>Version: All Versions</li><li>Platform: F5 BigIP</li><li>Configuration:
-<ul><li>Portal Access resource with rewrite profile</li><li>Oracle Peoplesoft backend application</li></ul>
+<ul><li>
+<p>BIG-IP APM 17.1.x, 17.5.x, or 21.1.x</p>
+</li><li>
+<p>Portal Access resource and rewrite profile</p>
+</li><li>
+<p>Oracle PeopleSoft back-end application</p>
 </li></ul>
 <h2>Cause</h2>
-<p>Requests with &quot;PT_WORKER_MIN_&quot; in the URL path are not properly handled by BIG-IP APM Portal Access. The application expects a specific JavaScript handler for these requests, which is not provided by default via Portal Access. This results in incomplete page loading and persistent spinner behavior.</p>
-<h2>Recommended Actions</h2>
-<p>To resolve this issue, add the following iRule to the relevant BIG-IP virtual server handling the Portal Access resource:</p>
-<p><code>when HTTP_REQUEST {<br> if { [HTTP::has_responded] } { return }<br> <br> if { [HTTP::path] contains &quot;PT_WORKER_MIN_&quot; } {<br>  HTTP::respond 200 content {<br>   addEventListener(&#39;message&#39;, received);function received(e) {<br>   postMessage(e.data);}<br>  } Content-Type &quot;application/javascript&quot;<br> }<br>}<br></code></p>
-<p>This iRule inspects incoming HTTP requests for the &quot;PT_WORKER_MIN_&quot; pattern in the path and responds with a 200 OK status, including a JavaScript snippet that enables proper page loading.</p>
+<p>The <span style="font-family: &#39;courier new&#39;, courier, monospace;">PT_WORKER_MIN_</span> files are used by PeopleSoft for HTML5 Web Workers. Portal Access does not support HTML5 Web Workers. The Portal Access section of the BIG-IP APM Client Compatibility Matrix states: &quot;Javascript Web Workers or Service Workers do not work as expected when executed through Portal Access.&quot;</p>
+<h2>Answer/Recommended Actions</h2>
+<p>To work around this issue, add an iRule to the Portal Access virtual server. The iRule answers requests for <span style="font-family: &#39;courier new&#39;, courier, monospace;">PT_WORKER_MIN_</span> files itself, with a small Web Worker script that returns each message it receives.</p>
+<p><span style="color: #c20025;"><span style="background-color: #f1f1f1;"><em><strong>Important</strong>: This iRule is a workaround for an unsupported feature, and it may not resolve the issue in every PeopleSoft application. If it does not, open a support case. You can also consider publishing the application with BIG-IP APM in LTM+APM mode, which does not rewrite the application. For more information, refer to <a href="https://my.f5.com/manage/s/article/K14079" target="_blank">K14079</a>: Converting an access policy to LTM+APM mode.</em></span></span></p>
+<p><em><strong>Impact of procedure</strong>: F5 recommends performing this procedure during a scheduled maintenance window.</em></p>
+<ol><li>
+<p>Log in to the Configuration utility.</p>
+</li><li>
+<p>Go to <strong>Local Traffic &gt; iRules &gt; iRule List</strong>.</p>
+</li><li>
+<p>Click <strong>Create</strong>.</p>
+</li><li>
+<p>Enter a name for the iRule.</p>
+</li><li>
+<p>In <strong>Definition</strong>, enter the following iRule:</p>
+<p><code><span>when HTTP_REQUEST {<br>    if { [HTTP::has_responded] } { return }<br><br>    if { [HTTP::path] contains &quot;PT_WORKER_MIN_&quot; } {<br>        HTTP::respond 200 content {<br>            addEventListener(&#39;message&#39;, received);function received(e) {<br>            postMessage(e.data);}<br>        } Content-Type &quot;application/javascript&quot;<br>    }<br>}</span></code></p>
+<p><span style="color: #c20025;"><span style="background-color: #f1f1f1;"><em><strong>Important</strong>: Keep the <span style="font-family: &#39;courier new&#39;, courier, monospace;">Content-Type &quot;application/javascript&quot;</span> part. Safari, and other browsers that use WebKit (for example, Google Chrome on iOS), do not run a Web Worker script that is sent without a JavaScript content type.</em></span></span></p>
+</li><li>
+<p>Click <strong>Finished</strong>.</p>
+</li><li>
+<p>Go to <strong>Local Traffic &gt; Virtual Servers &gt; Virtual Server List</strong>, and click the name of the Portal Access virtual server.</p>
+</li><li>
+<p>Click the <strong>Resources</strong> tab.</p>
+</li><li>
+<p>In the <strong>iRules</strong> section, click <strong>Manage</strong>.</p>
+</li><li>
+<p>Move the iRule from <strong>Available</strong> to <strong>Enabled</strong>, and click <strong>Finished</strong>.</p>
+</li><li>
+<p>Start a new access session, and verify that the page loads.</p>
+</li></ol>
+<p>To back out of this procedure, move the iRule from <strong>Enabled</strong> to <strong>Available</strong>.</p>
+<p>If the application still does not load, follow <a href="https://my.f5.com/manage/s/article/K14184" target="_blank">K14184</a>: Troubleshooting BIG-IP APM Portal Access applications. If the application uses ECMAScript 2015 (ES6) or later JavaScript, refer to <a href="https://my.f5.com/manage/s/article/K000130439" target="_blank">K000130439</a>: Configuring the Rewrite Control List (RCL) to use Modern JavaScript rewriting for Portal Access.</p>
 <h2>Additional Information</h2>
-<p>None</p>
-<h2>Related Content</h2>
-<ul><li>None</li></ul>
+<p>For more information about Web Workers and Portal Access, refer to the Portal Access section of the BIG-IP APM Client Compatibility Matrix for your BIG-IP version.</p>
 </article>
 </body>
 </html>

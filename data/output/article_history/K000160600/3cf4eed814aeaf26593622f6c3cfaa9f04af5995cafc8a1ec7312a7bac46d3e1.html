@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000160600: Site not loading through reverse proxy</title>
+<meta name="description" content="Support Solution: Site not loading through reverse proxy — When a web application is accessed through BIG-IP APM Portal Access (webtop/reverse proxy), the application displays a blank or non-functional page. Direct access to the backend application works…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000160600">
+</head>
+<body>
+<header>
+<h1>K000160600: Site not loading through reverse proxy</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-05-14</dd>
+<dt>Updated</dt><dd>2026-05-14</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000160600">https://my.f5.com/manage/s/article/K000160600</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2><strong>Description</strong></h2>
+<p>When a web application is accessed through BIG-IP APM Portal Access (webtop/reverse proxy), the application displays a blank or non-functional page. Direct access to the backend application works correctly. Packet capture and HAR analysis reveal that the backend server returns HTTP 404 responses on certain resources (such as static assets or JavaScript files). Further investigation shows that BIG-IP APM Portal Access removes the <code>Accept-Encoding</code> header from requests before forwarding them to the backend server. The backend application requires this header to serve content correctly, and its absence results in failed resource loads and a broken portal page.</p>
+<h2><strong>Environment</strong></h2>
+<p>BIG-IP APM</p>
+<p>APM Portal Access resource (webtop) configured with a rewrite profile</p>
+<p>Backend application that requires the <code>Accept-Encoding</code> header to serve content correctly (for example, iDRAC web interface or similar web applications)</p>
+<p>BIG-IP version 17.x (may affect other versions)</p>
+<h2><strong>Cause</strong></h2>
+<p>BIG-IP APM Portal Access, by design, removes the <code>Accept-Encoding</code> header from requests forwarded to backend servers. This occurs because the APM rewrite engine processes and potentially re-encodes content. For certain backend applications, the absence of this header causes the server to return HTTP 404 responses for required resources (such as JavaScript files or static assets), resulting in a blank or broken page through the portal. Configuring the <code>Accept-Encoding</code> header via the Advanced headers section within the Portal Access resource item settings does not reliably re-insert this header.</p>
+<h2><strong>Answer/Recommended Actions</strong></h2>
+<p><strong>Workaround: Apply an iRule to re-insert the <code>Accept-Encoding</code> header</strong></p>
+<p>Use the <code>HTTP_REQUEST_RELEASE</code> event to insert or replace the <code>Accept-Encoding</code> header after the APM rewrite engine has processed the request, immediately before it is forwarded to the backend server.</p>
+<ol><li>Log in to the BIG-IP Configuration utility.</li><li>Navigate to <strong>Local Traffic &gt; iRules &gt; iRule List</strong>.</li><li>Click <strong>Create</strong>.</li><li>Enter a name for the iRule (for example, <span style="background-color: #f1f1f1;">apm_portal_insert_accept_encoding</span>).</li><li>In the <strong>Definition</strong> field, enter the following iRule:
+<p><span style="color: #000000;background-color: #f1f1f1;"><code><span style="background-color: #f1f1f1;">when HTTP_REQUEST_RELEASE {</span><br><span style="background-color: #f1f1f1;">    if { [HTTP::header exists &quot;Accept-Encoding&quot;] } {</span><br><span style="background-color: #f1f1f1;">        HTTP::header replace &quot;Accept-Encoding&quot; &quot;gzip, deflate&quot;</span><br><span style="background-color: #f1f1f1;">    } else {</span><br><span style="background-color: #f1f1f1;">        HTTP::header insert &quot;Accept-Encoding&quot; &quot;gzip, deflate&quot;</span><br><span style="background-color: #f1f1f1;">    }</span><br><span style="background-color: #f1f1f1;">}</span></code></span></p>
+</li><li>Click <strong>Finished</strong>.</li><li>Navigate to <strong>Local Traffic &gt; Virtual Servers</strong> and click the name of the APM portal access virtual server.</li><li>Click the <strong>Resources</strong> tab.</li><li>In the <strong>iRules</strong> section, click <strong>Manage</strong>.</li><li>Move the newly created iRule to the <strong>Enabled</strong> column.</li><li>Click <strong>Finished</strong>.</li><li>Start a new APM session and verify the application loads correctly through the portal.</li></ol>
+<p><strong>Troubleshooting steps to confirm the root cause before applying the workaround:</strong></p>
+<ol><li>Collect HAR traces for both direct access and portal access to the backend application and compare request headers. Confirm that <code>Accept-Encoding</code> is present in the direct access trace but absent in the portal access trace.</li><li>Enable SSL decryption on the BIG-IP for packet capture:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #f1f1f1;">tmsh modify sys db tcpdump.sslprovider value enable</span></p>
+</li><li>Collect a packet capture from the BIG-IP (not from the client workstation):
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;color: #f1f1f1;">tcpdump -nni 0.0:nnn --f5 ssl -vw /var/tmp/capture.pcap host &lt;client_ip&gt; or &lt;backend_server_ip&gt;</span></p>
+</li><li>Disable SSL decryption after capture:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;color: #f1f1f1;">tmsh modify sys db tcpdump.sslprovider value disable</span></p>
+</li><li>Analyze the decrypted capture. If the <code>Accept-Encoding</code> header is missing in requests from BIG-IP to the backend server and the backend returns HTTP 404 on resources, apply the iRule workaround above.</li></ol>
+<h2><strong>Additional Information</strong></h2>
+<ul><li>The <code>HTTP_REQUEST_RELEASE</code> event is the correct iRule event to use in the context of BIG-IP APM Portal Access. Portal Access involves two separate traffic flows (client-to-BIG-IP and BIG-IP-to-backend), and using <code>HTTP_REQUEST_SEND</code> or <code>HTTP_REQUEST</code> may not behave as expected for the server-side flow.</li><li>This behavior (removal of <code>Accept-Encoding</code>) is by design in the APM rewrite engine and is not classified as a defect. However, for applications that depend on this header, the iRule workaround above is effective.</li><li><span style="color: #15891f;"><em><strong>Note</strong>: Adding <code>Accept-Encoding</code> headers via the Advanced header configuration within the Portal Access resource item settings (under the Portal Access resource configuration) has been observed to be unreliable for re-inserting this header.</em></span></li><li>If a Web Acceleration or Compression profile is also assigned to the virtual server, consider removing it temporarily during troubleshooting to reduce complexity.<a href="https://my.f5.com/manage/s/article/K74392192" target="_blank"></a></li></ul>
+</article>
+</body>
+</html>

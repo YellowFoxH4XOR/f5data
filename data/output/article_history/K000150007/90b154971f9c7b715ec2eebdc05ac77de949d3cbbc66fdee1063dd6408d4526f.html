@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000150007: MySQL monitor may connect with TLSv1.1 to back end database servers</title>
+<meta name="description" content="Support Solution: MySQL monitor may connect with TLSv1.1 to back end database servers — When monitoring an LTM pool member with a MySQL monitor, the TLS connection may use an outdated TLSv1.1 version, and there are no controls or settings to change this.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000150007">
+</head>
+<body>
+<header>
+<h1>K000150007: MySQL monitor may connect with TLSv1.1 to back end database servers</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2025-02-28</dd>
+<dt>Updated</dt><dd>2026-04-24</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.1.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000150007">https://my.f5.com/manage/s/article/K000150007</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When monitoring an LTM pool member with a MySQL monitor, the TLS connection may use an outdated TLSv1.1 version, and there are no controls or settings to change this.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>MySQL pool members</li><li>MySQL monitor assigned to the pool members</li></ul>
+<h2>Cause</h2>
+<p>The MySQL monitor type simply calls the <em>Oracle Java Database Connector (JDBC) for MySQL</em>, which makes the decision about which TLS version to use. When a client connects to a MySQL server, the server initially sends it a Server Geeting packet, describing its version, features, and capabilities - this data includes a flag that indicates whether the server supports upgrading to TLS. If the client also supports TLS connections, then the client will indicate that in its own capabilities list, and will initiate a TLS handshake by sending a TLS Client Hello.</p>
+<p>Testing has shown that the MySQL JDBC client will connect using TLSv1.1 when speaking to any version of MySQL server lower than 8.0, and will use TLS1.2 for server version 8.0 and higher. This is not configurable, and is hard-coded into the connector, which is provided by Oracle.</p>
+<h2>Recommended Actions</h2>
+<p>To use TLSv1.2 with monitor probes for versions of MySQL below 8.0, you must implement an EAV (external) monitor that uses the MySQL command-line client, which does not have the same limitations as the JDBC.</p>
+<p><em>For example:</em></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>#!/bin/bash 
+ 
+# arguments supplied by bigd:
+# $1 = IP (::ffff:nnn.nnn.nnn.nnn notation or hostname)
+# $2 = port (decimal, host byte order)
+# $3 and higher = additional arguments
+ 
+user=$MYSQL_USER
+passwd=$MYSQL_PASSWORD
+ 
+# Name of the pidfile
+pidfile=&quot;/var/run/$MONITOR_NAME.$1..$2.pid&quot;
+if [ -f $pidfile ]
+then
+   kill -9 -`cat $pidfile` &gt; /dev/null 2&gt;&amp;1
+fi
+ 
+echo &quot;$$&quot; &gt; $pidfile
+# Remove the IPv6/IPv4 compatibility prefix 
+node_ip=`echo $1 | sed &#39;s/::ffff://&#39;`
+ 
+result=$(MYSQL_PWD=$MYSQL_PASSWWORD mysql --ssl --host $node_ip --port $2 --user &quot;$MYSQL_USER&quot; -e &quot;SELECT @@VERSION&quot; 2&gt;&amp;1)
+ 
+if [ $? -eq 0 ]
+then
+    rm -f $pidfile
+    echo &quot;up&quot;
+else
+    echo &quot;$0: Mysql monitor probe failed for $node_ip:$port with message $result&quot; | logger -p local0.notice
+fi
+ </code></pre>
+<p>To install and apply the external monitor script:</p>
+<p style="padding-left: 40px;">Using the BIG-IP GUI:</p>
+<ol><li style="list-style-type: none;">
+<ol><li>Import the script  (<em>System &gt;&gt; File Management &gt;&gt; External Monitor Program File List &gt;&gt; Import</em>) </li><li>Create an external monitor (<em>Local Traffic &gt;&gt; Monitors &gt;&gt; Create</em> ,  <em>Type</em>: <em>External</em>, <em>External Program</em>: (<em>name of program file from previous step)</em></li></ol>
+</li></ol>
+<p style="padding-left: 40px;"> </p>
+<p style="padding-left: 40px;">Using the BIG-IP traffic-management shell (tmsh)</p>
+<ol><li style="list-style-type: none;">
+<ol><li><span style="background-color: #f1f1f1;"><span style="font-family: terminal, monaco, monospace;">tmsh create sys file external-monitor mysql_eav_script source-file file:///tmp/filename</span></span></li><li><span style="background-color: #f1f1f1;"><span style="font-family: terminal, monaco, monospace;">tmsh create ltm monitor external xxxxx run /Common/mysql_eav_script user-defined MYSQL_PASSWD mysqlpassword user-defined MYSQL_USER mysqluser</span></span></li></ol>
+</li></ol>
+<h2><br>Additional Information</h2>
+<ul><li><a href="https://my.f5.com/manage/s/article/K71282813" target="_blank">K71282813: Overview of BIG-IP EAV external monitors</a></li></ul>
+</article>
+</body>
+</html>
