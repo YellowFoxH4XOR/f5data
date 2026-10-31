@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000164072: Configuration Fails to Load with &quot;Invalid characters in SNMP configuration&quot; Due to Control Characters in SNMP Fields</title>
+<meta name="description" content="Support Solution: Configuration Fails to Load with &quot;Invalid characters in SNMP configuration&quot; Due to Control Characters in SNMP Fields — 01070920:3: Application error for snmp: Invalid characters in SNMP configuration">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000164072">
+</head>
+<body>
+<header>
+<h1>K000164072: Configuration Fails to Load with &quot;Invalid characters in SNMP configuration&quot; Due to Control Characters in SNMP Fields</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-10-31</dd>
+<dt>Updated</dt><dd>2026-10-31</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000164072">https://my.f5.com/manage/s/article/K000164072</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>After upgrading BIG-IP to <strong>17.5.1.6 </strong>or later, the device may remain in an <strong>INOPERATIVE</strong> state because the configuration fails validation. The &#39;<strong>tmsh load sys config verify</strong>&#39; command reports an error similar to the following:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>01070920:3: Application error for snmp: Invalid characters in SNMP configuration
+Unexpected Error: Validating configuration process failed.</code></pre>
+<p>Starting in BIG-IP <strong>17.5.1.6</strong>, SNMP configuration fields reject control characters, such as a <strong>TAB</strong>. A configuration that loaded successfully on an earlier version can therefore fail after the upgrade.</p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>Upgrade path that crosses <strong>17.5.1.6</strong>, for example 17.5.1.5 to 17.5.1.11</li><li>Configuration file: <strong>/config/bigip_base.conf</strong></li><li>SNMP fields affected by the validation: <strong>sys snmp, community, trap sinks, trap sessions, USM users, disk monitors</strong>, and <strong>process monitors</strong></li><li>Affected value: a string in sys snmp (such as <strong>sys-location</strong>) that contains an embedded TAB character</li></ul>
+<h2>Cause</h2>
+<p>The &#39;<strong>sys-location</strong>&#39; value in the <strong>sys snmp</strong> section of &quot;<strong>/config/bigip_base.conf</strong>&quot; contained a <strong>TAB</strong> (control) character. Starting in <strong>17.5.1.6</strong>, SNMP string-field validation rejects control characters. The configuration load failed during the upgrade, which left the device <strong>INOPERATIVE.</strong></p>
+<p>This behavior is documented in the <strong>17.5.1.6</strong> <a href="https://techdocs.f5.com/kb/en-us/products/big-ip_ltm/releasenotes/related/relnote-supplement-bigip-17-5-1-6.html" title="Release Notes" target="_blank" rel="noopener noreferrer">Release Notes</a> supplement, &quot;<strong>SNMP Improvement</strong>&quot; (IDs 2200437-2 and 2200421-2).</p>
+<h2>Answer/Recommended Actions</h2>
+<p>Perform these checks <strong><span style="text-decoration: underline;">before</span></strong> upgrading to <strong>17.5.1.6</strong> or later, and on every unit in a device group or HA pair before its upgrade.</p>
+<p><span style="color: #e74c3c;"><em><strong>Important: </strong>It&#39;s always recommended to consider a planned MW before applying any change into the config file and re-loading into the Memory.</em></span></p>
+<p><strong>1)</strong> Review the SNMP string values in the configuration file:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># grep &#39;sys-location&#39; /config/bigip_base.conf</code></pre>
+<p>Check other SNMP string fields (for example, <strong>sys-contact, community, trap</strong>, and <strong>USM user</strong> values) as well.</p>
+<p><strong>2) </strong>From the &#39;<strong>/config</strong>&#39; directory, you can run the below sample PERL script to have a control-character scan against &#39;<strong>bigip_base.conf</strong>&#39;:</p>
+<p><span style="color: #2ecc71;"><em><strong>Note: </strong>Running the below PERL script should not have any negative Impact on your Device. Alternatively, you can also manually check the config file for any unexpected character for SNMP section - if you still prefer not to run the script on your Device.</em></span></p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># cat bigip_base.conf | perl -Mcharnames=:full -C -l -0777 -ne &#39;
+while (/&quot;(?:\\.|[^&quot;])*&quot;/g) {
+my $offset = $-[0];
+my $string = $&amp;;
+@ctrl = map {charnames::viacode(ord($_))} $string =~ /\p{PosixCntrl}/g;
+if (@ctrl) {
+print &quot;Offset: $offset, String: $string, Ctrl: &quot; . join &quot;+&quot;, @ctrl
+}
+}&#39;</code></pre>
+<p>Any output identifies a quoted string that contains a control character. Output is not expected on a clean configuration. For example, below is a sample problematic section in config file which can stop config loading and needs to be modified by removing the TAB with SPACE in its value:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>...
+sys snmp {
+...
+    sys-location &quot;ABCD DC  XYZ ABC     	  XYZ 1234&quot;         &lt;----------------- !!!!!!!
+    traps {
+...
+}
+}</code></pre>
+<p>And below would be the corrected value after the modification, and having only normal <strong>SPACE </strong>between characters with no <strong>TAB</strong>:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>...
+sys snmp {
+...
+    sys-location &quot;ABCD DC XYZ ABC XYZ 1234&quot;         &lt;----------------- [TAB Removed]
+    traps {
+...
+}
+}</code></pre>
+<p><strong>3)</strong> For each flagged value, remove the control character (such as a TAB) and replace it with a standard space. Back up the file before editing it.</p>
+<p><strong>4)</strong> Validate the configuration:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># tmsh load sys config verify</code></pre>
+<p>Confirm that the SNMP error is gone before you load or upgrade the unit.</p>
+<p><strong>5)</strong> Upgrade only after the configuration validates. Apply the same check and correction to every peer unit before its upgrade.</p>
+<h2>Additional Information</h2>
+<ul><li><strong>Expected behavior:</strong> Versions <strong>17.5.1.6</strong> and later intentionally reject control characters in SNMP string fields. A <strong>TAB </strong>in an SNMP string is no longer accepted, so this is a validation change and not a regression.</li><li><strong>Non-blocking warnings:</strong> The verify output may also show regex warnings (for example, in <strong>f5.apg_analytics</strong>) and deprecation notices. These did not stop the configuration from loading. The SNMP error is the blocking condition.</li><li><strong>Verification:</strong> On the affected system, the SNMP error was resolved after the <strong>TAB </strong>was replaced with a space, and the configuration loaded successfully.</li><li><strong>Scope of the scan: </strong>The Perl scan checks quoted strings. Review any unquoted SNMP values separately if the scan does not flag the problem.</li></ul>
+</article>
+</body>
+</html>

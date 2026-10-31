@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K40453455: Portal Access to an internal HTTPS site fails when the server requires SNI</title>
+<meta name="description" content="Support Solution: Portal Access to an internal HTTPS site fails when the server requires SNI — You access an HTTPS back-end application through a BIG-IP APM Portal Access resource, and the application does not load. When the BIG-IP system connects to the back-end server, the server closes the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K40453455">
+</head>
+<body>
+<header>
+<h1>K40453455: Portal Access to an internal HTTPS site fails when the server requires SNI</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2022-03-08</dd>
+<dt>Updated</dt><dd>2026-10-30</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K40453455">https://my.f5.com/manage/s/article/K40453455</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>You access an HTTPS back-end application through a BIG-IP APM Portal Access resource, and the application does not load. When the BIG-IP system connects to the back-end server, the server closes the connection with a TCP reset after the BIG-IP system sends the TLS Client Hello.</p>
+<h2>Environment</h2>
+<ul><li>
+<p>BIG-IP APM 17.1.x, 17.5.x, or 21.1.x</p>
+</li><li>
+<p>One or more Portal Access resources that use HTTPS</p>
+</li><li>
+<p>A Server SSL profile on the Portal Access virtual server</p>
+</li><li>
+<p>A back-end server that requires the Server Name Indication (SNI) TLS extension</p>
+</li></ul>
+<h2>Cause</h2>
+<p>The back-end server requires SNI. One Portal Access virtual server can serve many Portal Access resources with different host names, and the Server SSL profile of the virtual server is not configured to send the SNI extension with the host name of each Portal Access resource.</p>
+<p>The Portal Access section of the BIG-IP APM Client Compatibility Matrix states that Portal Access and web applications do not support TLS Server Name Indication (SNI), and that you can mitigate this issue with an iRule.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>You can use one of the following options:</p>
+<ul><li>
+<p>Option 1: Send the SNI extension for every Portal Access host. Use this option when the back-end servers require SNI with their own host name.</p>
+</li><li>
+<p>Option 2: Use a different Server SSL profile for one Portal Access host. Use this option when one back-end server needs a specific SNI configuration in its Server SSL profile.</p>
+</li></ul>
+<p>Both iRules read the back-end host name in the <span style="font-family: &#39;courier new&#39;, courier, monospace;">REWRITE_REQUEST_DONE</span> event, after Portal Access has rewritten the request. If the iRule logs a TCL error from <span style="font-family: &#39;courier new&#39;, courier, monospace;">HTTP::host</span> in this event, refer to <a href="https://my.f5.com/manage/s/article/K000158986" target="_blank">K000158986</a>: iRule error ERR_ARG for HTTP::host or HTTP::path in the REWRITE_REQUEST_DONE event.</p>
+<p><em><strong>Impact of procedure</strong>: F5 recommends performing this procedure during a scheduled maintenance window. Test the iRule in a non-production environment first.</em></p>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: F5 Support does not design or configure iRules. If you need help to adapt an iRule to your environment, contact F5 Professional Services.</em></span></p>
+<h3>Option 1: Send the SNI extension for every Portal Access host</h3>
+<ol><li>
+<p>Log in to the Configuration utility.</p>
+</li><li>
+<p>Go to <strong>Local Traffic &gt; iRules &gt; iRule List</strong>.</p>
+</li><li>
+<p>Click <strong>Create</strong>.</p>
+</li><li>
+<p>Enter a name for the iRule, for example <span style="font-family: &#39;courier new&#39;, courier, monospace;">apm_portal_sni</span>.</p>
+</li><li>
+<p>In <strong>Definition</strong>, enter the following iRule:</p>
+<p><code><span>when REWRITE_REQUEST_DONE {<br>  #log local0. &quot;HOST: [HTTP::host]&quot;<br>  set sni_value [getfield [HTTP::host] &quot;:&quot; 1]<br>}<br>when SERVERSSL_CLIENTHELLO_SEND {<br>  # SNI extension record as defined in RFC 3546/3.1<br>  #<br>  # - TLS Extension Type                =  int16( 0 = SNI )<br>  # - TLS Extension Length              =  int16( $sni_length + 5 byte )<br>  #    - SNI Record Length              =  int16( $sni_length + 3 byte)<br>  #       - SNI Record Type             =   int8( 0 = HOST )<br>  #          - SNI Record Value Length  =  int16( $sni_length )<br>  #          - SNI Record Value         =    str( $sni_value )<br>  #<br>  # Calculate the length of the SNI value, Compute the SNI Record / TLS extension fields and add the result to the SERVERSSL_CLIENTHELLO<br>  SSL::extensions insert [binary format SSScSa* 0 [expr { [set sni_length [string length $sni_value]] + 5 }] [expr { $sni_length + 3 }] 0 $sni_length $sni_value]<br>}</span></code></p>
+</li><li>
+<p>Click <strong>Finished</strong>.</p>
+</li><li>
+<p>Go to <strong>Local Traffic &gt; Virtual Servers &gt; Virtual Server List</strong>, and click the name of the Portal Access virtual server.</p>
+</li><li>
+<p>Click the <strong>Resources</strong> tab.</p>
+</li><li>
+<p>In the <strong>iRules</strong> section, click <strong>Manage</strong>.</p>
+</li><li>
+<p>Move the iRule from <strong>Available</strong> to <strong>Enabled</strong>, and click <strong>Finished</strong>.</p>
+</li><li>
+<p>Start a new access session, and verify that the application loads.</p>
+</li></ol>
+<p>To back out of this procedure, move the iRule from <strong>Enabled</strong> to <strong>Available</strong>.</p>
+<h3>Option 2: Use a different Server SSL profile for one Portal Access host</h3>
+<ol><li>
+<p>Create a Server SSL profile with the settings that the back-end server needs, for example the SNI value of that server, configured in the Server SSL profile.</p>
+</li><li>
+<p>Create an iRule with the following definition (use the same steps as in Option 1):</p>
+<p><code><span>when REWRITE_REQUEST_DONE {<br>    if { [HTTP::host] == &quot;example&quot; } {<br>        set changeSSLProfile 1<br>    }<br>}<br>when SERVER_CONNECTED {<br>    if { [info exists changeSSLProfile] &amp;&amp; $changeSSLProfile } {<br>        SSL::profile your-specific-serverssl-profile<br>        unset changeSSLProfile<br>    }<br>}</span></code></p>
+<p>Replace the following values:</p>
+<ul><li>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">example</span>: the Host header value (FQDN) that the back-end server expects, for example <span style="font-family: &#39;courier new&#39;, courier, monospace;">application.example<strong>.</strong>com</span>.</p>
+</li><li>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">your-specific-serverssl-profile</span>: the name of the Server SSL profile that you created in step 1.</p>
+</li></ul>
+</li><li>
+<p>Add the iRule to the Portal Access virtual server, as in Option 1, steps 7 to 10.</p>
+</li><li>
+<p>Start a new access session, and verify that the application loads.</p>
+</li></ol>
+<p>To back out of this procedure, move the iRule from <strong>Enabled</strong> to <strong>Available</strong>.</p>
+<h2>Additional Information</h2>
+<p>None.</p>
+</article>
+</body>
+</html>

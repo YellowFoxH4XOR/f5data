@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000158986: iRule error ERR_ARG for HTTP::host or HTTP::path in the REWRITE_REQUEST_DONE event</title>
+<meta name="description" content="Support Solution: iRule error ERR_ARG for HTTP::host or HTTP::path in the REWRITE_REQUEST_DONE event — You use an iRule on a BIG-IP APM Portal Access virtual server, and the iRule reads HTTP request data, for example with HTTP::host, HTTP::header, HTTP::path, or HTTP::uri, in the REWRITE_REQUEST_DONE…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000158986">
+</head>
+<body>
+<header>
+<h1>K000158986: iRule error ERR_ARG for HTTP::host or HTTP::path in the REWRITE_REQUEST_DONE event</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-01-02</dd>
+<dt>Updated</dt><dd>2026-10-30</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.0.X, 17.0.0, 17.1.2, 17.1.1, 17.1.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000158986">https://my.f5.com/manage/s/article/K000158986</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>You use an iRule on a BIG-IP APM Portal Access virtual server, and the iRule reads HTTP request data, for example with <span style="font-family: &#39;courier new&#39;, courier, monospace;">HTTP::host</span>, <span style="font-family: &#39;courier new&#39;, courier, monospace;">HTTP::header</span>, <span style="font-family: &#39;courier new&#39;, courier, monospace;">HTTP::path</span>, or <span style="font-family: &#39;courier new&#39;, courier, monospace;">HTTP::uri</span>, in the <span style="font-family: &#39;courier new&#39;, courier, monospace;">REWRITE_REQUEST_DONE</span> event. Some requests fail, and the iRule logs TCL errors.</p>
+<p>When you troubleshoot this issue, you may observe the following symptoms:</p>
+<ul><li>
+<p>The <strong>/var/log/ltm</strong> file contains TCL errors similar to the following examples (the iRule name, line number, and process ID vary):</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">err tmm2[&lt;pid&gt;]: 01220001:3: TCL error: /Common/&lt;irule_name&gt; &lt;REWRITE_REQUEST_DONE&gt; - ERR_ARG (line 1) invoked from within &quot;HTTP::host&quot;</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">tmm[&lt;pid&gt;]: 01220001:3: TCL error: /Common/&lt;irule_name&gt; &lt;REWRITE_REQUEST_DONE&gt; - No HTTP header is cached - ERR_NOT_SUPPORTED (line 15) invoked from within &quot;HTTP::host&quot;</span></p>
+</li><li>
+<p>A packet capture shows a reset with the reset cause <span style="font-family: &#39;courier new&#39;, courier, monospace;">iRule execution error</span>.</p>
+</li><li>
+<p>The errors occur for some requests only, more often for large POST requests, for example file uploads.</p>
+</li></ul>
+<h2>Environment</h2>
+<ul><li>
+<p>BIG-IP APM 17.1.x, 17.5.x or 21.1..x</p>
+</li><li>
+<p>Portal Access resource and rewrite profile</p>
+</li><li>
+<p>An iRule that reads HTTP request data in the <span style="font-family: &#39;courier new&#39;, courier, monospace;">REWRITE_REQUEST_DONE</span> event, for example to select a Server SSL profile or an SNI value by host name</p>
+</li></ul>
+<h2>Cause</h2>
+<p>The <span style="font-family: &#39;courier new&#39;, courier, monospace;">REWRITE_REQUEST_DONE</span> event runs after Portal Access has processed and rewritten the request. Depending on the state of the request flow at that point, the HTTP request headers may no longer be available to the iRule. For example, Portal Access may have already forwarded the headers, or, for a large POST request, it may already be processing the request payload. In this state, HTTP commands that read the request, such as <span style="font-family: &#39;courier new&#39;, courier, monospace;">HTTP::host</span> or <span style="font-family: &#39;courier new&#39;, courier, monospace;">HTTP::header</span>, fail with a TCL error.</p>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: Many iRules read <span style="font-family: &#39;courier new&#39;, courier, monospace;">HTTP::host</span> in the <span style="font-family: &#39;courier new&#39;, courier, monospace;">REWRITE_REQUEST_DONE</span> event and work as expected for most requests, for example the iRules in <a href="https://my.f5.com/manage/s/article/K40453455" target="_blank" rel="noopener noreferrer">K40453455</a>: Portal Access to an internal HTTPS site fails when the server requires SNI. The issue in this article occurs only for some requests, depending on the flow state.</em></span></p>
+<h2>Answer/Recommended Actions</h2>
+<p>Read the HTTP request data in an event in which the headers are available, store the result in a variable, and use the variable in the later events (for example <span style="font-family: &#39;courier new&#39;, courier, monospace;">REWRITE_REQUEST_DONE</span>, <span style="font-family: &#39;courier new&#39;, courier, monospace;">SERVER_CONNECTED</span>, or <span style="font-family: &#39;courier new&#39;, courier, monospace;">SERVERSSL_CLIENTHELLO_SEND</span>).</p>
+<p><em><strong>Impact of procedure</strong>: Test iRule changes in a non-production environment before you apply them to production.</em></p>
+<ol><li>
+<p>Identify the iRule and the line from the TCL error in <strong>/var/log/ltm</strong>.</p>
+</li><li>
+<p>Move the HTTP commands from <span style="font-family: &#39;courier new&#39;, courier, monospace;">REWRITE_REQUEST_DONE</span> to an earlier event:</p>
+<ul><li>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">ACCESS_ACL_ALLOWED</span>: runs earlier in the flow, when the request headers are available.</p>
+</li><li>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">HTTP_REQUEST</span>: runs before Portal Access rewrites the request. In this event, the request path still contains the Portal Access prefix (<span style="font-family: &#39;courier new&#39;, courier, monospace;">/f5-w-&lt;hex&gt;$$</span>), and the back-end host is encoded in hexadecimal in the prefix. Make sure that your iRule logic matches the request before it is rewritten.</p>
+</li></ul>
+</li><li>
+<p>In the earlier event, set a variable (for example a flag or a host name). In the later events, check that the variable exists with <span style="font-family: &#39;courier new&#39;, courier, monospace;">info exists</span> before you use it, and unset it after use.</p>
+</li><li>
+<p>Start a new access session, repeat the requests that failed (including large POST requests), and verify that <strong>/var/log/ltm</strong> has no new TCL errors from the iRule.</p>
+</li></ol>
+<p>If the issue persists, open a support case. Provide the iRule, the TCL error messages, and the data listed in the <strong>Collect HTTPWatch or HAR files for support</strong> section of <a href="https://my.f5.com/manage/s/article/K14184" target="_blank" rel="noopener noreferrer">K14184</a>: Troubleshooting BIG-IP APM Portal Access applications.</p>
+<p><span style="color: #15891f;"><em><strong>Note</strong>: F5 Support does not design or configure iRules. If you need help to adapt an iRule to your environment, contact F5 Professional Services.</em></span></p>
+<h2>Additional Information</h2>
+<p>None.</p>
+</article>
+</body>
+</html>
