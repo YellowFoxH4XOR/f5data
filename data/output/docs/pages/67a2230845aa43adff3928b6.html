@@ -1122,8 +1122,8 @@ when ACCESS_SESSION_STARTED {
  set sts [call /Common/HSSR::http_req -virt /Common/vs-HSSR-helper \
           -state hstate -uri $static::logon_uri -rbody logonform]
  if { ($sts != 200) ||
-      ![regexp $static::rex $logonform elem] ||
-      ![regexp {(?i) value=['"]?([^ '"&gt;]{1,})} $elem junk token] } {
+      ![regexp -- $static::rex $logonform elem] ||
+      ![regexp -- {(?i) value=['"]?([^ '"&gt;]{1,})} $elem junk token] } {
   log local0.err "cannot get XSRF token from ${static::logon_uri} for sid ${sid}"
   call /Common/HSSR::http_close hstate
   ACCESS::session remove
@@ -1139,7 +1139,7 @@ when ACCESS_SESSION_STARTED {
           -uri $static::logon_uri -redir 0 -rcookies cookies \
           -rheaders headers -method POST \
           -form [list authenticity_token $token username $uid password $pwd]]
- unset pwd ; #not something to leave lying around
+ unset -- pwd ; #not something to leave lying around
  if { ($sts == 302) &amp;&amp;
       ([lsearch $cookies $static::chief_cookie] &gt;= 0) } {
   #pass server cookies to client
@@ -1652,7 +1652,7 @@ proc http_req {args} {
      set e "option '${n}' not recognized"
      break
     }
-    if {($xn &gt;= 0) &amp;&amp; [regexp {[^0-9]} $v]} {
+    if {($xn &gt;= 0) &amp;&amp; [regexp -- {[^0-9]} $v]} {
      set e "option ${n} value must be integer"
      break
     }
@@ -1694,7 +1694,7 @@ proc http_req {args} {
 
   if {$uri eq ""} {
    set e "you must supply -uri option!"
-  } elseif {![regexp $static::HSSR_urlsplit $uri junk schm ruid rpwd host port path] ||
+  } elseif {![regexp -- $static::HSSR_urlsplit $uri junk schm ruid rpwd host port path] ||
             ([string length $path] &gt; 2040)} {
    set e "malformed -uri ${uri}"
   } elseif {([set schm [string tolower $schm]] ne "") &amp;&amp;
@@ -1719,7 +1719,7 @@ proc http_req {args} {
                          ($method eq "GET") || ($method eq "HEAD") )} {
    set e "use '-expect 100' only when sending -body or -form data"
   } elseif {$proxy ne ""} {
-   if {![regexp $static::HSSR_urlsplit $proxy junk pxy_s pxy_uid pxy_pwd pxy_h pxy_p]} {
+   if {![regexp -- $static::HSSR_urlsplit $proxy junk pxy_s pxy_uid pxy_pwd pxy_h pxy_p]} {
     set e "-proxy URL invalid"
     break
    }
@@ -1727,7 +1727,7 @@ proc http_req {args} {
    set pxy_h [string tolower $pxy_h]
    if {[string index $pxy_h 0] eq "\x5b"} {
     set pxy_h [string map [list "%25" "%"] $pxy_h]
-    regexp $static::HSSR_ipv6match $pxy_h junk raddr
+    regexp -- $static::HSSR_ipv6match $pxy_h junk raddr
    } else {
     if {[string index $pxy_h end] eq "."} {
      set pxy_h [string range $pxy_h 0 end-1]
@@ -1776,7 +1776,7 @@ proc http_req {args} {
  set host [string tolower $host]
  if {[set ipv6 [expr {[string index $host 0] eq "\x5b"}]]} {
   set host [string map [list "%25" "%"] $host]
-  regexp $static::HSSR_ipv6match $host junk haddr
+  regexp -- $static::HSSR_ipv6match $host junk haddr
  } elseif {[string index $host end] eq "."} {
   set host [string range $host 0 end-1]
  }
@@ -1786,7 +1786,7 @@ proc http_req {args} {
  if {$path eq ""} { set path "/" }
 
  #milk helps us swallow cookies
- set milk [expr {$munch &amp;&amp; ![regexp {[^.][.][^.]+[^0-9\x5d]$} $host]}]
+ set milk [expr {$munch &amp;&amp; ![regexp -- {[^.][.][^.]+[^0-9\x5d]$} $host]}]
 
  if {$userid eq ""} {
   set creds ""
@@ -1933,7 +1933,7 @@ proc http_req {args} {
   }
 
   #canonicalize path
-  regsub -all {(?://)|(?:[^/]+/[.][.]/)} $path "/" path
+  regsub -all -- {(?://)|(?:[^/]+/[.][.]/)} $path "/" path
 
   #retry POST/whatever after redirect(s)?
   if {($what ne "") &amp;&amp; ($who eq $server) &amp;&amp; ($path eq $where)} {
@@ -2104,7 +2104,7 @@ proc http_req {args} {
 
      #extract HTTP status code to $rslt
      if {([string length $hdrs] &lt; 16) ||
-         ![regexp {^HTTP/1[.][01]\x20([0-9]+)[^\r]*\r\n} $hdrs skip rslt]} {
+         ![regexp -- {^HTTP/1[.][01]\x20([0-9]+)[^\r]*\r\n} $hdrs skip rslt]} {
       set e "server data unrecognized (not HTTP?), initial bytes:\x20"
       append e [URI::encode [string range $hdrs 0 31]]
       set hdrs ""
@@ -2116,7 +2116,7 @@ proc http_req {args} {
       break
      }
 
-     if {[regexp {(?i)Transfer-Encoding:[\x20\t]*Chunked} $hdrs]} {
+     if {[regexp -- {(?i)Transfer-Encoding:[\x20\t]*Chunked} $hdrs]} {
       set bootylen 0
       set trail false
       while {$ctr &gt; 0} {
@@ -2143,7 +2143,7 @@ proc http_req {args} {
        }
 
        set hex ""
-       if {[regexp {^(?:[\r\n])*([0-9A-Fa-f]+)[^\r]*\r\n} $chunk skip hex] &amp;&amp;
+       if {[regexp -- {^(?:[\r\n])*([0-9A-Fa-f]+)[^\r]*\r\n} $chunk skip hex] &amp;&amp;
            ($hex ne "0")} {
         if {[catch {recv -status sts [string length $skip] $conn} junk]} {
          set e "skip chunksz fails: ${sts} (${junk})"
@@ -2182,7 +2182,7 @@ proc http_req {args} {
         set e "timed-out while flushing optional trailing headers"
        }
       }
-     } elseif {(![set clh [regexp {(?i)Content-Length:[\x20\t]*([0-9]+)} $hdrs junk clen]] &amp;&amp;
+     } elseif {(![set clh [regexp -- {(?i)Content-Length:[\x20\t]*([0-9]+)} $hdrs junk clen]] &amp;&amp;
                 [set clen $maxbody]) ||
                (($clen &gt; 0) &amp;&amp; ($clen &lt;= $maxbody))} {
       set z [expr {$ctr * $intvl}]
@@ -2245,12 +2245,12 @@ proc http_req {args} {
    }
 
    #compute default cookie path
-   regexp {^/[^?#]*} $path ckypath
+   regexp -- {^/[^?#]*} $path ckypath
    if {[set x [string last "/" $ckypath]] &gt; 0} { incr x -1 }
    set ckypath [string range $ckypath 0 $x]
 
    #remove LWS from headers
-   set hdrs [regsub -all {[\x20\t]*\r\n[\x20\t]+} $hdrs "\x20"]
+   set hdrs [regsub -all -- {[\x20\t]*\r\n[\x20\t]+} $hdrs "\x20"]
 
    #parse headers
    set mimetype "unk/unk"
@@ -2260,7 +2260,7 @@ proc http_req {args} {
    set hdrs [string map [list "\r\n" "\n"] $hdrs]
    set rlist [split $hdrs "\n"]
    foreach rline $rlist {
-    if {![regexp {^([^:]+):[ \t]+(.*)} $rline junk n v]} { continue }
+    if {![regexp -- {^([^:]+):[ \t]+(.*)} $rline junk n v]} { continue }
     set v [string trim $v]
 
     #I wish (September 2013) iRules had "switch -nocase"
@@ -2269,11 +2269,11 @@ proc http_req {args} {
       set cky [set val [set opts ""]]
       #unlike some browsers we reject nameless cookies
       while {([string bytelength $v] &lt; 4480) &amp;&amp;
-             [regexp $static::HSSR_ckymatch $v junk cky val opts]} {
-       if {[regexp {(?i)Domain=[.]?([^.;\x20\t][^;\x20\t]*)} $opts junk cdom]} {
+             [regexp -- $static::HSSR_ckymatch $v junk cky val opts]} {
+       if {[regexp -- {(?i)Domain=[.]?([^.;\x20\t][^;\x20\t]*)} $opts junk cdom]} {
         set cdom [string tolower $cdom]
         if {[string index $cdom 0] eq "\x5b"} {
-         if {!$ipv6 || ![regexp $static::HSSR_ipv6match $cdom junk caddr] ||
+         if {!$ipv6 || ![regexp -- $static::HSSR_ipv6match $cdom junk caddr] ||
              ![IP::addr $caddr equals $haddr]} {
           if {!$milk} { break }
           set cdom "***"
@@ -2292,21 +2292,21 @@ proc http_req {args} {
        }
 
        #rfc6265 has ?query in cookie-path but not MS-IE and not us
-       if {![regexp {(?i)Path=(/[^?#;]*)} $opts junk cpth]} {
+       if {![regexp -- {(?i)Path=(/[^?#;]*)} $opts junk cpth]} {
         set cpth $ckypath
        }
-       regsub -all {(?://)|(?:[^/]+/[.][.]/)} $cpth "/" cpth
+       regsub -all -- {(?://)|(?:[^/]+/[.][.]/)} $cpth "/" cpth
        set cpsz [string length $cpth]
 
        set cexp 2147485546
-       if {[regexp {(?i)Max-Age=([0-9]+)} $opts junk expdt]} {
+       if {[regexp -- {(?i)Max-Age=([0-9]+)} $opts junk expdt]} {
         set cexp [expr {$expdt + [clock seconds]}]
-       } elseif {[regexp {(?i)Expires=([^;]+);?} $opts junk expdt] &amp;&amp;
+       } elseif {[regexp -- {(?i)Expires=([^;]+);?} $opts junk expdt] &amp;&amp;
                  ![catch {clock scan $expdt -gmt 1} expdt]} {
         set cexp $expdt
        }
 
-       set cscr [regexp {(?i)\ySecure;?\y} $opts]
+       set cscr [regexp -- {(?i)\ySecure;?\y} $opts]
 
        #cookie names and paths ARE case-sensitive
        set repl 0
@@ -2341,7 +2341,7 @@ proc http_req {args} {
        }
        if {$v starts_with "/"} {
         #relative path so contact same host
-        if {![regexp {^/[^\x23]*} $v a] || ([string length $a] &gt; 2040)} {
+        if {![regexp -- {^/[^\x23]*} $v a] || ([string length $a] &gt; 2040)} {
          set e "bogus redirect from ${dest} '${server}'"
          set rtry -2
          break
@@ -2350,7 +2350,7 @@ proc http_req {args} {
         set r $rTLS
         set h $host
         set p $port
-       } elseif {[regexp $static::HSSR_urlsplit $v junk s toss lose h p a] &amp;&amp;
+       } elseif {[regexp -- $static::HSSR_urlsplit $v junk s toss lose h p a] &amp;&amp;
                  ([string length $a] &lt; 2041) &amp;&amp; ($a ne "*")} {
         set s [string tolower $s]
         set r [expr {[string index $s end] eq "s"}]
@@ -2372,7 +2372,7 @@ proc http_req {args} {
       #don't molest host/port/etc before swallowing all cookies
      }
      "connection" {
-      if {$connected &amp;&amp; ($rslt != 100) &amp;&amp; [regexp {(?i)\yclose\y} $v]} {
+      if {$connected &amp;&amp; ($rslt != 100) &amp;&amp; [regexp -- {(?i)\yclose\y} $v]} {
        catch {close $conn}
        set connected false
       }
@@ -2385,8 +2385,8 @@ proc http_req {args} {
      }
      "content-type" {
       set v [string tolower $v]
-      regexp {^[^/;\x20\t]+/[^;\x20\t]+} $v mimetype
-      if {![regexp {(?i)charset=([^;\x20\t]+)} $v junk charset] &amp;&amp;
+      regexp -- {^[^/;\x20\t]+/[^;\x20\t]+} $v mimetype
+      if {![regexp -- {(?i)charset=([^;\x20\t]+)} $v junk charset] &amp;&amp;
           (($mimetype starts_with "text/") ||
            ($mimetype eq "application/javascript") ||
            ($mimetype eq "application/ecmascript")) &amp;&amp; ($sniff != 2)} {
@@ -2394,7 +2394,7 @@ proc http_req {args} {
       }
      }
      "www-authenticate" {
-      if {($rslt == 401) &amp;&amp; ($creds ne "") &amp;&amp; [regexp {(?i)Basic\x20} $v]} {
+      if {($rslt == 401) &amp;&amp; ($creds ne "") &amp;&amp; [regexp -- {(?i)Basic\x20} $v]} {
        #We already sent "Authorization: Basic XXX" header but some servers
        #(f5 APM) will 401 first request and only look for creds on second
        #request (and change cookies too)
@@ -2402,13 +2402,13 @@ proc http_req {args} {
       }
      }
      "proxy-authenticate" {
-      if {($rslt == 407) &amp;&amp; ($pxy_uid ne "") &amp;&amp; [regexp {(?i)Basic\x20} $v]} {
+      if {($rslt == 407) &amp;&amp; ($pxy_uid ne "") &amp;&amp; [regexp -- {(?i)Basic\x20} $v]} {
        set rslt 455 ; #what, again?
       }
      }
      "retry-after" {
-      if {[regexp {^(503|(30[1237]))$} $rslt] &amp;&amp; (
-           ([regexp {^[0-9]+} $v delay] &amp;&amp; $delay) ||
+      if {[regexp -- {^(503|(30[1237]))$} $rslt] &amp;&amp; (
+           ([regexp -- {^[0-9]+} $v delay] &amp;&amp; $delay) ||
            ( ![catch {clock scan $v -gmt 1} dttm] &amp;&amp;
              ([set delay [expr {$dttm - [clock seconds]}]] &gt; -1) )
           ) &amp;&amp; (
@@ -2449,7 +2449,7 @@ proc http_req {args} {
    set rTLS $r
    set host $h
    if {[set ipv6 [expr {[string index $host 0] eq "\x5b"}]]} {
-    regexp $static::HSSR_ipv6match $host junk haddr
+    regexp -- $static::HSSR_ipv6match $host junk haddr
    }
    set port $p
    set server "${host}:${port}"
@@ -2510,13 +2510,13 @@ proc http_req {args} {
     break
    }
 
-   if {[regexp $static::HSSR_quiver $odor contag] &amp;&amp;
-       [regexp {(?i)[\x20\t]content=['\x22]?([^'\x22&gt;]+)} $contag junk contype]} {
+   if {[regexp -- $static::HSSR_quiver $odor contag] &amp;&amp;
+       [regexp -- {(?i)[\x20\t]content=['\x22]?([^'\x22&gt;]+)} $contag junk contype]} {
     set contype [string tolower $contype]
-    regexp {^[^/;\x20\t]+/[^;\x20\t]+} $contype mymtype
+    regexp -- {^[^/;\x20\t]+/[^;\x20\t]+} $contype mymtype
     if {$mimetype eq "unk/unk"} { set mimetype $mymtype }
 
-    if {![regexp {charset=([^;\x20\t]+)} $contype junk charset] &amp;&amp;
+    if {![regexp -- {charset=([^;\x20\t]+)} $contype junk charset] &amp;&amp;
         (($mimetype starts_with "text/") ||
          ($mimetype eq "application/javascript") ||
          ($mimetype eq "application/ecmascript")) &amp;&amp; ($sniff != 2)} {
@@ -2525,12 +2525,12 @@ proc http_req {args} {
     if {$charset ne "binary"} { break }
    }
 
-   if {[regexp {/((xml)|([^;\x20\t]+[+]xml))} $mimetype]} {
+   if {[regexp -- {/((xml)|([^;\x20\t]+[+]xml))} $mimetype]} {
     set charset "utf-8" ; #text/xml dfl is ASCII; UTF-8 common, incls. both
     #but next we check for overrides...
    }
-   if {[regexp $static::HSSR_csetmeta $odor junk charset] ||
-       [regexp $static::HSSR_xmlenc $odor junk charset]} {
+   if {[regexp -- $static::HSSR_csetmeta $odor junk charset] ||
+       [regexp -- $static::HSSR_xmlenc $odor junk charset]} {
     set charset [string tolower $charset]
    }
    if {$charset ne "binary"} { break }
@@ -2705,7 +2705,7 @@ when CLIENT_ACCEPTED {
 }
 
 when HTTP_REQUEST {
- regexp {^[^\x5b:][^:]*} [HTTP::header value Host] h
+ regexp -- {^[^\x5b:][^:]*} [HTTP::header value Host] h
 
  if {[set v [HTTP::header value X-HSSR-Helper]] ne ""} {
   HTTP::header remove X-HSSR-Helper
