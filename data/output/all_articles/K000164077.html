@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000164077: Slow Large-File Uploads to the BIG-IP Tenant Management IP over High-Latency Connections</title>
+<meta name="description" content="Support Solution: Slow Large-File Uploads to the BIG-IP Tenant Management IP over High-Latency Connections — Uploading large files using SCP or SFTP into a BIG-IP tenant management interface IP on an rSeries appliance may become very slow specially when the round-trip time (RTT) between the SCP/SFTP client…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000164077">
+</head>
+<body>
+<header>
+<h1>K000164077: Slow Large-File Uploads to the BIG-IP Tenant Management IP over High-Latency Connections</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-11-02</dd>
+<dt>Updated</dt><dd>2026-11-02</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>F5OS Products</li><li>BIG-IP LTM: 17.1.X, 17.5.X, 21.1.X, 21.0.X, 21.1.0, 21.0.0, 17.5.1, 17.5.0, 17.1.3, 17.1.2, 17.1.1, 17.1.0</li><li>F5OS-A: 1.8.X, 1.8.4, 1.8.3, 1.8.0</li><li>F5OS-C: 1.8.X, 1.8.2, 1.8.1, 1.8.0</li><li>F5OS: 2.X.X, 2.0.X, 2.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000164077">https://my.f5.com/manage/s/article/K000164077</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Uploading large files using SCP or SFTP into a BIG-IP tenant management interface IP on an rSeries appliance may become very slow specially when the round-trip time (RTT) between the SCP/SFTP client and the tenant is high. </p>
+<h2>Environment</h2>
+<ul><li>rSeries host</li><li>BIG-IP tenant</li><li>Uploading large files (ie. ISO) towards BIG-IP tenant management interface IP over a link with high RTT.</li></ul>
+<h2>Cause</h2>
+<p>Generic receive offload (GRO) feature on the rSeries host causes smaller segments to be queued behind larger aggregated segments resulting in segments arriving out of order in the tenant. PD has assigned ID2707301 (F5OS) and ID2711641 (BIG-IP) for this issue.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>1. For the r2k host, execute these commands on Bash: </p>
+<p>    <span style="background-color: #f1f1f1;">nmcli connection modify mgmt ethtool.feature-gro off</span> <br>    <span style="background-color: #f1f1f1;">nmcli connection up mgmt </span></p>
+<p>  To verify: </p>
+<p>  <span style="background-color: #f1f1f1;">nmcli connection show mgmt | grep gro</span> </p>
+<p><span style="color: #15891f;"><em>  <strong>Note</strong>: This setting will survive reboots and upgrades. </em></span></p>
+<p>2. For the tenant, there are 2 parts: </p>
+<p>    2.1. For eth0, execute this command: </p>
+<p>      <span style="background-color: #f1f1f1;">echo &#39;ETHTOOL_OPTS=&quot;-K ${DEVICE} gro off&quot;&#39; &gt;&gt; /etc/sysconfig/network-scripts/ifcfg-eth0</span> </p>
+<p>    To verify: </p>
+<p>      <span style="background-color: #f1f1f1;">ethtool -k eth0 | egrep &quot;generic-receive&quot;</span> </p>
+<p><span style="color: #15891f;"><em>     <strong>Note</strong>: This setting survives reboots, but not upgrades. This particular step will need to be performed when the BIG-IP tenant is upgraded.</em></span></p>
+<p>    2.2. For mgmt, a script needs to be created so that /config/startup calls it every time that the tenant reboots. Create a script (ie. /config/startup_script_ID2711641.sh) on the BIG-IP similar to the following: </p>
+<pre class="language-c" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>#!/bin/bash 
+# Filename: /config/startup_script_ID2711641.sh 
+# Workaround for ID2711641 
+
+source /usr/lib/bigstart/bigip-ready-functions 
+wait_bigip_ready 
+
+/sbin/ethtool -K mgmt gro off </code></pre>
+<p> <br>    Make the script executable. </p>
+<p>      <span style="background-color: #f1f1f1;">chmod +x /config/startup_script_ID2711641.sh </span><br> <br>    Add the script into /config/startup: </p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code># 
+# NOTE: 
+# This file will be installed in /config/startup and it will 
+# be called by /etc/rc.local. 
+# 
+# - /config/startup is for customer config additions and 
+# will be saved in UCS 
+# 
+# - /etc/rc.local should *not* be used by customers and 
+# can/will be changed by F5 
+# 
+
+/config/startup_script_ID2711641.sh &amp; </code></pre>
+<p><span style="color: #15891f;"><em>    <strong>Note</strong>: This setting will survive reboots and upgrades.  </em></span></p>
+<p>    To have the setting take effect immediately without rebooting the tenant, execute the following from the tenant&#39;s Bash CLI: </p>
+<p>      <span style="background-color: #f1f1f1;">/sbin/ethtool -K mgmt gro off </span></p>
+<p>    To verify: </p>
+<p>      <span style="background-color: #f1f1f1;">ethtool -k mgmt | egrep &quot;generic-receive&quot; </span><br> <br><em><span style="color: #15891f;"><strong>Note</strong>: PD recommends to only use these workaround steps for devices affected when transferring files going to the tenant. </span></em></p>
+<p> </p>
+<h2>Additional Information</h2>
+<p>None.</p>
+</article>
+</body>
+</html>
