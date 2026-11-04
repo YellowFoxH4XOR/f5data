@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000164103: VELOS Controller Stuck at &quot;Waiting for ConfD&quot; After F5OS-C Upgrade</title>
+<meta name="description" content="Support Solution: VELOS Controller Stuck at &quot;Waiting for ConfD&quot; After F5OS-C Upgrade — After an F5OS-C controller upgrade on a VELOS chassis, the standby controller may fail to complete startup and remain at the console prompt Waiting for ConfD. The Kubernetes API on that controller is…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000164103">
+</head>
+<body>
+<header>
+<h1>K000164103: VELOS Controller Stuck at &quot;Waiting for ConfD&quot; After F5OS-C Upgrade</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-11-04</dd>
+<dt>Updated</dt><dd>2026-11-04</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS Products</li><li>F5OS-C: 1.8.X, 1.8.2, 1.8.1, 1.8.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000164103">https://my.f5.com/manage/s/article/K000164103</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>After an F5OS-C controller upgrade on a VELOS chassis, the standby controller may fail to complete startup and remain at the console prompt <span style="background-color: #f1f1f1;">Waiting for ConfD</span>. The Kubernetes API on that controller is unreachable, and the active controller cannot complete the upgrade.</p>
+<p>Symptoms and log messages:</p>
+<ul><li><span style="background-color: #f1f1f1;">show system image</span> shows the target image as <span style="font-family: &#39;courier new&#39;, courier, monospace;">in-progress</span> on the standby controller and <span style="font-family: &#39;courier new&#39;, courier, monospace;">pending</span> on the active controller.</li><li><span style="background-color: #f1f1f1;">docker ps -a</span> shows the <span style="font-family: &#39;courier new&#39;, courier, monospace;">etcd</span> and <span style="font-family: &#39;courier new&#39;, courier, monospace;">api_master</span> containers repeatedly exiting, while the <span style="font-family: &#39;courier new&#39;, courier, monospace;">controller-services-registry</span> containers remain running.</li><li><span style="background-color: #f1f1f1;">systemctl status platform-services-deployment.service</span> reports <span style="font-family: &#39;courier new&#39;, courier, monospace;">active (exited)</span>, but the platform service containers are not running.</li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">/var/log_controller/velos.log</span> and <span style="font-family: &#39;courier new&#39;, courier, monospace;">/var/log/messages</span> repeatedly show <span style="font-family: &#39;courier new&#39;, courier, monospace;">bootevent.sh: ... waiting for the alert service container</span>.</li><li>Kubernetes reflector errors appear, such as <span style="font-family: &#39;courier new&#39;, courier, monospace;">Failed to list *v1.Service: ... dial tcp &lt;controller-services-IP&gt;:8443: i/o timeout</span>.</li></ul>
+<h2>Environment</h2>
+<ul><li>Product: F5OS-C (VELOS controller)</li><li>Platform: VELOS chassis with redundant controllers</li><li>Conditions:
+<ul><li>The standby controller imported a controller software image that the active controller did not import, because <span style="font-family: &#39;courier new&#39;, courier, monospace;">/var/export/chassis</span> exceeded the 40% software-import utilization threshold.</li><li>A stale controller-services registry entry for the obsolete version remained in <span style="font-family: &#39;courier new&#39;, courier, monospace;">/var/import/import.json</span> on the standby controller and was assigned port 2508.</li><li>The active controller later assigned port 2508 to the new controller-services registry. The standby controller accepted this assignment without detecting that port 2508 was already in use locally.</li><li>After reboot, port 2508 was backed by the obsolete registry, which did not contain the <span style="font-family: &#39;courier new&#39;, courier, monospace;">chassis-gui</span> image required by the target version. Platform-services deployment failed.</li></ul>
+</li></ul>
+<h2>Cause</h2>
+<ul><li>Duplicate controller-services registry port assignment on the standby controller. The standby controller accepts a registry port from the active controller even when that port is already in use locally. Bug ID <a href="https://cdn.f5.com/product/bugtracker/ID2014413.html" target="_blank">Bug ID 2014413</a> tracks this issue, and the fix is planned for a future F5OS-C release.</li><li>An image may still be imported on the standby controller even when the active controller import fails due to insufficient disk space. Bug ID <a href="https://cdn.f5.com/product/bugtracker/ID2693653.html" target="_blank">Bug ID 2693653</a> tracks this issue, and the fix is planned for a future release.</li></ul>
+<h2>Early Warning</h2>
+<p>Before starting an upgrade, check the image status on both controllers. A controller that failed to import an image displays a &quot;Volume usage limit reached&quot; message in both the GUI and <span style="background-color: #f1f1f1;">show image</span> output.</p>
+<h2>Recommended Actions</h2>
+<p><strong>Workaround and recovery (perform on the affected standby controller only):</strong></p>
+<ol><li>Open an SSH session to the affected controller over the ccpeer link.</li><li>Stop the software management service and back up <span style="font-family: &#39;courier new&#39;, courier, monospace;">import.json</span>:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">systemctl stop sw-mgmt.service</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">cp /var/import/import.json{,.bak}</span></p>
+</li><li>Remove the obsolete image from staging:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">chattr -i /var/import/staging/&lt;obsolete-image&gt;.iso</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">rm -vf /var/import/staging/&lt;obsolete-image&gt;.iso</span></p>
+</li><li>Edit <span style="font-family: &#39;courier new&#39;, courier, monospace;">/var/import/import.json</span> to remove all references to the obsolete version. Make sure the JSON remains valid after the edit, for example by removing the trailing comma from the preceding entry. Verify the affected lines on your system before editing.</li><li>Set ccsync to standby mode:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">echo standby &gt; /etc/ccsync/mode.conf</span></p>
+</li><li>Reboot the controller:
+<p><span style="background-color: #f1f1f1;">reboot</span></p>
+</li><li>After the reboot, verify that the platform services started without image pull errors:
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">journalctl -b -u sw-mgmt.service -u platform-services-deployment.service --no-pager</span></p>
+<p>Add <span style="font-family: &#39;courier new&#39;, courier, monospace;">-f</span> to monitor in real time.</p>
+</li></ol>
+<p>If the issue persists, collect a host-only qkview from the affected controller and contact F5 Support.</p>
+<p><strong>Preventive measures (until running a fixed release):</strong></p>
+<ul><li>Verify that the software images in <span style="font-family: &#39;courier new&#39;, courier, monospace;">/var/import/staging</span> are synchronized between both controllers.</li><li>Remove older, unused images as part of routine housekeeping.</li><li>Keep <span style="font-family: &#39;courier new&#39;, courier, monospace;">/var/export/chassis</span> below the 40% software-import utilization threshold.</li><li>Check <span style="font-family: &#39;courier new&#39;, courier, monospace;">/var/import/import.json</span> for duplicate port assignments before starting an upgrade, especially where the duplicate relates to the current or target software version.</li></ul>
+<h2>Additional Information</h2>
+<ul><li>The repeated <span style="font-family: &#39;courier new&#39;, courier, monospace;">waiting for the alert service container</span> message in the boot logs is expected when platform services fail to start. It indicates a loop in <span style="font-family: &#39;courier new&#39;, courier, monospace;">bootevent.sh</span> and does not identify the root cause by itself.</li><li>Restarting <span style="font-family: &#39;courier new&#39;, courier, monospace;">platform-services-deployment.service</span> or rebooting the controller alone may not resolve the issue. Correcting the registry configuration in <span style="font-family: &#39;courier new&#39;, courier, monospace;">import.json</span> and removing the stale image may be required.</li></ul>
+</article>
+</body>
+</html>

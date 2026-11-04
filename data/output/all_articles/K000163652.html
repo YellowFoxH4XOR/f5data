@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000163652: Device trust fails with &quot;This device is not found&quot; when you click on &#x27;Device Certificate Matches&#x27; button in Step 2</title>
+<meta name="description" content="Support Solution: Device trust fails with &quot;This device is not found&quot; when you click on &#x27;Device Certificate Matches&#x27; button in Step 2 — When trying to build Device Trust, you get below error in Step 2 - when you click on &#x27;Device Certificate Matches&#x27; button. Step 1, there is no issue.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000163652">
+</head>
+<body>
+<header>
+<h1>K000163652: Device trust fails with &quot;This device is not found&quot; when you click on &#x27;Device Certificate Matches&#x27; button in Step 2</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-11-03</dd>
+<dt>Updated</dt><dd>2026-11-03</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000163652">https://my.f5.com/manage/s/article/K000163652</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<ul><li><span dir="ltr">When trying to build Device Trust, you get below error in Step 2 - when you click on &#39;<em>Device Certificate Matches</em>&#39; button. Step 1, there is no issue.<br></span><span dir="ltr"><span style="font-family: &#39;courier new&#39;, courier, monospace;">This device is not found</span></span></li></ul>
+<p>Symptoms:</p>
+<ul><li>The initial HTTPS connection to the peer on TCP 443 succeeds, and the peer certificate is displayed.</li><li>Trust establishment fails when additional HTTPS connections are opened to the peer.</li><li>Logs on both devices show no explicit error.</li><li>Packet captures show large TCP segments with the Don&#39;t Fragment (DF) bit set that never reach the peer. The sender retransmits them repeatedly, and no ICMP &quot;<em>fragmentation needed</em>&quot; messages are returned.</li></ul>
+<h2>Environment</h2>
+<ul><li><span dir="ltr">You are building device trust between two different plaforms. For example vCMP guest on iSeries and Tenant on rSeries. Issue is not explicit with building trust between different platforms.</span></li><li>Devices in different management subnets, with at least one intermediate Layer 3 device on the path</li><li><span style="background-color: #f1f1f1;">icontrol.basic_auth</span> set to <strong>enable</strong> (default) on both devices</li><li><span style="background-color: #f1f1f1;">tmsh list /sys icontrol-soap</span> returns an empty configuration, <strong>httpd allow</strong> is <strong>All</strong>, and <strong>sshd allow</strong> is <strong>ALL</strong></li><li>A device in the Forced Offline state is being added to or joined to a trust domain</li></ul>
+<h2>Cause</h2>
+<ul><li><strong>Network MTU mismatch (packet drops for large packets) on the path between the management IPs.</strong> You will see packet drops. Not all packets reach the peer device. For example a 1527-byte TCP segment was split by TCP Segmentation Offload into 1448-byte and 79-byte segments. The 1448-byte segment never reached the peer, and its retransmissions were never received. The segments were within the MSS (1460 bytes) and had DF set, but no ICMP unreachable messages appeared in the captures, so they were either not generated or were dropped.</li><li>The root cause is in your network infrastructure limitation, not in BIG-IP.</li></ul>
+<h2>Answer/Recommended Actions</h2>
+<ol><li><strong>Verify basic reachability and allow lists on both peers.</strong>
+<ul><li>Confirm ICMP, TCP 22, and TCP 443 connectivity between the management IPs.</li><li>Run <span style="background-color: #f1f1f1;">tmsh list sys httpd allow</span> and <span style="background-color: #f1f1f1;">tmsh list sys sshd allow</span>. Both must permit the peer.</li><li>Run <span style="background-color: #f1f1f1;">tmsh list /sys icontrol-soap</span>. An empty configuration means no restrictions are configured.</li></ul>
+</li><li><strong>Confirm the path MTU between the peers.</strong> Run the following from each device, replacing the placeholder with the peer&#39;s management IP:
+<ul><li><span style="background-color: #f1f1f1;">tracepath -n &lt;peer-mgmt-ip&gt;</span></li><li><span style="background-color: #f1f1f1;">ping -M do -s 1472 &lt;peer-mgmt-ip&gt; -c3</span></li><li>Start with an ICMP payload of 1472 bytes. This corresponds to a 1500-byte IP packet (1472 + 8-byte ICMP header + 20-byte IP header).</li><li>Repeat from the other device to the first device.</li><li>If the 1472-byte ping fails with DF set and a smaller size succeeds, the path MTU is smaller than 1500.</li></ul>
+</li><li><strong>Correct the MTU on the network path.</strong> Check whether the smaller MTU is expected, for example because of a tunnel. If it is not expected, fix the misconfigured link or device so that the path supports 1500-byte packets, and ensure ICMP &quot;fragmentation needed&quot; messages are not blocked.</li><li><strong>Temporary workaround (not persistent).</strong> You can lower the MTU of the management interface to allow trust establishment. This change does not persist across reboots and is not a long-term fix: <span style="background-color: #f1f1f1;">ip link set eth0 mtu &lt;value&gt;</span></li><li><strong>Alternative: establish the trust using a self IP address.</strong> Add the peer by its ConfigSync or self IP address instead of its management IP. Ensure that TCP 4353 (ConfigSync) is reachable between the peers.</li><li><strong>Peer state requirement.</strong> A device in the Forced Offline state cannot be added to a device trust. Bring the device online before adding it.</li><li><strong>If the issue persists after the above steps,</strong> collect data for F5 Support:
+<ul><li>Run <span style="background-color: #f1f1f1;">tcpdump -nni eth0 -s0 &#39;host &lt;peer-1-ip&gt; or host &lt;peer-2-ip&gt; or arp or icmp&#39; -w /var/tmp/${HOSTNAME%%.*}-eth0.pcap</span> on both devices while reproducing the failure. Wait about 30 seconds between attempts.</li><li>Run <span style="background-color: #f1f1f1;">iptables-save -c &amp;&gt;&gt; /var/tmp/${HOSTNAME%%.*}-iptables.out</span> on both devices before, during, and after testing.</li><li>Generate a qkview on both devices after testing (see K12878).</li></ul>
+</li></ol>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>

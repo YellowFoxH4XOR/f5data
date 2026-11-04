@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000138875: UCS generation fails when using iControl REST API</title>
+<meta name="description" content="Support Solution: UCS generation fails when using iControl REST API — UCS creation via the iControl REST API appears to hang when sending a request to /mgmt/tm/sys/ucs">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000138875">
+</head>
+<body>
+<header>
+<h1>K000138875: UCS generation fails when using iControl REST API</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-03-11</dd>
+<dt>Updated</dt><dd>2026-11-03</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 16.1.4</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000138875">https://my.f5.com/manage/s/article/K000138875</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>You observe the following:</p>
+<ul><li>UCS creation via the iControl REST API appears to hang when sending a request to <strong>/mgmt/tm/sys/ucs</strong></li><li>UCS creation via the iControl REST API appears to do nothing when sending a request to <strong>/mgmt/tm/task/sys/ucs</strong></li></ul>
+<h2>Environment</h2>
+<ul><li>BIG-IP v13 and later</li><li>iControl REST API</li></ul>
+<h2>Cause</h2>
+<p>The synchronous, URI, <strong>/mgmt/tm/sys/ucs</strong> request does not get an immediate response when saving large UCS files and waits for a response from iControl REST.</p>
+<p>In contrast, sending a request to the asynchronous URI, <strong>/mgmt/tm/task/sys/ucs</strong> only creates a task with the task state of <strong>STARTED </strong>or <strong>UPDATING</strong>. To start the task, modify the value of task state to <strong>VALIDATING </strong>in a PUT request and specify the <strong>selfLink </strong>as the endpoint.</p>
+<h2>Recommended Actions</h2>
+<p>When saving a large UCS file that will take a long time, create the UCS asynchronously with a task using the URI <strong>/mgmt/tm/task/sys/ucs</strong>. You must then validate that task to run otherwise it will time out and nothing will happen.</p>
+<p>You can follow these steps:</p>
+<ol><li>Create the UCS task. For example:<br><code>curl -sk -u admin:admin -H &quot;Content-Type: application/json&quot; -X POST https://localhost/mgmt/tm/task/sys/ucs -d &#39;{&quot;command&quot;:&quot;save&quot;,&quot;name&quot;:&quot;/var/local/ucs/ucs-filename.ucs&quot;}&#39; | jq</code> <br>Output will appear similar to this:<br><code>{<br> &quot;_taskId&quot;: 1708800684638206,<br> &quot;_taskState&quot;: &quot;STARTED&quot;,<br> &quot;_taskTimeInStateMs&quot;: 0,<br> &quot;_taskResultLink&quot;: &quot;https://localhost/mgmt/tm/task/sys/ucs/1708800684638206/result?ver=16.1.4.2&quot;,<br> &quot;selfLink&quot;: &quot;https://localhost/mgmt/tm/task/sys/ucs/1708800684638206?ver=16.1.4.2&quot;<br> }</code></li><li>The next step is to validate the task so the job will actually run. We accomplish this with the <strong>VALIDATING </strong>keyword and the task ID in the URI. For example:<br><code> curl -sk -u admin:admin -H &#39;Content-Type: application/json&#39; -X PUT -d &#39;{&quot;_taskState&quot;:&quot;VALIDATING&quot;}&#39; https://localhost/mgmt/tm/task/sys/ucs/1708800684638206 | jq</code> <br>Output will appear similar to this:<br><code> {<br> &quot;code&quot;: 202,<br> &quot;message&quot;: &quot;Task will execute asynchronously.&quot;,<br> &quot;errorStack&quot;: []<br> } </code></li><li>(Optional) You can check that the task completed successfully with a GET request to the task ID. This request waits for task completion to produce output so you typically should wait to run it until after you expect the UCS creation task to be complete. For example:<br><code>curl -sk -u admin:admin https://localhost/mgmt/tm/task/sys/ucs/1708800684638206 | jq </code><br>Output will appear similar to this:<br><code>
+    {<br>&quot;selfLink&quot;: &quot;https://localhost/mgmt/tm/task/sys/ucs/1708800684638206?ver=16.1.4.2&quot;,<br>&quot;_taskId&quot;: 1708800684638206,<br>&quot;_taskState&quot;: &quot;COMPLETED&quot;,<br>&quot;_taskTimeInStateMs&quot;: 74000,<br>&quot;_taskResultLink&quot;: &quot;https://localhost/mgmt/tm/task/sys/ucs/1708800684638206/result?ver=16.1.4.2&quot;<br>}
+      </code></li></ol>
+<h2>Additional Information</h2>
+<p>The above examples are shown piping the data to the <strong>jq </strong>command. While not mandatory, this tool will display the output in a much easier to read format.</p>
+</article>
+</body>
+</html>
