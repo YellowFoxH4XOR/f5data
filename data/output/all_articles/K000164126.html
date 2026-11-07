@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000164126: CIS ExternalDNS empty-pool wideIP causes recurring GTM reconcile failure</title>
+<meta name="description" content="Support Solution: CIS ExternalDNS empty-pool wideIP causes recurring GTM reconcile failure — When F5 Container Ingress Services (CIS) is configured to manage BIG-IP DNS (GTM) wideIPs through ExternalDNS custom resources, GTM provisioning can stop working and the controller log repeats the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000164126">
+</head>
+<body>
+<header>
+<h1>K000164126: CIS ExternalDNS empty-pool wideIP causes recurring GTM reconcile failure</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-11-06</dd>
+<dt>Updated</dt><dd>2026-11-06</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP Platforms</li><li>F5 Automation and Orchestration</li><li>BIG-IP</li><li>F5 BIG-IP Resources for Terraform</li><li>F5 BIG-IP Container Ingress Services</li><li>F5 Application Services 3 Extension</li><li>BIG-IP GTM</li><li>BIG-IP LTM</li><li>BIG-IP Cloud Edition</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000164126">https://my.f5.com/manage/s/article/K000164126</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When F5 Container Ingress Services (CIS) is configured to manage BIG-IP DNS (GTM) wideIPs through ExternalDNS custom resources, GTM provisioning can stop working and the controller log repeats the same error roughly every 128 seconds.</p>
+<p>New ExternalDNS resources no longer deploy as wideIPs, and the condition does not clear on its own.</p>
+<ul><li>GTM/ExternalDNS provisioning halts; newly created or updated ExternalDNS resources never appear as wideIPs on the BIG-IP.</li><li>The CIS controller log repeats the same error on a backoff interval that grows to and then stays at 128 seconds</li><li>Restarting the CIS pod temporarily restores GTM provisioning, but the error returns while the offending resource still exists</li><li>On the BIG-IP, one or more wideIPs are left with no pool (a &quot;pool-less&quot; wideIP)</li><li>At the default INFO log level (no traceback is shown, and the triggering resource is not named):</li></ul>
+<p style="padding-left: 40px;"><span style="font-family: times new roman, times, serif;background-color: #dddddd;">[__main__ ERROR] Unexpected error: list index out of range</span><br><span style="font-family: times new roman, times, serif;background-color: #dddddd;">[__main__ ERROR] Error applying config, will try again in 128 seconds</span></p>
+<ul><li>At <span style="font-family: times new roman, times, serif;">--log-level=DEBUG,</span> the full Python traceback is visible:</li></ul>
+<p style="padding-left: 40px;"><span style="font-family: times new roman, times, serif;background-color: #dddddd;">[__main__ ERROR] Unexpected error: list index out of range</span><br><span style="font-family: times new roman, times, serif;background-color: #dddddd;">Traceback (most recent call last):</span><br><span style="font-family: times new roman, times, serif;background-color: #dddddd;">  File &quot;/usr/local/bin/bigipconfigdriver.py&quot;, line 396, in _do_reset</span><br><span style="font-family: times new roman, times, serif;background-color: #dddddd;">    gtmIncomplete=self._update_gtm(config)</span><br><span style="font-family: times new roman, times, serif;background-color: #dddddd;">  File &quot;/usr/local/bin/bigipconfigdriver.py&quot;, line 477, in _update_gtm</span><br><span style="font-family: times new roman, times, serif;background-color: #dddddd;">    mgr._gtm.delete_update_gtm(</span><br><span style="font-family: times new roman, times, serif;background-color: #dddddd;">  File &quot;/usr/local/bin/bigipconfigdriver.py&quot;, line 792, in delete_update_gtm</span><br><span style="font-family: times new roman, times, serif;background-color: #dddddd;">    self.handle_operation_create(gtm,partition,gtmConfig,opr_config[opr],opr)</span><br><span style="font-family: times new roman, times, serif;background-color: #dddddd;">  File &quot;/usr/local/bin/bigipconfigdriver.py&quot;, line 866, in handle_operation_create</span><br><span style="font-family: times new roman, times, serif;background-color: #dddddd;">    self._gtm_config[partition][&#39;wideIPs&#39;][index][&quot;pools&quot;][...]</span><br><span style="font-family: times new roman, times, serif;background-color: #dddddd;">IndexError: list index out of range</span></p>
+<h2>Environment</h2>
+<ul><li>F5 Container Ingress Services (CIS / k8s-bigip-ctlr)</li><li>BIG-IP DNS (GTM) provisioning via CIS</li><li>ExternalDNS custom resource (CRD mode)</li></ul>
+<h2>Cause</h2>
+<ul><li>This is a defect in the CIS GTM/ExternalDNS agent (<span style="font-family: times new roman, times, serif;">bigipconfigdriver.py</span>), tracked as Bug ID 2564737</li><li>During each reconcile, the CIS GTM agent rebuilds its desired GTM configuration from the ExternalDNS resources, compares it against an in-memory cache (<span style="font-family: times new roman, times, serif;">self._gtm_config</span>), and pushes only the differences to BIG-IP DNS.</li><li>When a wideIP loses its last pool, the delete path removes the pool from the cached wideIP entry but does not remove the wideIP itself. This leaves a cache entry for a wideIP with an empty pool list<span style="font-family: times new roman, times, serif;"> (pools: []) </span>— effectively a DNS name that points to nothing.</li><li>Later in that same reconcile pass, the create/update path walks the cache and indexes into that wideIP&#39;s pool list<span style="font-family: times new roman, times, serif;"> (...[&#39;wideIPs&#39;][index][&quot;pools&quot;][...]). </span>Because the list is now empty, the code reaches for an element that does not exist and raises <span style="font-family: times new roman, times, serif;">IndexError: list index out of range.</span></li><li>That exception aborts the reconcile before the cache can be refreshed, so the bad entry is never cleaned up. Every subsequent reconcile pass (approximately every 128 seconds) trips over the same &quot;poisoned&quot; wideIP and fails again. The result is that all GTM provisioning stays stuck, and a restart alone does not permanently resolve it — if the offending resource still exists, the freshly rebuilt cache is re-poisoned on the next pass.</li></ul>
+<h2>Answer/Recommended Actions</h2>
+<ul><li>Upgrade CIS to 2.20.5 or later, which contains the fix for Bug ID 2564737.</li><li>In the fixed version, the GTM reconcile no longer fails when a wideIP&#39;s pool list becomes empty; the pool-removal event is followed by a successful, continued reconcile instead of the <span style="font-family: times new roman, times, serif;">IndexError</span>, and no pool-less wideIP &quot;poison&quot; is created.</li></ul>
+<h2>Additional Information</h2>
+<p>Bug ID: 2564737 (fixed in CIS 2.20.5)</p>
+</article>
+</body>
+</html>

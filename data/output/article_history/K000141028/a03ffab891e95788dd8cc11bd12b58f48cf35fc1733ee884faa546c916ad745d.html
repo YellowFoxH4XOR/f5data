@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000141028: PowerBI App limitations with Portal Access</title>
+<meta name="description" content="Support Solution: PowerBI App limitations with Portal Access — Power BI web application may not work properly when deployed with Portal Access.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000141028">
+</head>
+<body>
+<header>
+<h1>K000141028: PowerBI App limitations with Portal Access</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2024-09-11</dd>
+<dt>Updated</dt><dd>2024-09-13</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP APM: 17.X.X, 16.X.X, 15.X.X, 17.1.X, 17.1.1, 17.1.0, 17.0.X, 17.0.0, 16.1.X, 16.1.5, 16.1.4, 16.1.3, 16.1.2, 16.1.1, 16.1.0, 16.0.X, 16.0.1, 16.0.0, 15.1.X, 15.1.10, 15.1.9, 15.1.8, 15.1.7, 15.1.6, 15.1.5, 15.1.4, 15.1.3, 15.1.2, 15.1.1, 15.1.0, 15.0.X, 15.0.1, 15.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000141028">https://my.f5.com/manage/s/article/K000141028</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>Power BI web application may not work properly when deployed with Portal Access.<br>There are at least two known limitations which can be identified via specific web developer tools console errors.</p>
+<p><span style="text-decoration: underline;">First error:</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">cache-fm-Modern.js:1494 Uncaught TypeError: Cannot read properties of undefined (reading &#39;document&#39;) and this need to be handled.</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">at get_ (cache-fm-Modern.js:1494:187)</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">at get_frameElement (cache-fm-Modern.js:1496:8)</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">at F5_st (cache-fm-Modern.js:1497:9)</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">at F5_st_set (cache-fm-Modern.js:2234:1387)</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">at cache-fm-Modern.js:2236:35</span></p>
+<p><span style="text-decoration: underline;">Second error:</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Uncaught DOMException: DOMException: Failed to read the &#39;localStorage&#39; property from &#39;Window&#39;: The document is sandboxed and lacks the &#39;allow-same-origin&#39; flag.</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    at F5_st (cache-fm-Modern.js:7:124)</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    at F5_st_set (cache-fm-Modern.js:2233:1387)</span><br><span style="font-family: &#39;courier new&#39;, courier, monospace;">    at cache-fm-Modern.js:2235:35</span></p>
+<h2>Environment</h2>
+<ul><li>Power BI Application</li><li>Portal Access</li></ul>
+<h2>Cause</h2>
+<ul><li>First error is due to ID 1617037</li><li>Second error is due to ID 840257</li></ul>
+<h2>Recommended Actions</h2>
+<ul><li>For bug ID 1617037, you can use a custom cache-fm-Modern.js which you can download here: <a href="https://techdocs.f5.com/dam/f5/kb/global/solutions/k000141028/cache-fm-Modern_bugID1617037.txt" target="_blank">cache-fm-Modern_bugID1617037.txt</a></li></ul>
+<p><span style="color: rgb(21, 137, 31);"><em><strong>Note</strong>: the fix for bug ID <a href="https://cdn.f5.com/product/bugtracker/ID1552685.html" target="_blank">1552685</a> mentioned in <a href="https://my.f5.com/manage/s/article/K000138771" target="_blank">K000138771</a> is included in this custom cache-fm-Modern file.</em></span></p>
+<ul><li>For bug ID 840257, an iRule solution can be used if you know in which file the faulty code should be fixed.</li></ul>
+<p>Example of iRule:</p>
+<p><code># START<br>when HTTP_REQUEST {<br>  if { [HTTP::has_responded] } { return }<br>  if { [HTTP::path] ends_with &quot;replacethisfilename.js&quot; } {<br>     HTTP::header remove &quot;Accept-Encoding&quot;<br>     if { [HTTP::version] eq &quot;1.1&quot; } {<br>        if { [HTTP::header is_keepalive] } {<br>           HTTP::header replace &quot;Connection&quot; &quot;Keep-Alive&quot;<br>        }<br>        HTTP::version &quot;1.0&quot;<br>     }<br>     set sandbox 1<br>  }<br>}<br>when HTTP_RESPONSE {<br>  if { [info exists sandbox] } {<br>     if { [HTTP::header exists &quot;Content-Length&quot;] and [HTTP::header &quot;Content-Length&quot;] &lt;= 6291456 and [HTTP::header &quot;Content-Length&quot;] != 0} {<br>        HTTP::collect [HTTP::header Content-Length]<br>     } else {<br>        HTTP::collect 6291456 ;# 6MB<br>     }<br>  }<br>}<br>when HTTP_RESPONSE_DATA {<br>  if { [info exists sandbox] } {<br>     unset sandbox<br>     set str_sandbox { sandbox=&quot;allow-scripts&quot;}<br>     set strt_sandbox [string first $str_sandbox [HTTP::payload]]<br>     if { $strt_sandbox &gt; 0 } {<br>        HTTP::payload replace $strt_sandbox [string length $str_sandbox] { sandbox=&quot;allow-same-origin allow-scripts&quot;}<br>     }<br>     HTTP::release<br>  }<br>}<br># END</code></p>
+<p><span style="color: rgb(21, 137, 31);"><em><strong>Note</strong>: Make sure you change replacethisfilename.js referenced in the above iRule with the JavaScript filename containing the sandbox code to change. If you don&#39;t know it then it is recommended to open an SR with F5 support.</em></span></p>
+<h2>Additional Information</h2>
+<p>None</p>
+</article>
+</body>
+</html>
