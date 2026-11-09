@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000164149: Telemetry Streaming Fails with &quot;unable to get local issuer certificate&quot; for Publicly Trusted Certificate Chains</title>
+<meta name="description" content="Support Solution: Telemetry Streaming Fails with &quot;unable to get local issuer certificate&quot; for Publicly Trusted Certificate Chains — BIG-IP Telemetry Streaming (TS) cannot send data to an external HTTPS consumer, such as a Splunk HTTP Event Collector (HEC) endpoint, and fails with &quot;unable to get local issuer certificate.&quot; The…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000164149">
+</head>
+<body>
+<header>
+<h1>K000164149: Telemetry Streaming Fails with &quot;unable to get local issuer certificate&quot; for Publicly Trusted Certificate Chains</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-11-09</dd>
+<dt>Updated</dt><dd>2026-11-09</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000164149">https://my.f5.com/manage/s/article/K000164149</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>BIG-IP Telemetry Streaming (TS) cannot send data to an external HTTPS consumer, such as a Splunk HTTP Event Collector (HEC) endpoint, and fails with &quot;<strong>unable to get local issuer certificate</strong>.&quot; The server certificate chain is publicly trusted, and openssl s_client and curl on the BIG-IP validate it successfully. The failure occurs only in the Node.js runtime used by restnoded.</p>
+<p>Error messages (from <strong>/var/log/restnoded/restnoded.log</strong>):</p>
+<ul><li style="font-family: &#39;courier new&#39;, courier, monospace;"><span style="font-family: &#39;courier new&#39;, courier, monospace;">Message: HTTP Error: unable to get local issuer certificate</span></li></ul>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM</li><li>F5 BIG-IP Telemetry Streaming (f5-telemetry package)</li><li>Publicly issued leaf and root certificate</li></ul>
+<h2>Cause</h2>
+<p>The Node.js runtime used by Telemetry Streaming uses its own CA bundle and does not use the system OpenSSL trust store. GlobalSign Root R46 is trusted by the system, but it is not present in the Node.js bundle. As a result, the TLS handshake fails at chain validation even though the server chain is valid.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>Add the GlobalSign Root R46 certificate to the Node.js runtime using the <strong>NODE_EXTRA_CA_CERTS</strong> environment variable. Do not use allowSelfSignedCert: true as a workaround, because the certificate is publicly issued and disabling validation removes server authentication.</p>
+<p>1.) Obtain the <strong>GlobalSign Root R46</strong> certificate in <strong>PEM format </strong>from GlobalSign. Save it on the BIG-IP, for example <strong><em>/config/ssl/ssl.crt/globalsign-r46.pem</em></strong>. Verify the file with <span style="font-family: &#39;courier new&#39;, courier, monospace;background-color: #ecf0f1;"><em>openssl x509 -in &lt;file&gt; -noout -subject</em></span> before you proceed.<br><br>2.) Back up the restnoded startup script:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>cp /etc/bigstart/scripts/restnoded /var/tmp/restnoded.bak</code></pre>
+<p><br>3.) Edit <strong>/etc/bigstart/scripts/restnoded</strong> and add the following line after the existing <em>export</em> <em>NODE_PATH=/usr/lib/node_modules</em> line:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>export NODE_EXTRA_CA_CERTS=/config/ssl/ssl.crt/globalsign-r46.pem</code></pre>
+<p>See below:</p>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>#!/bin/sh
+
+service=restnoded
+
+# First argument passed to these scripts is the number of starts
+start_cnt=$1
+
+# load common functions and clear down indicators
+. /usr/lib/bigstart/functions
+clear_down ${service}
+...
+export NODE_PATH=/usr/lib/node_modules
+export NODE_EXTRA_CA_CERTS=/config/ssl/ssl.crt/globalsign-r46.pem
+...</code></pre>
+<h2>Additional Information</h2>
+<p>Edits to files under <strong>/etc/bigstart/scripts/</strong> are system-level changes. Re-check the change after any software upgrade, because the file may be overwritten.</p>
+</article>
+</body>
+</html>
