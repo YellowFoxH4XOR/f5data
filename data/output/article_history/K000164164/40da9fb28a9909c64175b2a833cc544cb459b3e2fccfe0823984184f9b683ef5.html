@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000164164: BIG-IQ WAF Events Free-Text Search Times Out with Large Event Volumes</title>
+<meta name="description" content="Support Solution: BIG-IQ WAF Events Free-Text Search Times Out with Large Event Volumes — Error on server request 1. The system returned an unexpected error (400 Bad Request). Request timed out.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000164164">
+</head>
+<body>
+<header>
+<h1>K000164164: BIG-IQ WAF Events Free-Text Search Times Out with Large Event Volumes</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-11-10</dd>
+<dt>Updated</dt><dd>2026-11-10</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IQ</li><li>BIG-IQ Centralized Management</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000164164">https://my.f5.com/manage/s/article/K000164164</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>On BIG-IQ, the free-text filter on <strong>Monitoring &gt; WAF &gt; Events</strong> (Web Application Security events) can fail with the following error when the event database is large:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Error on server request 1. The system returned an unexpected error (400 Bad Request). Request timed out.</span></p>
+<p>The free-text filter searches only the records already loaded in the GUI, not the full event database. When the database holds tens of millions of events, a search that uses leading and trailing wildcards (for example, <strong>*Mozilla*</strong>) can run until it times out. </p>
+<h2>Environment</h2>
+<ul><li>BIG-IQ deployed as a BIG-IQ Centralized Management (CM) and BIG-IQ Data Collection Device (DCD) cluster</li><li>Event storage: Elasticsearch with multiple event indices, millions of documents, and hundreds of shards</li><li>Connected BIG-IP systems generating millions of ASM events every couple of hours</li><li>ASM event logging configured to log all requests on the virtual servers</li><li>Search method: free-text wildcard search in the Events filter box with a 1-minute time range</li></ul>
+<h2>Cause</h2>
+<p>The timeout results from two factors that combine:</p>
+<ul><li><strong>Leading-wildcard free-text searches:</strong> Elasticsearch cannot use the sorted term index for a term that begins with <strong>*</strong> or <strong>?</strong>. It must scan every term in the index. Elasticsearch documentation states: &quot;In order to prevent extremely slow wildcard queries, a wildcard term should not start with one of the wildcards * or ?.&quot;</li><li><strong>High event volume and shard count:</strong> Aggressive logging creates a very large document count and shard count. The GUI filter operates on loaded records and does not provide an efficient database-wide search, so large volumes lead to request timeouts.</li></ul>
+<h2>Answer/Recommended Actions</h2>
+<ol><li><strong>Use structured filters instead of the free-text box.</strong> Go to <strong>Monitoring &gt; Events &gt; Web Application Security &gt; Events &gt; Filters and Tags</strong>. Set a short time range and select a specific policy or virtual server.</li><li><strong>Avoid leading wildcards in search terms.</strong> Do not begin a search term with <strong>*</strong> or <strong>?</strong>. If a search is required, use a trailing wildcard only.</li><li><strong>Reduce event logging on the BIG-IP systems:</strong>
+<ul><li>Log illegal requests only, unless your environment requires logging all requests.</li><li>Remove duplicate logging profiles.</li><li>Limit Bot Defense logging to actionable events.</li></ul>
+</li><li><strong>Reduce shard count and stored data on the DCD:</strong>
+<ul><li>Review the <strong>security-auditlog</strong> indices. These indices are not managed by the retention policy and can accumulate over time.</li><li>Remove old <strong>asmindex</strong> indices if they are not required (for example, keep only the last 3–4 days).</li><li>Remove stale empty indices from  past years (for example, <strong>bruteforceprimindex_2021*</strong>, <strong>bruteforcesecindex_2021*</strong>, <strong>botindex_2021*</strong>, <strong>asm-correlation_2021*</strong>).</li><li><span style="color: #c20025;"><em><strong>Warning</strong>: Index deletion is destructive and cannot be undone. Confirm that the data is not required before you delete any index.</em></span></li></ul>
+</li><li><strong>Verify the results.</strong> Run the following commands on the DCD and CM, and confirm the shard count and cluster status have improved:<br><span style="background-color: #f1f1f1;">curl -s localhost:9200/_cluster/health?pretty</span><br><span style="background-color: #f1f1f1;">curl -s localhost:9200/_cat/allocation?v</span></li><li><strong>Use remote syslog for long-term retention.</strong> Forward events to a remote syslog server instead of storing them on the BIG-IQ Data Collection Device. Shorter raw retention also reduces the number of indices and shards.</li></ol>
+<h2>Additional Information</h2>
+<ul><li><strong>Expected behavior:</strong> The free-text filter is limited to records already loaded in the GUI and is not intended for searching millions of records. This limitation also exists in the latest BIG-IQ release, so the steps above are the recommended path rather than a product fix.</li></ul>
+</article>
+</body>
+</html>
