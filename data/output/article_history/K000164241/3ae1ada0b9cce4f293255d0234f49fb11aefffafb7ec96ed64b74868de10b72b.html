@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000164241: Detecting and recovering from system controller or chassis partition split brain on VELOS</title>
+<meta name="description" content="Support Solution: Detecting and recovering from system controller or chassis partition split brain on VELOS — A VELOS system has two system controllers. They run active/standby for management and the cluster control plane, and active/active for backplane traffic. Each chassis partition also runs…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000164241">
+</head>
+<body>
+<header>
+<h1>K000164241: Detecting and recovering from system controller or chassis partition split brain on VELOS</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-11-13</dd>
+<dt>Updated</dt><dd>2026-11-13</dd>
+<dt>Applies to</dt><dd><ul><li>F5OS Products</li><li>F5OS-C: 1.X.X, 1.8.X, 1.8.3, 1.8.2, 1.8.1, 1.8.0, 1.6.X, 1.6.4, 1.6.2, 1.6.1, 1.6.0, 1.5.X, 1.5.1, 1.5.0, 1.3.X, 1.3.2, 1.3.1, 1.3.0, 1.2.X, 1.2.2, 1.2.1, 1.2.0, 1.1.X, 1.1.4, 1.1.3, 1.1.2, 1.1.1, 1.1.0</li><li>F5OS</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000164241">https://my.f5.com/manage/s/article/K000164241</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2> Description</h2>
+<p> A VELOS system has two system controllers. They run active/standby for management and the cluster control plane, and active/active for backplane traffic. Each chassis partition also runs active/standby across the two  controllers. A split brain is when both controllers, or both partition instances, claim the same role: both active, or both standby.</p>
+<p> </p>
+<p> Symptoms can show up at any layer:</p>
+<p> - Both controllers&#39; prompts show active, and each controller reports itself as current-active.</p>
+<p> - The floating management IP address (VIP) is unreachable, because both controllers are standby.</p>
+<p> - Partition configuration or API calls fail or fail back.</p>
+<p> - BIG-IP tenants in an HA pair go active/active.</p>
+<p> </p>
+<p> Rebooting a controller while the other controller is not cluster-ready has the same effect as rebooting both at once, and can lead to an extended outage.</p>
+<p> </p>
+<h2> Environment</h2>
+<p> - VELOS chassis with two system controllers</p>
+<p> - One or more chassis partitions; BIG-IP tenants, optionally in HA pairs</p>
+<p> </p>
+<h2> Cause</h2>
+<p> The two controllers, or the two partition instances, lose contact with each other. Usually this is the internal network between the controllers: the control-plane link, the controller switch fabric, or a hung controller. When</p>
+<p> the link is restored, the partition HA pair returns to the preferred controller (see Bug ID 2187625 for a known issue after that recovery).</p>
+<p> </p>
+<h2> Recommended Actions</h2>
+<p> </p>
+<p> 1. Understand the layers. Look top-down, fix bottom-up.</p>
+<p>   Layer 3 Tenants (BIG-IP): traffic groups, failover, mirroring</p>
+<p>   Layer 2 Chassis partitions (F5OS-P): partition HA, blades, VLANs, LAGs</p>
+<p>   Layer 1 Controller software (F5OS-C): controller redundancy, ConfD, OpenShift/etcd, switch fabric</p>
+<p>   Layer 0 Host OS: hardware, kernel, kubelet, Docker, DRBD</p>
+<p>   A symptom at a higher layer is often caused by a lower one. Find the lowest layer that is broken, and fix that first.</p>
+<p> </p>
+<p> 2. Rules before rebooting, reseating, or failing over a controller</p>
+<p>   At every moment, at least one controller must be active and cluster-ready. Never reboot, reseat, or run go-standby on the only ready controller.</p>
+<p>Do not reboot &quot;to try&quot;: first know which layer is broken and why the reboot fixes it. For the full rolling-reboot procedure, see the companion article &quot;Reboot both VELOS system controllers safely (rolling reboot)&quot; (link once published).</p>
+<p> </p>
+<p> 3. Readiness check before manual failover (see K000160334)</p>
+<p>   On the controller that is, or will become, active:</p>
+<p>    show cluster</p>
+<p>     cluster orchestration-manager cluster-initialized true</p>
+<p>     cluster orchestration-manager cluster-ready true</p>
+<p>     cluster orchestration-manager etcd-ha-running true</p>
+<p>     all stages Done; both controllers &quot;In Cluster&quot;</p>
+<p>     summary-status &quot;Openshift cluster is healthy, and all controllers and blades are ready.&quot;</p>
+<p>    show system redundancy-details state hardware</p>
+<p>     LOCAL HEALTHY true for both controllers</p>
+<p>   If any item fails, stop. Do not fail over to that controller, and do not reboot the other one.</p>
+<p>   Read the individual fields, not only the summary line: the summary can report all controllers ready while the node table shows a controller NotReady.</p>
+<p> </p>
+<p> 4. Detect split brain</p>
+<p>   Log in to each controller using its own management IP address, not the floating IP address.</p>
+<p>   Controller layer:</p>
+<p>    </p>
+<p>show system redundancy state   (both controllers must report the same current-active)</p>
+<p>    show cluster           (same active-node on both; etcd-ha-running true)</p>
+<p>    show system redundancy-details state hardware  (exactly one controller with LOCAL ACTIVE GRANTED true)</p>
+<p>  </p>
+<p> Split brain looks like this:</p>
+<p>    - each controller reports itself as current-active and active-node;</p>
+<p>    - both prompts show active;</p>
+<p>    - etcd-ha-running is false;</p>
+<p>    - redundancy-details returns &quot;Error: application error&quot;.</p>
+<p>   Both controllers can still show &quot;In Cluster&quot; during a split brain. An error from these commands is a failed check, not missing data.</p>
+<p>  </p>
+<p> Partition layer (partition CLI):</p>
+<p>    show system redundancy  (one controller node active and one standby, fault false, status redundant)</p>
+<p>  </p>
+<p> Tenant layer (BIG-IP):</p>
+<p>    tmsh show cm failover-status  (a traffic group must not be active on both devices)</p>
+<p> </p>
+<p> 5. Recover</p>
+<p>   First restore the connection between the two sides. Save qkviews from both controllers before you make changes.</p>
+<p>   - Both controllers active: keep the controller that passes step 3. On the other controller, using its own IP address:</p>
+<p>     config</p>
+<p>     system redundancy go-standby</p>
+<p>    </p>
+<p>If it does not change role, or if both or neither controller pass step 3, contact F5 Support. Do not reboot either controller until the good controller is known.</p>
+<p>   - Both controllers standby (no floating IP address): contact F5 Support. Setting system redundancy config mode prefer-1 or prefer-2 on the controller that passes step 3 makes it the preferred active controller. Return the </p>
+<p> mode to auto afterwards.</p>
+<p>   - Chassis partition active on both controllers: this resolves to the preferred controller when the internal connection is restored. If go-standby then fails back immediately, see Bug ID 2187625. The workaround is to restart  the partition HA service on the non-preferred controller:</p>
+<p>     system diagnostics os-utils docker restart node controller-2 service partition&lt;ID&gt;_ha</p>
+<p>    This affects configuration and the data path. Perform it during a maintenance window.</p>
+<p>   - Tenants active on both devices: restore the HA path first (HA VLAN and LAG in both partitions, controllers healthy). Then, on the tenant that should be standby:</p>
+<p>     </p>
+<p>tmsh run sys failover standby</p>
+<p>    </p>
+<p>Do not reboot tenants to resolve active/active.</p>
+<p>   - Controller failed but still inserted, and blocking recovery: contact F5 Support (see Bug ID 1752821, /var/omd/FORCE_PEER_CC_MISSING).</p>
+<p> </p>
+<h2> Additional Information</h2>
+<p> - Log messages that mark a controller role change (/var/log_controller/velos.log): &quot;role change detected&quot;, &quot;ConfD is now Active&quot;, &quot;ConfD is now Standby&quot;, &quot;standby confd lost contact with active confd&quot;.</p>
+<p> - Controller redundancy modes: auto (default), prefer-1, prefer-2. Partition redundancy modes add active-controller (see Bug ID 1696269).</p>
+</article>
+</body>
+</html>
