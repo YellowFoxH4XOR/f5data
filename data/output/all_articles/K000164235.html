@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000164235: Explanation of memory metrics available in F5OS GUI and confd</title>
+<meta name="description" content="Support Solution: Explanation of memory metrics available in F5OS GUI and confd — Note: these values will be present on F5OS &gt; 1.8.0 due to a fix for ID1233865.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000164235">
+</head>
+<body>
+<header>
+<h1>K000164235: Explanation of memory metrics available in F5OS GUI and confd</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-11-17</dd>
+<dt>Updated</dt><dd>2026-11-17</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000164235">https://my.f5.com/manage/s/article/K000164235</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<div>
+<div>At the time of writing this article, GUI dashboard of r5900 running F5OS v2 showed:</div>
+</div>
+<div>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>F5OS System shows 44% used; 8.3GB available of 14.9 GB. 
+F5OS Tenant shows 77% used; 24.7GB available of 110.5GB.</code></pre>
+</div>
+<div><em><span style="text-decoration: underline;">Note: these values will be present on F5OS &gt; 1.8.0 due to a fix for <a href="https://cdn.f5.com/product/bugtracker/ID1233865.html" target="_blank" rel="noopener noreferrer">ID1233865</a>.</span></em></div>
+<div>The corresponding values presented by the GUI, could be found in the following confd outputs:</div>
+<div>
+<div>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>[root@appliance-1(r5900.local):Active] ~ # f5sh show components component platform state memory
+state memory total  134623019008
+state memory available 8202682368
+state memory free   993447936
+state memory used-percent 93
+state memory platform-total 15995518976 &lt;-------------
+state memory platform-used 7096360960
+state memory platform-used-percent 44 &lt;-------------
+
+[root@appliance-1(r5900.local):Active] ~ # f5sh show cluster nodes node state tenant-memory
+cluster nodes node node-1
+ state tenant-memory tenant-reserved 118627500032
+ state tenant-memory tenant-configured 23622320128
+ state tenant-memory tenant-provisioned 0
+ state tenant-memory tenant-deployed 92123693056
+ state tenant-memory tenant-configured-percent 19
+ state tenant-memory tenant-provisioned-percent 0
+ state tenant-memory tenant-deployed-percent 77 &lt;-------------</code></pre>
+</div>
+<div> </div>
+<div>Now, to have a good understanding of how these confd values are calculated, here are the formulas and respective explanations:</div>
+<div>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>available:
+
+    /proc/meminfo --&gt; MemAvailable
+
+    An estimate of how much memory is available for starting new applications, without swapping. 
+    Calculated from MemFree, SReclaimable, the size of the file LRU lists, and the low watermarks in each zone. 
+    The estimate takes into account that the system needs some page cache to function well, 
+    and that not all reclaimable slab will be reclaimable, due to items being in use. 
+    The impact of those factors will vary from system to system.
+
+free:
+
+    /proc/meminfo --&gt; MemFree
+ 
+    An estimate of how much memory is available for starting new applications, without swapping. 
+    Calculated from MemFree, SReclaimable, the size of the file LRU lists, and the low watermarks in each zone. 
+    The estimate takes into account that the system needs some page cache to function well, and that not 
+    all reclaimable slab will be reclaimable, due to items being in use. The impact of those factors will vary from system to system.
+
+used-percent:
+
+    /proc/meminfo --&gt; (MemTotal - MemAvailable) / MemTotal * 100
+    An estimate in % of how much total memory is used.
+
+platform-total:
+
+    /proc/meminfo --&gt; (MemTotal - (HugePages_Total * md.HugePageSize))
+
+    This is the amount of memory allocated to the F5OS platform services layer. 
+    The tenant memory is reserved and that is why used-percent is such a large number. 
+    This number attempts to represent the mount left over used by platform services.
+
+platform-used:
+
+    /proc/meminfo --&gt; (MemTotal) - (md.HugePagesTotal * md.HugePageSize) - MemFree - MemBuffers - Cached
+    Attempts to report how much of the platform layer is currently in use.
+
+platform-used-percent: 
+
+    (platform-used / platform-total) * 100
+    This is the amount of memory used by the platform layer.
+
+tenant-reserved:
+
+    memory total - platform-total
+    This is the amount of memory available for tenant allocation.
+
+tenant-configured:
+    
+    This is the amount of memory allocated to tenants in Configured state.
+
+tenant-provisioned:
+
+    This is the amount of memory allocated to tenants in Provisioned state.
+
+tenant-deployed:
+
+    This is the amount of memory allocated to tenants in Deployed state.
+
+tenant-configured-percent:
+  
+    (tenant-configured / tenant-reserved) * 100  
+    This is the amount of memory used by tenants in Configured state out of all memory reserved for tenants.
+
+tenant-provisioned-percent:
+
+    (tenant-provisioned / tenant-reserved) * 100  
+    This is the amount of memory used by tenants in Provisioned state out of all memory reserved for tenants.
+
+tenant-deployed-percent:
+
+    (tenant-deployed / tenant-reserved) * 100  
+    This is the amount of memory used by tenants in Deployed state out of all memory reserved for tenants.</code></pre>
+</div>
+</div>
+<div>GUI dashboard is calculated based on what confd reports, and the dashboard also does an extra unit calculation for better user experience. /proc/meminfo is in KiB, so 1024 bytes, not 1000 bytes. That means, values from confd needs to be multiplied by 1073741824 (2³⁰), so the divisor is binary, to get a value in GB (gigabyte) shown in GUI.</div>
+<div> </div>
+<div>Our numbers:</div>
+<div>
+<table style="width: 100%;height: 252.583px;border-width: 1px;margin-left: 0px;margin-right: auto;" border="1"><thead><tr style="height: 68.1167px;"><th colspan="1" rowspan="1" style="width: 30.8607%;text-align: center;">
+<h3><span style="font-size: inherit;">Bytes</span></h3>
+</th><th colspan="1" rowspan="1" style="width: 20.843%;text-align: center;">
+<h3><span style="font-size: inherit;">÷ 2³⁰</span></h3>
+</th><th colspan="1" rowspan="1" style="width: 48.2963%;text-align: center;">
+<h3><span style="font-size: inherit;">GUI presentation</span></h3>
+</th></tr></thead><tbody><tr style="height: 46.1167px;"><td colspan="1" rowspan="1" style="width: 30.8607%;text-align: center;"><span style="font-size: inherit;">System total</span></td><td colspan="1" rowspan="1" style="width: 20.843%;text-align: center;"><span style="font-size: inherit;">15,995,518,976</span></td><td colspan="1" rowspan="1" style="width: 48.2963%;text-align: center;"><span style="font-size: inherit;">14.897</span></td></tr><tr style="height: 46.1167px;"><td colspan="1" rowspan="1" style="width: 30.8607%;text-align: center;"><span style="font-size: inherit;">System free (total − 7,096,360,960)</span></td><td colspan="1" rowspan="1" style="width: 20.843%;text-align: center;"><span style="font-size: inherit;">8,899,158,016</span></td><td colspan="1" rowspan="1" style="width: 48.2963%;text-align: center;"><span style="font-size: inherit;">8.288</span></td></tr><tr style="height: 46.1167px;"><td colspan="1" rowspan="1" style="width: 30.8607%;text-align: center;"><span style="font-size: inherit;">Tenant total</span></td><td colspan="1" rowspan="1" style="width: 20.843%;text-align: center;"><span style="font-size: inherit;">118,627,500,032</span></td><td colspan="1" rowspan="1" style="width: 48.2963%;text-align: center;"><span style="font-size: inherit;">110.48</span></td></tr><tr style="height: 46.1167px;"><td colspan="1" rowspan="1" style="width: 30.8607%;text-align: center;"><span style="font-size: inherit;">Tenant free (total − 92,123,693,056)</span></td><td colspan="1" rowspan="1" style="width: 20.843%;text-align: center;"><span style="font-size: inherit;">26,503,806,976</span></td><td colspan="1" rowspan="1" style="width: 48.2963%;text-align: center;"><span style="font-size: inherit;">24.684</span></td></tr></tbody></table>
+</div>
+<div>To reiterate what GUI Dashboard showed:</div>
+<div>
+<div>
+<div>
+<pre class="language-markup" style="background: #efefef;padding: 8px;display: block;border: 1px solid rgb(204, 204, 204);overflow-x: auto;"><code>F5OS System shows 44% used; 8.3GB available of 14.9 GB.
+F5OS Tenant shows 77% used; 24.7GB available of 110.5GB.</code></pre>
+</div>
+</div>
+</div>
+<h2>Environment</h2>
+<ul><li>F5OS-A version 2.0.0</li><li>Platform: F5-BIG-R5900 (rSeries)</li></ul>
+<h2>Cause</h2>
+<p>None. The article is purely informational.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>None. The article is purely informational.</p>
+<h2>Additional Information</h2>
+<p>None.</p>
+</article>
+</body>
+</html>

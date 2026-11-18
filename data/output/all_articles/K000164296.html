@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000164296: SSL Handshake failed with Alert (Level: Fatal, Description: Unknown CA)</title>
+<meta name="description" content="Support Solution: SSL Handshake failed with Alert (Level: Fatal, Description: Unknown CA) — warning tmm3[20873]: 01260009:4: &lt;client_IP&gt;:&lt;port&gt; -&gt; &lt;VS_IP&gt;:443: Connection error: ssl_null_parse:3926: alert(48) received alert">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000164296">
+</head>
+<body>
+<header>
+<h1>K000164296: SSL Handshake failed with Alert (Level: Fatal, Description: Unknown CA)</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-11-18</dd>
+<dt>Updated</dt><dd>2026-11-18</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000164296">https://my.f5.com/manage/s/article/K000164296</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>TLS handshakes fail with a BIG-IP LTM HTTPS virtual server that uses a Client SSL profile. The BIG-IP logs show the handshake failing after an alert 48 is received from the client:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">warning tmm3[20873]: 01260009:4: &lt;client_IP&gt;:&lt;port&gt; -&gt; &lt;VS_IP&gt;:443: Connection error: ssl_null_parse:3926: alert(48) received alert</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">warning tmm3[20873]: 01260013:4: SSL Handshake failed for TCP &lt;client_IP&gt;:&lt;port&gt; -&gt; &lt;VS_IP&gt;:443</span></p>
+<p>A packet capture taken on the BIG-IP shows the server Certificate message sent by the BIG-IP, followed immediately by a client-side fatal alert:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Alert (Level: Fatal, Description: Unknown CA)</span></p>
+<p>The alert is sent from the client, in cleartext, directly after the Certificate message. Alert 48 (Unknown CA) means the client cannot build a trusted path from the server certificate chain to a CA it trusts. </p>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM (classic TMOS)</li><li>HTTPS virtual server with a Client SSL profile (clientside context) and a server SSL profile (serverside context)</li><li>The Client SSL profile&#39;s cert-key-chain referenced the leaf certificate for the cert, the chain, and the key. The chain was set to the same leaf certificate instead of the intermediate chain.</li><li>The leaf certificate was issued by an intermediate CA. The intermediate CA was not included in the chain the BIG-IP sent.</li></ul>
+<h2>Cause</h2>
+<p>The Client SSL profile&#39;s certificate chain was incomplete. The BIG-IP sent only the leaf certificate, and the issuing intermediate CA was not sent. The client could not build a trusted path to a CA it trusts and sent a fatal Unknown CA alert.</p>
+<p>The client&#39;s trust store may also need to contain the intermediate or root CA, particularly for clients that use custom trust stores and do not fetch missing intermediates. </p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li>Capture traffic on the BIG-IP during a failed handshake, for example with <span style="background-color: #f1f1f1;">tcpdump -s0 -nni 0.0:nnnp host &lt;client_IP&gt; and host &lt;VS_IP&gt; -w &lt;capture_file&gt; -v</span>. </li><li>In the packet capture, confirm that the client sends <span style="font-family: &#39;courier new&#39;, courier, monospace;">Alert (Level: Fatal, Description: Unknown CA)</span> immediately after the server Certificate message.</li><li>Review the Client SSL profile: <span style="background-color: #f1f1f1;">tmsh list ltm profile client-ssl &lt;profile_name&gt;</span>. Check the <strong>cert-key-chain</strong> entry. The <strong>chain</strong> must reference a certificate chain that includes the issuing intermediate CA, not the leaf certificate itself.</li><li>Validate the certificate and chain files (<strong>cert</strong>, <strong>chain</strong>, <strong>key</strong>) and confirm the chain is correct for the issuing CA.</li><li>Update the Client SSL profile so that the chain includes the intermediate CA, then retest the handshake from the affected client.</li><li>If the handshake still fails after the chain is corrected, check whether the client&#39;s trust store contains the required intermediate or root CA. F5 does not manage the client&#39;s trust store.</li></ol>
+<h2>Additional Information</h2>
+<ul><li>The alert 48 &quot;Unknown CA&quot; from the client indicates a chain or trust problem. It does not indicate that the BIG-IP has a defect.<a href="https://my.f5.com/manage/s/article/K000163029" target="_blank"></a></li></ul>
+</article>
+</body>
+</html>
