@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000164309: Blocking TRACE, TRACK, and CONNECT HTTP Methods on NGINX Plus Load Balancers</title>
+<meta name="description" content="Support Solution: Blocking TRACE, TRACK, and CONNECT HTTP Methods on NGINX Plus Load Balancers — NGINX Plus load balancers must block the HTTP methods TRACE, TRACK, and CONNECT for security hardening. NGINX core rejects TRACE with HTTP 405 and has rejected CONNECT since nginx 1.21.1. NGINX core…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000164309">
+</head>
+<body>
+<header>
+<h1>K000164309: Blocking TRACE, TRACK, and CONNECT HTTP Methods on NGINX Plus Load Balancers</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-11-19</dd>
+<dt>Updated</dt><dd>2026-11-19</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Plus: 37.0.0, 37.0.3, 37.0.2, 37.0.1, 37.X.X, 37.3.X, 37.3.0, 37.2.X, 37.2.1, 37.2.0, 37.1.X, 37.1.1, 37.1.0, 37.0.X, 37.0.8, 37.0.7, 37.0.6, 37.0.5, 37.0.4, R32</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000164309">https://my.f5.com/manage/s/article/K000164309</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>NGINX Plus load balancers must block the HTTP methods TRACE, TRACK, and CONNECT for security hardening. NGINX core rejects TRACE with HTTP 405 and has rejected CONNECT since nginx 1.21.1. NGINX core has no built-in rejection for TRACK, so TRACK requests can be passed to upstream servers through <span style="background-color: #f1f1f1;">proxy_pass</span>. Where the block configuration is missing, TRACK returns 404 instead of 405. From NGINX Plus R36, CONNECT forward proxying can be enabled with <span style="background-color: #f1f1f1;">tunnel_pass</span>, so CONNECT must remain in the block map.</p>
+<h2>Environment</h2>
+<ul><li>NGINX Plus R32 (nginx 1.25.5) and NGINX Plus R37 (nginx 1.29.8)</li><li>Multiple NGINX Plus instances managed through centralized configuration management</li><li>Shared configuration files in /etc/nginx/global/, including fileandnetwork.conf, which is included at server level in HTTP and HTTPS server blocks</li><li>Port 80 server blocks that contain <span style="background-color: #f1f1f1;">return 301 https://$host$request_uri;</span> before the global includes</li><li><span style="background-color: #f1f1f1;">stream {}</span> blocks that proxy plain TCP on several ports, including 80 and 8080</li></ul>
+<h2>Cause</h2>
+<ul><li>NGINX core does not handle TRACK and requires explicit configuration to reject it.</li><li>TRACK returned 404 instead of 405 on instances where the map and the block-methods include were absent from the running configuration.</li></ul>
+<h2>Answer/Recommended Actions</h2>
+<ol><li>In the <span style="background-color: #f1f1f1;">http {}</span> context, create /etc/nginx/global/block-methods-map.conf with the following content:
+<p><code>map $request_method $blocked_method {<br>default 0;<br>TRACE 1;<br>TRACK 1;<br>CONNECT 1;<br>}</code></p>
+Include the file in the <span style="background-color: #f1f1f1;">http {}</span> block of /etc/nginx/nginx.conf, before the conf.d include lines. Alternatively, place the map directly inside <span style="background-color: #f1f1f1;">http {}</span>.</li><li>Create /etc/nginx/global/block-methods.conf with the following content:
+<p><code>if ($blocked_method) {<br>return 405;<br>}</code></p>
+</li><li>Include block-methods.conf in every HTTP (port 80) and HTTPS (port 443) server block, directly after the <span style="background-color: #f1f1f1;">listen</span> and <span style="background-color: #f1f1f1;">server_name</span> lines and before any <span style="background-color: #f1f1f1;">return</span> or <span style="background-color: #f1f1f1;">rewrite</span> redirect:
+<p><code>server {<br>listen :80;<br>server_name app.example.com;<br>include global/block-methods.conf;<br>return 301 https://$host$request_uri;<br>}</code></p>
+If your server blocks already include <span style="background-color: #f1f1f1;">global/fileandnetwork.conf</span>, you can add <span style="background-color: #f1f1f1;">include global/block-methods.conf;</span> as the last line of that file. This works only if the <span style="background-color: #f1f1f1;">fileandnetwork.conf</span> include line appears before any <span style="background-color: #f1f1f1;">return</span> or <span style="background-color: #f1f1f1;">rewrite</span> redirect in the server block. If a block has a redirect above that include line (for example, <span style="background-color: #f1f1f1;">return 301 https://$host$request_uri;</span> on port 80), move <span style="background-color: #f1f1f1;">include global/fileandnetwork.conf;</span> above the redirect, or add <span style="background-color: #f1f1f1;">include global/block-methods.conf;</span> directly above the redirect. Include <span style="background-color: #f1f1f1;">fileandnetwork.conf</span> only inside server blocks, never in <span style="background-color: #f1f1f1;">http {}</span>. For server blocks that do not include <span style="background-color: #f1f1f1;">fileandnetwork.conf</span>, add <span style="background-color: #f1f1f1;">include global/block-methods.conf;</span> directly. Do not add <span style="background-color: #f1f1f1;">fileandnetwork.conf</span> to those blocks, because it may duplicate directives defined inline.</li><li>Deploy the map and the updated shared file together to every NGINX Plus instance. The <span style="background-color: #f1f1f1;">$blocked_method</span> variable is undefined without the map, so deploy both before reloading.</li><li>Validate and reload on each instance:
+<p><span style="background-color: #f1f1f1;">nginx -t &amp;&amp; nginx -s reload</span></p>
+</li><li>Verify the running configuration:
+<ul><li>Compare the count of <span style="background-color: #f1f1f1;">include global/fileandnetwork.conf</span> lines with the count of <span style="background-color: #f1f1f1;">server_name</span> lines in <span style="background-color: #f1f1f1;">nginx -T</span> output. A small difference is expected for management servers.</li><li>Confirm the map is present with:
+<p><span style="background-color: #f1f1f1;">nginx -T 2&gt;/dev/null | grep -n -A6 &quot;map \$request_method&quot;</span></p>
+</li></ul>
+</li><li>Re-test TRACK, TRACE, and CONNECT with curl over both HTTP/1.1 and HTTP/2 on each virtual server. Use the real hostname so the correct server block is selected:
+<p><span style="background-color: #f1f1f1;">curl -i --http1.1 -X TRACK https://&lt;hostname&gt;/</span></p>
+<p><span style="background-color: #f1f1f1;">curl -i --http2 -X TRACK https://&lt;hostname&gt;/</span></p>
+<p><span style="background-color: #f1f1f1;">curl -i --http1.1 -X TRACE https://&lt;hostname&gt;/</span></p>
+<p><span style="background-color: #f1f1f1;">curl -i --http1.1 -X CONNECT --request-target &lt;hostname&gt;:443 https://&lt;hostname&gt;/</span></p>
+Expected results:
+<ul><li>TRACK and TRACE return 405.</li><li>CONNECT is rejected with an error status (405 or 400), and no tunnel is established.</li></ul>
+</li></ol>
+<p><strong>Notes</strong>:</p>
+<ul><li>Keep CONNECT in the map on R36 and later. NGINX Plus R36 introduced HTTP CONNECT forward-proxy support (<span style="background-color: #f1f1f1;">tunnel_pass</span>), so relying only on the built-in rejection is not sufficient on those releases.</li><li>The same configuration is supported on NGINX Plus R32 and R37. No changes to the snippets are required.</li><li>Do not include the HTTP snippet in <span style="background-color: #f1f1f1;">stream {}</span> configuration. HTTP applications published through <span style="background-color: #f1f1f1;">stream {}</span> must enforce method restrictions on the backend or be moved to an HTTP server block.</li><li>Server blocks for the NGINX Plus API/dashboard on port 8080 and the stub_status server on port 80 do not need the include, as they are management endpoints restricted by allow/deny rules or authentication.</li></ul>
+<h2>Additional Information</h2>
+<ul><li><strong>Expected behavior:</strong> Blocking TRACK, TRACE, and CONNECT affects only these three methods. GET, HEAD, POST, PUT, PATCH, DELETE, and OPTIONS are not affected. Confirm with application owners that no published application relies on these methods.</li><li><strong>Port 80 redirects:</strong> If the include is placed after <span style="background-color: #f1f1f1;">return 301</span>, TRACK requests on port 80 receive a 301 redirect instead of 405. The request still does not reach the upstream server, but the 405 response is not returned. Placing the include before the redirect provides a consistent 405.</li><li><strong>Change window:</strong> Apply the change first on a non-production instance or during a maintenance window.</li><li><strong>Verification status:</strong> The fix was accepted by the customer and the case was resolved, but the case does not contain post-change test output for <span style="background-color: #f1f1f1;">eaaorigin-knocker.timesinternet.in</span>, <span style="background-color: #f1f1f1;">etm.spog.ai</span>, or <span style="background-color: #f1f1f1;">auth.gaana.com</span>. These hostnames returned 404 for TRACK before the change. Confirm the results in a lab before relying on this article.</li><li><strong>Reference documentation:</strong>
+<ul><li>map module: <a href="https://example.org/en/docs/http/ngx_http_map_module.html" target="_blank">ngx_http_map_module documentation</a><span class="fontColorGreen"><strong>Note</strong>: This link takes you to a resource outside of MyF5, and the third party could remove the document without our knowledge.</span></li><li>if and return directives: <a href="https://example.org/en/docs/http/ngx_http_rewrite_module.html" target="_blank">ngx_http_rewrite_module documentation</a><span class="fontColorGreen"><strong>Note</strong>: This link takes you to a resource outside of MyF5, and the third party could remove the document without our knowledge.</span></li></ul>
+</li></ul>
+</article>
+</body>
+</html>
