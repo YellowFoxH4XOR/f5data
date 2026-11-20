@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000164309: Blocking TRACE, TRACK, and CONNECT HTTP Methods on NGINX Plus Load Balancers</title>
+<meta name="description" content="Support Solution: Blocking TRACE, TRACK, and CONNECT HTTP Methods on NGINX Plus Load Balancers — You want to block the HTTP methods TRACE, TRACK, and CONNECT on NGINX Plus for security hardening, and apply the restriction consistently to all HTTP and HTTPS virtual servers.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000164309">
+</head>
+<body>
+<header>
+<h1>K000164309: Blocking TRACE, TRACK, and CONNECT HTTP Methods on NGINX Plus Load Balancers</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-11-19</dd>
+<dt>Updated</dt><dd>2026-11-19</dd>
+<dt>Applies to</dt><dd><ul><li>NGINX Products</li><li>NGINX Plus: 37.0.0, 37.0.3, 37.0.2, 37.0.1, 37.X.X, 37.3.X, 37.3.0, 37.2.X, 37.2.1, 37.2.0, 37.1.X, 37.1.1, 37.1.0, 37.0.X, 37.0.8, 37.0.7, 37.0.6, 37.0.5, 37.0.4, R32</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000164309">https://my.f5.com/manage/s/article/K000164309</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>You want to block the HTTP methods TRACE, TRACK, and CONNECT on NGINX Plus for security hardening, and apply the restriction consistently to all HTTP and HTTPS virtual servers.</p>
+<ul><li>NGINX rejects TRACE with HTTP 405 by default.</li><li>NGINX rejects CONNECT by default (since nginx 1.21.1). Starting with NGINX Plus R36, CONNECT can be enabled for a server or location with the <code>tunnel_pass</code> directive.</li><li>NGINX has no built-in rejection for TRACK. Without explicit configuration, NGINX processes a TRACK request like any other request and may pass it to the upstream server. The response status then depends on the location or upstream.</li></ul>
+<h2>Environment</h2>
+<ul><li>NGINX Plus R32 and later</li><li>HTTP and HTTPS server blocks, for example in a reverse proxy (proxy_pass) deployment</li></ul>
+<h2>Cause</h2>
+<p>NGINX does not recognize TRACK as a known method, so TRACK must be blocked with explicit configuration. The restriction cannot be implemented in the <code>http {}</code> context alone: the <code>map</code> directive is valid in <code>http {}</code>, but the <code>if</code> and <code>return</code> directives that reject a request are valid only in <code>server</code> and <code>location</code> context.</p>
+<h2>Recommended Actions</h2>
+<ol><li>
+<p>Create the file <code>/etc/nginx/global/block-methods-map.conf</code> with the following content:</p>
+<pre>map $request_method $blocked_method {
+    default   0;
+    TRACE     1;
+    TRACK     1;
+    CONNECT   1;
+}</pre>
+<p>Include the file in the <code>http {}</code> block of <code>/etc/nginx/nginx.conf</code>:</p>
+<pre>http {
+    ...
+    include /etc/nginx/global/block-methods-map.conf;
+    ...
+}</pre>
+<p>Alternatively, place the <code>map</code> block directly inside <code>http {}</code>.</p>
+</li><li>
+<p>Create the file <code>/etc/nginx/global/block-methods.conf</code> with the following content:</p>
+<pre>if ($blocked_method) {
+    return 405;
+}</pre>
+</li><li>
+<p>Include <code>block-methods.conf</code> in every HTTP and HTTPS server block, directly after the <code>listen</code> and <code>server_name</code> lines and before any <code>return</code> or <code>rewrite</code> directive. For example:</p>
+<pre>server {
+    listen 80;
+    server_name app.example.com;
+    include /etc/nginx/global/block-methods.conf;
+    return 301 https://$host$request_uri;
+}</pre>
+<p><strong>Alternative – shared file:</strong> If all your server blocks already include a common file at server level, you can add <code>include /etc/nginx/global/block-methods.conf;</code> as the last line of that shared file instead of editing every server block. In this case:</p>
+<ul><li>The include line of the shared file must appear before any <code>return</code> or <code>rewrite</code> directive in each server block. If a server block has a redirect above that include line, move the include above the redirect, or add <code>include /etc/nginx/global/block-methods.conf;</code> directly above the redirect.</li><li>Include the shared file only inside server blocks, never in <code>http {}</code>, because the <code>if</code> directive is not allowed in the <code>http {}</code> context.</li><li>For server blocks that do not include the shared file, add <code>include /etc/nginx/global/block-methods.conf;</code> directly. Do not add the shared file to those blocks if they already define some of the same directives inline, because this may duplicate the directives.</li></ul>
+</li><li>
+<p>Deploy the <code>map</code> and <code>block-methods.conf</code> together to every NGINX Plus instance. <code>block-methods.conf</code> uses the <code>$blocked_method</code> variable, which is defined by the <code>map</code>.</p>
+</li><li>
+<p>Validate the configuration and reload NGINX on each instance:</p>
+<pre>nginx -t &amp;&amp; nginx -s reload</pre>
+</li><li>
+<p>Verify the running configuration:</p>
+<ul><li>
+<p>Confirm that the map is present:</p>
+<pre>nginx -T 2&gt;/dev/null | grep -n -A6 &quot;map \$request_method&quot;</pre>
+</li><li>
+<p>If you include <code>block-methods.conf</code> directly in each server block, compare the following two counts. The first (include lines) should equal the second (<code>server_name</code> lines), apart from server blocks that you intentionally exclude. The <code>server_name</code> count is an approximation: server blocks without <code>server_name</code> are not counted.</p>
+<pre>nginx -T 2&gt;/dev/null | grep -c &quot;include /etc/nginx/global/block-methods.conf&quot;
+nginx -T 2&gt;/dev/null | grep -cE &quot;^\s*server_name&quot;</pre>
+<p>If you use a relative include path (for example, <code>include global/block-methods.conf;</code>), adjust the first command accordingly.</p>
+</li><li>
+<p>If you use the shared-file approach, the <code>block-methods.conf</code> count returns 1, because <code>nginx -T</code> prints each included file only once. Instead, compare the number of include lines for the shared file with the number of <code>server_name</code> lines. A small difference is expected for server blocks that you intentionally exclude.</p>
+</li></ul>
+</li><li>
+<p>Test TRACK, TRACE, and CONNECT on each virtual server, using the real hostname so that the correct server block is selected:</p>
+<pre>curl -i --http1.1 -X TRACK https://&lt;hostname&gt;/
+curl -i --http2 -X TRACK https://&lt;hostname&gt;/
+curl -i --http1.1 -X TRACE https://&lt;hostname&gt;/
+curl -i --http1.1 -X CONNECT --request-target &lt;hostname&gt;:443 https://&lt;hostname&gt;/</pre>
+<p>Expected results:</p>
+<ul><li>TRACK and TRACE return 405.</li><li>CONNECT is rejected with an error status (405 or 400), and no tunnel is established.</li></ul>
+</li></ol>
+<p><strong>Notes</strong>:</p>
+<ul><li>Keep CONNECT in the map. Starting with NGINX Plus R36, CONNECT can be enabled with <code>tunnel_pass</code>. Keeping CONNECT in the map ensures that it stays blocked in server blocks that include <code>block-methods.conf</code>, even if <code>tunnel_pass</code> is added to them later. Do not include <code>block-methods.conf</code> in server blocks that are intended to work as an HTTP CONNECT forward proxy.</li><li>The same configuration works on NGINX Plus R32 and later. No changes to the snippets are required between releases.</li><li>Do not include <code>block-methods.conf</code> in <code>stream {}</code> configuration. The stream module proxies TCP/UDP and does not process HTTP methods. HTTP applications published through <code>stream {}</code> must enforce method restrictions on the backend, or be moved to an HTTP server block.</li><li>Management-only server blocks, such as the NGINX Plus API or <code>stub_status</code>, can be excluded if access to them is already restricted, for example with <code>allow</code> and <code>deny</code> directives.</li></ul>
+<h2>Additional Information</h2>
+<ul><li><strong>Expected behavior:</strong> The configuration affects only TRACE, TRACK, and CONNECT. Other methods, such as GET, HEAD, POST, PUT, PATCH, DELETE, and OPTIONS, are not affected. Confirm with application owners that no published application relies on the blocked methods.</li><li><strong>Port 80 redirects:</strong> If the include is placed after a <code>return 301</code> directive, TRACK requests on port 80 receive the 301 redirect instead of 405. The request is still not passed to the upstream server. Placing the include before the redirect returns a consistent 405.</li><li><strong>Change window:</strong> Apply the change first on a non-production instance or during a maintenance window.</li><li><strong>Reference documentation:</strong>
+<ul><li><a href="https://nginx.org/en/docs/http/ngx_http_map_module.html" target="_blank" rel="noopener noreferrer">Module ngx_http_map_module (map directive)</a></li><li><a href="https://nginx.org/en/docs/http/ngx_http_rewrite_module.html" target="_blank" rel="noopener noreferrer">Module ngx_http_rewrite_module (if and return directives)</a></li><li><a href="https://docs.nginx.com/nginx/admin-guide/web-server/http-connect-proxy" target="_blank" rel="noopener noreferrer">HTTP CONNECT forward proxy (tunnel_pass)</a></li></ul>
+<p><strong>Note</strong>: These links take you to resources outside of MyF5, and the third party could remove the documents without our knowledge.</p>
+</li></ul>
+</article>
+</body>
+</html>
