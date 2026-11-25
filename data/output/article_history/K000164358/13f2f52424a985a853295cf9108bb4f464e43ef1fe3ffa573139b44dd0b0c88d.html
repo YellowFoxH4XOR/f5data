@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000164358: BIG-IP DNS named and zrd Services Fail to Start After Upgrade to 17.1.3.7 Due to dnssec-validation yes Without trust-anchors</title>
+<meta name="description" content="Support Solution: BIG-IP DNS named and zrd Services Fail to Start After Upgrade to 17.1.3.7 Due to dnssec-validation yes Without trust-anchors — /config/named.conf:51: the &#x27;dnssec-validation yes&#x27; option requires configured &#x27;trust-anchors&#x27;; consider using &#x27;dnssec-validation auto&#x27;.">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000164358">
+</head>
+<body>
+<header>
+<h1>K000164358: BIG-IP DNS named and zrd Services Fail to Start After Upgrade to 17.1.3.7 Due to dnssec-validation yes Without trust-anchors</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-11-24</dd>
+<dt>Updated</dt><dd>2026-11-24</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP DNS: 17.X.X, 17.5.X, 17.5.1, 17.5.0, 17.1.X, 17.1.3, 17.1.2, 17.1.1, 17.1.0, 17.0.X, 17.0.0</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000164358">https://my.f5.com/manage/s/article/K000164358</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>On BIG-IP DNS (GTM), the <span style="font-family: &#39;courier new&#39;, courier, monospace;">named </span>and zrd services fail to start and are reported as <strong>Down </strong>in the service list. The <span style="font-family: &#39;courier new&#39;, courier, monospace;">named </span>service fails to load its configuration, reporting the following error:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">/config/named.conf:51: the &#39;dnssec-validation yes&#39; option requires configured &#39;trust-anchors&#39;; consider using &#39;dnssec-validation auto&#39;.</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">crit named[22015]: loading configuration: failure</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">crit named[22015]: exiting (due to fatal error)</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">notice systemd[1]: named.service: main process exited, code=exited, status=1/FAILURE</span></p>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP DNS (GTM)</li><li>Software: BIG-IP 17.1.3.7 (BIND 9.20.26), previously running BIG-IP 17.1.3.2 (BIND 9.18.44)</li><li>Configuration: <span style="font-family: &#39;courier new&#39;, courier, monospace;">/config/named.conf</span> line 51 contains <span style="font-family: &#39;courier new&#39;, courier, monospace;">dnssec-validation yes;</span> with no <span style="font-family: &#39;courier new&#39;, courier, monospace;">trust-anchors</span> statement. This setting was not changed by the upgrade.</li><li>GTM synchronization is enabled (<span style="font-family: &#39;courier new&#39;, courier, monospace;">synchronization yes</span>, <span style="font-family: &#39;courier new&#39;, courier, monospace;">synchronize-zone-files yes</span>) across a multi-device sync group. The same configuration load failure appears on each device in the group.</li></ul>
+<h2>Cause</h2>
+<p>BIND 9.20 (shipped in BIG-IP 17.1.3.7) requires an explicitly configured <span style="font-family: &#39;courier new&#39;, courier, monospace;">trust-anchors</span> statement when <span style="font-family: &#39;courier new&#39;, courier, monospace;">dnssec-validation yes</span> is set. BIND 9.18 (shipped in 17.1.3.2) started without it and did not perform DNSSEC validation for zones lacking a matching trust anchor. The configuration that worked on 17.1.3.2 therefore prevents named from starting on 17.1.3.7, which in turn prevents zrd from starting.</p>
+<h2>Answer/Recommended Actions</h2>
+<p>Perform the following steps on each device, validating on one device before applying to the rest of the sync group.</p>
+<p><strong>IMPORTANT NOTE:</strong></p>
+<ul><li>F5 strongly recommends creating a backup of every GTM unit in a syncgroup before implementing any changes and storing the backups in a secure, remote location. Refer to <a href="https://my.f5.com/manage/s/article/K13132" target="_blank" rel="noopener noreferrer">K13132</a>.</li><li>Verify that a minimum of 3 GB of free disk space is available on each of the /var and /shared partitions before proceeding. Refer to <a href="https://my.f5.com/manage/s/article/K14403" target="_blank" rel="noopener noreferrer">K14403</a>.</li><li>Retrieve the BIG-IP system&#39;s master key using the Bash shell and securely retain it with the UCS backup, following the instructions in <a href="https://my.f5.com/manage/s/article/K9420" target="_blank" rel="noopener noreferrer">K9420</a>.</li><li>Implement all changes during a maintenance window.</li></ul>
+<p> </p>
+<ol><li>
+<p>Check the named configuration file and the current status of the services:</p>
+<p><span style="background-color: #f1f1f1;">cd /var/named/config/</span></p>
+<p><span style="background-color: #f1f1f1;">ls -larth</span></p>
+<p><span style="background-color: #f1f1f1;">bigstart status zrd named</span></p>
+<p><span style="background-color: #f1f1f1;">bigstart stop zrd named</span></p>
+</li><li>
+<p>Back up the configuration file before editing:</p>
+<p><span style="background-color: #f1f1f1;">cp named.conf named.conf.&lt;date&gt;.bak</span></p>
+</li><li>
+<p>Edit <span style="font-family: &#39;courier new&#39;, courier, monospace;">named.conf</span> (for example, <span style="background-color: #f1f1f1;">vi named.conf</span>) and change:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">dnssec-validation yes;</span></p>
+<p>to:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">dnssec-validation auto;</span></p>
+<p>Alternatively, if manual trust anchors are operationally required, add a valid <span style="font-family: &#39;courier new&#39;, courier, monospace;">trust-anchors</span> configuration instead. Refer to the BIND configuration guide for the correct syntax.</p>
+</li><li>
+<p>Start the services:</p>
+<p><span style="background-color: #f1f1f1;">bigstart start named</span></p>
+<p><span style="background-color: #f1f1f1;">bigstart status zrd named</span></p>
+<p><span style="background-color: #f1f1f1;">bigstart start zrd</span></p>
+<p><span style="background-color: #f1f1f1;">bigstart status zrd named</span></p>
+</li><li>Confirm that both services show as running. Verify that the named log no longer reports the <span style="font-family: &#39;courier new&#39;, courier, monospace;">trust-anchors</span> error.</li></ol>
+<h2>Additional Information</h2>
+<ul><li>Expected behavior: with <span style="font-family: &#39;courier new&#39;, courier, monospace;">dnssec-validation yes</span>, BIND 9.20 requires a <span style="font-family: &#39;courier new&#39;, courier, monospace;">trust-anchors</span> statement. This is a behavior change from BIND 9.18 in 17.1.3.2, which started without it.</li><li>Unexpected behavior: named fails to load its configuration on 17.1.3.7, which prevents zrd from starting.</li><li>Changing to <span style="font-family: &#39;courier new&#39;, courier, monospace;">dnssec-validation auto</span> does not require trust-anchors. Confirm the behavior you need before selecting auto or manual trust anchors.</li><li>Review DNSSEC validation settings before upgrading to BIND 9.20-based releases.</li><li>Reference: <a href="https://bind9.readthedocs.io/en/v9.20.0/notes.html" target="_blank" rel="noopener noreferrer">BIND 9.20</a> change requiring explicit trust-anchors with <span style="font-family: &#39;courier new&#39;, courier, monospace;">dnssec-validation yes</span>.</li></ul>
+</article>
+</body>
+</html>
