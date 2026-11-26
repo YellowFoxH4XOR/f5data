@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000164325: UCS Load Fails on BIG-IP VE 17.5.1 with &quot;Symmetric Unit Key decrypt failure&quot;</title>
+<meta name="description" content="Support Solution: UCS Load Fails on BIG-IP VE 17.5.1 with &quot;Symmetric Unit Key decrypt failure&quot; — When migrating from a physical BIG-IP to a BIG-IP VE using a UCS file, the load fails with the message &quot;Symmetric Unit Key decrypt failure - decrypt failure.&quot; This message is misleading and masks the…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000164325">
+</head>
+<body>
+<header>
+<h1>K000164325: UCS Load Fails on BIG-IP VE 17.5.1 with &quot;Symmetric Unit Key decrypt failure&quot;</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2026-11-20</dd>
+<dt>Updated</dt><dd>2026-11-26</dd>
+<dt>Applies to</dt><dd><ul><li>BIG-IP</li><li>BIG-IP LTM: 17.5.1</li></ul></dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000164325">https://my.f5.com/manage/s/article/K000164325</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>When migrating from a physical BIG-IP to a BIG-IP VE using a UCS file, the load fails with the message &quot;Symmetric Unit Key decrypt failure - decrypt failure.&quot; This message is misleading and masks the actual configuration validation errors. See <a href="https://support.f5.com/csp/article/K36822000" target="_blank" rel="noopener noreferrer">K36822000: Misleading &quot;Symmetric Unit Key decrypt failure&quot; error while loading UCS</a>.</p>
+<p>The true cause is found in the mcpd validation errors. Configuration validation stops the load, and the following errors appear in the LTM log:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">01071837:3: The pool (...) contains a reference to a gateway failsafe device (...), which does not exist on the system.</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">01070330:3: Static route gateway (...) is not directly connected via an interface.</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">01071a95:3: Admin IP gateway for management route /Common/IMC is not in a connected network.</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">01420006:3: Validating configuration process failed.</span></p>
+<p><a href="https://cdn.f5.com/product/bugtracker/ID1043141.html" target="_blank" rel="noopener noreferrer">Bug ID 1043141</a> can prevent these real errors from appearing during configuration reload, so only the decrypt message is shown.</p>
+<p>Additional messages seen in the logs, which are not blocking, include:</p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Master key OpenSSL error: ... PEM routines:PEM_read_bio:no start line ... Expecting: CERTIFICATE</span></p>
+<p><span style="font-family: &#39;courier new&#39;, courier, monospace;">Error processing MCP messages: Local connection to MCPD failed: MCP error 0x1020048: 01020048:7: Connect to mcp daemon failed</span></p>
+<h2>Environment</h2>
+<ul><li>Product: BIG-IP LTM VE, version 17.5.1</li><li>Migration from a physical BIG-IP to a BIG-IP VE</li><li>Load command: <span style="background-color: #f1f1f1;">tmsh load sys ucs &lt;ucs_file&gt; no-license platform-migrate keep-current-management-ip</span></li><li>The UCS was collected from the physical source device and edited to remove gateway failsafe objects.</li><li>The source configuration references:
+<ul><li>Gateway failsafe devices that do not exist on the VE</li><li>A static route gateway not directly connected to any interface on the VE</li><li>A management route gateway (/Common/IMC) not in a connected network on the VE</li></ul>
+</li></ul>
+<h2>Cause</h2>
+<p>The UCS references gateway failsafe devices, a static route gateway, and a management route gateway that are not valid on the new VE. These validation errors block the load.</p>
+<p><a href="https://cdn.f5.com/product/bugtracker/ID1043141.html" target="_blank" rel="noopener noreferrer">Bug ID 1043141</a> hides the real validation errors during configuration reload, so only the &quot;Symmetric Unit Key decrypt failure&quot; message is shown.</p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li>Review the LTM log immediately after the failed load and filter for mcpd errors: <span style="background-color: #f1f1f1;">grep &quot;err mcpd&quot; /var/log/ltm</span></li><li>Correct every reported validation error in the UCS or on the VE:
+<ul><li>Remove or update gateway failsafe pool members and references that point to devices not present on the VE.</li><li>Correct static routes so the gateway is directly connected via an interface on the VE.</li><li>Correct the management route (/Common/IMC) so its gateway is in a connected network.</li></ul>
+</li><li>Confirm connectivity to each gateway from the VE (for example, with ping) before loading the configuration. Self-IPs must be in the same network as the gateway.</li><li>Reload the corrected UCS and check the LTM log again for remaining <span style="background-color: #f1f1f1;">err mcpd</span> entries.</li><li>After the load, verify that gateway failsafe pool members are monitored as expected. If a gateway is unreachable, the device may report &quot;FailsafeFault&quot; and fail over, so check that the production interfaces are enabled and the gateway can be reached.</li><li>For HA configurations, ensure the peer management IPs are allowed in the httpd configuration (for example, add them to &quot;allow httpd&quot;) on each unit.</li></ol>
+<h2>Additional Information</h2>
+<ul><li>The &quot;Symmetric Unit Key decrypt failure&quot; message in this scenario is misleading. Review the mcpd errors in the LTM log for the actual cause.</li><li>Expected behavior: a UCS load with invalid gateway, route, or failsafe references is rejected during validation, and the LTM log reports the specific errors.</li><li>Unexpected behavior: the decrypt message appears without any mcpd validation errors in the log, which may indicate the issue described in <a href="https://cdn.f5.com/product/bugtracker/ID1043141.html" target="_blank" rel="noopener noreferrer">Bug ID 1043141</a>.</li></ul>
+</article>
+</body>
+</html>

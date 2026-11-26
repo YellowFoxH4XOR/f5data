@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>K000091562: GUI shows &quot;Unable to contact BIG-IP device&quot; or a Web GUI error and becomes unresponsive</title>
+<meta name="description" content="Support Solution: GUI shows &quot;Unable to contact BIG-IP device&quot; or a Web GUI error and becomes unresponsive — The BIG-IP LTM Web GUI shows &quot;Unable to contact BIG-IP device&quot; or a Web GUI error and becomes unresponsive. The httpd service restarts repeatedly, and QKView generation from the GUI fails. The Tomcat…">
+<link rel="canonical" href="https://my.f5.com/manage/s/article/K000091562">
+</head>
+<body>
+<header>
+<h1>K000091562: GUI shows &quot;Unable to contact BIG-IP device&quot; or a Web GUI error and becomes unresponsive</h1>
+<dl>
+<dt>Type</dt><dd>Support Solution</dd>
+<dt>Published</dt><dd>2023-03-20</dd>
+<dt>Updated</dt><dd>2026-11-26</dd>
+<dt>Source</dt><dd><a href="https://my.f5.com/manage/s/article/K000091562">https://my.f5.com/manage/s/article/K000091562</a></dd>
+</dl>
+</header>
+<hr>
+<article>
+<h2>Description</h2>
+<p>The BIG-IP LTM Web GUI shows &quot;Unable to contact BIG-IP device&quot; or a Web GUI error and becomes unresponsive. The httpd service restarts repeatedly, and QKView generation from the GUI fails. The Tomcat log shows <span style="font-family: &#39;courier new&#39;, courier, monospace;">java.lang.OutOfMemoryError: Java heap space</span> followed by repeated Tomcat restarts, and httpd logs AJP connection errors.</p>
+<p>Symptoms and log messages:</p>
+<ul><li><strong>Tomcat heap exhaustion</strong> with at least 500 instances of:
+<ul><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">java.lang.OutOfMemoryError: Java heap space</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">-XX:OnOutOfMemoryError=&quot;/usr/bin/restart_tomcat&quot;</span> followed by repeated Tomcat restarts</li></ul>
+</li><li><strong>httpd AJP errors</strong> when Tomcat is unavailable:
+<ul><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">AH00957: AJP: attempt to connect to localhost:8009 failed</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">AH00959: ap_proxy_connect_backend disabling worker for (localhost)</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">AH00896: failed to make connection to backend: localhost</span></li><li><span style="font-family: &#39;courier new&#39;, courier, monospace;">AH00992: ajp_read_header: ajp_ilink_receive failed</span></li></ul>
+</li><li><strong>High CPU usage</strong> caused by the <strong>restjavad</strong> process continually crashing and restarting (see <a href="https://cdn.f5.com/product/bugtracker/ID894593.html" target="_blank">Bug ID 894593</a>).</li><li><strong>GUI errors during long operations</strong>, such as saving a UCS file, which can time out after 5 minutes (see <a href="https://cdn.f5.com/product/bugtracker/ID796605.html" target="_blank">Bug ID 796605</a>).</li></ul>
+<h2>Environment</h2>
+<ul><li>BIG-IP LTM version 14.1.4</li><li>High-availability (HA) device pair</li><li>AVR module provisioned, which may consume additional memory</li><li>Large configuration, where UCS saves from the GUI take longer than 5 minutes</li></ul>
+<p>Relevant database variables, with values observed on the affected system before changes:</p>
+<table border="1" cellpadding="6" cellspacing="0"><thead><tr><th colspan="1" rowspan="1">Variable</th><th colspan="1" rowspan="1">Default</th><th colspan="1" rowspan="1">Observed value</th><th colspan="1" rowspan="1">Allowed range</th></tr></thead><tbody><tr><td colspan="1" rowspan="1">provision.tomcat.extramb</td><td colspan="1" rowspan="1">0</td><td colspan="1" rowspan="1">50</td><td colspan="1" rowspan="1">integer 0 to 1024</td></tr><tr><td colspan="1" rowspan="1">restjavad.useextramb</td><td colspan="1" rowspan="1">false</td><td colspan="1" rowspan="1">false</td><td colspan="1" rowspan="1">false, true</td></tr><tr><td colspan="1" rowspan="1">provision.extramb</td><td colspan="1" rowspan="1">0</td><td colspan="1" rowspan="1">0</td><td colspan="1" rowspan="1">integer 0 to 8192</td></tr></tbody></table>
+<h2>Cause</h2>
+<ul><li><strong>Tomcat heap exhaustion:</strong> The Tomcat process ran out of Java heap space. Its OnOutOfMemoryError handler restarted Tomcat repeatedly, which caused the AJP connection failures in httpd. See <a href="https://support.f5.com/csp/article/K9719" target="_blank">K9719: Error Message: java.lang.OutOfMemoryError</a>.</li><li><strong>restjavad instability:</strong> <a href="https://cdn.f5.com/product/bugtracker/ID894593.html" target="_blank">Bug ID 894593</a> describes restjavad becoming unstable when the memory it requires exceeds the memory allocated to it. Continuous restarts drive up CPU usage and degrade system performance.</li><li><strong>GUI timeouts:</strong> <a href="https://cdn.f5.com/product/bugtracker/ID796605.html" target="_blank">Bug ID 796605</a> describes the GUI returning an error when a UCS save or other operation takes more than 5 minutes.</li></ul>
+<p>Hypothesis (unconfirmed): The <span style="font-family: &#39;courier new&#39;, courier, monospace;">provision.tomcat.extramb</span> value of 50 may be insufficient for this system&#39;s workload.</p>
+<h2>Answer/Recommended Actions</h2>
+<ol><li><strong>Confirm the Tomcat memory error.</strong> On the device, check whether the Tomcat log contains repeated <span style="font-family: &#39;courier new&#39;, courier, monospace;">java.lang.OutOfMemoryError</span> entries. Check the httpd error log for the AJP errors listed in the Description section.</li><li><strong>Review Tomcat memory provisioning.</strong> Check the current value with <span style="background-color: #f1f1f1;">tmsh list sys db provision.tomcat.extramb</span>. Refer to <a href="https://support.f5.com/csp/article/K9719" target="_blank">K9719: Error Message: java.lang.OutOfMemoryError</a> for guidance on adjusting this value. Make changes in a maintenance window.</li><li><strong>Review restjavad memory settings.</strong> Check the following values:
+<p><span style="background-color: #f1f1f1;">tmsh list sys db restjavad.useextramb</span></p>
+<p><span style="background-color: #f1f1f1;">tmsh list sys db provision.extramb</span></p>
+Apply the changes described in <a href="https://cdn.f5.com/product/bugtracker/ID894593.html" target="_blank">Bug ID 894593</a> and restart restjavad. Then confirm that CPU usage has dropped and the GUI remains responsive.</li><li><strong>Generate QKView from the CLI if the GUI is unavailable.</strong> Run <span style="background-color: #f1f1f1;">qkview -s0</span> from the command line.</li><li><strong>Save large UCS files from the CLI.</strong> Until <a href="https://cdn.f5.com/product/bugtracker/ID796605.html" target="_blank">Bug ID 796605</a> is resolved, use the tmsh command <span style="background-color: #f1f1f1;">save sys ucs &lt;name&gt;</span> instead of saving from the GUI.</li><li><strong>Plan the HA sync after restjavad changes.</strong> Restarting restjavad can leave the HA pair out of sync. The GUI sync warning may state that the active device goes offline for several minutes, so schedule any manual sync in a maintenance window.</li><li><strong>Plan the upgrade.</strong> Confirm the fixed versions for <a href="https://cdn.f5.com/product/bugtracker/ID796605.html" target="_blank">Bug ID 796605</a> and <a href="https://cdn.f5.com/product/bugtracker/ID894593.html" target="_blank">Bug ID 894593</a> in the bug tracker before choosing a target version. Check the hardware and software compatibility and upgrade paths for the target version before upgrading.</li></ol>
+<h2>Additional Information</h2>
+<ul><li><strong>Expected behavior:</strong> The AJP connection errors in httpd are expected while Tomcat is down or restarting. They are a symptom, not the root cause.</li><li><strong>Unexpected behavior:</strong> Tomcat restarting repeatedly with <span style="font-family: &#39;courier new&#39;, courier, monospace;">OutOfMemoryError</span> entries is not normal operation.</li><li>Record the before and after values for any change to the database variables listed in the Environment section.</li></ul>
+</article>
+</body>
+</html>
